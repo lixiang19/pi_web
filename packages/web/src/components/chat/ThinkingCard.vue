@@ -16,36 +16,41 @@ const toggleExpand = () => {
 
 <template>
   <div
-    class="rounded-2xl border border-amber-400/20 bg-amber-500/5 backdrop-blur-sm"
+    class="overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] transition-all duration-300"
+    :class="isExpanded ? 'ring-1 ring-amber-500/20' : ''"
   >
     <button
       type="button"
-      class="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-amber-500/10"
+      class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.04]"
       @click="toggleExpand"
     >
-      <Brain class="size-4 text-amber-400" />
-      <span class="text-xs font-medium text-amber-300">
-        {{ block.redacted ? "思考内容已编辑" : "思考过程" }}
+      <div class="flex size-6 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+        <Brain class="size-3.5" />
+      </div>
+      <span class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500/80">
+        {{ block.redacted ? "Redacted Logic" : "Neural Processing" }}
       </span>
-      <span class="ml-auto text-[10px] text-amber-400/60">
-        {{ isExpanded ? "收起" : "展开" }}
-      </span>
-      <component
-        :is="isExpanded ? ChevronUp : ChevronDown"
-        class="size-4 text-amber-400/60"
-      />
+      <div class="ml-auto flex items-center gap-2">
+        <span class="text-[9px] font-bold uppercase tracking-widest text-stone-600">
+          {{ isExpanded ? "CLOSE" : "EXPAND" }}
+        </span>
+        <component
+          :is="isExpanded ? ChevronUp : ChevronDown"
+          class="size-3 text-stone-600 group-hover:text-amber-500"
+        />
+      </div>
     </button>
 
-    <div v-show="isExpanded" class="border-t border-amber-400/10 px-4 py-3">
-      <p v-if="block.redacted" class="text-xs italic text-amber-400/60">
-        此思考内容已被安全过滤器编辑。
+    <div v-show="isExpanded" class="border-t border-white/5 bg-black/20 px-5 py-4">
+      <p v-if="block.redacted" class="text-[11px] font-medium italic text-stone-500">
+        Trace redacted by core security protocol.
       </p>
-      <p
+      <div
         v-else
-        class="whitespace-pre-wrap text-xs leading-5 text-amber-200/80 font-mono"
+        class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-amber-200/70 selection:bg-amber-500/30"
       >
         {{ block.thinking }}
-      </p>
+      </div>
     </div>
   </div>
 </template>

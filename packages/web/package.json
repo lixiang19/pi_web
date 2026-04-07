@@ -18,7 +18,8 @@
     "lucide-vue-next": "^0.542.0",
     "reka-ui": "^2.9.4",
     "tailwind-merge": "^3.3.1",
-    "vue": "^3.5.32"
+    "vue": "^3.5.32",
+    "vue-router": "^4.6.3"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",

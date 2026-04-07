@@ -1,0 +1,124 @@
+<script setup lang="ts">
+import { Check, MoonStar, SunMedium } from "lucide-vue-next";
+
+import { themeOptions, type ThemeName } from "@/assets/registry";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useThemePreferences } from "@/composables/useThemePreferences";
+import type { ThemeMode } from "@/lib/theme";
+import { cn } from "@/lib/utils";
+
+const themeDescriptions: Record<ThemeName, string> = {
+  default: "收敛冷感的基础工作台主题，适合作为系统默认基准。",
+  amber: "偏暖、警示感强，适合强调执行态与终端氛围。",
+  amethyst: "更冷峻、偏晶体质感，适合长时间阅读和聚焦。",
+  bubblegum: "高对比的玩味配色，用来测试更大胆的品牌感。",
+  caffeine: "重度控制台氛围，适合代码工作区和夜间操作。",
+  northernLights: "更明显的冷暖过渡，强调氛围感与层次。",
+  pastelDreams: "轻盈明亮，更适合浅色模式和展示场景。",
+};
+
+const preferences = useThemePreferences();
+
+const modeOptions: Array<{ label: string; value: ThemeMode; icon: typeof SunMedium }> = [
+  { label: "Light", value: "light", icon: SunMedium },
+  { label: "Dark", value: "dark", icon: MoonStar },
+];
+</script>
+
+<template>
+  <div class="grid gap-3 xl:grid-cols-[360px_minmax(0,1fr)]">
+    <aside class="rounded-[32px] border border-white/10 bg-black/35 p-6 backdrop-blur">
+      <p class="text-[10px] font-black uppercase tracking-[0.24em] text-amber-300/80">
+        Theme Control
+      </p>
+      <h2 class="mt-3 text-3xl font-black tracking-tight text-stone-50">
+        主题实验室
+      </h2>
+      <p class="mt-3 text-sm leading-7 text-stone-400">
+        这里直接驱动运行时主题 token，并把选择结果持久化。切换后立即作用于整个 Web 工作台。
+      </p>
+
+      <div class="mt-6 space-y-3">
+        <div class="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <p class="text-[10px] font-black uppercase tracking-[0.2em] text-stone-500">
+            Current Theme
+          </p>
+          <p class="mt-2 text-xl font-black text-stone-50">
+            {{ preferences.currentThemeOption.label }}
+          </p>
+          <p class="mt-2 text-sm leading-6 text-stone-400">
+            {{ themeDescriptions[preferences.themeName] }}
+          </p>
+        </div>
+
+        <div class="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <p class="text-[10px] font-black uppercase tracking-[0.2em] text-stone-500">
+            Mode
+          </p>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <button
+              v-for="option in modeOptions"
+              :key="option.value"
+              type="button"
+              :class="cn(
+                'flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-bold transition-all',
+                preferences.mode === option.value
+                  ? 'border-amber-400/30 bg-amber-500/10 text-amber-100'
+                  : 'border-white/10 bg-black/20 text-stone-300 hover:bg-white/[0.05]',
+              )"
+              @click="preferences.setMode(option.value)"
+            >
+              <component :is="option.icon" class="size-4" />
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <button
+        v-for="theme in themeOptions"
+        :key="theme.value"
+        type="button"
+        :class="cn(
+          'group rounded-[30px] border p-5 text-left transition-all',
+          preferences.themeName === theme.value
+            ? 'border-amber-400/30 bg-amber-500/10 shadow-[0_0_36px_rgba(245,158,11,0.12)]'
+            : 'border-white/10 bg-black/30 hover:bg-white/[0.05]',
+        )"
+        @click="preferences.setTheme(theme.value as ThemeName)"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-[10px] font-black uppercase tracking-[0.24em] text-stone-500">
+              Theme Token
+            </p>
+            <h3 class="mt-3 text-2xl font-black tracking-tight text-stone-50">
+              {{ theme.label }}
+            </h3>
+          </div>
+          <Badge
+            v-if="preferences.themeName === theme.value"
+            class="border-amber-400/30 bg-amber-500/15 text-amber-100"
+          >
+            <Check class="mr-1 size-3" />
+            Active
+          </Badge>
+        </div>
+
+        <div class="mt-5 flex gap-2">
+          <span class="h-3 flex-1 rounded-full bg-[hsl(var(--background))] ring-1 ring-white/10" />
+          <span class="h-3 flex-1 rounded-full bg-[hsl(var(--card))] ring-1 ring-white/10" />
+          <span class="h-3 flex-1 rounded-full bg-[hsl(var(--primary))] ring-1 ring-white/10" />
+          <span class="h-3 flex-1 rounded-full bg-[hsl(var(--accent))] ring-1 ring-white/10" />
+        </div>
+
+        <p class="mt-4 text-sm leading-7 text-stone-400">
+          {{ themeDescriptions[theme.value as ThemeName] }}
+        </p>
+      </button>
+    </section>
+  </div>
+</template>

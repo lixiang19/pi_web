@@ -3,6 +3,7 @@
 ## Responsibility
 
 - 负责提供 Web 端 Pi 工作台，统一组织左侧会话列表、中间消息流、右侧文件树三栏结构。
+- 负责提供共享页面壳与导航，把工作台、设置页、主题页、会话详情页统一收敛到同一套路由外框下。
 - 负责把 `@mariozechner/pi-coding-agent` 的持久化 session 能力桥接成前端可消费的 HTTP 与 SSE 接口，而不是只暴露运行时内存会话。
 - 负责发现并管理 Pi agent 资源，统一合并 `~/.pi/agent/agents` 与最近 `.pi/agents`，并把 project 覆盖关系投影给前端。
 - 负责把会话级 agent 选择真正注入 Pi runtime，包括 system prompt 追加、模型/thinking 覆写、steps 预算和工具权限 gate，而不是只在前端保存一个名字。
@@ -13,6 +14,7 @@
 - 负责在前端把消息、草稿和加载生命周期按 `sessionId` 分桶缓存，并通过邻近会话预取减少会话切换时的整份重新拉取。
 - 负责通过限窗快照和前端扩窗机制控制长会话历史加载，避免中间区默认渲染整份消息历史。
 - 负责在 Web 入口完成主题 token 注册、默认主题注入与明暗模式根节点切换，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量。
+- 负责把主题选择持久化到浏览器本地存储，保证刷新后仍能恢复用户上次选中的主题与明暗模式。
 - 负责限制文件树访问边界，只允许浏览当前工作区及同仓库 worktree 范围内的目录。
 - 不负责桌面壳原生交互、PR 状态、分享链接、复杂工具执行面板，这些仍在后续迭代范围内。
 - 服务对象包括 Web 最终用户、Tauri 桌面壳中的前端运行时，以及本仓库的开发构建流程。
@@ -26,17 +28,22 @@
 ```text
 +-----------------------------+
 | Vue App                     |
-| main.ts / App.vue           |
-| App.vue                     |
-| - SessionSidebar            |
-| - Chat Stream               |
-| - WorkspaceFileTree         |
+| main.ts -> router -> App    |
+| PlatformShell.vue           |
+| - WorkbenchPage             |
+| - SettingsPage              |
+| - ThemesPage                |
+| - SessionDetailPage         |
 +--------------+--------------+
                |
                v
 +-----------------------------+
 | 前端编排与派生层            |
 | usePiChat.ts                |
+| useWorkbenchSessionState.ts |
+| useWorkbenchResourcePicker.ts|
+| useWorkbenchPage.ts         |
+| useThemePreferences.ts      |
 | session-sidebar.ts          |
 | lib/theme.ts                |
 | assets/registry.ts          |
@@ -73,7 +80,7 @@
 ```
 
 - Vue 层只消费投影后的摘要和树结构，不直接拼接底层 session 文件信息。
-- 前端编排层负责把服务端的 session 摘要转成项目、group、父子会话树，并管理 localStorage 里的折叠、pin、recent 等视图状态。
+- 前端编排层负责把服务端的 session 摘要转成项目、group、父子会话树，并把会话派生状态、资源面板控制、主题偏好持久化拆成独立 composable。
 - 服务层同时承担三件事：列出和打开 SDK 持久化 session、维护归档元数据、约束文件树访问范围。
 
 ### Key Abstractions
@@ -156,7 +163,7 @@ export interface ChatComposerState {
 ```
 
 - 这是输入区从“单个 input 字符串”升级为“会话级输入编排器”的核心状态对象，统一承载草稿、发送中断、显式选择与待恢复输入。
-- 由 `usePiChat` 创建与维护，`App.vue` 直接消费并驱动输入区 UI。
+- 由 `usePiChat` 创建与维护，再经由 `useWorkbenchSessionState.ts`、`useWorkbenchResourcePicker.ts` 与 `WorkbenchChatPanel.vue` 消费并驱动输入区 UI。
 - 依据：`packages/web/src/lib/types.ts`，`packages/web/src/composables/usePiChat.ts`
 
 - 抽象名称：新会话草稿上下文
@@ -169,8 +176,8 @@ type SessionDraftContext = {
 ```
 
 - 这是把“还没真正创建 session，但已经进入工作台”的状态显式建模后的前端抽象，决定草稿态的目录、父会话和首次发送时的落盘参数。
-- 由 `usePiChat.openSessionDraft()` 维护，`App.vue` 直接消费以显示草稿态标题、父会话回退和文件树根目录。
-- 依据：`packages/web/src/composables/usePiChat.ts`，`packages/web/src/App.vue`
+- 由 `usePiChat.openSessionDraft()` 维护，`useWorkbenchSessionState.ts` 与 `WorkbenchPage.vue` 消费以显示草稿态标题、父会话回退和文件树根目录。
+- 依据：`packages/web/src/composables/usePiChat.ts`，`packages/web/src/composables/useWorkbenchSessionState.ts`，`packages/web/src/pages/WorkbenchPage.vue`
 
 - 抽象名称：会话快照缓存桶
 
@@ -196,8 +203,26 @@ export interface ResourceCatalogResponse {
 ```
 
 - 这是输入区 `/` 资源选择器与 prompt chips 的真实后端契约，统一承载 prompt、skill、command 三类资源。
-- 由服务端 `GET /api/resources` 生产，`usePiChat` 拉取后交给 `App.vue` 渲染与注入输入区。
+- 由服务端 `GET /api/resources` 生产，`usePiChat` 拉取后交给 `useWorkbenchResourcePicker.ts` 与 `WorkbenchResourcePicker.vue` 渲染与注入输入区。
 - 依据：`packages/server/src/index.js`，`packages/web/src/lib/api.ts`，`packages/web/src/lib/types.ts`
+
+- 抽象名称：主题偏好状态
+
+```ts
+export type ThemePreference = {
+  themeName: ThemeName
+  mode: ThemeMode
+}
+
+export const applyThemePreference = (preference: ThemePreference) => {
+  applyTheme(preference.themeName, preference.mode)
+  localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(preference))
+}
+```
+
+- 这是主题系统从“启动时注入默认主题”升级为“运行时可切换且可持久化”的核心抽象。
+- `lib/theme.ts` 负责读取/写入 localStorage 并驱动 DOM，`useThemePreferences.ts` 负责页面级交互状态，`ThemesPage.vue` 负责用户界面。
+- 依据：`packages/web/src/lib/theme.ts`，`packages/web/src/composables/useThemePreferences.ts`，`packages/web/src/pages/ThemesPage.vue`
 
 - 抽象名称：agent 资源定义与发现结果
 
@@ -216,7 +241,7 @@ export interface AgentSummary {
 ```
 
 - 这是输入区 agent 选择器和服务端运行时注入之间的契约对象，包含 YAML frontmatter 投影后的核心字段。
-- 由服务端 `discoverAgents()` 和 `GET /api/agents` 生产，`usePiChat` 与 `App.vue` 消费。
+- 由服务端 `discoverAgents()` 和 `GET /api/agents` 生产，`usePiChat` 与 `WorkbenchChatHeader.vue` 消费。
 - 依据：`packages/server/src/agents.js`，`packages/web/src/lib/types.ts`
 
 - 抽象名称：agent permission 编译结果
@@ -372,21 +397,31 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
   - 实现位置：`normalizeThemeCss()` 与 `initializeThemeSystem()`，位于 `packages/web/src/assets/registry.ts`、`packages/web/src/lib/theme.ts`
   - 为什么这么做：主题源文件保存的是完整 `hsl(...)` 字符串，而当前工作台的 Tailwind 颜色系统消费的是原始 HSL token；必须在注册边界统一归一化，再在入口一次性注入，才能让 `bg-background`、`text-foreground`、`dark:*` 和全局背景渐变共用同一套主题变量。
 
+- 模式名：共享路由壳 + 子页面装配
+  - 实现位置：`PlatformShell.vue` 与 `router/index.ts`，位于 `packages/web/src/layouts/PlatformShell.vue`、`packages/web/src/router/index.ts`
+  - 为什么这么做：一旦工作台不再只是单页，背景、导航、页面标题和最大宽度容器就不该散落在多个页面里重复实现，应该由共享路由壳统一承担。
+
+- 模式名：主题偏好持久化
+  - 实现位置：`getResolvedThemePreference()`、`applyThemePreference()` 与 `useThemePreferences()`，位于 `packages/web/src/lib/theme.ts`、`packages/web/src/composables/useThemePreferences.ts`
+  - 为什么这么做：主题选择属于用户偏好，刷新后丢失会破坏平台一致性，因此必须在主题系统边界直接持久化，而不是在页面层临时保存。
+
 ## Flow
 
 - 场景：左栏启动与会话摘要恢复流程
 
 ```text
-[1] App.vue mounted
-  -> [2] usePiChat.boot()
-  -> [3] GET /api/sessions
-  -> [4] SessionManager.listAll()
-  -> [5] project-context/session-metadata enrich
-  -> [6] SessionSidebar buildSessionProjects()
+[1] main.ts 挂载 router
+  -> [2] PlatformShell.vue 渲染共享壳与导航
+  -> [3] WorkbenchPage.vue mounted
+  -> [4] usePiChat.boot()
+  -> [5] GET /api/sessions
+  -> [6] SessionManager.listAll()
+  -> [7] project-context/session-metadata enrich
+  -> [8] SessionSidebar buildSessionProjects()
 ```
 
-- 第 3 到 5 步把 SDK 持久化 session、归档元数据和 git/worktree 上下文整合成增强摘要。
-- 第 6 步前端再按项目、group、父子会话树组织 UI。
+- 第 5 到 7 步把 SDK 持久化 session、归档元数据和 git/worktree 上下文整合成增强摘要。
+- 第 8 步前端再按项目、group、父子会话树组织 UI。
 
 - 场景：左栏切换已有会话流程
 
@@ -420,7 +455,7 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 ```text
 [1] 左栏点击“新建”或“子会话”
   -> [2] usePiChat.openSessionDraft({ cwd, parentSessionId })
-  -> [3] App.vue 进入草稿态并切换文件树/资源目录
+  -> [3] WorkbenchPage.vue 进入草稿态并切换文件树/资源目录
   -> [4] 用户第一次 submit()
   -> [5] ensureSession() -> POST /api/sessions
   -> [6] sendMessage() + SSE 流式更新
@@ -444,7 +479,7 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 - 场景：右侧文件树加载流程
 
 ```text
-[1] App.vue 计算 fileTreeRoot
+[1] useWorkbenchSessionState.ts 计算 fileTreeRoot
   -> [2] WorkspaceFileTree watch(rootDir)
   -> [3] GET /api/files/tree
   -> [4] resolveWorkspaceScope() 判定允许 root
@@ -457,12 +492,12 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 - 场景：agent 发现与输入区选择流程
 
 ```text
-[1] App.vue / usePiChat.boot()
+[1] WorkbenchPage.vue / usePiChat.boot()
   -> [2] GET /api/agents?cwd=...
   -> [3] discoverAgents(cwd)
   -> [4] 合并 ~/.pi/agent/agents 与最近 .pi/agents
   -> [5] 过滤 task-only agent
-  -> [6] 输入区 Select 展示可选 agent
+  -> [6] WorkbenchChatHeader Select 展示可选 agent
 ```
 
 - 关键分支：若 project scope 与 user scope 存在同名 agent，则 project 版本覆盖 user 版本。
@@ -475,7 +510,7 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
   -> [2] GET /api/resources?cwd=...&sessionId=...
   -> [3] ResourceLoader.getPrompts()/getSkills()
   -> [4] extensionRunner.getRegisteredCommands()
-  -> [5] App.vue 渲染 prompt chips 与 / 资源面板
+  -> [5] useWorkbenchResourcePicker.ts 过滤资源，WorkbenchResourcePicker.vue 渲染 / 资源面板
   -> [6] 资源注入 draftText 或直接发送
 ```
 
@@ -496,19 +531,34 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 - 第 3 步会同步应用 system prompt、model、thinking、steps 预算与 active tools。
 - 第 4 到 5 步保证 agent 改动不是 UI 状态，而是会真正改变 Pi session 的执行上下文。
 
+ - 场景：设置页与主题页导航流程
+
+```text
+[1] PlatformShell.vue 渲染顶部导航
+  -> [2] RouterLink 跳转 /settings 或 /themes
+  -> [3] 对应 page setup 执行 composable
+  -> [4] SettingsPage.vue 展示运行态摘要
+  -> [5] ThemesPage.vue 调用 useThemePreferences()
+  -> [6] applyThemePreference() 写入 DOM 与 localStorage
+```
+
+- 设置页不直接管理主题 token，只负责导航和运行态摘要。
+- 主题页通过 composable 驱动主题切换，避免把持久化逻辑写进模板事件里。
+
 - 场景：Web 工作台主题启动流程
 
 ```text
 [1] main.ts import style.css + initializeThemeSystem()
   -> [2] assets/registry.ts normalizeThemeCss()
-  -> [3] lib/theme.ts ensureThemeStyleElement()
-  -> [4] 写入默认主题 token 到 <style>
-  -> [5] html.dataset.theme='default' 且 html.dark=true
-  -> [6] App.vue mount 后所有 shadcn-vue/tailwind 颜色统一读取主题变量
+  -> [3] lib/theme.ts getResolvedThemePreference()
+  -> [4] lib/theme.ts ensureThemeStyleElement()
+  -> [5] 写入已持久化或默认主题 token 到 <style>
+  -> [6] html.dataset.theme/theme mode 同步到根节点
+  -> [7] router + 页面组件统一读取主题变量
 ```
 
 - 第 2 步把主题资产中的完整 `hsl(...)` 颜色声明转换成 Tailwind 配色系统使用的原始 token。
-- 第 4 到 5 步在应用挂载前完成，因此首屏渲染不会再依赖 `style.css` 中的写死配色。
+- 第 3 到 6 步在应用挂载前完成，因此首屏渲染不会再依赖 `style.css` 中的写死配色，刷新后也能恢复用户上次主题。
 
 ## Integration
 
@@ -531,26 +581,48 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 ### Internal Dependencies
 
 ```text
-App.vue
+main.ts
+  -> router/index.ts
+    -> App.vue
+      -> layouts/PlatformShell.vue
+        -> pages/WorkbenchPage.vue
+          -> components/workbench/WorkbenchHeader.vue
+          -> components/chat/SessionSidebar.vue
+            -> components/chat/SessionSidebarSessionNode.vue
+            -> lib/session-sidebar.ts
+          -> components/workbench/chat/WorkbenchChatPanel.vue
+            -> components/workbench/chat/WorkbenchChatHeader.vue
+            -> components/workbench/chat/WorkbenchMessageStream.vue
+            -> components/workbench/chat/WorkbenchComposer.vue
+              -> components/workbench/chat/WorkbenchResourcePicker.vue
+          -> components/workbench/ProjectFilePanel.vue
+            -> components/WorkspaceFileTree.vue
+              -> lib/api.ts
+                -> /api/files/tree
+        -> pages/SettingsPage.vue
+          -> composables/useWorkbenchSessionState.ts
+        -> pages/ThemesPage.vue
+          -> composables/useThemePreferences.ts
+        -> pages/SessionDetailPage.vue
+          -> components/workbench/chat/WorkbenchMessageStream.vue
+          -> components/workbench/ProjectFilePanel.vue
   -> lib/theme.ts
-     -> assets/registry.ts
-  -> components/chat/SessionSidebar.vue
-     -> components/chat/SessionSidebarSessionNode.vue
-     -> lib/session-sidebar.ts
-  -> composables/usePiChat.ts
-     -> lib/api.ts
-        -> /api/system/info
-        -> /api/providers
-        -> /api/agents
-        -> /api/sessions
-        -> /api/sessions/:id
-        -> /api/sessions/:id/messages
-        -> /api/config/agents/:name
-        -> /api/sessions/:id/archive
-        -> /api/sessions/:id/abort
-  -> components/WorkspaceFileTree.vue
-     -> lib/api.ts
-        -> /api/files/tree
+    -> assets/registry.ts
+pages/WorkbenchPage.vue
+  -> composables/useWorkbenchPage.ts
+    -> composables/useWorkbenchSessionState.ts
+    -> composables/useWorkbenchResourcePicker.ts
+    -> composables/usePiChat.ts
+       -> lib/api.ts
+          -> /api/system/info
+          -> /api/providers
+          -> /api/agents
+          -> /api/sessions
+          -> /api/sessions/:id
+          -> /api/sessions/:id/messages
+          -> /api/config/agents/:name
+          -> /api/sessions/:id/archive
+          -> /api/sessions/:id/abort
 
 packages/server/src/index.js
   -> project-context.js
@@ -584,8 +656,8 @@ packages/server/src/index.js
 
 ```text
 用户点击左栏 / 输入消息
-  -> SessionSidebar / App.vue
-  -> usePiChat / session-sidebar 派生层
+  -> PlatformShell / WorkbenchPage / SessionSidebar / WorkbenchChatPanel
+  -> useWorkbenchSessionState / useWorkbenchResourcePicker / usePiChat / session-sidebar 派生层
   -> lib/api.ts HTTP + SSE
   -> Express 服务层
   -> SessionManager / DefaultResourceLoader / agent registry / git / 文件系统 / 元数据存储
@@ -603,11 +675,24 @@ packages/server/src/index.js
 | packages/server/src/project-context.js | 166 | 解析项目/worktree 上下文与工作区访问范围 |
 | packages/server/src/session-metadata.js | 144 | 持久化 session 归档元数据与会话级 agent 选择 |
 | packages/web/src/composables/usePiChat.ts | 434 | 前端会话编排、agent 选择、SSE 同步与会话动作入口 |
+| packages/web/src/composables/useWorkbenchSessionState.ts | 187 | 工作台会话派生层，承接标题、目录根、下拉选择与会话跳转动作 |
+| packages/web/src/composables/useWorkbenchResourcePicker.ts | 139 | Slash 资源面板派生层，负责过滤、注入与资源目录刷新 |
+| packages/web/src/composables/useThemePreferences.ts | 48 | 主题页交互层，负责组合当前偏好并驱动主题切换 |
+| packages/web/src/composables/useWorkbenchPage.ts | 24 | 工作台组合层，只负责拼装会话派生与资源派生 composable |
+| packages/web/src/router/index.ts | 62 | Web 路由入口，声明共享页面壳、工作台与设置/主题/详情页 |
+| packages/web/src/layouts/PlatformShell.vue | 92 | 共享页面壳，提供背景、导航和路由级标题区域 |
+| packages/web/src/pages/WorkbenchPage.vue | 92 | 三栏工作台页面装配，连接左栏、聊天页和文件树页签 |
+| packages/web/src/pages/SettingsPage.vue | 153 | 设置页，展示运行态摘要与平台导航入口 |
+| packages/web/src/pages/ThemesPage.vue | 123 | 主题页，负责切换主题 token 与明暗模式 |
+| packages/web/src/pages/SessionDetailPage.vue | 134 | 会话详情页，聚焦单个会话消息流与目录上下文 |
 | packages/web/src/components/chat/SessionSidebar.vue | 390 | 左侧会话栏主组件，管理搜索、折叠、pin、recent 与动作派发 |
 | packages/web/src/components/chat/SessionSidebarSessionNode.vue | 229 | 递归渲染父子会话树与节点操作 |
+| packages/web/src/components/workbench/chat/WorkbenchChatPanel.vue | 107 | 中间聊天区域总装配，组合头部、消息流与输入区 |
+| packages/web/src/components/workbench/chat/WorkbenchMessageStream.vue | 228 | 消息流滚动容器，管理回到底部与历史扩窗滚动锚点 |
+| packages/web/src/components/workbench/chat/WorkbenchComposer.vue | 106 | 输入区与资源选择器容器，承接草稿输入和发送动作 |
 | packages/web/src/lib/session-sidebar.ts | 248 | 左栏项目/group/树结构派生与搜索规则 |
-| packages/web/src/App.vue | 375 | 三栏工作台总装配，连接左栏、消息区、agent 选择与文件树 |
-| packages/web/src/lib/theme.ts | unknown | 主题运行时注入入口，负责默认主题挂载和根节点明暗模式切换 |
+| packages/web/src/App.vue | 7 | 根应用壳，仅提供 RouterView 容器 |
+| packages/web/src/lib/theme.ts | 103 | 主题运行时注入入口，负责主题恢复、DOM 注入和明暗模式切换 |
 | packages/web/src/assets/registry.ts | unknown | 主题资产注册表，负责把主题 CSS 归一化成当前工作台可消费的 token |
 | packages/web/src/lib/api.ts | 109 | Web 端 REST 请求封装与 agent API 入口 |
 | packages/web/src/lib/types.ts | 99 | 会话、agent、文件树和 mutation 类型定义 |
