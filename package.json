@@ -1,0 +1,23 @@
+{
+  "name": "pi-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,yellow \"npm run dev --workspace @pi/server\" \"npm run dev --workspace @pi/web\"",
+    "dev:web": "npm run dev --workspace @pi/web",
+    "dev:server": "npm run dev --workspace @pi/server",
+    "dev:desktop": "npm run dev --workspace @pi/desktop",
+    "build": "npm run build --workspace @pi/server && npm run build --workspace @pi/web",
+    "build:web": "npm run build --workspace @pi/web",
+    "build:server": "npm run build --workspace @pi/server",
+    "build:desktop": "npm run build --workspace @pi/desktop",
+    "check": "npm run check --workspace @pi/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules
+dist
+target
+coverage
+.DS_Store
+.env.local
+.env.*.local
+*.log
+*.tsbuildinfo
+
+packages/web/node_modules
+packages/web/dist
+packages/server/node_modules
+packages/desktop/node_modules
+packages/desktop/src-tauri/target
+packages/desktop/src-tauri/gen

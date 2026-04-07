@@ -1,0 +1,17 @@
+{
+  "name": "@pi/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "build": "node --check src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.65.2",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "zod": "^4.1.12"
+  }
+}

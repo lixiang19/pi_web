@@ -1,0 +1,74 @@
+@import '@fontsource-variable/manrope';
+@import '@fontsource/ibm-plex-mono';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-family: 'Manrope Variable', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  :root {
+    --background: 24 10% 5%;
+    --foreground: 36 17% 96%;
+    --card: 20 13% 8%;
+    --card-foreground: 36 17% 96%;
+    --popover: 20 13% 8%;
+    --popover-foreground: 36 17% 96%;
+    --primary: 36 92% 56%;
+    --primary-foreground: 20 14% 8%;
+    --secondary: 20 11% 14%;
+    --secondary-foreground: 36 17% 96%;
+    --muted: 20 11% 14%;
+    --muted-foreground: 35 9% 63%;
+    --accent: 22 29% 18%;
+    --accent-foreground: 36 17% 96%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 26 12% 18%;
+    --input: 26 12% 18%;
+    --ring: 36 92% 56%;
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top, rgba(245, 158, 11, 0.18), transparent 32%),
+    linear-gradient(180deg, #140f07 0%, #0c0a09 44%, #09090b 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(245, 158, 11, 0.3);
+  color: #fafaf9;
+}
+
+.font-mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
