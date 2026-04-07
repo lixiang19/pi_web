@@ -1,6 +1,6 @@
-import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
@@ -8,10 +8,13 @@ const normalizePath = (value) => path.resolve(value);
 
 const isPathInsideRoot = (candidatePath, rootPath) => {
   const relative = path.relative(rootPath, candidatePath);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
 };
 
-const parseBranchName = (value) => value.replace(/^refs\/heads\//, '').trim();
+const parseBranchName = (value) => value.replace(/^refs\/heads\//, "").trim();
 
 const parseWorktreeList = (content) => {
   const items = [];
@@ -27,13 +30,13 @@ const parseWorktreeList = (content) => {
       continue;
     }
 
-    if (line.startsWith('worktree ')) {
+    if (line.startsWith("worktree ")) {
       if (current) {
         items.push(current);
       }
 
       current = {
-        path: normalizePath(line.slice('worktree '.length).trim()),
+        path: normalizePath(line.slice("worktree ".length).trim()),
       };
       continue;
     }
@@ -42,8 +45,8 @@ const parseWorktreeList = (content) => {
       continue;
     }
 
-    if (line.startsWith('branch ')) {
-      current.branch = parseBranchName(line.slice('branch '.length));
+    if (line.startsWith("branch ")) {
+      current.branch = parseBranchName(line.slice("branch ".length));
     }
   }
 
@@ -56,12 +59,13 @@ const parseWorktreeList = (content) => {
 
 const getBasename = (value) => path.basename(value) || value;
 
-const getContainingWorktree = (cwd, worktrees) => worktrees
-  .filter((item) => isPathInsideRoot(cwd, item.path))
-  .sort((left, right) => right.path.length - left.path.length)[0];
+const getContainingWorktree = (cwd, worktrees) =>
+  worktrees
+    .filter((item) => isPathInsideRoot(cwd, item.path))
+    .sort((left, right) => right.path.length - left.path.length)[0];
 
 async function runGit(cwd, args) {
-  const { stdout } = await execFileAsync('git', ['-C', cwd, ...args]);
+  const { stdout } = await execFileAsync("git", ["-C", cwd, ...args]);
   return stdout.trim();
 }
 
@@ -78,26 +82,42 @@ export function createProjectContextResolver(workspaceDir) {
     const pending = (async () => {
       try {
         const [topLevel, commonDir, worktreeOutput] = await Promise.all([
-          runGit(normalizedCwd, ['rev-parse', '--show-toplevel']),
-          runGit(normalizedCwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
-          runGit(normalizedCwd, ['worktree', 'list', '--porcelain']),
+          runGit(normalizedCwd, ["rev-parse", "--show-toplevel"]),
+          runGit(normalizedCwd, [
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+          ]),
+          runGit(normalizedCwd, ["worktree", "list", "--porcelain"]),
         ]);
 
         const worktrees = parseWorktreeList(worktreeOutput);
-        const worktreesWithGitDir = await Promise.all(worktrees.map(async (item) => ({
-          ...item,
-          gitDir: normalizePath(await runGit(item.path, ['rev-parse', '--path-format=absolute', '--git-dir'])),
-        })));
+        const worktreesWithGitDir = await Promise.all(
+          worktrees.map(async (item) => ({
+            ...item,
+            gitDir: normalizePath(
+              await runGit(item.path, [
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-dir",
+              ]),
+            ),
+          })),
+        );
 
-        const containingWorktree = getContainingWorktree(normalizedCwd, worktreesWithGitDir)
-          ?? {
-            path: normalizePath(topLevel),
-            branch: undefined,
-            gitDir: normalizePath(commonDir),
-          };
+        const containingWorktree = getContainingWorktree(
+          normalizedCwd,
+          worktreesWithGitDir,
+        ) ?? {
+          path: normalizePath(topLevel),
+          branch: undefined,
+          gitDir: normalizePath(commonDir),
+        };
 
-        const projectRootWorktree = worktreesWithGitDir.find((item) => item.gitDir === normalizePath(commonDir))
-          ?? containingWorktree;
+        const projectRootWorktree =
+          worktreesWithGitDir.find(
+            (item) => item.gitDir === normalizePath(commonDir),
+          ) ?? containingWorktree;
 
         return {
           isGit: true,
@@ -105,7 +125,8 @@ export function createProjectContextResolver(workspaceDir) {
           projectRoot: projectRootWorktree.path,
           projectLabel: getBasename(projectRootWorktree.path),
           worktreeRoot: containingWorktree.path,
-          worktreeLabel: containingWorktree.branch || getBasename(containingWorktree.path),
+          worktreeLabel:
+            containingWorktree.branch || getBasename(containingWorktree.path),
           branch: containingWorktree.branch,
           worktrees: worktreesWithGitDir.map((item) => ({
             path: item.path,
@@ -113,7 +134,7 @@ export function createProjectContextResolver(workspaceDir) {
             label: item.branch || getBasename(item.path),
           })),
         };
-      } catch (_error) {
+      } catch {
         return {
           isGit: false,
           projectId: normalizedCwd,

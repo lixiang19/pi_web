@@ -15,9 +15,19 @@
     "build:web": "npm run build --workspace @pi/web",
     "build:server": "npm run build --workspace @pi/server",
     "build:desktop": "npm run build --workspace @pi/desktop",
-    "check": "npm run check --workspace @pi/web"
+    "lint": "eslint . --ext .ts,.vue",
+    "lint:fix": "eslint . --ext .ts,.vue --fix",
+    "typecheck": "npm run check --workspace @pi/web",
+    "check": "npm run lint && npm run typecheck",
+    "check:fix": "npm run lint:fix && npm run typecheck"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "@eslint/js": "^10.0.1",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.7.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.2.0",
+    "eslint-plugin-vue": "^10.8.0",
+    "globals": "^17.4.0"
   }
 }

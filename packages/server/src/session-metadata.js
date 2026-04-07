@@ -1,5 +1,5 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const METADATA_VERSION = 2;
 
@@ -9,8 +9,8 @@ const createDefaultState = () => ({
 });
 
 export function createSessionMetadataStore(workspaceDir) {
-  const metadataDir = path.join(workspaceDir, '.pi-web');
-  const metadataFile = path.join(metadataDir, 'session-sidebar.json');
+  const metadataDir = path.join(workspaceDir, ".pi-web");
+  const metadataFile = path.join(metadataDir, "session-sidebar.json");
 
   let cachedState = null;
   let writeQueue = Promise.resolve();
@@ -21,15 +21,18 @@ export function createSessionMetadataStore(workspaceDir) {
     }
 
     try {
-      const content = await fs.readFile(metadataFile, 'utf8');
+      const content = await fs.readFile(metadataFile, "utf8");
       const parsed = JSON.parse(content);
       cachedState = {
         ...createDefaultState(),
         ...parsed,
-        sessions: typeof parsed?.sessions === 'object' && parsed.sessions ? parsed.sessions : {},
+        sessions:
+          typeof parsed?.sessions === "object" && parsed.sessions
+            ? parsed.sessions
+            : {},
       };
     } catch (error) {
-      if (error?.code !== 'ENOENT') {
+      if (error?.code !== "ENOENT") {
         throw error;
       }
 
@@ -44,7 +47,11 @@ export function createSessionMetadataStore(workspaceDir) {
 
     writeQueue = writeQueue.then(async () => {
       await fs.mkdir(metadataDir, { recursive: true });
-      await fs.writeFile(metadataFile, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+      await fs.writeFile(
+        metadataFile,
+        `${JSON.stringify(state, null, 2)}\n`,
+        "utf8",
+      );
     });
 
     await writeQueue;
@@ -72,10 +79,17 @@ export function createSessionMetadataStore(workspaceDir) {
       parentSessionPath: sessionInput.parentSessionPath,
       createdAt: sessionInput.createdAt,
       updatedAt: sessionInput.updatedAt,
-      ...(sessionInput.agent !== undefined ? { agent: sessionInput.agent || undefined } : {}),
-      ...(sessionInput.model !== undefined ? { model: normalizeString(sessionInput.model) || undefined } : {}),
+      ...(sessionInput.agent !== undefined
+        ? { agent: sessionInput.agent || undefined }
+        : {}),
+      ...(sessionInput.model !== undefined
+        ? { model: normalizeString(sessionInput.model) || undefined }
+        : {}),
       ...(sessionInput.thinkingLevel !== undefined
-        ? { thinkingLevel: normalizeString(sessionInput.thinkingLevel) || undefined }
+        ? {
+            thinkingLevel:
+              normalizeString(sessionInput.thinkingLevel) || undefined,
+          }
         : {}),
     };
 
@@ -124,17 +138,25 @@ export function createSessionMetadataStore(workspaceDir) {
     const current = nextState.sessions[sessionId] ?? {};
     nextState.sessions[sessionId] = {
       ...current,
-      ...(selection.agent !== undefined ? { agent: normalizeString(selection.agent) || undefined } : {}),
-      ...(selection.model !== undefined ? { model: normalizeString(selection.model) || undefined } : {}),
+      ...(selection.agent !== undefined
+        ? { agent: normalizeString(selection.agent) || undefined }
+        : {}),
+      ...(selection.model !== undefined
+        ? { model: normalizeString(selection.model) || undefined }
+        : {}),
       ...(selection.thinkingLevel !== undefined
-        ? { thinkingLevel: normalizeString(selection.thinkingLevel) || undefined }
+        ? {
+            thinkingLevel:
+              normalizeString(selection.thinkingLevel) || undefined,
+          }
         : {}),
     };
 
     await persist(nextState);
   };
 
-  const setAgent = async (sessionId, agent) => setSelection(sessionId, { agent });
+  const setAgent = async (sessionId, agent) =>
+    setSelection(sessionId, { agent });
 
   return {
     load,
@@ -148,8 +170,8 @@ export function createSessionMetadataStore(workspaceDir) {
 }
 
 function normalizeString(value) {
-  if (typeof value !== 'string') {
-    return '';
+  if (typeof value !== "string") {
+    return "";
   }
 
   return value.trim();

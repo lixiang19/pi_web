@@ -1,9 +1,9 @@
-import path from 'node:path';
-import fs from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import path from "node:path";
+import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
-import express from 'express';
-import cors from 'cors';
+import express from "express";
+import cors from "cors";
 import {
   AuthStorage,
   DefaultResourceLoader,
@@ -11,10 +11,10 @@ import {
   SessionManager,
   SettingsManager,
   createAgentSession,
-} from '@mariozechner/pi-coding-agent';
-import { z } from 'zod';
+} from "@mariozechner/pi-coding-agent";
+import { z } from "zod";
 
-import { createProjectContextResolver } from './project-context.js';
+import { createProjectContextResolver } from "./project-context.js";
 import {
   deleteAgent,
   discoverAgents,
@@ -23,25 +23,29 @@ import {
   THINKING_LEVELS,
   normalizeThinkingLevel,
   saveAgent,
-} from './agents.js';
-import { compileAgentPermission, createPermissionGateExtension } from './agent-permissions.js';
-import { createSessionMetadataStore } from './session-metadata.js';
+} from "./agents.js";
+import {
+  compileAgentPermission,
+  createPermissionGateExtension,
+} from "./agent-permissions.js";
+import { createSessionMetadataStore } from "./session-metadata.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, '../../..');
+const rootDir = path.resolve(__dirname, "../../..");
 const defaultWorkspaceDir = process.env.PI_WORKSPACE_DIR
   ? path.resolve(process.env.PI_WORKSPACE_DIR)
   : rootDir;
-const port = Number.parseInt(process.env.PORT || '3000', 10);
+const port = Number.parseInt(process.env.PORT || "3000", 10);
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: "2mb" }));
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
 const activeSessions = new Map();
-const projectContextResolver = createProjectContextResolver(defaultWorkspaceDir);
+const projectContextResolver =
+  createProjectContextResolver(defaultWorkspaceDir);
 const sessionMetadataStore = createSessionMetadataStore(defaultWorkspaceDir);
 
 const createSessionSchema = z.object({
@@ -60,42 +64,54 @@ const messageSchema = z.object({
   agent: z.string().nullable().optional(),
 });
 
-const updateSessionSchema = z.object({
-  title: z.string().min(1).max(200).optional(),
-  model: z.string().nullable().optional(),
-  thinkingLevel: z.enum(THINKING_LEVELS).nullable().optional(),
-  agent: z.string().nullable().optional(),
-}).refine(
-  (payload) => payload.title !== undefined
-    || payload.model !== undefined
-    || payload.thinkingLevel !== undefined
-    || payload.agent !== undefined,
-  {
-    message: '至少要更新 title、model、thinkingLevel 或 agent 之一',
-  },
-);
+const updateSessionSchema = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    model: z.string().nullable().optional(),
+    thinkingLevel: z.enum(THINKING_LEVELS).nullable().optional(),
+    agent: z.string().nullable().optional(),
+  })
+  .refine(
+    (payload) =>
+      payload.title !== undefined ||
+      payload.model !== undefined ||
+      payload.thinkingLevel !== undefined ||
+      payload.agent !== undefined,
+    {
+      message: "至少要更新 title、model、thinkingLevel 或 agent 之一",
+    },
+  );
 
 const resourceCatalogQuerySchema = z.object({
   cwd: z.string().optional(),
   sessionId: z.string().optional(),
 });
 
-const agentUpsertSchema = z.object({
-  name: z.string().optional(),
-  description: z.string().optional(),
-  display_name: z.string().nullable().optional(),
-  mode: z.enum(['primary', 'task', 'all']).optional(),
-  model: z.string().nullable().optional(),
-  thinking: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).nullable().optional(),
-  steps: z.number().int().min(1).nullable().optional(),
-  enabled: z.boolean().optional(),
-  permission: z.record(z.string(), z.any()).optional(),
-  prompt: z.string().optional(),
-  scope: z.enum(['user', 'project']).optional(),
-}).strict();
+const sessionSnapshotQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(400).optional(),
+});
+
+const agentUpsertSchema = z
+  .object({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    display_name: z.string().nullable().optional(),
+    mode: z.enum(["primary", "task", "all"]).optional(),
+    model: z.string().nullable().optional(),
+    thinking: z
+      .enum(["off", "minimal", "low", "medium", "high", "xhigh"])
+      .nullable()
+      .optional(),
+    steps: z.number().int().min(1).nullable().optional(),
+    enabled: z.boolean().optional(),
+    permission: z.record(z.string(), z.any()).optional(),
+    prompt: z.string().optional(),
+    scope: z.enum(["user", "project"]).optional(),
+  })
+  .strict();
 
 const agentScopeQuerySchema = z.object({
-  scope: z.enum(['user', 'project']).optional(),
+  scope: z.enum(["user", "project"]).optional(),
   cwd: z.string().optional(),
 });
 
@@ -109,35 +125,41 @@ const fileTreeQuerySchema = z.object({
 });
 
 const ignoredDirectoryNames = new Set([
-  '.git',
-  'node_modules',
-  'dist',
-  'build',
-  'target',
-  '.next',
-  '.turbo',
-  'coverage',
-  '.pi-web',
+  ".git",
+  "node_modules",
+  "dist",
+  "build",
+  "target",
+  ".next",
+  ".turbo",
+  "coverage",
+  ".pi-web",
 ]);
 
+const DEFAULT_SESSION_MESSAGE_LIMIT = 80;
+const MAX_SESSION_MESSAGE_LIMIT = 400;
+
 const normalizeString = (value) => {
-  if (typeof value !== 'string') {
-    return '';
+  if (typeof value !== "string") {
+    return "";
   }
 
   return value.trim();
 };
 
-const normalizeFsPath = (value) => path.resolve(normalizeString(value) || defaultWorkspaceDir);
+const normalizeFsPath = (value) =>
+  path.resolve(normalizeString(value) || defaultWorkspaceDir);
 
 const ensureWithinRoot = (candidatePath, rootPath) => {
   const relative = path.relative(rootPath, candidatePath);
-  if (relative === '') {
+  if (relative === "") {
     return candidatePath;
   }
 
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    const error = new Error('Requested path is outside the allowed workspace root');
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    const error = new Error(
+      "Requested path is outside the allowed workspace root",
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -145,15 +167,16 @@ const ensureWithinRoot = (candidatePath, rootPath) => {
   return candidatePath;
 };
 
-const toPosixPath = (value) => value.split(path.sep).join('/');
+const toPosixPath = (value) => value.split(path.sep).join("/");
 
-const getFallbackTitle = (firstMessage) => normalizeString(firstMessage).slice(0, 48) || '新会话';
+const getFallbackTitle = (firstMessage) =>
+  normalizeString(firstMessage).slice(0, 48) || "新会话";
 
 const closeClients = (record) => {
   for (const client of record.clients) {
     try {
       client.end();
-    } catch (_error) {
+    } catch {
       // noop
     }
   }
@@ -163,19 +186,21 @@ const closeClients = (record) => {
 const listDirectoryEntries = async (directoryPath, rootPath) => {
   const dirents = await fs.readdir(directoryPath, { withFileTypes: true });
   const entries = dirents
-    .filter((entry) => entry.name !== '.' && !ignoredDirectoryNames.has(entry.name))
+    .filter(
+      (entry) => entry.name !== "." && !ignoredDirectoryNames.has(entry.name),
+    )
     .map((entry) => {
       const entryPath = path.join(directoryPath, entry.name);
       return {
         name: entry.name,
         path: toPosixPath(entryPath),
-        kind: entry.isDirectory() ? 'directory' : 'file',
-        relativePath: toPosixPath(path.relative(rootPath, entryPath)) || '.',
+        kind: entry.isDirectory() ? "directory" : "file",
+        relativePath: toPosixPath(path.relative(rootPath, entryPath)) || ".",
       };
     })
     .sort((left, right) => {
       if (left.kind !== right.kind) {
-        return left.kind === 'directory' ? -1 : 1;
+        return left.kind === "directory" ? -1 : 1;
       }
 
       return left.name.localeCompare(right.name);
@@ -184,14 +209,18 @@ const listDirectoryEntries = async (directoryPath, rootPath) => {
   return entries;
 };
 
-const isPathInAllowedRoots = (candidatePath, allowedRoots) => allowedRoots.some((rootPath) => {
-  const relative = path.relative(rootPath, candidatePath);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-});
+const isPathInAllowedRoots = (candidatePath, allowedRoots) =>
+  allowedRoots.some((rootPath) => {
+    const relative = path.relative(rootPath, candidatePath);
+    return (
+      relative === "" ||
+      (!relative.startsWith("..") && !path.isAbsolute(relative))
+    );
+  });
 
 const normalizeContent = (content) => {
-  if (typeof content === 'string') {
-    return [{ type: 'text', text: content }];
+  if (typeof content === "string") {
+    return [{ type: "text", text: content }];
   }
 
   if (!Array.isArray(content)) {
@@ -199,31 +228,39 @@ const normalizeContent = (content) => {
   }
 
   return content.map((item) => {
-    if (!item || typeof item !== 'object') {
-      return { type: 'unknown' };
+    if (!item || typeof item !== "object") {
+      return { type: "unknown" };
     }
 
-    if (item.type === 'text') {
-      return { type: 'text', text: typeof item.text === 'string' ? item.text : '' };
+    if (item.type === "text") {
+      return {
+        type: "text",
+        text: typeof item.text === "string" ? item.text : "",
+      };
     }
 
-    return { type: item.type || 'unknown', text: typeof item.text === 'string' ? item.text : '' };
+    return {
+      type: item.type || "unknown",
+      text: typeof item.text === "string" ? item.text : "",
+    };
   });
 };
 
-const contentToText = (content) => normalizeContent(content)
-  .filter((item) => item.type === 'text')
-  .map((item) => item.text || '')
-  .join('');
+const contentToText = (content) =>
+  normalizeContent(content)
+    .filter((item) => item.type === "text")
+    .map((item) => item.text || "")
+    .join("");
 
 const serializeMessage = (message, index) => {
-  const role = normalizeString(message?.role) || 'system';
+  const role = normalizeString(message?.role) || "system";
   const text = contentToText(message?.content);
   return {
     id: `${index}-${message?.timestamp || Date.now()}`,
-    role: role === 'toolResult' ? 'tool' : role,
+    role: role === "toolResult" ? "tool" : role,
     text,
-    createdAt: typeof message?.timestamp === 'number' ? message.timestamp : Date.now(),
+    createdAt:
+      typeof message?.timestamp === "number" ? message.timestamp : Date.now(),
   };
 };
 
@@ -238,7 +275,11 @@ const findModel = (modelSpec) => {
     return null;
   }
 
-  return getAvailableModels().find((model) => `${model.provider}/${model.id}` === normalized) || null;
+  return (
+    getAvailableModels().find(
+      (model) => `${model.provider}/${model.id}` === normalized,
+    ) || null
+  );
 };
 
 const formatModelSpec = (model) => {
@@ -259,7 +300,9 @@ const toSourceInfo = (sourceInfo) => {
     source: sourceInfo.source,
     scope: sourceInfo.scope,
     origin: sourceInfo.origin,
-    ...(sourceInfo.baseDir ? { baseDir: toPosixPath(path.resolve(sourceInfo.baseDir)) } : {}),
+    ...(sourceInfo.baseDir
+      ? { baseDir: toPosixPath(path.resolve(sourceInfo.baseDir)) }
+      : {}),
   };
 };
 
@@ -274,7 +317,7 @@ const listProviders = () => {
           .split(/[-_/]+/)
           .filter(Boolean)
           .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-          .join(' '),
+          .join(" "),
         models: {},
       });
     }
@@ -291,7 +334,9 @@ const listProviders = () => {
   return {
     providers: [...grouped.values()],
     default: {
-      chat: firstAvailable ? `${firstAvailable.provider}/${firstAvailable.id}` : undefined,
+      chat: firstAvailable
+        ? `${firstAvailable.provider}/${firstAvailable.id}`
+        : undefined,
     },
   };
 };
@@ -308,24 +353,27 @@ const createAgentSummary = (agent) => ({
   source: toPosixPath(path.resolve(agent.source)),
 });
 
-const createSessionResourceLoader = (record) => new DefaultResourceLoader({
-  cwd: record.cwd,
-  settingsManager: record.settingsManager,
-  appendSystemPromptOverride: (base) => {
-    const sections = [...base];
-    const systemPrompt = normalizeString(record.selectedAgentConfig?.systemPrompt);
-    if (systemPrompt) {
-      sections.push(systemPrompt);
-    }
+const createSessionResourceLoader = (record) =>
+  new DefaultResourceLoader({
+    cwd: record.cwd,
+    settingsManager: record.settingsManager,
+    appendSystemPromptOverride: (base) => {
+      const sections = [...base];
+      const systemPrompt = normalizeString(
+        record.selectedAgentConfig?.systemPrompt,
+      );
+      if (systemPrompt) {
+        sections.push(systemPrompt);
+      }
 
-    return sections;
-  },
-  extensionFactories: [
-    createPermissionGateExtension(() => record.selectedPermissionPolicy),
-  ],
-});
+      return sections;
+    },
+    extensionFactories: [
+      createPermissionGateExtension(() => record.selectedPermissionPolicy),
+    ],
+  });
 
-const isPrimarySessionAgent = (agent) => agent && agent.mode !== 'task';
+const isPrimarySessionAgent = (agent) => agent && agent.mode !== "task";
 
 const ensurePrimaryAgentOrThrow = (agentName, agent) => {
   if (!agentName) {
@@ -348,11 +396,13 @@ const ensurePrimaryAgentOrThrow = (agentName, agent) => {
 };
 
 const applySessionAgentSelection = async (record, selection = {}) => {
-  const selectedAgentName = normalizeString(selection.agentName) || '';
+  const selectedAgentName = normalizeString(selection.agentName) || "";
   const agent = selectedAgentName
     ? ensurePrimaryAgentOrThrow(
         selectedAgentName,
-        (await discoverAgents(record.cwd)).find((item) => item.name === selectedAgentName),
+        (await discoverAgents(record.cwd)).find(
+          (item) => item.name === selectedAgentName,
+        ),
       )
     : null;
 
@@ -380,44 +430,61 @@ const applySessionAgentSelection = async (record, selection = {}) => {
     await record.session.reload();
   }
 
-  await record.session.setActiveToolsByName(record.selectedPermissionPolicy.activeToolNames);
+  await record.session.setActiveToolsByName(
+    record.selectedPermissionPolicy.activeToolNames,
+  );
 
-  const nextExplicitModel = selection.model !== undefined
-    ? normalizeString(selection.model) || undefined
-    : record.explicitModelSpec;
-  if (selection.model !== undefined && nextExplicitModel && !findModel(nextExplicitModel)) {
+  const nextExplicitModel =
+    selection.model !== undefined
+      ? normalizeString(selection.model) || undefined
+      : record.explicitModelSpec;
+  if (
+    selection.model !== undefined &&
+    nextExplicitModel &&
+    !findModel(nextExplicitModel)
+  ) {
     const error = new Error(`模型不存在: ${nextExplicitModel}`);
     error.statusCode = 400;
     throw error;
   }
   record.explicitModelSpec = nextExplicitModel;
 
-  const chosenModel = findModel(record.explicitModelSpec)
-    || findModel(agent?.model)
-    || record.session.model
-    || null;
+  const chosenModel =
+    findModel(record.explicitModelSpec) ||
+    findModel(agent?.model) ||
+    record.session.model ||
+    null;
   if (chosenModel) {
     await record.session.setModel(chosenModel);
   }
-  record.resolvedModelSpec = formatModelSpec(record.session.model || chosenModel);
+  record.resolvedModelSpec = formatModelSpec(
+    record.session.model || chosenModel,
+  );
 
-  const nextExplicitThinking = selection.thinkingLevel !== undefined
-    ? normalizeThinkingLevel(selection.thinkingLevel)
-    : record.explicitThinkingLevel;
-  if (selection.thinkingLevel !== undefined && selection.thinkingLevel !== null && !nextExplicitThinking) {
+  const nextExplicitThinking =
+    selection.thinkingLevel !== undefined
+      ? normalizeThinkingLevel(selection.thinkingLevel)
+      : record.explicitThinkingLevel;
+  if (
+    selection.thinkingLevel !== undefined &&
+    selection.thinkingLevel !== null &&
+    !nextExplicitThinking
+  ) {
     const error = new Error(`thinkingLevel 非法: ${selection.thinkingLevel}`);
     error.statusCode = 400;
     throw error;
   }
   record.explicitThinkingLevel = nextExplicitThinking;
 
-  const thinking = record.explicitThinkingLevel
-    || normalizeThinkingLevel(agent?.thinking)
-    || normalizeThinkingLevel(record.session.thinkingLevel);
+  const thinking =
+    record.explicitThinkingLevel ||
+    normalizeThinkingLevel(agent?.thinking) ||
+    normalizeThinkingLevel(record.session.thinkingLevel);
   if (thinking) {
     await record.session.setThinkingLevel(thinking);
   }
-  record.resolvedThinkingLevel = normalizeThinkingLevel(record.session.thinkingLevel) || thinking;
+  record.resolvedThinkingLevel =
+    normalizeThinkingLevel(record.session.thinkingLevel) || thinking;
 
   await sessionMetadataStore.setSelection(record.id, {
     agent: record.selectedAgentName,
@@ -441,7 +508,7 @@ const restoreSessionSelection = async (record) => {
       model: explicitModelSpec,
       thinkingLevel: explicitThinkingLevel,
     });
-  } catch (_error) {
+  } catch {
     record.explicitModelSpec = undefined;
     record.explicitThinkingLevel = undefined;
     await sessionMetadataStore.setSelection(record.id, {
@@ -462,36 +529,47 @@ const emit = (record, payload) => {
 const updateStatus = (record, nextStatus) => {
   record.status = nextStatus;
   record.updatedAt = Date.now();
-  emit(record, { type: 'status', status: nextStatus });
+  emit(record, { type: "status", status: nextStatus });
 };
 
 const attachSession = (record) => {
   record.unsubscribe = record.session.subscribe((event) => {
     record.updatedAt = Date.now();
 
-    if (event.type === 'turn_start' && record.turnBudget.maxTurns) {
+    if (event.type === "turn_start" && record.turnBudget.maxTurns) {
       if (record.turnBudget.usedTurns >= record.turnBudget.maxTurns) {
         record.turnBudget.exhausted = true;
         void record.session.abort();
       }
     }
 
-    if (event.type === 'agent_start' || event.type === 'message_start' || event.type === 'message_update') {
-      updateStatus(record, 'streaming');
+    if (
+      event.type === "agent_start" ||
+      event.type === "message_start" ||
+      event.type === "message_update"
+    ) {
+      updateStatus(record, "streaming");
     }
 
-    if (event.type === 'message_end' || event.type === 'agent_end' || event.type === 'turn_end') {
-      updateStatus(record, 'idle');
+    if (
+      event.type === "message_end" ||
+      event.type === "agent_end" ||
+      event.type === "turn_end"
+    ) {
+      updateStatus(record, "idle");
     }
 
-    if (event.type === 'turn_end' && record.turnBudget.maxTurns) {
+    if (event.type === "turn_end" && record.turnBudget.maxTurns) {
       record.turnBudget.usedTurns += 1;
       if (record.turnBudget.usedTurns >= record.turnBudget.maxTurns) {
         record.turnBudget.exhausted = true;
       }
     }
 
-    if (event.type === 'message_end' && normalizeString(event?.message?.role) === 'assistant') {
+    if (
+      event.type === "message_end" &&
+      normalizeString(event?.message?.role) === "assistant"
+    ) {
       record.updatedAt = Date.now();
     }
 
@@ -506,20 +584,30 @@ const attachSession = (record) => {
       assistantMessageEvent: event.assistantMessageEvent
         ? {
             type: event.assistantMessageEvent.type,
-            delta: typeof event.assistantMessageEvent.delta === 'string' ? event.assistantMessageEvent.delta : null,
+            delta:
+              typeof event.assistantMessageEvent.delta === "string"
+                ? event.assistantMessageEvent.delta
+                : null,
           }
         : undefined,
     });
   });
 };
 
-const createActiveSessionRecord = ({ stateRef, session, settingsManager, resourceLoader, createdAt, updatedAt }) => {
+const createActiveSessionRecord = ({
+  stateRef,
+  session,
+  settingsManager,
+  resourceLoader,
+  createdAt,
+  updatedAt,
+}) => {
   const record = Object.assign(stateRef || {}, {
     id: session.sessionId,
     sessionFile: session.sessionFile,
     parentSessionPath: undefined,
     cwd: session.sessionManager.getCwd(),
-    status: 'idle',
+    status: "idle",
     createdAt,
     updatedAt,
     session,
@@ -530,7 +618,7 @@ const createActiveSessionRecord = ({ stateRef, session, settingsManager, resourc
     defaultToolNames: [...session.getActiveToolNames()],
     selectedAgentName: undefined,
     selectedAgentConfig: null,
-    selectedAgentSignature: '',
+    selectedAgentSignature: "",
     explicitModelSpec: undefined,
     explicitThinkingLevel: undefined,
     resolvedModelSpec: formatModelSpec(session.model),
@@ -548,7 +636,12 @@ const createActiveSessionRecord = ({ stateRef, session, settingsManager, resourc
   return record;
 };
 
-const createSessionRecord = async ({ cwd, title, model, parentSessionPath }) => {
+const createSessionRecord = async ({
+  cwd,
+  title,
+  model,
+  parentSessionPath,
+}) => {
   const sessionManager = SessionManager.create(cwd);
   if (parentSessionPath) {
     sessionManager.newSession({ parentSession: parentSessionPath });
@@ -603,12 +696,15 @@ const destroySessionRecord = (record) => {
 };
 
 const persistSessionFileIfNeeded = async (record) => {
-  if (!record.sessionFile || record.session.messages.some((message) => message.role === 'assistant')) {
+  if (
+    !record.sessionFile ||
+    record.session.messages.some((message) => message.role === "assistant")
+  ) {
     return;
   }
 
   const sessionManager = record.session.sessionManager;
-  if (typeof sessionManager._rewriteFile !== 'function') {
+  if (typeof sessionManager._rewriteFile !== "function") {
     return;
   }
 
@@ -621,7 +717,7 @@ const persistSessionRecordMetadata = async (record) => {
   await persistSessionFileIfNeeded(record);
   await sessionMetadataStore.upsertSession({
     id: record.id,
-    title: normalizeString(record.session.sessionName) || '新会话',
+    title: normalizeString(record.session.sessionName) || "新会话",
     cwd: normalizeFsPath(record.cwd || defaultWorkspaceDir),
     sessionFile: path.resolve(record.sessionFile),
     parentSessionPath: record.parentSessionPath,
@@ -645,8 +741,10 @@ const listWorkspaceSessions = async () => {
     const cwd = normalizeFsPath(info.cwd || defaultWorkspaceDir);
     const projectContext = await projectContextResolver.resolveContext(cwd);
 
-    if (!isPathInAllowedRoots(cwd, workspaceScope.allowedRoots)
-      && projectContext.projectId !== workspaceScope.workspaceProjectId) {
+    if (
+      !isPathInAllowedRoots(cwd, workspaceScope.allowedRoots) &&
+      projectContext.projectId !== workspaceScope.workspaceProjectId
+    ) {
       continue;
     }
 
@@ -656,9 +754,13 @@ const listWorkspaceSessions = async () => {
       projectContext,
       metadata: {
         archived: metadataState.sessions[info.id]?.archived === true,
-        agent: normalizeString(metadataState.sessions[info.id]?.agent) || undefined,
-        model: normalizeString(metadataState.sessions[info.id]?.model) || undefined,
-        thinkingLevel: normalizeThinkingLevel(metadataState.sessions[info.id]?.thinkingLevel),
+        agent:
+          normalizeString(metadataState.sessions[info.id]?.agent) || undefined,
+        model:
+          normalizeString(metadataState.sessions[info.id]?.model) || undefined,
+        thinkingLevel: normalizeThinkingLevel(
+          metadataState.sessions[info.id]?.thinkingLevel,
+        ),
       },
     });
   }
@@ -666,7 +768,10 @@ const listWorkspaceSessions = async () => {
   const knownSessionIds = new Set(enriched.map((item) => item.info.id));
 
   for (const [sessionId, metadata] of Object.entries(metadataState.sessions)) {
-    if (knownSessionIds.has(sessionId) || !normalizeString(metadata.sessionFile)) {
+    if (
+      knownSessionIds.has(sessionId) ||
+      !normalizeString(metadata.sessionFile)
+    ) {
       continue;
     }
 
@@ -674,15 +779,17 @@ const listWorkspaceSessions = async () => {
 
     try {
       await fs.stat(sessionFile);
-    } catch (_error) {
+    } catch {
       continue;
     }
 
     const cwd = normalizeFsPath(metadata.cwd || defaultWorkspaceDir);
     const projectContext = await projectContextResolver.resolveContext(cwd);
 
-    if (!isPathInAllowedRoots(cwd, workspaceScope.allowedRoots)
-      && projectContext.projectId !== workspaceScope.workspaceProjectId) {
+    if (
+      !isPathInAllowedRoots(cwd, workspaceScope.allowedRoots) &&
+      projectContext.projectId !== workspaceScope.workspaceProjectId
+    ) {
       continue;
     }
 
@@ -724,8 +831,10 @@ const listWorkspaceSessions = async () => {
     const cwd = normalizeFsPath(record.cwd || defaultWorkspaceDir);
     const projectContext = await projectContextResolver.resolveContext(cwd);
 
-    if (!isPathInAllowedRoots(cwd, workspaceScope.allowedRoots)
-      && projectContext.projectId !== workspaceScope.workspaceProjectId) {
+    if (
+      !isPathInAllowedRoots(cwd, workspaceScope.allowedRoots) &&
+      projectContext.projectId !== workspaceScope.workspaceProjectId
+    ) {
       continue;
     }
 
@@ -744,16 +853,28 @@ const listWorkspaceSessions = async () => {
       projectContext,
       metadata: {
         archived: metadataState.sessions[record.id]?.archived === true,
-        agent: record.selectedAgentName || normalizeString(metadataState.sessions[record.id]?.agent) || undefined,
-        model: record.explicitModelSpec || normalizeString(metadataState.sessions[record.id]?.model) || undefined,
-        thinkingLevel: record.explicitThinkingLevel || normalizeThinkingLevel(metadataState.sessions[record.id]?.thinkingLevel),
+        agent:
+          record.selectedAgentName ||
+          normalizeString(metadataState.sessions[record.id]?.agent) ||
+          undefined,
+        model:
+          record.explicitModelSpec ||
+          normalizeString(metadataState.sessions[record.id]?.model) ||
+          undefined,
+        thinkingLevel:
+          record.explicitThinkingLevel ||
+          normalizeThinkingLevel(
+            metadataState.sessions[record.id]?.thinkingLevel,
+          ),
       },
     });
     knownSessionIds.add(record.id);
   }
 
   const infosById = new Map(enriched.map((item) => [item.info.id, item]));
-  const idByPath = new Map(enriched.map((item) => [path.resolve(item.info.path), item.info.id]));
+  const idByPath = new Map(
+    enriched.map((item) => [path.resolve(item.info.path), item.info.id]),
+  );
   const childrenById = new Map();
 
   for (const item of enriched) {
@@ -779,23 +900,29 @@ const listWorkspaceSessions = async () => {
 
 const toSessionSummary = (item) => {
   const activeRecord = activeSessions.get(item.info.id);
-  const title = normalizeString(activeRecord?.session.sessionName)
-    || normalizeString(item.info.name)
-    || getFallbackTitle(item.info.firstMessage);
+  const title =
+    normalizeString(activeRecord?.session.sessionName) ||
+    normalizeString(item.info.name) ||
+    getFallbackTitle(item.info.firstMessage);
 
   return {
     id: item.info.id,
     title,
     cwd: item.cwd,
-    status: activeRecord?.status || 'idle',
+    status: activeRecord?.status || "idle",
     createdAt: item.info.created.getTime(),
-    updatedAt: Math.max(item.info.modified.getTime(), activeRecord?.updatedAt || 0),
+    updatedAt: Math.max(
+      item.info.modified.getTime(),
+      activeRecord?.updatedAt || 0,
+    ),
     archived: item.metadata.archived,
     agent: activeRecord?.selectedAgentName || item.metadata.agent,
     model: activeRecord?.explicitModelSpec || item.metadata.model,
-    thinkingLevel: activeRecord?.explicitThinkingLevel || item.metadata.thinkingLevel,
+    thinkingLevel:
+      activeRecord?.explicitThinkingLevel || item.metadata.thinkingLevel,
     resolvedModel: activeRecord?.resolvedModelSpec || item.metadata.model,
-    resolvedThinkingLevel: activeRecord?.resolvedThinkingLevel || item.metadata.thinkingLevel,
+    resolvedThinkingLevel:
+      activeRecord?.resolvedThinkingLevel || item.metadata.thinkingLevel,
     sessionFile: toPosixPath(path.resolve(item.info.path)),
     parentSessionId: item.parentSessionId,
     projectId: item.projectContext.projectId,
@@ -807,14 +934,14 @@ const toSessionSummary = (item) => {
   };
 };
 
-const toSessionSnapshot = async (record, sessionRegistry) => {
-  const registry = sessionRegistry ?? await listWorkspaceSessions();
+const toSessionSnapshot = async (record, sessionRegistry, options = {}) => {
+  const registry = sessionRegistry ?? (await listWorkspaceSessions());
   const item = registry.infosById.get(record.id);
   const summary = item
     ? toSessionSummary(item)
     : {
         id: record.id,
-        title: normalizeString(record.session.sessionName) || '新会话',
+        title: normalizeString(record.session.sessionName) || "新会话",
         cwd: record.cwd,
         status: record.status,
         createdAt: record.createdAt,
@@ -825,7 +952,7 @@ const toSessionSnapshot = async (record, sessionRegistry) => {
         thinkingLevel: record.explicitThinkingLevel,
         resolvedModel: record.resolvedModelSpec,
         resolvedThinkingLevel: record.resolvedThinkingLevel,
-        sessionFile: toPosixPath(record.sessionFile || ''),
+        sessionFile: toPosixPath(record.sessionFile || ""),
         parentSessionId: undefined,
         projectId: record.cwd,
         projectRoot: toPosixPath(record.cwd),
@@ -835,14 +962,33 @@ const toSessionSnapshot = async (record, sessionRegistry) => {
         worktreeLabel: path.basename(record.cwd) || record.cwd,
       };
 
+  const allMessages = record.session.messages;
+  const totalCount = allMessages.length;
+  const requestedLimit = Number.isInteger(options.limit)
+    ? Math.max(1, Math.min(options.limit, MAX_SESSION_MESSAGE_LIMIT))
+    : DEFAULT_SESSION_MESSAGE_LIMIT;
+  const effectiveLimit =
+    totalCount > 0 ? Math.min(totalCount, requestedLimit) : requestedLimit;
+  const startIndex = Math.max(0, totalCount - effectiveLimit);
+  const visibleMessages = allMessages.slice(startIndex);
+
   return {
     ...summary,
-    messages: record.session.messages.map(serializeMessage),
+    messages: visibleMessages.map((message, index) =>
+      serializeMessage(message, startIndex + index),
+    ),
+    historyMeta: {
+      loadedCount: visibleMessages.length,
+      totalCount,
+      hasMoreAbove: startIndex > 0,
+      limit: effectiveLimit,
+    },
   };
 };
 
 const buildResourceCatalog = (session, resourceLoader) => {
-  const { prompts, diagnostics: promptDiagnostics } = resourceLoader.getPrompts();
+  const { prompts, diagnostics: promptDiagnostics } =
+    resourceLoader.getPrompts();
   const { skills, diagnostics: skillDiagnostics } = resourceLoader.getSkills();
   const commands = session.extensionRunner?.getRegisteredCommands() ?? [];
 
@@ -863,7 +1009,7 @@ const buildResourceCatalog = (session, resourceLoader) => {
     commands: commands.map((command) => ({
       name: command.invocationName || command.name,
       description: command.description,
-      source: 'extension',
+      source: "extension",
       sourceInfo: toSourceInfo(command.sourceInfo),
     })),
     diagnostics: {
@@ -898,10 +1044,10 @@ const createTransientCatalogSession = async (cwd) => {
 };
 
 const getSessionInfoOrThrow = async (sessionId, sessionRegistry) => {
-  const registry = sessionRegistry ?? await listWorkspaceSessions();
+  const registry = sessionRegistry ?? (await listWorkspaceSessions());
   const item = registry.infosById.get(sessionId);
   if (!item) {
-    const error = new Error('Session not found');
+    const error = new Error("Session not found");
     error.statusCode = 404;
     throw error;
   }
@@ -967,36 +1113,36 @@ const collectDescendantIds = (sessionId, childrenById) => {
   return [...collected];
 };
 
-app.get('/health', (_req, res) => {
+app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/system/info', (_req, res) => {
+app.get("/api/system/info", (_req, res) => {
   res.json({
-    appName: 'Pi Web',
+    appName: "Pi Web",
     workspaceDir: defaultWorkspaceDir,
     apiBase: `http://127.0.0.1:${port}`,
-    sdkVersion: '0.65.2',
+    sdkVersion: "0.65.2",
   });
 });
 
-app.get('/api/providers', (_req, res) => {
+app.get("/api/providers", (_req, res) => {
   res.json(listProviders());
 });
 
-app.get('/api/agents', async (req, res, next) => {
+app.get("/api/agents", async (req, res, next) => {
   try {
     const cwd = normalizeString(req.query?.cwd) || defaultWorkspaceDir;
     const agents = await discoverAgents(cwd);
-    res.json(agents
-      .filter((agent) => agent.mode !== 'task')
-      .map(createAgentSummary));
+    res.json(
+      agents.filter((agent) => agent.mode !== "task").map(createAgentSummary),
+    );
   } catch (error) {
     next(error);
   }
 });
 
-app.get('/api/resources', async (req, res, next) => {
+app.get("/api/resources", async (req, res, next) => {
   try {
     const query = resourceCatalogQuerySchema.parse(req.query ?? {});
 
@@ -1010,7 +1156,9 @@ app.get('/api/resources', async (req, res, next) => {
     const transient = await createTransientCatalogSession(cwd);
 
     try {
-      res.json(buildResourceCatalog(transient.session, transient.resourceLoader));
+      res.json(
+        buildResourceCatalog(transient.session, transient.resourceLoader),
+      );
     } finally {
       transient.session.dispose();
     }
@@ -1019,7 +1167,7 @@ app.get('/api/resources', async (req, res, next) => {
   }
 });
 
-app.get('/api/config/agents/:name', async (req, res, next) => {
+app.get("/api/config/agents/:name", async (req, res, next) => {
   try {
     const query = agentScopeQuerySchema.parse(req.query ?? {});
     const cwd = normalizeString(query.cwd) || defaultWorkspaceDir;
@@ -1049,7 +1197,7 @@ app.get('/api/config/agents/:name', async (req, res, next) => {
   }
 });
 
-app.post('/api/config/agents/:name', async (req, res, next) => {
+app.post("/api/config/agents/:name", async (req, res, next) => {
   try {
     const payload = agentUpsertSchema.parse(req.body ?? {});
     const cwd = normalizeString(req.query?.cwd) || defaultWorkspaceDir;
@@ -1077,7 +1225,7 @@ app.post('/api/config/agents/:name', async (req, res, next) => {
   }
 });
 
-app.put('/api/config/agents/:name', async (req, res, next) => {
+app.put("/api/config/agents/:name", async (req, res, next) => {
   try {
     const payload = agentUpsertSchema.parse(req.body ?? {});
     const cwd = normalizeString(req.query?.cwd) || defaultWorkspaceDir;
@@ -1105,11 +1253,11 @@ app.put('/api/config/agents/:name', async (req, res, next) => {
   }
 });
 
-app.delete('/api/config/agents/:name', async (req, res, next) => {
+app.delete("/api/config/agents/:name", async (req, res, next) => {
   try {
     const query = agentScopeQuerySchema.parse(req.query ?? {});
     if (!query.scope) {
-      const error = new Error('删除 agent 时必须显式指定 scope');
+      const error = new Error("删除 agent 时必须显式指定 scope");
       error.statusCode = 400;
       throw error;
     }
@@ -1122,7 +1270,7 @@ app.delete('/api/config/agents/:name', async (req, res, next) => {
   }
 });
 
-app.get('/api/files/tree', async (req, res, next) => {
+app.get("/api/files/tree", async (req, res, next) => {
   try {
     const query = fileTreeQuerySchema.parse(req.query ?? {});
     const rootPath = normalizeFsPath(query.root || defaultWorkspaceDir);
@@ -1130,7 +1278,9 @@ app.get('/api/files/tree', async (req, res, next) => {
     const workspaceScope = await projectContextResolver.resolveWorkspaceScope();
 
     if (!isPathInAllowedRoots(rootPath, workspaceScope.allowedRoots)) {
-      const error = new Error('Requested root is outside the allowed workspace scope');
+      const error = new Error(
+        "Requested root is outside the allowed workspace scope",
+      );
       error.statusCode = 400;
       throw error;
     }
@@ -1139,7 +1289,7 @@ app.get('/api/files/tree', async (req, res, next) => {
 
     const stats = await fs.stat(targetPath);
     if (!stats.isDirectory()) {
-      const error = new Error('Requested path is not a directory');
+      const error = new Error("Requested path is not a directory");
       error.statusCode = 400;
       throw error;
     }
@@ -1156,7 +1306,7 @@ app.get('/api/files/tree', async (req, res, next) => {
   }
 });
 
-app.get('/api/sessions', async (_req, res, next) => {
+app.get("/api/sessions", async (_req, res, next) => {
   try {
     const sessionRegistry = await listWorkspaceSessions();
     const summaries = sessionRegistry.items
@@ -1175,30 +1325,41 @@ app.get('/api/sessions', async (_req, res, next) => {
   }
 });
 
-app.get('/api/sessions/:sessionId', async (req, res, next) => {
+app.get("/api/sessions/:sessionId", async (req, res, next) => {
   try {
+    const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
     const sessionRegistry = await listWorkspaceSessions();
-    const record = await ensureSessionRecord(req.params.sessionId, sessionRegistry);
-    res.json(await toSessionSnapshot(record, sessionRegistry));
+    const record = await ensureSessionRecord(
+      req.params.sessionId,
+      sessionRegistry,
+    );
+    res.json(await toSessionSnapshot(record, sessionRegistry, query));
   } catch (error) {
     next(error);
   }
 });
 
-app.get('/api/sessions/:sessionId/stream', async (req, res, next) => {
+app.get("/api/sessions/:sessionId/stream", async (req, res, next) => {
   try {
+    const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
     const sessionRegistry = await listWorkspaceSessions();
-    const record = await ensureSessionRecord(req.params.sessionId, sessionRegistry);
+    const record = await ensureSessionRecord(
+      req.params.sessionId,
+      sessionRegistry,
+    );
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
     record.clients.add(res);
-    emit(record, { type: 'snapshot', session: await toSessionSnapshot(record, sessionRegistry) });
+    emit(record, {
+      type: "snapshot",
+      session: await toSessionSnapshot(record, sessionRegistry, query),
+    });
 
-    req.on('close', () => {
+    req.on("close", () => {
       record.clients.delete(res);
     });
   } catch (error) {
@@ -1206,14 +1367,17 @@ app.get('/api/sessions/:sessionId/stream', async (req, res, next) => {
   }
 });
 
-app.post('/api/sessions', async (req, res, next) => {
+app.post("/api/sessions", async (req, res, next) => {
   try {
     const payload = createSessionSchema.parse(req.body ?? {});
     const parentSession = payload.parentSessionId
       ? await getSessionInfoOrThrow(payload.parentSessionId)
       : null;
     const record = await createSessionRecord({
-      cwd: normalizeString(payload.cwd) || parentSession?.cwd || defaultWorkspaceDir,
+      cwd:
+        normalizeString(payload.cwd) ||
+        parentSession?.cwd ||
+        defaultWorkspaceDir,
       title: payload.title,
       model: payload.model,
       parentSessionPath: parentSession?.info.path,
@@ -1231,19 +1395,29 @@ app.post('/api/sessions', async (req, res, next) => {
   }
 });
 
-app.patch('/api/sessions/:sessionId', async (req, res, next) => {
+app.patch("/api/sessions/:sessionId", async (req, res, next) => {
   try {
     const payload = updateSessionSchema.parse(req.body ?? {});
     const sessionRegistry = await listWorkspaceSessions();
-    const record = await ensureSessionRecord(req.params.sessionId, sessionRegistry);
+    const record = await ensureSessionRecord(
+      req.params.sessionId,
+      sessionRegistry,
+    );
 
     if (payload.title !== undefined) {
       record.session.setSessionName(payload.title.trim());
     }
 
-    if (payload.agent !== undefined || payload.model !== undefined || payload.thinkingLevel !== undefined) {
+    if (
+      payload.agent !== undefined ||
+      payload.model !== undefined ||
+      payload.thinkingLevel !== undefined
+    ) {
       await applySessionAgentSelection(record, {
-        agentName: payload.agent !== undefined ? payload.agent : record.selectedAgentName,
+        agentName:
+          payload.agent !== undefined
+            ? payload.agent
+            : record.selectedAgentName,
         model: payload.model,
         thinkingLevel: payload.thinkingLevel,
       });
@@ -1258,11 +1432,14 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
   }
 });
 
-app.post('/api/sessions/:sessionId/archive', async (req, res, next) => {
+app.post("/api/sessions/:sessionId/archive", async (req, res, next) => {
   try {
     const payload = archiveSessionSchema.parse(req.body ?? {});
     const sessionRegistry = await listWorkspaceSessions();
-    const sessionIds = collectDescendantIds(req.params.sessionId, sessionRegistry.childrenById);
+    const sessionIds = collectDescendantIds(
+      req.params.sessionId,
+      sessionRegistry.childrenById,
+    );
 
     await sessionMetadataStore.setArchived(sessionIds, payload.archived);
 
@@ -1272,10 +1449,13 @@ app.post('/api/sessions/:sessionId/archive', async (req, res, next) => {
   }
 });
 
-app.delete('/api/sessions/:sessionId', async (req, res, next) => {
+app.delete("/api/sessions/:sessionId", async (req, res, next) => {
   try {
     const sessionRegistry = await listWorkspaceSessions();
-    const sessionIds = collectDescendantIds(req.params.sessionId, sessionRegistry.childrenById);
+    const sessionIds = collectDescendantIds(
+      req.params.sessionId,
+      sessionRegistry.childrenById,
+    );
 
     for (const sessionId of sessionIds) {
       const item = sessionRegistry.infosById.get(sessionId);
@@ -1299,37 +1479,42 @@ app.delete('/api/sessions/:sessionId', async (req, res, next) => {
   }
 });
 
-app.post('/api/sessions/:sessionId/messages', async (req, res, next) => {
+app.post("/api/sessions/:sessionId/messages", async (req, res, next) => {
   try {
     const payload = messageSchema.parse(req.body ?? {});
     const sessionRegistry = await listWorkspaceSessions();
-    const record = await ensureSessionRecord(req.params.sessionId, sessionRegistry);
+    const record = await ensureSessionRecord(
+      req.params.sessionId,
+      sessionRegistry,
+    );
 
     if (record.turnBudget.exhausted) {
-      const error = new Error('当前 agent 的 steps 已耗尽，请重新选择 agent 或新建会话');
+      const error = new Error(
+        "当前 agent 的 steps 已耗尽，请重新选择 agent 或新建会话",
+      );
       error.statusCode = 400;
       throw error;
     }
 
-    await applySessionAgentSelection(
-      record,
-      {
-        agentName: payload.agent !== undefined ? payload.agent : record.selectedAgentName,
-        model: payload.model,
-        thinkingLevel: payload.thinkingLevel,
-      },
-    );
+    await applySessionAgentSelection(record, {
+      agentName:
+        payload.agent !== undefined ? payload.agent : record.selectedAgentName,
+      model: payload.model,
+      thinkingLevel: payload.thinkingLevel,
+    });
     await persistSessionRecordMetadata(record);
 
-    updateStatus(record, 'streaming');
+    updateStatus(record, "streaming");
 
-    void record.session.prompt(payload.prompt, { source: 'interactive' }).catch((error) => {
-      record.status = 'error';
-      emit(record, {
-        type: 'error',
-        error: error instanceof Error ? error.message : String(error),
+    void record.session
+      .prompt(payload.prompt, { source: "interactive" })
+      .catch((error) => {
+        record.status = "error";
+        emit(record, {
+          type: "error",
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
 
     res.json({ ok: true });
   } catch (error) {
@@ -1337,11 +1522,11 @@ app.post('/api/sessions/:sessionId/messages', async (req, res, next) => {
   }
 });
 
-app.post('/api/sessions/:sessionId/abort', async (req, res, next) => {
+app.post("/api/sessions/:sessionId/abort", async (req, res, next) => {
   try {
     const record = await ensureSessionRecord(req.params.sessionId);
     await record.session.abort();
-    updateStatus(record, 'idle');
+    updateStatus(record, "idle");
     res.json({ ok: true });
   } catch (error) {
     next(error);
@@ -1349,8 +1534,11 @@ app.post('/api/sessions/:sessionId/abort', async (req, res, next) => {
 });
 
 app.use((error, _req, res, _next) => {
-  const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-  const message = error instanceof Error ? error.message : 'Unknown server error';
+  const statusCode = Number.isInteger(error?.statusCode)
+    ? error.statusCode
+    : 500;
+  const message =
+    error instanceof Error ? error.message : "Unknown server error";
   res.status(statusCode).send(message);
 });
 

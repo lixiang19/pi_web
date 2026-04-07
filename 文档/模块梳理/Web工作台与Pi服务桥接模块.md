@@ -10,6 +10,8 @@
 - 负责把 session 历史、项目/worktree 信息、归档状态与当前流式状态投影为稳定的前端摘要模型。
 - 负责将左栏的视图状态与服务端的会话语义状态拆分：归档在服务端持久化，pin、折叠、recent、展开等视图状态在前端本地持久化。
 - 负责把输入区升级为会话级输入编排器，统一管理草稿、发送态、模型/thinking/agent 显式选择、`@agent` 提及与 `/` 资源选择。
+- 负责在前端把消息、草稿和加载生命周期按 `sessionId` 分桶缓存，并通过邻近会话预取减少会话切换时的整份重新拉取。
+- 负责通过限窗快照和前端扩窗机制控制长会话历史加载，避免中间区默认渲染整份消息历史。
 - 负责限制文件树访问边界，只允许浏览当前工作区及同仓库 worktree 范围内的目录。
 - 不负责桌面壳原生交互、PR 状态、分享链接、复杂工具执行面板，这些仍在后续迭代范围内。
 - 服务对象包括 Web 最终用户、Tauri 桌面壳中的前端运行时，以及本仓库的开发构建流程。
@@ -141,6 +143,8 @@ export interface ChatComposerState {
   selectedThinkingLevel: ThinkingLevel | ''
   selectedAgent: string
   hasDraft: boolean
+  isFocused: boolean
+  isDisabled: boolean
   pendingPrompt: string
 }
 ```
@@ -148,6 +152,32 @@ export interface ChatComposerState {
 - 这是输入区从“单个 input 字符串”升级为“会话级输入编排器”的核心状态对象，统一承载草稿、发送中断、显式选择与待恢复输入。
 - 由 `usePiChat` 创建与维护，`App.vue` 直接消费并驱动输入区 UI。
 - 依据：`packages/web/src/lib/types.ts`，`packages/web/src/composables/usePiChat.ts`
+
+- 抽象名称：新会话草稿上下文
+
+```ts
+type SessionDraftContext = {
+  cwd: string
+  parentSessionId: string
+}
+```
+
+- 这是把“还没真正创建 session，但已经进入工作台”的状态显式建模后的前端抽象，决定草稿态的目录、父会话和首次发送时的落盘参数。
+- 由 `usePiChat.openSessionDraft()` 维护，`App.vue` 直接消费以显示草稿态标题、父会话回退和文件树根目录。
+- 依据：`packages/web/src/composables/usePiChat.ts`，`packages/web/src/App.vue`
+
+- 抽象名称：会话快照缓存桶
+
+```ts
+type CachedSessionEntry = {
+  snapshot: SessionSnapshot
+  hydratedAt: number
+}
+```
+
+- 这是前端按 `sessionId` 维护的消息快照缓存，用于支撑切会话秒切、SSE snapshot 回填、邻近预取和发送期乐观消息更新。
+- 由 `usePiChat` 内部创建并维护，`loadSession()/prefetchSession()/connectStream()` 都会消费它。
+- 依据：`packages/web/src/composables/usePiChat.ts`
 
 - 抽象名称：Pi 资源目录响应
 
@@ -235,17 +265,18 @@ export const buildSessionProjects = (options: {
 ```ts
 const {
   activeSession,
-  createSession,
+  openSessionDraft,
   renameSession,
   archiveSession,
   deleteSession,
   loadSession,
+  prefetchSession,
   submit,
   abort,
 } = usePiChat()
 ```
 
-- `usePiChat` 统一负责 session 列表刷新、SSE 同步、创建/删除/重命名/归档这些动作，以及当前活动会话消息流。
+- `usePiChat` 统一负责 session 列表刷新、SSE 同步、草稿态进入、按 session 缓存切换、邻近预取、创建/删除/重命名/归档这些动作，以及当前活动会话消息流。
 - 页面和左栏组件不直接调用 `fetch`，全部经由它编排。
 - 依据：`packages/web/src/composables/usePiChat.ts`
 
@@ -291,6 +322,22 @@ const {
   - 实现位置：`usePiChat` 中的 `draftMap`、`applyDraftForSession()`、`restorePendingDraft()`，位于 `packages/web/src/composables/usePiChat.ts`
   - 为什么这么做：输入区草稿属于会话工作流的一部分，切换会话、发送失败或中止后都必须恢复，而不是丢失在页面临时状态里。
 
+- 模式名：前端 session 分桶缓存 + 加载去重
+  - 实现位置：`usePiChat` 中的 `sessionCache`、`hydrateSession()`、`loadSessionInFlightById`，位于 `packages/web/src/composables/usePiChat.ts`
+  - 为什么这么做：当前服务端还没有历史扩窗接口，切会话性能只能先靠前端缓存桶、并发去重和请求乱序保护兜住，避免每次切换都重新等待整份快照。
+
+- 模式名：新会话草稿延迟落盘
+  - 实现位置：`openSessionDraft()` 与 `ensureSession()`，位于 `packages/web/src/composables/usePiChat.ts`
+  - 为什么这么做：左栏点击“新建”时先进入正式草稿态，只有第一次发送消息才真正 `POST /api/sessions`，这样才能同时满足会话工作台心智和输入草稿连续性。
+
+- 模式名：邻近会话预取
+  - 实现位置：`prefetchNeighborSessions()`、`prefetchSession()`，位于 `packages/web/src/composables/usePiChat.ts`、`packages/web/src/components/chat/SessionSidebar*.vue`
+  - 为什么这么做：切换体感快不只靠缓存命中，还要在 hover 和当前会话邻近位置提前做 hydration，把等待前移到后台。
+
+- 模式名：历史限窗快照 + 前端扩窗
+  - 实现位置：`GET /api/sessions/:id?limit=`、`toSessionSnapshot()`、`usePiChat.loadEarlier()`，位于 `packages/server/src/index.js`、`packages/web/src/composables/usePiChat.ts`
+  - 为什么这么做：长会话如果默认返回整份消息，会同时拖慢切会话、首次打开和中间区渲染；先返回最新窗口，再按需向上扩窗，才符合性能优先的工作台设计。
+
 - 模式名：真实资源目录驱动的输入增强
   - 实现位置：`buildResourceCatalog()` 与 `GET /api/resources`，位于 `packages/server/src/index.js`
   - 为什么这么做：prompt chips、skill 插入和 slash command 列表都必须来自 Pi SDK 真实资源发现，前端不能继续硬编码演示数据。
@@ -316,26 +363,40 @@ const {
 ```text
 [1] SessionSidebar click session
   -> [2] usePiChat.loadSession(sessionId)
-  -> [3] GET /api/sessions/:id
-  -> [4] ensureSessionRecord(open if needed)
-  -> [5] 建立 /stream SSE 订阅
-  -> [6] 中间消息区与右侧文件树更新
+  -> [3] 命中 sessionCache 则立即切换 UI
+  -> [4] 未命中才 GET /api/sessions/:id?limit=...
+  -> [5] 建立 /stream SSE 订阅并消费 snapshot
+  -> [6] 中间消息区、资源目录与右侧文件树更新
 ```
 
-- 关键分支：如果该 session 尚未在运行时打开，服务端会先通过 `SessionManager.open()` 与 `createAgentSession()` 恢复它。
+- 关键分支 A：如果该 session 已经 hydrated，前端直接复用缓存桶，避免切换阻塞在整份快照请求上。
+- 关键分支 B：如果该 session 尚未在运行时打开，服务端会先通过 `SessionManager.open()` 与 `createAgentSession()` 恢复它。
 
-- 场景：新建子会话 / 形成父子树流程
+- 场景：长会话向上扩窗流程
 
 ```text
-[1] 左栏点击“子会话”
-  -> [2] POST /api/sessions { parentSessionId }
-  -> [3] SessionManager.create().newSession({ parentSession })
-  -> [4] createAgentSession()
-  -> [5] GET /api/sessions refresh
-  -> [6] 左栏父子树重建并显示新节点
+[1] 中间区点击“加载更早消息”
+  -> [2] usePiChat.loadEarlier()
+  -> [3] GET /api/sessions/:id?limit=nextLimit
+  -> [4] toSessionSnapshot() 返回更大的尾部窗口
+  -> [5] 前端替换当前消息窗口
+  -> [6] 按 scrollHeight 差值恢复滚动锚点
 ```
 
-- 服务端通过 `parentSessionPath` 建立真实父子关系，前端不伪造树结构。
+- 关键点：扩窗不是重新建树，也不是一次性把全历史拉回，而是只扩大当前可见窗口，并保持用户当前阅读位置不跳动。
+
+- 场景：新会话草稿进入与首次发送流程
+
+```text
+[1] 左栏点击“新建”或“子会话”
+  -> [2] usePiChat.openSessionDraft({ cwd, parentSessionId })
+  -> [3] App.vue 进入草稿态并切换文件树/资源目录
+  -> [4] 用户第一次 submit()
+  -> [5] ensureSession() -> POST /api/sessions
+  -> [6] sendMessage() + SSE 流式更新
+```
+
+- 服务端仍通过 `parentSessionPath` 建立真实父子关系，前端只是把“尚未落盘”的新会话显式表示成草稿态，而不是提前伪造真实 session。
 
 - 场景：归档或硬删除一棵会话树
 
