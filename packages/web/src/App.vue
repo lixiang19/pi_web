@@ -166,6 +166,24 @@ const thinkingLabel = computed(
       ?.label || effectiveThinkingLevel.value,
 );
 const quickPromptChips = computed(() => resources.value.prompts.slice(0, 4));
+const sessionSidebarProps = computed(() => {
+  const nextProps: {
+    sessions: typeof sessions.value;
+    activeSessionId: string;
+    isSending: boolean;
+    workspaceDir?: string;
+  } = {
+    sessions: sessions.value,
+    activeSessionId: activeSessionId.value,
+    isSending: isSending.value,
+  };
+
+  if (info.value?.workspaceDir) {
+    nextProps.workspaceDir = info.value.workspaceDir;
+  }
+
+  return nextProps;
+});
 
 const slashTrigger = computed(() => {
   const match = composer.draftText.match(/(^|\s)\/([\w:-]*)$/);
@@ -290,10 +308,18 @@ const injectCommand = (commandName: string) => {
 const toggleResourcePicker = async () => {
   resourcePickerPinned.value = !resourcePickerPinned.value;
   if (resourcePickerPinned.value) {
-    await refreshResources({
-      cwd: fileTreeRoot.value || info.value?.workspaceDir,
-      sessionId: activeSessionId.value || undefined,
-    });
+    const resourceOptions: { cwd?: string; sessionId?: string } = {};
+    const resolvedCwd = fileTreeRoot.value || info.value?.workspaceDir;
+
+    if (resolvedCwd) {
+      resourceOptions.cwd = resolvedCwd;
+    }
+
+    if (activeSessionId.value) {
+      resourceOptions.sessionId = activeSessionId.value;
+    }
+
+    await refreshResources(resourceOptions);
   }
 };
 
@@ -321,10 +347,19 @@ const createSidebarSession = async (payload: {
   cwd?: string;
   parentSessionId?: string;
 }) => {
-  await openSessionDraft({
-    cwd: payload.cwd || activeSession.value?.cwd || info.value?.workspaceDir,
-    parentSessionId: payload.parentSessionId,
-  });
+  const draftOptions: { cwd?: string; parentSessionId?: string } = {};
+  const resolvedCwd =
+    payload.cwd || activeSession.value?.cwd || info.value?.workspaceDir;
+
+  if (resolvedCwd) {
+    draftOptions.cwd = resolvedCwd;
+  }
+
+  if (payload.parentSessionId) {
+    draftOptions.parentSessionId = payload.parentSessionId;
+  }
+
+  await openSessionDraft(draftOptions);
 };
 
 const openSession = async (sessionId: string) => {
@@ -566,10 +601,7 @@ onBeforeUnmount(() => {
       <div class="grid flex-1 gap-3 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         <aside class="min-h-[280px] xl:h-[calc(100vh-9.5rem)]">
           <SessionSidebar
-            :sessions="sessions"
-            :active-session-id="activeSessionId"
-            :workspace-dir="info?.workspaceDir"
-            :is-sending="isSending"
+            v-bind="sessionSidebarProps"
             @select="openSession"
             @create="createSidebarSession"
             @prefetch="prefetchSession"

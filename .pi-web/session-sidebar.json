@@ -16,6 +16,14 @@
       "createdAt": 1775551060252,
       "updatedAt": 1775551063113
     },
-    "2a0f068a-12d6-47b8-aa29-fe1e84b78cdb": {}
+    "2a0f068a-12d6-47b8-aa29-fe1e84b78cdb": {
+      "agent": "assistant",
+      "title": "梳理当前中间对话的功能现状",
+      "cwd": "/Users/lixiang/Documents/myCode/pi_web",
+      "sessionFile": "/Users/lixiang/.pi/agent/sessions/--Users-lixiang-Documents-myCode-pi_web--/2026-04-07T12-23-59-384Z_2a0f068a-12d6-47b8-aa29-fe1e84b78cdb.jsonl",
+      "createdAt": 1775564639384,
+      "updatedAt": 1775565943618,
+      "model": "github-copilot/claude-sonnet-4.5"
+    }
   }
 }

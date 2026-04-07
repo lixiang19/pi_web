@@ -12,6 +12,7 @@
 - 负责把输入区升级为会话级输入编排器，统一管理草稿、发送态、模型/thinking/agent 显式选择、`@agent` 提及与 `/` 资源选择。
 - 负责在前端把消息、草稿和加载生命周期按 `sessionId` 分桶缓存，并通过邻近会话预取减少会话切换时的整份重新拉取。
 - 负责通过限窗快照和前端扩窗机制控制长会话历史加载，避免中间区默认渲染整份消息历史。
+- 负责在 Web 入口完成主题 token 注册、默认主题注入与明暗模式根节点切换，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量。
 - 负责限制文件树访问边界，只允许浏览当前工作区及同仓库 worktree 范围内的目录。
 - 不负责桌面壳原生交互、PR 状态、分享链接、复杂工具执行面板，这些仍在后续迭代范围内。
 - 服务对象包括 Web 最终用户、Tauri 桌面壳中的前端运行时，以及本仓库的开发构建流程。
@@ -25,6 +26,7 @@
 ```text
 +-----------------------------+
 | Vue App                     |
+| main.ts / App.vue           |
 | App.vue                     |
 | - SessionSidebar            |
 | - Chat Stream               |
@@ -36,11 +38,15 @@
 | 前端编排与派生层            |
 | usePiChat.ts                |
 | session-sidebar.ts          |
+| lib/theme.ts                |
+| assets/registry.ts          |
 | - session refresh           |
 | - SSE sync                  |
 | - draft persistence         |
 | - model/thinking/agent      |
 | - resource catalog          |
+| - theme token normalize     |
+| - theme bootstrap           |
 | - project/group/tree build  |
 +--------------+--------------+
                |
@@ -280,6 +286,26 @@ const {
 - 页面和左栏组件不直接调用 `fetch`，全部经由它编排。
 - 依据：`packages/web/src/composables/usePiChat.ts`
 
+- 抽象名称：主题注册表与运行时注入器
+
+```ts
+export const themes = {
+  default: normalizeThemeCss(defaultTheme),
+  amber: normalizeThemeCss(amberTheme),
+  // ...
+}
+
+export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
+  ensureThemeStyleElement().textContent = themes[themeName]
+  document.documentElement.dataset.theme = themeName
+  document.documentElement.classList.toggle('dark', mode === 'dark')
+}
+```
+
+- 这是 Web 主题系统的核心抽象，前半段把主题资产统一编译成当前 Tailwind 配色约定可消费的 token，后半段在启动时把默认主题真实写入 DOM，而不是在组件里散落硬编码颜色。
+- `registry.ts` 负责主题 token 的归一化与导出，`theme.ts` 负责默认主题样式挂载、`data-theme` 标记和 `.dark` 根类切换，`main.ts` 在 Vue app mount 前执行初始化。
+- 依据：`packages/web/src/assets/registry.ts`，`packages/web/src/lib/theme.ts`，`packages/web/src/main.ts`
+
 ### Design Patterns
 
 - 模式名：SDK 持久化 session 列表恢复
@@ -341,6 +367,10 @@ const {
 - 模式名：真实资源目录驱动的输入增强
   - 实现位置：`buildResourceCatalog()` 与 `GET /api/resources`，位于 `packages/server/src/index.js`
   - 为什么这么做：prompt chips、skill 插入和 slash command 列表都必须来自 Pi SDK 真实资源发现，前端不能继续硬编码演示数据。
+
+- 模式名：主题资产归一化 + 启动期样式注入
+  - 实现位置：`normalizeThemeCss()` 与 `initializeThemeSystem()`，位于 `packages/web/src/assets/registry.ts`、`packages/web/src/lib/theme.ts`
+  - 为什么这么做：主题源文件保存的是完整 `hsl(...)` 字符串，而当前工作台的 Tailwind 颜色系统消费的是原始 HSL token；必须在注册边界统一归一化，再在入口一次性注入，才能让 `bg-background`、`text-foreground`、`dark:*` 和全局背景渐变共用同一套主题变量。
 
 ## Flow
 
@@ -466,6 +496,20 @@ const {
 - 第 3 步会同步应用 system prompt、model、thinking、steps 预算与 active tools。
 - 第 4 到 5 步保证 agent 改动不是 UI 状态，而是会真正改变 Pi session 的执行上下文。
 
+- 场景：Web 工作台主题启动流程
+
+```text
+[1] main.ts import style.css + initializeThemeSystem()
+  -> [2] assets/registry.ts normalizeThemeCss()
+  -> [3] lib/theme.ts ensureThemeStyleElement()
+  -> [4] 写入默认主题 token 到 <style>
+  -> [5] html.dataset.theme='default' 且 html.dark=true
+  -> [6] App.vue mount 后所有 shadcn-vue/tailwind 颜色统一读取主题变量
+```
+
+- 第 2 步把主题资产中的完整 `hsl(...)` 颜色声明转换成 Tailwind 配色系统使用的原始 token。
+- 第 4 到 5 步在应用挂载前完成，因此首屏渲染不会再依赖 `style.css` 中的写死配色。
+
 ## Integration
 
 ### External Dependencies
@@ -488,6 +532,8 @@ const {
 
 ```text
 App.vue
+  -> lib/theme.ts
+     -> assets/registry.ts
   -> components/chat/SessionSidebar.vue
      -> components/chat/SessionSidebarSessionNode.vue
      -> lib/session-sidebar.ts
@@ -561,6 +607,8 @@ packages/server/src/index.js
 | packages/web/src/components/chat/SessionSidebarSessionNode.vue | 229 | 递归渲染父子会话树与节点操作 |
 | packages/web/src/lib/session-sidebar.ts | 248 | 左栏项目/group/树结构派生与搜索规则 |
 | packages/web/src/App.vue | 375 | 三栏工作台总装配，连接左栏、消息区、agent 选择与文件树 |
+| packages/web/src/lib/theme.ts | unknown | 主题运行时注入入口，负责默认主题挂载和根节点明暗模式切换 |
+| packages/web/src/assets/registry.ts | unknown | 主题资产注册表，负责把主题 CSS 归一化成当前工作台可消费的 token |
 | packages/web/src/lib/api.ts | 109 | Web 端 REST 请求封装与 agent API 入口 |
 | packages/web/src/lib/types.ts | 99 | 会话、agent、文件树和 mutation 类型定义 |
 | README.md | 36 | 项目结构与启动方式说明 |

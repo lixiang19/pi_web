@@ -79,7 +79,7 @@ const projects = computed(() =>
     sessions: props.sessions,
     pinnedIds: pinnedSessionIds.value,
     query: searchQuery.value,
-    workspaceDir: props.workspaceDir,
+    ...(props.workspaceDir ? { workspaceDir: props.workspaceDir } : {}),
   }),
 );
 

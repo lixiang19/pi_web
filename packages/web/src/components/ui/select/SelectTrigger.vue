@@ -4,7 +4,7 @@ import type { HTMLAttributes } from "vue";
 import { reactiveOmit } from "@vueuse/core";
 import { ChevronDown } from "lucide-vue-next";
 import { SelectIcon, SelectTrigger, useForwardProps } from "reka-ui";
-import { cn } from "@/lib/utils";
+import { cn, useDefinedObject } from "@/lib/utils";
 
 const props = withDefaults(
   defineProps<
@@ -17,7 +17,7 @@ const props = withDefaults(
 );
 
 const delegatedProps = reactiveOmit(props, "class", "size");
-const forwardedProps = useForwardProps(delegatedProps);
+const forwardedProps = useForwardProps(useDefinedObject(delegatedProps));
 </script>
 
 <template>

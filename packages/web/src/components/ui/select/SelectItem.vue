@@ -9,7 +9,7 @@ import {
   SelectItemText,
   useForwardProps,
 } from "reka-ui";
-import { cn } from "@/lib/utils";
+import { cn, useDefinedObject } from "@/lib/utils";
 
 const props = defineProps<
   SelectItemProps & { class?: HTMLAttributes["class"] }
@@ -17,7 +17,7 @@ const props = defineProps<
 
 const delegatedProps = reactiveOmit(props, "class");
 
-const forwardedProps = useForwardProps(delegatedProps);
+const forwardedProps = useForwardProps(useDefinedObject(delegatedProps));
 </script>
 
 <template>

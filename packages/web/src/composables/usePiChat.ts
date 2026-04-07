@@ -37,6 +37,7 @@ import type {
   ThinkingLevel,
   ToolCallContentBlock,
 } from "@/lib/types";
+import { omitUndefined } from "@/lib/utils";
 
 type SessionDraftContext = {
   cwd: string;
@@ -91,11 +92,16 @@ const extractContentBlocks = (
           text: block.text ?? "",
         };
       case "thinking":
-        return {
-          type: "thinking",
-          thinking: block.thinking ?? "",
-          redacted: block.redacted,
-        };
+        return block.redacted === undefined
+          ? {
+              type: "thinking",
+              thinking: block.thinking ?? "",
+            }
+          : {
+              type: "thinking",
+              thinking: block.thinking ?? "",
+              redacted: block.redacted,
+            };
       case "toolCall":
         return {
           type: "toolCall",
@@ -700,9 +706,7 @@ export function usePiChat() {
       const nextCwd = activeDraftContext.value?.cwd || info.value?.workspaceDir;
       await Promise.all([
         refreshAgents(nextCwd),
-        refreshResources({
-          cwd: nextCwd,
-        }),
+        refreshResources(nextCwd ? { cwd: nextCwd } : undefined),
       ]);
     }
   };
@@ -721,11 +725,15 @@ export function usePiChat() {
     resourceError.value = "";
 
     try {
-      resources.value = await getResources({
-        cwd:
-          options?.cwd ?? activeSession.value?.cwd ?? info.value?.workspaceDir,
-        sessionId: options?.sessionId ?? (activeSessionId.value || undefined),
-      });
+      resources.value = await getResources(
+        omitUndefined({
+          cwd:
+            options?.cwd ??
+            activeSession.value?.cwd ??
+            info.value?.workspaceDir,
+          sessionId: options?.sessionId ?? activeSessionId.value,
+        }),
+      );
     } catch (caughtError) {
       resources.value = createEmptyResources();
       resourceError.value =
@@ -859,11 +867,12 @@ export function usePiChat() {
 
       // 消息更新 - 处理各种增量事件
       if (payload.type === "message_update" && payload.assistantMessageEvent) {
+        const assistantEvent = payload.assistantMessageEvent;
         const {
           type: eventType,
           contentIndex = 0,
-          delta = "",
-        } = payload.assistantMessageEvent;
+        } = assistantEvent;
+        const delta = assistantEvent.delta ?? "";
 
         // 如果没有当前消息ID，创建新消息
         if (!currentAssistantMessageId) {
@@ -881,10 +890,9 @@ export function usePiChat() {
           } else if (eventType === "toolcall_start") {
             currentPendingToolCall = {
               type: "toolCall",
-              id: payload.assistantMessageEvent.toolCall?.id ?? createLocalId(),
-              name: payload.assistantMessageEvent.toolCall?.name ?? "unknown",
-              arguments:
-                payload.assistantMessageEvent.toolCall?.arguments ?? {},
+              id: assistantEvent.toolCall?.id ?? createLocalId(),
+              name: assistantEvent.toolCall?.name ?? "unknown",
+              arguments: assistantEvent.toolCall?.arguments ?? {},
             };
             currentAccumulatedBlocks = [currentPendingToolCall];
           }
@@ -972,13 +980,9 @@ export function usePiChat() {
               case "toolcall_start":
                 currentPendingToolCall = {
                   type: "toolCall",
-                  id:
-                    payload.assistantMessageEvent.toolCall?.id ??
-                    createLocalId(),
-                  name:
-                    payload.assistantMessageEvent.toolCall?.name ?? "unknown",
-                  arguments:
-                    payload.assistantMessageEvent.toolCall?.arguments ?? {},
+                  id: assistantEvent.toolCall?.id ?? createLocalId(),
+                  name: assistantEvent.toolCall?.name ?? "unknown",
+                  arguments: assistantEvent.toolCall?.arguments ?? {},
                 };
                 newBlocks.push(currentPendingToolCall);
                 break;
@@ -1184,15 +1188,18 @@ export function usePiChat() {
       updateDraftValue(composer.sessionId, composer.draftText);
     }
 
-    const snapshot = await createSession({
-      cwd: options?.cwd ?? activeSession.value?.cwd ?? info.value?.workspaceDir,
-      title: options?.title,
-      model: options?.model ?? (composer.selectedModel || undefined),
-      thinkingLevel:
-        options?.thinkingLevel ?? (composer.selectedThinkingLevel || null),
-      parentSessionId: options?.parentSessionId,
-      agent: options?.agent ?? (composer.selectedAgent || null),
-    });
+    const snapshot = await createSession(
+      omitUndefined({
+        cwd:
+          options?.cwd ?? activeSession.value?.cwd ?? info.value?.workspaceDir,
+        title: options?.title,
+        model: options?.model ?? (composer.selectedModel || undefined),
+        thinkingLevel:
+          options?.thinkingLevel ?? (composer.selectedThinkingLevel || null),
+        parentSessionId: options?.parentSessionId,
+        agent: options?.agent ?? (composer.selectedAgent || null),
+      }),
+    );
 
     if (options?.inheritDraftFromNewSession) {
       moveDraftValue(null, snapshot.id);
@@ -1213,8 +1220,10 @@ export function usePiChat() {
     }
 
     const snapshot = await createAndLoadSession({
-      cwd: activeDraftContext.value?.cwd || undefined,
-      parentSessionId: activeDraftContext.value?.parentSessionId || undefined,
+      ...omitUndefined({
+        cwd: activeDraftContext.value?.cwd,
+        parentSessionId: activeDraftContext.value?.parentSessionId,
+      }),
       inheritDraftFromNewSession: true,
     });
     return snapshot.id;
@@ -1281,24 +1290,30 @@ export function usePiChat() {
         });
       }
 
-      await sendMessage(sessionId, {
-        prompt,
-        model: composer.selectedModel || undefined,
-        thinkingLevel: composer.selectedThinkingLevel || undefined,
-        agent: effectiveAgentName,
-      });
+      await sendMessage(
+        sessionId,
+        omitUndefined({
+          prompt,
+          model: composer.selectedModel || undefined,
+          thinkingLevel: composer.selectedThinkingLevel || undefined,
+          agent: effectiveAgentName,
+        }),
+      );
 
       clearDraftValue(sessionId);
       clearDraftValue(null);
-      patchSessionSummary(sessionId, {
-        agent: effectiveAgentName || undefined,
-        model: composer.selectedModel || undefined,
-        thinkingLevel: composer.selectedThinkingLevel || undefined,
-        resolvedModel,
-        resolvedThinkingLevel: effectiveThinkingLevel.value,
-        status: "streaming",
-        updatedAt: Date.now(),
-      });
+      patchSessionSummary(
+        sessionId,
+        omitUndefined({
+          agent: effectiveAgentName || undefined,
+          model: composer.selectedModel || undefined,
+          thinkingLevel: composer.selectedThinkingLevel || undefined,
+          resolvedModel,
+          resolvedThinkingLevel: effectiveThinkingLevel.value,
+          status: "streaming" as const,
+          updatedAt: Date.now(),
+        }),
+      );
     } catch (caughtError) {
       error.value =
         caughtError instanceof Error

@@ -196,13 +196,15 @@ export const buildSessionProjects = (options: {
             key: `${project.id}:project-root:${project.projectRoot}`,
             kind: "project-root",
             label: "project root",
-            branch: rootSessions[0]?.branch,
             worktreeRoot: project.projectRoot,
             sessions: rootSessions,
             tree,
             lastUpdatedAt: Math.max(
               ...rootSessions.map((session) => session.updatedAt),
             ),
+            ...(rootSessions[0]?.branch
+              ? { branch: rootSessions[0].branch }
+              : {}),
           });
         }
       }
@@ -240,13 +242,13 @@ export const buildSessionProjects = (options: {
             label:
               sessions[0]?.worktreeLabel ||
               relativeLabel(worktreeRoot, options.workspaceDir),
-            branch: sessions[0]?.branch,
             worktreeRoot,
             sessions,
             tree,
             lastUpdatedAt: Math.max(
               ...sessions.map((session) => session.updatedAt),
             ),
+            ...(sessions[0]?.branch ? { branch: sessions[0].branch } : {}),
           };
         })
         .filter((group): group is SessionGroupView => group !== null)
@@ -267,7 +269,6 @@ export const buildSessionProjects = (options: {
             key: `${project.id}:archived:${project.projectRoot}`,
             kind: "archived",
             label: "archived",
-            branch: undefined,
             worktreeRoot: project.projectRoot,
             sessions: archivedSessions,
             tree,

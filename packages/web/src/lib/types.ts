@@ -190,15 +190,63 @@ export interface StreamEvent {
   error?: string;
   message?: {
     role?: string;
-    content?: Array<{
-      type: string;
-      text?: string;
-      thinking?: string;
-      redacted?: boolean;
-      id?: string;
-      name?: string;
-      arguments?: Record<string, unknown>;
-    }>;
+    content?: Array<
+      | {
+          type: "text";
+          text?: string;
+        }
+      | {
+          type: "thinking";
+          thinking?: string;
+          redacted?: boolean;
+        }
+      | {
+          type: "toolCall";
+          id?: string;
+          name?: string;
+          arguments?: Record<string, unknown>;
+        }
+      | {
+          type: "toolResult";
+          toolCallId?: string;
+          toolName?: string;
+          content?: Array<
+            | {
+                type: "text";
+                text?: string;
+              }
+            | {
+                type: "image";
+                data?: string;
+                mimeType?: string;
+              }
+          >;
+          isError?: boolean;
+        }
+      | {
+          type: string;
+          text?: string;
+          thinking?: string;
+          redacted?: boolean;
+          id?: string;
+          name?: string;
+          arguments?: Record<string, unknown>;
+          toolCallId?: string;
+          toolName?: string;
+          content?: Array<
+            | {
+                type: "text";
+                text?: string;
+              }
+            | {
+                type: "image";
+                data?: string;
+                mimeType?: string;
+              }
+          >;
+          isError?: boolean;
+        }
+    >;
   };
   assistantMessageEvent?: {
     type?: AssistantMessageEventType;
@@ -206,9 +254,9 @@ export interface StreamEvent {
     delta?: string | null;
     content?: string;
     toolCall?: {
-      id: string;
-      name: string;
-      arguments: Record<string, unknown>;
+      id?: string;
+      name?: string;
+      arguments?: Record<string, unknown>;
     };
   };
 }
