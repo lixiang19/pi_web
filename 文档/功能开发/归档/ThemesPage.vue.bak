@@ -3,7 +3,6 @@ import { Check, MoonStar, SunMedium } from "lucide-vue-next";
 
 import { themeOptions, type ThemeName } from "@/assets/registry";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { useThemePreferences } from "@/composables/useThemePreferences";
 import type { ThemeMode } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -18,7 +17,13 @@ const themeDescriptions: Record<ThemeName, string> = {
   pastelDreams: "轻盈明亮，更适合浅色模式和展示场景。",
 };
 
-const preferences = useThemePreferences();
+const {
+  currentThemeOption,
+  mode,
+  setMode,
+  setTheme,
+  themeName,
+} = useThemePreferences();
 
 const modeOptions: Array<{ label: string; value: ThemeMode; icon: typeof SunMedium }> = [
   { label: "Light", value: "light", icon: SunMedium },
@@ -45,10 +50,10 @@ const modeOptions: Array<{ label: string; value: ThemeMode; icon: typeof SunMedi
             Current Theme
           </p>
           <p class="mt-2 text-xl font-black text-stone-50">
-            {{ preferences.currentThemeOption.label }}
+            {{ currentThemeOption?.label }}
           </p>
           <p class="mt-2 text-sm leading-6 text-stone-400">
-            {{ themeDescriptions[preferences.themeName] }}
+            {{ themeDescriptions[themeName] }}
           </p>
         </div>
 
@@ -63,11 +68,11 @@ const modeOptions: Array<{ label: string; value: ThemeMode; icon: typeof SunMedi
               type="button"
               :class="cn(
                 'flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-bold transition-all',
-                preferences.mode === option.value
+                mode === option.value
                   ? 'border-amber-400/30 bg-amber-500/10 text-amber-100'
                   : 'border-white/10 bg-black/20 text-stone-300 hover:bg-white/[0.05]',
               )"
-              @click="preferences.setMode(option.value)"
+              @click="setMode(option.value)"
             >
               <component :is="option.icon" class="size-4" />
               {{ option.label }}
@@ -84,11 +89,11 @@ const modeOptions: Array<{ label: string; value: ThemeMode; icon: typeof SunMedi
         type="button"
         :class="cn(
           'group rounded-[30px] border p-5 text-left transition-all',
-          preferences.themeName === theme.value
+          themeName === theme.value
             ? 'border-amber-400/30 bg-amber-500/10 shadow-[0_0_36px_rgba(245,158,11,0.12)]'
             : 'border-white/10 bg-black/30 hover:bg-white/[0.05]',
         )"
-        @click="preferences.setTheme(theme.value as ThemeName)"
+        @click="setTheme(theme.value as ThemeName)"
       >
         <div class="flex items-start justify-between gap-3">
           <div>
@@ -100,7 +105,7 @@ const modeOptions: Array<{ label: string; value: ThemeMode; icon: typeof SunMedi
             </h3>
           </div>
           <Badge
-            v-if="preferences.themeName === theme.value"
+            v-if="themeName === theme.value"
             class="border-amber-400/30 bg-amber-500/15 text-amber-100"
           >
             <Check class="mr-1 size-3" />

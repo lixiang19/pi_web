@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { LayoutDashboard, Palette, Settings2 } from "lucide-vue-next";
-import { computed } from "vue";
+import {
+  ChevronLeft,
+  ChevronRight,
+  LayoutDashboard,
+  Settings2,
+  Brush,
+} from "lucide-vue-next";
+import { computed, ref } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 const route = useRoute();
+
+const isCollapsed = ref(false);
 
 const navItems = [
   {
@@ -16,78 +24,110 @@ const navItems = [
     icon: LayoutDashboard,
   },
   {
+    name: "design",
+    label: "界面设计",
+    to: "/design",
+    icon: Brush,
+  },
+  {
     name: "settings",
-    label: "系统设置",
+    label: "设置",
     to: "/settings",
     icon: Settings2,
   },
-  {
-    name: "themes",
-    label: "主题实验室",
-    to: "/themes",
-    icon: Palette,
-  },
 ];
 
-const pageTitle = computed(() => String(route.meta.title || "Pi 工作台"));
-const pageDescription = computed(() =>
-  String(route.meta.description || "Pi Web 平台工作区与导航入口。"),
-);
+const pageTitle = computed(() => String(route.meta["title"] || "Pi 工作台"));
 
 const isNavItemActive = (name: string) => route.name === name;
+const toggleSidebar = () => {
+  isCollapsed.value = !isCollapsed.value;
+};
 </script>
 
 <template>
-  <div class="relative min-h-screen overflow-hidden bg-[#09090b] text-stone-50">
-    <div
-      class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.18),transparent_26%),radial-gradient(circle_at_right,rgba(59,130,246,0.12),transparent_30%)]"
-    />
-    <div
-      class="pointer-events-none absolute inset-0 bg-grid bg-[size:28px_28px] opacity-[0.04]"
-    />
-
-    <div class="relative mx-auto flex min-h-screen max-w-[1760px] flex-col px-3 py-3 sm:px-4 sm:py-4 xl:px-6 xl:py-5">
-      <header class="mb-3 rounded-[28px] border border-white/10 bg-black/30 px-4 py-4 backdrop-blur sm:px-5">
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div class="space-y-2">
-            <div class="flex flex-wrap items-center gap-2">
-              <Badge class="rounded-full border border-amber-400/30 bg-amber-500/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200">
-                Pi Platform
-              </Badge>
-              <Badge variant="outline" class="border-white/10 bg-white/[0.03] text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">
-                Route Layer
-              </Badge>
-            </div>
-            <div>
-              <h1 class="text-2xl font-black tracking-tight text-stone-50 sm:text-3xl">
-                {{ pageTitle }}
-              </h1>
-              <p class="mt-1 max-w-2xl text-sm leading-6 text-stone-400">
-                {{ pageDescription }}
-              </p>
-            </div>
+  <div class="flex h-screen w-full overflow-hidden bg-background text-foreground">
+    <!-- Sidebar -->
+    <aside
+      :class="cn(
+        'group relative flex flex-col border-r bg-sidebar border-sidebar-border transition-all duration-200 ease-in-out',
+        isCollapsed ? 'w-14' : 'w-56',
+      )"
+    >
+      <!-- Logo -->
+      <div class="flex h-12 items-center px-3">
+        <div class="flex items-center gap-2.5 overflow-hidden">
+          <div class="flex size-7 shrink-0 items-center justify-center bg-primary text-primary-foreground font-semibold text-xs rounded">
+            PI
           </div>
-
-          <nav class="grid gap-2 sm:grid-cols-3 xl:min-w-[520px]">
-            <RouterLink
-              v-for="item in navItems"
-              :key="item.name"
-              :to="item.to"
-              :class="cn(
-                'flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all',
-                isNavItemActive(item.name)
-                  ? 'border-amber-400/30 bg-amber-500/10 text-amber-100 shadow-[0_0_24px_rgba(245,158,11,0.1)]'
-                  : 'border-white/10 bg-white/[0.03] text-stone-300 hover:bg-white/[0.06] hover:text-stone-50',
-              )"
-            >
-              <component :is="item.icon" class="size-4" />
-              <span>{{ item.label }}</span>
-            </RouterLink>
-          </nav>
+          <span
+            v-if="!isCollapsed"
+            class="whitespace-nowrap font-semibold text-sm text-sidebar-foreground"
+          >
+            Pi Platform
+          </span>
         </div>
-      </header>
+      </div>
 
-      <RouterView />
-    </div>
+      <!-- Navigation -->
+      <nav class="flex-1 px-2 py-3 space-y-0.5">
+        <RouterLink
+          v-for="item in navItems"
+          :key="item.name"
+          :to="item.to"
+          :class="cn(
+            'group relative flex items-center gap-2.5 px-2.5 py-1.5 text-sm font-medium rounded-md transition-colors',
+            isNavItemActive(item.name)
+              ? 'bg-sidebar-accent text-sidebar-foreground'
+              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
+            isCollapsed && 'justify-center px-0'
+          )"
+          :title="isCollapsed ? item.label : ''"
+        >
+          <!-- Active Indicator -->
+          <div
+            v-if="isNavItemActive(item.name) && !isCollapsed"
+            class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary rounded-full"
+          />
+          <component :is="item.icon" class="size-4 shrink-0" />
+          <span v-if="!isCollapsed" class="whitespace-nowrap">{{ item.label }}</span>
+        </RouterLink>
+      </nav>
+
+      <!-- Sidebar Footer -->
+      <div class="p-2 border-t border-sidebar-border">
+        <button
+          class="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-xs font-medium text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-colors rounded-md"
+          :class="isCollapsed && 'justify-center px-0'"
+          @click="toggleSidebar"
+        >
+          <component :is="isCollapsed ? ChevronRight : ChevronLeft" class="size-4 shrink-0" />
+          <span v-if="!isCollapsed">{{ isCollapsed ? '展开' : '收起' }}</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex flex-1 flex-col overflow-hidden">
+      <!-- Content Area -->
+      <div class="flex-1 overflow-y-auto scrollbar-thin">
+        <div class="h-full">
+          <RouterView />
+        </div>
+      </div>
+    </main>
   </div>
 </template>
+
+<style scoped>
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 10px;
+}
+</style>

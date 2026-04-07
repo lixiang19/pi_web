@@ -39,14 +39,21 @@ const readStoredThemePreference = (): ThemePreference | null => {
       themeName?: string
       mode?: string
     }
+    const themeName = parsed.themeName
+    const mode = parsed.mode
 
-    if (!isThemeName(parsed.themeName || '') || !isThemeMode(parsed.mode || '')) {
+    if (
+      typeof themeName !== 'string' ||
+      typeof mode !== 'string' ||
+      !isThemeName(themeName) ||
+      !isThemeMode(mode)
+    ) {
       return null
     }
 
     return {
-      themeName: parsed.themeName,
-      mode: parsed.mode,
+      themeName,
+      mode,
     }
   } catch {
     return null

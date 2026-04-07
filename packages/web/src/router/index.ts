@@ -4,8 +4,8 @@ import PlatformShell from "@/layouts/PlatformShell.vue";
 import NotFoundPage from "@/pages/NotFoundPage.vue";
 import SessionDetailPage from "@/pages/SessionDetailPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
-import ThemesPage from "@/pages/ThemesPage.vue";
 import WorkbenchPage from "@/pages/WorkbenchPage.vue";
+import DesignLabPage from "@/pages/DesignLabPage.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -24,21 +24,21 @@ const router = createRouter({
           },
         },
         {
+          path: "design",
+          name: "design",
+          component: DesignLabPage,
+          meta: {
+            title: "界面设计",
+            description: "界面概念实验室与组件研究。",
+          },
+        },
+        {
           path: "settings",
           name: "settings",
           component: SettingsPage,
           meta: {
             title: "系统设置",
-            description: "查看运行态摘要、导航入口和平台设置扩展位。",
-          },
-        },
-        {
-          path: "themes",
-          name: "themes",
-          component: ThemesPage,
-          meta: {
-            title: "主题实验室",
-            description: "管理主题 token 与明暗模式，直接作用到整个工作台。",
+            description: "工作台外观、主题和其他配置选项。",
           },
         },
         {

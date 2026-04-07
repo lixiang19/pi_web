@@ -157,67 +157,59 @@ watch(
 
 <template>
   <div
-    class="flex h-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-black/35 backdrop-blur"
+    class="flex h-full flex-col overflow-hidden"
   >
-    <div class="border-b border-white/10 px-4 py-4">
+    <div class="border-b px-4 py-2.5 bg-muted/20">
       <div class="flex items-center justify-between gap-3">
-        <div>
-          <p class="text-sm font-semibold text-stone-100">文件树</p>
-          <p class="mt-1 text-xs text-stone-500">当前会话目录的真实文件结构</p>
+        <div class="flex items-center gap-2">
+          <p class="text-[9px] font-black uppercase tracking-widest text-foreground/40">Explorer</p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="rounded-full text-stone-400 hover:text-stone-100"
+        <button
+          class="p-1 text-foreground/30 hover:text-foreground transition-colors"
           @click="refreshTree"
         >
           <RefreshCw
-            class="size-4"
+            class="size-3"
             :class="isDirectoryLoading(rootPath) ? 'animate-spin' : ''"
           />
-        </Button>
+        </button>
       </div>
       <p
-        class="mt-3 break-all rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[11px] leading-5 text-stone-400"
+        class="mt-2 break-all border border-muted bg-muted/10 px-2 py-1 font-mono text-[9px] text-foreground/30"
       >
-        {{ rootPath || "没有可展示的目录" }}
+        {{ rootPath || "NO_ROOT" }}
       </p>
     </div>
 
-    <ScrollArea class="flex-1 px-2 py-3">
-      <div v-if="!rootPath" class="px-3 py-8 text-sm text-stone-500">
-        当前没有可用目录。
+    <div class="flex-1 overflow-auto scrollbar-thin">
+      <div v-if="!rootPath" class="px-4 py-8 text-[9px] font-black uppercase text-foreground/20">
+        No directory.
       </div>
 
       <div
         v-else-if="visibleNodes.length === 0 && isDirectoryLoading(rootPath)"
-        class="flex items-center gap-3 px-3 py-8 text-sm text-stone-500"
+        class="flex items-center gap-3 px-4 py-8 text-[9px] font-black uppercase text-foreground/40"
       >
-        <LoaderCircle class="size-4 animate-spin text-amber-300" />
-        正在加载文件树...
+        <LoaderCircle class="size-3 animate-spin" />
+        Loading...
       </div>
 
       <div
         v-else-if="fileTreeError"
-        class="px-3 py-6 text-sm leading-6 text-red-200"
+        class="px-4 py-6 text-[9px] font-mono text-destructive"
       >
         {{ fileTreeError }}
       </div>
 
       <div
-        v-else-if="visibleNodes.length === 0"
-        class="px-3 py-8 text-sm text-stone-500"
-      >
-        当前目录为空。
-      </div>
-
-      <div v-else class="space-y-1 pb-4">
+        v-else class="py-1">
         <button
           v-for="node in visibleNodes"
           :key="node.entry.path"
           type="button"
-          class="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left transition hover:bg-white/[0.05]"
-          :style="{ paddingLeft: `${node.depth * 16 + 12}px` }"
+          class="group flex w-full items-center gap-1.5 border-l-2 border-transparent px-2 py-1 text-left transition hover:bg-accent/40"
+          :class="isDirectoryExpanded(node.entry.path) ? 'border-primary/10' : ''"
+          :style="{ paddingLeft: `${node.depth * 8 + 8}px` }"
           @click="toggleDirectory(node.entry)"
         >
           <component
@@ -228,10 +220,10 @@ watch(
                   : ChevronRight
                 : ChevronRight
             "
-            class="size-4 shrink-0"
+            class="size-2.5 shrink-0"
             :class="
               node.entry.kind === 'directory'
-                ? 'text-stone-500'
+                ? 'text-foreground/20'
                 : 'text-transparent'
             "
           />
@@ -244,34 +236,22 @@ watch(
                   : Folder
                 : FileCode2
             "
-            class="size-4 shrink-0"
+            class="size-3 shrink-0"
             :class="
               node.entry.kind === 'directory'
-                ? 'text-amber-200'
-                : 'text-stone-400'
+                ? 'text-foreground/40'
+                : 'text-foreground/60'
             "
           />
 
           <span
-            class="min-w-0 flex-1 truncate text-sm"
-            :class="
-              node.entry.kind === 'directory'
-                ? 'text-stone-100'
-                : 'text-stone-300'
-            "
+            class="min-w-0 flex-1 truncate text-[11px] font-medium tracking-tight"
+            :class="node.entry.kind === 'directory' ? 'text-foreground/60 uppercase text-[10px] font-black' : 'text-foreground/80'"
           >
             {{ node.entry.name }}
           </span>
-
-          <LoaderCircle
-            v-if="
-              node.entry.kind === 'directory' &&
-              isDirectoryLoading(node.entry.path)
-            "
-            class="size-3.5 shrink-0 animate-spin text-amber-300"
-          />
         </button>
       </div>
-    </ScrollArea>
+    </div>
   </div>
 </template>

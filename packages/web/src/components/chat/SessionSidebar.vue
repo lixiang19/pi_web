@@ -7,7 +7,6 @@ import {
   Clock3,
   FolderGit2,
   FolderKanban,
-  PanelLeft,
   Plus,
   Search,
 } from "lucide-vue-next";
@@ -103,8 +102,6 @@ const activeNowSessions = computed(() => {
     .map((item) => item.session);
 });
 
-const currentProjectId = computed(() => activeSession.value?.projectId || "");
-
 const formatRelativeTime = (timestamp: number) => {
   const delta = timestamp - Date.now();
   const minute = 60 * 1000;
@@ -167,23 +164,6 @@ const togglePin = (sessionId: string) => {
   }
 
   pinnedSessionIds.value = [...next];
-};
-
-const openProject = (projectId: string) => {
-  const project = projects.value.find((item) => item.id === projectId);
-  if (!project) {
-    return;
-  }
-
-  const preferredSessionId = activeSessionByProject.value[projectId];
-  const candidate =
-    project.sessions.find((session) => session.id === preferredSessionId) ??
-    project.sessions.find((session) => !session.archived) ??
-    project.sessions[0];
-
-  if (candidate && candidate.id !== props.activeSessionId) {
-    emit("select", candidate.id);
-  }
 };
 
 const startRename = (sessionId: string, currentTitle: string) => {
@@ -285,204 +265,115 @@ watch(
 
 <template>
   <div
-    class="flex h-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-black/35 backdrop-blur"
+    class="flex h-full flex-col overflow-hidden bg-background"
   >
-    <div class="border-b border-white/10 px-4 py-4">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div
-            class="rounded-2xl border border-white/10 bg-white/[0.05] p-2 text-amber-200"
-          >
-            <PanelLeft class="size-4" />
-          </div>
-          <div>
-            <p class="text-sm font-semibold text-stone-100">对话列表</p>
-            <p class="text-xs text-stone-500">项目、worktree、子会话与归档</p>
-          </div>
-        </div>
+    <div class="px-4 py-4 border-b">
+      <div class="flex items-center justify-between gap-3 mb-4">
+        <p class="text-xs font-medium text-muted-foreground/60">
+          会话
+        </p>
 
-        <Button
-          class="rounded-full px-4"
+        <button
+          class="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
           :disabled="isSending"
           @click="emit('create', {})"
         >
-          <Plus class="size-4" />
+          <Plus class="size-3.5" />
           新建
-        </Button>
+        </button>
       </div>
 
-      <div class="relative mt-4">
+      <div class="relative">
         <Search
-          class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-stone-500"
+          class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/40"
         />
         <Input
           v-model="searchQuery"
-          class="border-white/10 bg-white/[0.04] pl-10 text-stone-100 placeholder:text-stone-500"
-          placeholder="搜索会话、目录或分组"
+          class="w-full bg-muted/50 pl-9 pr-3 h-8 text-sm focus:bg-muted transition-colors placeholder:text-muted-foreground/40"
+          placeholder="筛选会话..."
         />
       </div>
     </div>
 
-    <ScrollArea class="flex-1 px-3 py-3">
-      <div class="space-y-5 pb-4">
+    <ScrollArea class="flex-1 px-4 py-2 scrollbar-thin">
+      <div class="space-y-8 pb-4">
+        <!-- Recent Sessions -->
         <section v-if="activeNowSessions.length > 0" class="space-y-2">
-          <div
-            class="flex items-center gap-2 px-1 text-[11px] uppercase tracking-[0.28em] text-stone-500"
-          >
-            <Clock3 class="size-3.5" />
-            recent
+          <div class="px-1 text-xs font-medium text-muted-foreground/50">
+            最近访问
           </div>
 
-          <div class="space-y-2">
+          <div class="space-y-0.5">
             <button
               v-for="session in activeNowSessions"
               :key="session.id"
               type="button"
-              class="w-full rounded-2xl border px-3 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.06]"
-              :class="
-                session.id === activeSessionId
-                  ? 'border-amber-400/35 bg-amber-500/10'
-                  : 'border-white/10 bg-white/[0.03]'
-              "
+              class="group relative flex w-full items-center gap-2 px-2 py-1.5 text-left rounded-md transition-colors"
+              :class="session.id === activeSessionId ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent/60'"
               @mouseenter="emit('prefetch', session.id)"
-              @focus="emit('prefetch', session.id)"
               @click="emit('select', session.id)"
             >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="truncate text-sm font-medium text-stone-100">
-                    {{ session.title }}
-                  </p>
-                  <p class="mt-1 truncate text-xs text-stone-500">
-                    {{ session.projectLabel }}
-                  </p>
+              <!-- Active Indicator -->
+              <div
+                v-if="session.id === activeSessionId"
+                class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary rounded-full"
+              />
+              <div class="flex-1 min-w-0">
+                <p class="truncate text-sm font-medium" :class="session.id === activeSessionId ? 'text-sidebar-foreground' : 'text-sidebar-foreground/80'">
+                  {{ session.title || '无标题' }}
+                </p>
+                <div class="flex items-center gap-2 mt-0.5">
+                  <span class="text-xs text-muted-foreground/60">{{ session.projectId }}</span>
+                  <span class="text-xs text-muted-foreground/40 tabular-nums">
+                    {{ formatRelativeTime(activeNowEntries[session.id] ?? session.updatedAt) }}
+                  </span>
                 </div>
-                <span class="shrink-0 text-[11px] text-stone-500">{{
-                  formatRelativeTime(session.updatedAt)
-                }}</span>
               </div>
             </button>
           </div>
         </section>
 
-        <section class="space-y-3">
-          <div
-            class="flex items-center gap-2 px-1 text-[11px] uppercase tracking-[0.28em] text-stone-500"
-          >
-            <FolderKanban class="size-3.5" />
-            项目分组
+        <!-- Projects -->
+        <section class="space-y-4">
+          <div class="px-1 text-xs font-medium text-muted-foreground/50">
+            浏览
           </div>
 
-          <div
-            v-if="projects.length === 0"
-            class="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm text-stone-500"
-          >
-            当前没有匹配的会话。
+          <div v-if="projects.length === 0" class="py-8 text-center">
+            <p class="text-xs text-muted-foreground/30">暂无会话</p>
           </div>
 
           <div v-else class="space-y-3">
-            <div
-              v-for="project in projects"
-              :key="project.id"
-              class="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]"
-            >
-              <div class="flex items-center gap-2 px-4 py-3">
+            <div v-for="project in projects" :key="project.id" class="space-y-1">
+              <div class="flex items-center justify-between px-1 group/proj">
                 <button
                   type="button"
-                  class="min-w-0 flex-1 text-left"
-                  @click="openProject(project.id)"
-                >
-                  <div class="flex items-center gap-2">
-                    <FolderGit2 class="size-4 text-amber-200" />
-                    <p class="truncate text-sm font-medium text-stone-100">
-                      {{ project.label }}
-                    </p>
-                    <Badge
-                      variant="outline"
-                      class="border-white/10 bg-transparent text-[10px] text-stone-400"
-                    >
-                      {{ project.sessions.length }}
-                    </Badge>
-                    <Badge
-                      v-if="project.id === currentProjectId"
-                      variant="outline"
-                      class="border-amber-400/20 bg-amber-500/10 text-[10px] text-amber-100"
-                    >
-                      当前
-                    </Badge>
-                  </div>
-                  <p class="mt-1 truncate pl-6 text-[11px] text-stone-500">
-                    {{ project.pathLabel }}
-                  </p>
-                </button>
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="size-8 rounded-full text-stone-500 hover:text-stone-100"
+                  class="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-medium text-muted-foreground/70 hover:text-sidebar-foreground transition-colors"
                   @click="toggleProject(project.id)"
                 >
-                  <component
-                    :is="
-                      isProjectCollapsed(project.id)
-                        ? ChevronRight
-                        : ChevronDown
-                    "
-                    class="size-4"
-                  />
-                </Button>
+                  <component :is="isProjectCollapsed(project.id) ? ChevronRight : ChevronDown" class="size-3.5 text-muted-foreground/40 shrink-0" />
+                  <span class="truncate">{{ project.id }}</span>
+                </button>
+                <button
+                  class="size-6 flex items-center justify-center opacity-0 group-hover/proj:opacity-100 hover:text-primary transition-all rounded"
+                  @click.stop="emit('create', { cwd: project.id })"
+                >
+                  <Plus class="size-4" />
+                </button>
               </div>
 
-              <div
-                v-if="!isProjectCollapsed(project.id)"
-                class="space-y-3 border-t border-white/10 px-3 py-3"
-              >
-                <section
-                  v-for="group in project.groups"
-                  :key="group.key"
-                  class="overflow-hidden rounded-2xl border border-white/10 bg-black/20"
-                >
-                  <div class="flex items-center gap-2 px-3 py-2.5">
-                    <button
-                      type="button"
-                      class="min-w-0 flex-1 text-left"
-                      @click="toggleGroup(group.key, group.kind === 'archived')"
-                    >
-                      <div class="flex items-center gap-2">
-                        <p class="truncate text-sm font-medium text-stone-200">
-                          {{ group.label }}
-                        </p>
-                        <span
-                          v-if="group.branch"
-                          class="truncate text-[11px] text-stone-500"
-                          >{{ group.branch }}</span
-                        >
-                      </div>
-                    </button>
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="size-7 rounded-full text-stone-500 hover:text-stone-100"
-                      @click="toggleGroup(group.key, group.kind === 'archived')"
-                    >
-                      <component
-                        :is="
-                          isGroupCollapsed(group.key, group.kind === 'archived')
-                            ? ChevronRight
-                            : ChevronDown
-                        "
-                        class="size-4"
-                      />
-                    </Button>
-                  </div>
-
-                  <div
-                    v-if="
-                      !isGroupCollapsed(group.key, group.kind === 'archived')
-                    "
-                    class="space-y-1 border-t border-white/10 px-2 py-2"
+              <div v-if="!isProjectCollapsed(project.id)" class="ml-5 space-y-3">
+                <div v-for="group in project.groups" :key="group.key" class="space-y-1">
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-1.5 px-1 py-1 text-xs font-medium text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors rounded"
+                    @click="toggleGroup(group.key, group.kind === 'archived')"
                   >
+                    <component :is="isGroupCollapsed(group.key, group.kind === 'archived') ? ChevronRight : ChevronDown" class="size-3 text-muted-foreground/30" />
+                    <span class="truncate">{{ group.label }}</span>
+                  </button>
+
+                  <div v-if="!isGroupCollapsed(group.key, group.kind === 'archived')" class="space-y-0.5">
                     <SessionSidebarSessionNode
                       v-for="node in group.tree"
                       :key="node.session.id"
@@ -496,26 +387,17 @@ watch(
                       @select="emit('select', $event)"
                       @prefetch="emit('prefetch', $event)"
                       @toggle-expand="toggleExpandedParent"
-                      @start-rename="
-                        (sessionId, currentTitle) =>
-                          startRename(sessionId, currentTitle)
-                      "
+                      @start-rename="startRename"
                       @update-editing-title="updateEditingTitle"
                       @save-rename="saveRename"
                       @cancel-rename="cancelRename"
                       @toggle-pin="togglePin"
-                      @create-child="
-                        (sessionId, cwd) =>
-                          emit('create', { parentSessionId: sessionId, cwd })
-                      "
-                      @archive="
-                        (sessionId, archived) =>
-                          emit('archive', sessionId, archived)
-                      "
+                      @create-child="(sessionId, cwd) => emit('create', { parentSessionId: sessionId, cwd })"
+                      @archive="(sessionId, archived) => emit('archive', sessionId, archived)"
                       @remove="removeSession"
                     />
                   </div>
-                </section>
+                </div>
               </div>
             </div>
           </div>

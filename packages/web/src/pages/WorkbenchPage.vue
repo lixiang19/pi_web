@@ -57,19 +57,12 @@ const {
 </script>
 
 <template>
-  <div class="space-y-3">
-    <WorkbenchHeader
-      :sdk-version="info?.sdkVersion"
-      :session-count="sessions.length"
-      :short-workspace-path="formatShortPath(fileTreeRoot || '')"
-      :status-label="statusLabel"
-      :status-tone="statusTone"
-    />
-
-    <div class="grid flex-1 gap-3 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-      <aside class="min-h-[280px] xl:h-[calc(100vh-12.75rem)]">
+  <div class="h-full">
+    <div class="flex h-full divide-x">
+      <aside class="w-72 flex shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
         <SessionSidebar
           v-bind="sessionSidebarProps"
+          class="flex-1"
           @archive="archiveSession"
           @create="createSidebarSession"
           @prefetch="prefetchSession"
@@ -79,7 +72,7 @@ const {
         />
       </aside>
 
-      <main class="min-h-[560px] xl:h-[calc(100vh-12.75rem)]">
+      <main class="min-w-0 flex-1 flex flex-col bg-background">
         <WorkbenchChatPanel
           :active-draft-parent-session-id="activeDraftContext?.parentSessionId"
           :active-session-id="activeSessionId"
@@ -105,6 +98,7 @@ const {
           :skills="filteredSkills"
           :status="status"
           :thinking-options="thinkingOptions"
+          class="flex-1"
           @apply-prompt="applyPrompt"
           @inject-command="injectCommand"
           @inject-skill="injectSkill"
@@ -120,11 +114,12 @@ const {
       </main>
 
       <aside
-        class="flex min-h-[400px] flex-col gap-3 xl:h-[calc(100vh-12.75rem)]"
+        class="w-80 flex shrink-0 flex-col bg-background"
       >
         <ProjectFilePanel
           :project-label="formatProjectLabel(fileTreeRoot)"
           :root-dir="fileTreeRoot"
+          class="flex-1"
         />
       </aside>
     </div>

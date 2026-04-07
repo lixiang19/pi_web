@@ -12,20 +12,20 @@ defineProps<{
 
 <template>
   <div
-    class="flex flex-1 flex-col overflow-hidden rounded-[32px] border border-white/10 bg-black/35 backdrop-blur"
+    class="flex flex-1 flex-col overflow-hidden"
   >
-    <div class="flex items-center justify-between border-b border-white/10 px-6 py-4">
+    <div class="flex h-12 items-center justify-between border-b px-4">
       <div class="flex items-center gap-2">
-        <FolderKanban class="size-4 text-amber-400" />
-        <h3 class="text-sm font-semibold tracking-tight text-stone-50">
-          项目文件树
+        <FolderKanban class="size-3.5 text-foreground/40" />
+        <h3 class="text-[10px] font-black uppercase tracking-widest text-foreground/60">
+          Project Files
         </h3>
       </div>
-      <Badge variant="outline" class="border-white/10 bg-white/5 text-[10px]">
+      <span class="text-[9px] font-black uppercase opacity-30 tabular-nums">
         {{ projectLabel }}
-      </Badge>
+      </span>
     </div>
-    <div class="flex-1 overflow-auto p-4">
+    <div class="flex-1 overflow-auto p-4 scrollbar-thin">
       <WorkspaceFileTree :root-dir="rootDir" />
     </div>
   </div>
