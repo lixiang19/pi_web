@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "workflow": "完整工作流智能体",
+  "statePath": "/Users/lixiang/Documents/myCode/pi_web/文档/功能开发/2026-04-08_重构菜单组件_状态.json",
+  "planPath": "/Users/lixiang/Documents/myCode/pi_web/文档/功能开发/2026-04-08_重构菜单组件_方案.md",
+  "createdAt": "2026-04-08T14:22:28.971Z",
+  "updatedAt": "2026-04-08T23:02:50.873Z",
+  "currentStage": "用户审查",
+  "stages": {
+    "探索": {
+      "status": "done",
+      "summary": "完成双层导航架构探索"
+    },
+    "澄清": {
+      "status": "done",
+      "summary": "需求已明确：重构PlatformShell，状态同步+组件拆分+Linear风格"
+    },
+    "计划": {
+      "status": "done",
+      "summary": "方案已确认，用户同意执行"
+    },
+    "执行": {
+      "status": "done",
+      "summary": "M1里程碑完成：组件拆分+状态同步，M2样式重构完成"
+    },
+    "前端优化": {
+      "status": "done",
+      "summary": "frontend-polish agent完成，优化项全部通过"
+    },
+    "检查": {
+      "status": "done",
+      "summary": "双Agent检查完成：功能验收通过，规范安全有条件通过（P2:未使用shadcn组件，但主题变量使用正确）"
+    },
+    "用户审查": {
+      "status": "in_progress",
+      "summary": "等待用户审查变更"
+    },
+    "归档": {
+      "status": "pending",
+      "summary": ""
+    },
+    "反思": {
+      "status": "pending",
+      "summary": ""
+    },
+    "已完成": {
+      "status": "pending",
+      "summary": ""
+    }
+  }
+}

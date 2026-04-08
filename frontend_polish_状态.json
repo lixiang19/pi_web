@@ -1,0 +1,49 @@
+{
+  "currentStage": "frontend-polish",
+  "completed": true,
+  "timestamp": "2026-04-08T00:00:00Z",
+  "summary": "PlatformShell 导航组件前端优化完成",
+  "changes": [
+    {
+      "file": "packages/web/src/layouts/PlatformShell.vue",
+      "optimizations": [
+        "静态 NAV_ITEMS 移出 setup，避免每次渲染重新创建",
+        "统一过渡时间为 150ms，符合 Linear 风格",
+        "使用 transition-colors 替代 transition-all 减少重绘",
+        "提取样式常量提高可维护性"
+      ]
+    },
+    {
+      "file": "packages/web/src/components/layout/SidebarNavItem.vue",
+      "optimizations": [
+        "props 解构优化，减少 props.xxx 访问开销",
+        "统一过渡时间为 150ms",
+        "使用 transition-colors 替代 transition-all",
+        "调整 active indicator 位置（left-px）和透明度（bg-primary/80）"
+      ]
+    },
+    {
+      "file": "packages/web/src/components/layout/SidebarLogo.vue",
+      "optimizations": [
+        "props 解构优化",
+        "高度从 12 调整为 11（更紧凑）",
+        "添加底部边框分隔线",
+        "统一过渡时间为 150ms"
+      ]
+    }
+  ],
+  "shadcnThemeVariables": [
+    "bg-sidebar",
+    "border-sidebar-border",
+    "sidebar-foreground",
+    "sidebar-accent",
+    "bg-primary",
+    "primary-foreground"
+  ],
+  "linearStyleCompliance": {
+    "border": "细边框 sidebar-border/50",
+    "spacing": "紧凑间距 py-1.5, px-2.5",
+    "transition": "150ms 微妙过渡",
+    "indicator": "左侧 2px 圆角指示器"
+  }
+}
