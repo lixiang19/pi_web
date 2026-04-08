@@ -162,7 +162,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="relative flex-1 overflow-hidden">
     <ScrollArea ref="messageScrollArea" class="h-full">
-      <div class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
+      <div class="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-4">
         <div
           v-if="messages.length === 0"
           class="flex flex-col items-center justify-center gap-4 py-20 text-center"

@@ -133,11 +133,11 @@ const filterTreeByQuery = (
 export const buildSessionProjects = (options: {
   sessions: SessionSummary[];
   pinnedIds: string[];
-  query: string;
+  query?: string;
   workspaceDir?: string;
 }) => {
   const pinnedIdSet = new Set(options.pinnedIds);
-  const normalizedQuery = options.query.trim().toLowerCase();
+  const normalizedQuery = (options.query ?? "").trim().toLowerCase();
   const projectsById = new Map<string, SessionProjectView>();
 
   for (const session of options.sessions) {

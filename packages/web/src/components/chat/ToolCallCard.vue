@@ -31,86 +31,45 @@ const toggleExpand = () => {
 
 <template>
   <div
-    class="overflow-hidden rounded-2xl border transition-all duration-300"
+    class="overflow-hidden rounded-lg border bg-muted/50 transition-all"
     :class="[
-      isResult
-        ? (block as ToolResultContentBlock).isError
-          ? 'border-red-500/20 bg-red-500/[0.03]'
-          : 'border-emerald-500/20 bg-emerald-500/[0.03]'
-        : 'border-sky-500/20 bg-sky-500/[0.03]',
-      isExpanded ? 'ring-1' : '',
-      isExpanded && isResult && !(block as ToolResultContentBlock).isError ? 'ring-emerald-500/20' : '',
-      isExpanded && isResult && (block as ToolResultContentBlock).isError ? 'ring-red-500/20' : '',
-      isExpanded && !isResult ? 'ring-sky-500/20' : ''
+      isResult && (block as ToolResultContentBlock).isError ? 'border-destructive/30' : 'border-border',
+      isExpanded ? 'ring-1 ring-primary/20' : ''
     ]"
   >
     <button
       type="button"
-      class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.04]"
+      class="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
       @click="toggleExpand"
     >
-      <div 
-        class="flex size-7 items-center justify-center rounded-lg"
-        :class="
+      <component
+        :is="
           isResult
             ? (block as ToolResultContentBlock).isError
-              ? 'bg-red-500/10 text-red-500'
-              : 'bg-emerald-500/10 text-emerald-500'
-            : 'bg-sky-500/10 text-sky-500'
+              ? AlertCircle
+              : Check
+            : Wrench
         "
-      >
-        <component
-          :is="
-            isResult
-              ? (block as ToolResultContentBlock).isError
-                ? AlertCircle
-                : Check
-              : Wrench
-          "
-          class="size-4"
-        />
-      </div>
+        class="size-4 shrink-0"
+        :class="isResult && (block as ToolResultContentBlock).isError ? 'text-destructive' : 'text-muted-foreground'"
+      />
       
-      <div class="flex flex-col">
-        <span class="text-[9px] font-black uppercase tracking-[0.2em] opacity-50">
-          {{ isResult ? "Protocol Output" : "Execution Thread" }}
-        </span>
-        <span
-          class="text-[11px] font-bold tracking-tight"
-          :class="
-            isResult
-              ? (block as ToolResultContentBlock).isError
-                ? 'text-red-400'
-                : 'text-emerald-400'
-              : 'text-sky-400'
-          "
-        >
+      <div class="flex flex-col min-w-0">
+        <span class="text-xs font-medium text-foreground truncate">
           {{ toolName }}
         </span>
       </div>
-
-      <div class="ml-auto flex items-center gap-2">
-        <span class="text-[9px] font-bold uppercase tracking-widest text-stone-600">
-          {{ isExpanded ? "CLOSE" : "EXPAND" }}
-        </span>
+      
+      <div class="ml-auto">
         <component
           :is="isExpanded ? ChevronUp : ChevronDown"
-          class="size-3 text-stone-600"
+          class="size-4 text-muted-foreground"
         />
       </div>
     </button>
 
-    <div v-show="isExpanded" class="border-t border-white/5 bg-black/40 px-5 py-4">
-      <div
-        class="whitespace-pre-wrap font-mono text-[11px] leading-relaxed selection:bg-white/10"
-        :class="
-          isResult
-            ? (block as ToolResultContentBlock).isError
-              ? 'text-red-200/70'
-              : 'text-emerald-200/70'
-            : 'text-sky-200/70'
-        "
-      >
+    <div v-show="isExpanded" class="border-t px-3 py-3">
+      <div class="whitespace-pre-wrap font-mono text-xs leading-5 text-foreground/70">
         <template v-if="isToolCall">
           {{ JSON.stringify((block as ToolCallContentBlock).arguments, null, 2) }}
         </template>

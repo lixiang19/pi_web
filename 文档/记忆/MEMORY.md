@@ -4,13 +4,13 @@
 
 ## 架构决策
 - [Pi SDK] 只能用 SDK 模式，禁止 RPC（官方限制，无替代方案）
-- [Pi SDK] 权限控制必须在服务端 `tool_call` 事件 gate，前端禁止做权限判断
-- [Pi SDK] Agent 配置通过 `resourceLoader.appendSystemPromptOverride` 注入，不要自己拼
-- [前后端分离] server 负责 runtime + 权限，web 只做投影消费，禁止在 Web 层伪造会话语义
+- [数据存储] 统一用服务端 JSON 文件存储（~/.ridge/），不混用 localStorage（架构简单统一）
+- [前后端分离] server 负责 runtime + 权限 + 持久化，web 只做投影消费，禁止在 Web 层伪造会话语义
+- [输入安全] 所有服务端写入必须白名单校验，防止原型污染（__proto__ 注入）
+- [目录边界] 工作区文件树与 Home 目录项目选择必须拆成两个接口，不能共用一套 root 校验（安全语义不同）
 
 ## 规范与教训
-- [主题规范] 禁止硬编码颜色值（`bg-[#hex]`、`text-amber-500` 等），必须用 shadcn 主题变量（暗色模式会失效）
-- [透明度] 用 `/95`、`/80`、`/20` 后缀（如 `bg-popover/95`），不用 `bg-white/[0.x]` 语法
-- [布局模式] 工作台采用三段式 flex 布局：Header(shrink-0) + MessageArea(flex-1) + Composer(shrink-0)
+- [主题规范] 禁止硬编码颜色值，必须用 shadcn 主题变量（暗色模式会失效）
+- [透明度] 用 `/95`、`/80`、`/20` 后缀，不用 `bg-white/[0.x]` 语法
 - [双Agent检查] 检查阶段两个 agent 必须互不可见结果，避免自查盲区
-- [构建问题] 项目有遗留类型错误（vue-router 依赖、未使用变量），修改前先确认构建状态
+- [P0修复] 审查发现的严重问题（安全/命名冲突）必须立即修复，不拖到下次迭代

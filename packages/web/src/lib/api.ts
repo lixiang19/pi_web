@@ -1,6 +1,9 @@
 import type {
   AgentSummary,
+  DirectoryBrowseResponse,
   FileTreeResponse,
+  ProjectItem,
+  ProjectsResponse,
   ProvidersResponse,
   ResourceCatalogResponse,
   SendMessagePayload,
@@ -159,4 +162,33 @@ export function getFileTree(path?: string, root?: string) {
   return request<FileTreeResponse>(
     `/api/files/tree${params.size > 0 ? `?${params.toString()}` : ""}`,
   );
+}
+
+export function browseFilesystem(path?: string) {
+  const params = new URLSearchParams();
+
+  if (path) {
+    params.set("path", path);
+  }
+
+  return request<DirectoryBrowseResponse>(
+    `/api/filesystem/browse${params.size > 0 ? `?${params.toString()}` : ""}`,
+  );
+}
+
+export function getProjects() {
+  return request<ProjectsResponse>("/api/projects");
+}
+
+export function addProject(path: string) {
+  return request<ProjectItem>("/api/projects", {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
+}
+
+export function deleteProject(id: string) {
+  return request<{ ok: true }>(`/api/projects/${id}`, {
+    method: "DELETE",
+  });
 }

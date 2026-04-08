@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import WorkbenchChatHeader from "@/components/workbench/chat/WorkbenchChatHeader.vue";
 import WorkbenchComposer from "@/components/workbench/chat/WorkbenchComposer.vue";
 import WorkbenchMessageStream from "@/components/workbench/chat/WorkbenchMessageStream.vue";
 import type {
@@ -56,27 +55,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div
-    class="flex h-full flex-col overflow-hidden bg-background"
-  >
-    <WorkbenchChatHeader
-      :agents="agents"
-      :auto-model-value="autoModelValue"
-      :auto-thinking-value="autoThinkingValue"
-      :composer="composer"
-      :current-session-title="currentSessionTitle"
-      :is-draft-session="isDraftSession"
-      :model-options="modelOptions"
-      :no-agent-value="noAgentValue"
-      :parent-session-id="parentSessionId"
-      :project-label="projectLabel"
-      :thinking-options="thinkingOptions"
-      @return-to-parent="emit('returnToParent')"
-      @select-agent="emit('selectAgent', $event)"
-      @select-model="emit('selectModel', $event)"
-      @select-thinking="emit('selectThinking', $event)"
-    />
-
+  <div class="flex h-full flex-col overflow-hidden bg-background">
     <WorkbenchMessageStream
       :active-draft-parent-session-id="activeDraftParentSessionId"
       :active-session-id="activeSessionId"
@@ -89,17 +68,29 @@ const emit = defineEmits<{
     />
 
     <WorkbenchComposer
+      :agents="agents"
+      :auto-model-value="autoModelValue"
+      :auto-thinking-value="autoThinkingValue"
       :commands="commands"
+      :composer="composer"
       :has-visible-resources="hasVisibleResources"
       :is-resource-picker-visible="isResourcePickerVisible"
       :is-sending="isSending"
+      :model-options="modelOptions"
+      :no-agent-value="noAgentValue"
+      :parent-session-id="parentSessionId"
+      :project-label="projectLabel"
       :prompts="prompts"
       :resource-error="resourceError"
       :skills="skills"
+      :thinking-options="thinkingOptions"
       :value="composer.draftText"
       @apply-prompt="emit('applyPrompt', $event)"
       @inject-command="emit('injectCommand', $event)"
       @inject-skill="emit('injectSkill', $event)"
+      @select-agent="emit('selectAgent', $event)"
+      @select-model="emit('selectModel', $event)"
+      @select-thinking="emit('selectThinking', $event)"
       @submit="emit('submit')"
       @toggle-resource-picker="emit('toggleResourcePicker')"
       @update:value="emit('update:draftText', $event)"

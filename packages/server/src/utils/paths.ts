@@ -1,0 +1,36 @@
+import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs/promises';
+
+const DATA_DIR_NAME = '.ridge';
+
+export const getDataDir = (): string => {
+  const homeDir = os.homedir();
+  return path.join(homeDir, DATA_DIR_NAME);
+};
+
+export const getStorageDir = async (): Promise<string> => {
+  const dataDir = getDataDir();
+  await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  return dataDir;
+};
+
+export const getSettingsPath = async (): Promise<string> => {
+  const storageDir = await getStorageDir();
+  return path.join(storageDir, 'settings.json');
+};
+
+export const getFavoritesPath = async (): Promise<string> => {
+  const storageDir = await getStorageDir();
+  return path.join(storageDir, 'favorites.json');
+};
+
+export const getProjectsPath = async (): Promise<string> => {
+  const storageDir = await getStorageDir();
+  return path.join(storageDir, 'projects.json');
+};
+
+export const getVersionsPath = async (): Promise<string> => {
+  const storageDir = await getStorageDir();
+  return path.join(storageDir, 'versions.json');
+};

@@ -2,7 +2,7 @@
 import { FolderKanban } from "lucide-vue-next";
 
 import WorkspaceFileTree from "@/components/WorkspaceFileTree.vue";
-import { Badge } from "@/components/ui/badge";
+
 
 defineProps<{
   projectLabel: string;

@@ -1,9 +1,11 @@
-import path from "node:path";
-import fs from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import { fileURLToPath } from 'node:url';
+import type { ServerResponse } from 'node:http';
 
-import express from "express";
-import cors from "cors";
+import express, { type Request, type Response, type NextFunction, type RequestHandler } from 'express';
+import cors from 'cors';
 import {
   AuthStorage,
   DefaultResourceLoader,
@@ -11,10 +13,11 @@ import {
   SessionManager,
   SettingsManager,
   createAgentSession,
-} from "@mariozechner/pi-coding-agent";
-import { z } from "zod";
+} from '@mariozechner/pi-coding-agent';
+import { z } from 'zod';
+import type { AgentSession, MessageContent, SessionEvent, ModelInfo } from '@mariozechner/pi-coding-agent';
 
-import { createProjectContextResolver } from "./project-context.js";
+import { createProjectContextResolver } from './project-context.js';
 import {
   deleteAgent,
   discoverAgents,
@@ -23,31 +26,59 @@ import {
   THINKING_LEVELS,
   normalizeThinkingLevel,
   saveAgent,
-} from "./agents.js";
+  type AgentConfigInternal,
+} from './agents.js';
 import {
   compileAgentPermission,
   createPermissionGateExtension,
-} from "./agent-permissions.js";
-import { createSessionMetadataStore } from "./session-metadata.js";
+} from './agent-permissions.js';
+import { createSessionMetadataStore } from './session-metadata.js';
+import {
+  getSettings,
+  setSettings,
+  getFavorites,
+  addFavorite,
+  removeFavorite,
+  getProjects,
+  addProject,
+  removeProject,
+} from './storage/index.js';
+import type {
+  SessionRecord,
+  SessionMetadata,
+  SessionSummary,
+  SessionSnapshot,
+  FileTreeEntry,
+  FileTreeResult,
+  FilesystemBrowseResult,
+  AgentSummary,
+  ProviderInfo,
+  ProvidersResponse,
+  ResourceCatalogResponse,
+  ThinkingLevel,
+  HttpError,
+  Project,
+  AgentPermission,
+} from './types/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, "../../..");
+const rootDir = path.resolve(__dirname, '../../..');
 const defaultWorkspaceDir = process.env.PI_WORKSPACE_DIR
   ? path.resolve(process.env.PI_WORKSPACE_DIR)
   : rootDir;
-const port = Number.parseInt(process.env.PORT || "3000", 10);
+const port = Number.parseInt(process.env.PORT || '3000', 10);
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: '2mb' }));
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
-const activeSessions = new Map();
-const projectContextResolver =
-  createProjectContextResolver(defaultWorkspaceDir);
+const activeSessions = new Map<string, SessionRecord>();
+const projectContextResolver = createProjectContextResolver(defaultWorkspaceDir);
 const sessionMetadataStore = createSessionMetadataStore(defaultWorkspaceDir);
 
+// ===== Zod Schemas =====
 const createSessionSchema = z.object({
   cwd: z.string().optional(),
   title: z.string().optional(),
@@ -78,7 +109,7 @@ const updateSessionSchema = z
       payload.thinkingLevel !== undefined ||
       payload.agent !== undefined,
     {
-      message: "至少要更新 title、model、thinkingLevel 或 agent 之一",
+      message: '至少要更新 title、model、thinkingLevel 或 agent 之一',
     },
   );
 
@@ -96,22 +127,22 @@ const agentUpsertSchema = z
     name: z.string().optional(),
     description: z.string().optional(),
     display_name: z.string().nullable().optional(),
-    mode: z.enum(["primary", "task", "all"]).optional(),
+    mode: z.enum(['primary', 'task', 'all']).optional(),
     model: z.string().nullable().optional(),
     thinking: z
-      .enum(["off", "minimal", "low", "medium", "high", "xhigh"])
+      .enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
       .nullable()
       .optional(),
     steps: z.number().int().min(1).nullable().optional(),
     enabled: z.boolean().optional(),
     permission: z.record(z.string(), z.any()).optional(),
     prompt: z.string().optional(),
-    scope: z.enum(["user", "project"]).optional(),
+    scope: z.enum(['user', 'project']).optional(),
   })
   .strict();
 
 const agentScopeQuerySchema = z.object({
-  scope: z.enum(["user", "project"]).optional(),
+  scope: z.enum(['user', 'project']).optional(),
   cwd: z.string().optional(),
 });
 
@@ -124,42 +155,51 @@ const fileTreeQuerySchema = z.object({
   path: z.string().optional(),
 });
 
+const filesystemBrowseQuerySchema = z.object({
+  path: z.string().optional(),
+});
+
+const createProjectSchema = z.object({
+  path: z.string().min(1),
+});
+
+// ===== Constants =====
 const ignoredDirectoryNames = new Set([
-  ".git",
-  "node_modules",
-  "dist",
-  "build",
-  "target",
-  ".next",
-  ".turbo",
-  "coverage",
-  ".pi-web",
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'target',
+  '.next',
+  '.turbo',
+  'coverage',
+  '.pi-web',
 ]);
 
 const DEFAULT_SESSION_MESSAGE_LIMIT = 80;
 const MAX_SESSION_MESSAGE_LIMIT = 400;
 
-const normalizeString = (value) => {
-  if (typeof value !== "string") {
-    return "";
+// ===== Utility Functions =====
+const normalizeString = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return '';
   }
-
   return value.trim();
 };
 
-const normalizeFsPath = (value) =>
+const normalizeFsPath = (value: unknown): string =>
   path.resolve(normalizeString(value) || defaultWorkspaceDir);
 
-const ensureWithinRoot = (candidatePath, rootPath) => {
+const ensureWithinRoot = (candidatePath: string, rootPath: string): string => {
   const relative = path.relative(rootPath, candidatePath);
-  if (relative === "") {
+  if (relative === '') {
     return candidatePath;
   }
 
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     const error = new Error(
-      "Requested path is outside the allowed workspace root",
-    );
+      'Requested path is outside the allowed workspace root',
+    ) as HttpError;
     error.statusCode = 400;
     throw error;
   }
@@ -167,12 +207,12 @@ const ensureWithinRoot = (candidatePath, rootPath) => {
   return candidatePath;
 };
 
-const toPosixPath = (value) => value.split(path.sep).join("/");
+const toPosixPath = (value: string): string => value.split(path.sep).join('/');
 
-const getFallbackTitle = (firstMessage) =>
-  normalizeString(firstMessage).slice(0, 48) || "新会话";
+const getFallbackTitle = (firstMessage: unknown): string =>
+  normalizeString(firstMessage).slice(0, 48) || '新会话';
 
-const closeClients = (record) => {
+const closeClients = (record: SessionRecord): void => {
   for (const client of record.clients) {
     try {
       client.end();
@@ -183,93 +223,169 @@ const closeClients = (record) => {
   record.clients.clear();
 };
 
-const listDirectoryEntries = async (directoryPath, rootPath) => {
+const listDirectoryEntries = async (
+  directoryPath: string,
+  rootPath: string,
+): Promise<FileTreeEntry[]> => {
   const dirents = await fs.readdir(directoryPath, { withFileTypes: true });
   const entries = dirents
     .filter(
-      (entry) => entry.name !== "." && !ignoredDirectoryNames.has(entry.name),
+      (entry) => entry.name !== '.' && !ignoredDirectoryNames.has(entry.name),
     )
     .map((entry) => {
       const entryPath = path.join(directoryPath, entry.name);
       return {
         name: entry.name,
         path: toPosixPath(entryPath),
-        kind: entry.isDirectory() ? "directory" : "file",
-        relativePath: toPosixPath(path.relative(rootPath, entryPath)) || ".",
+        kind: entry.isDirectory() ? ('directory' as const) : ('file' as const),
+        relativePath: toPosixPath(path.relative(rootPath, entryPath)) || '.',
       };
     })
     .sort((left, right) => {
       if (left.kind !== right.kind) {
-        return left.kind === "directory" ? -1 : 1;
+        return left.kind === 'directory' ? -1 : 1;
       }
-
       return left.name.localeCompare(right.name);
     });
 
   return entries;
 };
 
-const isPathInAllowedRoots = (candidatePath, allowedRoots) =>
+const serializeProject = (project: Project): Project => ({
+  ...project,
+  path: toPosixPath(path.resolve(project.path)),
+});
+
+const isPathInAllowedRoots = (candidatePath: string, allowedRoots: string[]): boolean =>
   allowedRoots.some((rootPath) => {
     const relative = path.relative(rootPath, candidatePath);
     return (
-      relative === "" ||
-      (!relative.startsWith("..") && !path.isAbsolute(relative))
+      relative === '' ||
+      (!relative.startsWith('..') && !path.isAbsolute(relative))
     );
   });
 
-const normalizeContent = (content) => {
-  if (typeof content === "string") {
-    return [{ type: "text", text: content }];
+interface ContentBlock {
+  type: 'text' | 'thinking' | 'toolCall' | 'toolResult' | 'unknown';
+  text?: string;
+  thinking?: string;
+  id?: string;
+  name?: string;
+  arguments?: Record<string, unknown>;
+  result?: unknown;
+}
+
+const normalizeContent = (content: unknown): ContentBlock[] => {
+  if (typeof content === 'string') {
+    return [{ type: 'text', text: content }];
   }
 
   if (!Array.isArray(content)) {
     return [];
   }
 
-  return content.map((item) => {
-    if (!item || typeof item !== "object") {
-      return { type: "unknown" };
+  return content.map((item): ContentBlock => {
+    if (!item || typeof item !== 'object') {
+      return { type: 'unknown', text: '' };
     }
-
-    if (item.type === "text") {
+    const typedItem = item as Record<string, unknown>;
+    if (typedItem.type === 'text') {
       return {
-        type: "text",
-        text: typeof item.text === "string" ? item.text : "",
+        type: 'text',
+        text: typeof typedItem.text === 'string' ? typedItem.text : '',
       };
     }
 
     return {
-      type: item.type || "unknown",
-      text: typeof item.text === "string" ? item.text : "",
+      type: 'unknown',
+      text: typeof typedItem.text === 'string' ? typedItem.text : '',
     };
   });
 };
 
-const contentToText = (content) =>
+const contentToText = (content: unknown): string =>
   normalizeContent(content)
-    .filter((item) => item.type === "text")
-    .map((item) => item.text || "")
-    .join("");
+    .filter((item) => item.type === 'text')
+    .map((item) => item.text || '')
+    .join('');
 
-const serializeMessage = (message, index) => {
-  const role = normalizeString(message?.role) || "system";
-  const text = contentToText(message?.content);
+const extractContentBlocks = (content: unknown): ContentBlock[] => {
+  if (typeof content === 'string') {
+    return [{ type: 'text', text: content }];
+  }
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content.map((item) => {
+    if (!item || typeof item !== 'object') {
+      return { type: 'text', text: '' };
+    }
+    const typedItem = item as Record<string, unknown>;
+    switch (typedItem.type) {
+      case 'text':
+        return {
+          type: 'text',
+          text: typeof typedItem.text === 'string' ? typedItem.text : '',
+        };
+      case 'thinking':
+        return {
+          type: 'thinking',
+          thinking: typeof typedItem.thinking === 'string' ? typedItem.thinking : '',
+        };
+      case 'toolCall':
+        return {
+          type: 'toolCall',
+          id: typeof typedItem.id === 'string' ? typedItem.id : '',
+          name: typeof typedItem.name === 'string' ? typedItem.name : 'unknown',
+          arguments:
+            typeof typedItem.arguments === 'object' && typedItem.arguments
+              ? (typedItem.arguments as Record<string, unknown>)
+              : {},
+        };
+      case 'toolResult':
+        return {
+          type: 'toolResult',
+          id: typeof typedItem.id === 'string' ? typedItem.id : '',
+          name: typeof typedItem.name === 'string' ? typedItem.name : 'unknown',
+          result: typedItem.result,
+        };
+      default:
+        return { type: 'text', text: typeof typedItem.text === 'string' ? typedItem.text : '' };
+    }
+  });
+};
+
+interface SerializedMessage {
+  id: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  text: string;
+  contentBlocks: ContentBlock[];
+  createdAt: number;
+}
+
+const serializeMessage = (message: { role?: string; content?: unknown; timestamp?: number }, index: number): SerializedMessage => {
+  const role = normalizeString(message?.role) || 'system';
+  const contentBlocks = extractContentBlocks(message?.content);
+  const text = contentBlocks
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
   return {
     id: `${index}-${message?.timestamp || Date.now()}`,
-    role: role === "toolResult" ? "tool" : role,
+    role: role === 'toolResult' ? 'tool' : (role as 'system' | 'user' | 'assistant' | 'tool'),
     text,
+    contentBlocks,
     createdAt:
-      typeof message?.timestamp === "number" ? message.timestamp : Date.now(),
+      typeof message?.timestamp === 'number' ? message.timestamp : Date.now(),
   };
 };
 
-const getAvailableModels = () => {
+const getAvailableModels = (): ModelInfo[] => {
   modelRegistry.refresh();
   return [...modelRegistry.getAvailable()];
 };
 
-const findModel = (modelSpec) => {
+const findModel = (modelSpec: string | undefined | null): ModelInfo | null => {
   const normalized = normalizeString(modelSpec);
   if (!normalized) {
     return null;
@@ -282,32 +398,42 @@ const findModel = (modelSpec) => {
   );
 };
 
-const formatModelSpec = (model) => {
+const formatModelSpec = (model: ModelInfo | null | undefined): string | undefined => {
   if (!model?.provider || !model?.id) {
     return undefined;
   }
-
   return `${model.provider}/${model.id}`;
 };
 
-const toSourceInfo = (sourceInfo) => {
-  if (!sourceInfo) {
+interface SourceInfoOut {
+  path: string;
+  source: string;
+  scope: string;
+  origin?: string;
+  baseDir?: string;
+}
+
+const toSourceInfo = (sourceInfo: unknown): SourceInfoOut | undefined => {
+  if (!sourceInfo || typeof sourceInfo !== 'object') {
     return undefined;
   }
-
-  return {
-    path: toPosixPath(path.resolve(sourceInfo.path)),
-    source: sourceInfo.source,
-    scope: sourceInfo.scope,
-    origin: sourceInfo.origin,
-    ...(sourceInfo.baseDir
-      ? { baseDir: toPosixPath(path.resolve(sourceInfo.baseDir)) }
-      : {}),
+  const typed = sourceInfo as Record<string, unknown>;
+  const result: SourceInfoOut = {
+    path: toPosixPath(path.resolve(String(typed.path))),
+    source: String(typed.source),
+    scope: String(typed.scope),
   };
+  if (typed.origin) {
+    result.origin = String(typed.origin);
+  }
+  if (typed.baseDir) {
+    result.baseDir = toPosixPath(path.resolve(String(typed.baseDir)));
+  }
+  return result;
 };
 
-const listProviders = () => {
-  const grouped = new Map();
+const listProviders = (): ProvidersResponse => {
+  const grouped = new Map<string, ProviderInfo>();
 
   for (const model of getAvailableModels()) {
     if (!grouped.has(model.provider)) {
@@ -317,12 +443,12 @@ const listProviders = () => {
           .split(/[-_/]+/)
           .filter(Boolean)
           .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-          .join(" "),
+          .join(' '),
         models: {},
       });
     }
 
-    grouped.get(model.provider).models[model.id] = {
+    grouped.get(model.provider)!.models[model.id] = {
       id: model.id,
       name: model.name || model.id,
       reasoning: model.reasoning === true,
@@ -341,7 +467,7 @@ const listProviders = () => {
   };
 };
 
-const createAgentSummary = (agent) => ({
+const createAgentSummary = (agent: AgentConfigInternal): AgentSummary => ({
   name: agent.name,
   description: agent.description,
   displayName: agent.displayName,
@@ -353,11 +479,11 @@ const createAgentSummary = (agent) => ({
   source: toPosixPath(path.resolve(agent.source)),
 });
 
-const createSessionResourceLoader = (record) =>
+const createSessionResourceLoader = (record: SessionRecord) =>
   new DefaultResourceLoader({
     cwd: record.cwd,
     settingsManager: record.settingsManager,
-    appendSystemPromptOverride: (base) => {
+    appendSystemPromptOverride: (base: string[]) => {
       const sections = [...base];
       const systemPrompt = normalizeString(
         record.selectedAgentConfig?.systemPrompt,
@@ -365,7 +491,6 @@ const createSessionResourceLoader = (record) =>
       if (systemPrompt) {
         sections.push(systemPrompt);
       }
-
       return sections;
     },
     extensionFactories: [
@@ -373,21 +498,22 @@ const createSessionResourceLoader = (record) =>
     ],
   });
 
-const isPrimarySessionAgent = (agent) => agent && agent.mode !== "task";
+const isPrimarySessionAgent = (agent: AgentConfigInternal | null | undefined): boolean =>
+  Boolean(agent && agent.mode !== 'task');
 
-const ensurePrimaryAgentOrThrow = (agentName, agent) => {
+const ensurePrimaryAgentOrThrow = (agentName: string | null | undefined, agent: AgentConfigInternal | null | undefined): AgentConfigInternal | null => {
   if (!agentName) {
     return null;
   }
 
   if (!agent) {
-    const error = new Error(`Agent 不存在: ${agentName}`);
+    const error = new Error(`Agent 不存在: ${agentName}`) as HttpError;
     error.statusCode = 404;
     throw error;
   }
 
   if (!isPrimarySessionAgent(agent)) {
-    const error = new Error(`Agent ${agentName} 仅允许 task 模式调用`);
+    const error = new Error(`Agent ${agentName} 仅允许 task 模式调用`) as HttpError;
     error.statusCode = 400;
     throw error;
   }
@@ -395,14 +521,22 @@ const ensurePrimaryAgentOrThrow = (agentName, agent) => {
   return agent;
 };
 
-const applySessionAgentSelection = async (record, selection = {}) => {
-  const selectedAgentName = normalizeString(selection.agentName) || "";
+interface SessionSelectionInput {
+  agentName?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel | null;
+}
+
+const applySessionAgentSelection = async (
+  record: SessionRecord,
+  selection: SessionSelectionInput,
+): Promise<void> => {
+  const selectedAgentName = normalizeString(selection.agentName) || '';
+  const agents = await discoverAgents(record.cwd);
   const agent = selectedAgentName
     ? ensurePrimaryAgentOrThrow(
         selectedAgentName,
-        (await discoverAgents(record.cwd)).find(
-          (item) => item.name === selectedAgentName,
-        ),
+        agents.find((item) => item.name === selectedAgentName),
       )
     : null;
 
@@ -410,11 +544,11 @@ const applySessionAgentSelection = async (record, selection = {}) => {
   const shouldReload = nextSignature !== record.selectedAgentSignature;
 
   record.selectedAgentName = agent?.name || undefined;
-  record.selectedAgentConfig = agent;
+  record.selectedAgentConfig = agent || null;
   record.selectedAgentSignature = nextSignature;
   record.selectedPermissionPolicy = compileAgentPermission(
     record.cwd,
-    agent?.permission,
+    agent?.permission as AgentPermission | undefined,
     record.defaultToolNames,
   );
   if (shouldReload || record.turnBudget.maxTurns !== agent?.steps) {
@@ -443,7 +577,7 @@ const applySessionAgentSelection = async (record, selection = {}) => {
     nextExplicitModel &&
     !findModel(nextExplicitModel)
   ) {
-    const error = new Error(`模型不存在: ${nextExplicitModel}`);
+    const error = new Error(`模型不存在: ${nextExplicitModel}`) as HttpError;
     error.statusCode = 400;
     throw error;
   }
@@ -470,7 +604,7 @@ const applySessionAgentSelection = async (record, selection = {}) => {
     selection.thinkingLevel !== null &&
     !nextExplicitThinking
   ) {
-    const error = new Error(`thinkingLevel 非法: ${selection.thinkingLevel}`);
+    const error = new Error(`thinkingLevel 非法: ${selection.thinkingLevel}`) as HttpError;
     error.statusCode = 400;
     throw error;
   }
@@ -493,7 +627,7 @@ const applySessionAgentSelection = async (record, selection = {}) => {
   });
 };
 
-const restoreSessionSelection = async (record) => {
+const restoreSessionSelection = async (record: SessionRecord): Promise<void> => {
   const metadata = await sessionMetadataStore.getSessionMetadata(record.id);
   const selectedAgentName = normalizeString(metadata.agent);
   const explicitModelSpec = normalizeString(metadata.model) || undefined;
@@ -519,24 +653,24 @@ const restoreSessionSelection = async (record) => {
   }
 };
 
-const emit = (record, payload) => {
+const emit = (record: SessionRecord, payload: unknown): void => {
   const data = `data: ${JSON.stringify(payload)}\n\n`;
   for (const client of record.clients) {
     client.write(data);
   }
 };
 
-const updateStatus = (record, nextStatus) => {
+const updateStatus = (record: SessionRecord, nextStatus: SessionRecord['status']): void => {
   record.status = nextStatus;
   record.updatedAt = Date.now();
-  emit(record, { type: "status", status: nextStatus });
+  emit(record, { type: 'status', status: nextStatus });
 };
 
-const attachSession = (record) => {
-  record.unsubscribe = record.session.subscribe((event) => {
+const attachSession = (record: SessionRecord): void => {
+  record.unsubscribe = record.session.subscribe((event: SessionEvent) => {
     record.updatedAt = Date.now();
 
-    if (event.type === "turn_start" && record.turnBudget.maxTurns) {
+    if (event.type === 'turn_start' && record.turnBudget.maxTurns) {
       if (record.turnBudget.usedTurns >= record.turnBudget.maxTurns) {
         record.turnBudget.exhausted = true;
         void record.session.abort();
@@ -544,22 +678,22 @@ const attachSession = (record) => {
     }
 
     if (
-      event.type === "agent_start" ||
-      event.type === "message_start" ||
-      event.type === "message_update"
+      event.type === 'agent_start' ||
+      event.type === 'message_start' ||
+      event.type === 'message_update'
     ) {
-      updateStatus(record, "streaming");
+      updateStatus(record, 'streaming');
     }
 
     if (
-      event.type === "message_end" ||
-      event.type === "agent_end" ||
-      event.type === "turn_end"
+      event.type === 'message_end' ||
+      event.type === 'agent_end' ||
+      event.type === 'turn_end'
     ) {
-      updateStatus(record, "idle");
+      updateStatus(record, 'idle');
     }
 
-    if (event.type === "turn_end" && record.turnBudget.maxTurns) {
+    if (event.type === 'turn_end' && record.turnBudget.maxTurns) {
       record.turnBudget.usedTurns += 1;
       if (record.turnBudget.usedTurns >= record.turnBudget.maxTurns) {
         record.turnBudget.exhausted = true;
@@ -567,8 +701,8 @@ const attachSession = (record) => {
     }
 
     if (
-      event.type === "message_end" &&
-      normalizeString(event?.message?.role) === "assistant"
+      event.type === 'message_end' &&
+      normalizeString(event?.message?.role) === 'assistant'
     ) {
       record.updatedAt = Date.now();
     }
@@ -585,7 +719,7 @@ const attachSession = (record) => {
         ? {
             type: event.assistantMessageEvent.type,
             delta:
-              typeof event.assistantMessageEvent.delta === "string"
+              typeof event.assistantMessageEvent.delta === 'string'
                 ? event.assistantMessageEvent.delta
                 : null,
           }
@@ -594,6 +728,15 @@ const attachSession = (record) => {
   });
 };
 
+interface CreateActiveSessionRecordParams {
+  stateRef?: Partial<SessionRecord>;
+  session: AgentSession;
+  settingsManager: SettingsManager;
+  resourceLoader: DefaultResourceLoader;
+  createdAt: number;
+  updatedAt: number;
+}
+
 const createActiveSessionRecord = ({
   stateRef,
   session,
@@ -601,60 +744,67 @@ const createActiveSessionRecord = ({
   resourceLoader,
   createdAt,
   updatedAt,
-}) => {
-  const record = Object.assign(stateRef || {}, {
+}: CreateActiveSessionRecordParams): SessionRecord => {
+  const record: SessionRecord = Object.assign(stateRef || {}, {
     id: session.sessionId,
     sessionFile: session.sessionFile,
-    parentSessionPath: undefined,
+    parentSessionPath: undefined as string | undefined,
     cwd: session.sessionManager.getCwd(),
-    status: "idle",
+    status: 'idle' as const,
     createdAt,
     updatedAt,
     session,
     settingsManager,
     resourceLoader,
-    unsubscribe: null,
-    clients: new Set(),
+    unsubscribe: null as (() => void) | null,
+    clients: new Set<ServerResponse>(),
     defaultToolNames: [...session.getActiveToolNames()],
-    selectedAgentName: undefined,
-    selectedAgentConfig: null,
-    selectedAgentSignature: "",
-    explicitModelSpec: undefined,
-    explicitThinkingLevel: undefined,
+    selectedAgentName: undefined as string | undefined,
+    selectedAgentConfig: null as AgentConfigInternal | null,
+    selectedAgentSignature: '',
+    explicitModelSpec: undefined as string | undefined,
+    explicitThinkingLevel: undefined as ThinkingLevel | undefined,
     resolvedModelSpec: formatModelSpec(session.model),
     resolvedThinkingLevel: normalizeThinkingLevel(session.thinkingLevel),
-    selectedPermissionPolicy: null,
+    selectedPermissionPolicy: null as ReturnType<typeof compileAgentPermission> | null,
     turnBudget: {
-      maxTurns: undefined,
+      maxTurns: undefined as number | undefined,
       usedTurns: 0,
       exhausted: false,
     },
-  });
+  }) as SessionRecord;
 
   attachSession(record);
   activeSessions.set(record.id, record);
   return record;
 };
 
+interface CreateSessionRecordParams {
+  cwd: string;
+  title?: string;
+  model?: string;
+  parentSessionPath?: string;
+}
+
 const createSessionRecord = async ({
   cwd,
   title,
   model,
   parentSessionPath,
-}) => {
+}: CreateSessionRecordParams): Promise<SessionRecord> => {
   const sessionManager = SessionManager.create(cwd);
   if (parentSessionPath) {
     sessionManager.newSession({ parentSession: parentSessionPath });
   }
 
   const settingsManager = SettingsManager.create(cwd);
-  const recordState = {
+  const recordState: Partial<SessionRecord> = {
     cwd,
     settingsManager,
     selectedAgentConfig: null,
     selectedPermissionPolicy: null,
   };
-  const resourceLoader = createSessionResourceLoader(recordState);
+  const resourceLoader = createSessionResourceLoader(recordState as SessionRecord);
   await resourceLoader.reload();
   const { session } = await createAgentSession({
     cwd,
@@ -665,7 +815,7 @@ const createSessionRecord = async ({
     resourceLoader,
   });
 
-  const chosenModel = findModel(model);
+  const chosenModel = findModel(model || '');
   if (chosenModel) {
     await session.setModel(chosenModel);
   }
@@ -689,35 +839,35 @@ const createSessionRecord = async ({
   return record;
 };
 
-const destroySessionRecord = (record) => {
+const destroySessionRecord = (record: SessionRecord): void => {
   record.unsubscribe?.();
   closeClients(record);
   activeSessions.delete(record.id);
 };
 
-const persistSessionFileIfNeeded = async (record) => {
+const persistSessionFileIfNeeded = async (record: SessionRecord): Promise<void> => {
   if (
     !record.sessionFile ||
-    record.session.messages.some((message) => message.role === "assistant")
+    record.session.messages.some((message) => message.role === 'assistant')
   ) {
     return;
   }
 
   const sessionManager = record.session.sessionManager;
-  if (typeof sessionManager._rewriteFile !== "function") {
+  if (typeof (sessionManager as { _rewriteFile?(): void })._rewriteFile !== 'function') {
     return;
   }
 
   await fs.mkdir(path.dirname(record.sessionFile), { recursive: true });
-  sessionManager._rewriteFile();
+  (sessionManager as { _rewriteFile(): void })._rewriteFile();
   sessionManager.flushed = true;
 };
 
-const persistSessionRecordMetadata = async (record) => {
+const persistSessionRecordMetadata = async (record: SessionRecord): Promise<void> => {
   await persistSessionFileIfNeeded(record);
   await sessionMetadataStore.upsertSession({
     id: record.id,
-    title: normalizeString(record.session.sessionName) || "新会话",
+    title: normalizeString(record.session.sessionName) || '新会话',
     cwd: normalizeFsPath(record.cwd || defaultWorkspaceDir),
     sessionFile: path.resolve(record.sessionFile),
     parentSessionPath: record.parentSessionPath,
@@ -729,14 +879,42 @@ const persistSessionRecordMetadata = async (record) => {
   });
 };
 
-const listWorkspaceSessions = async () => {
+interface SessionRegistryItem {
+  info: {
+    id: string;
+    name: string;
+    cwd: string;
+    path: string;
+    created: Date;
+    modified: Date;
+    firstMessage?: unknown;
+    parentSessionPath?: string;
+  };
+  cwd: string;
+  projectContext: Awaited<ReturnType<ReturnType<typeof createProjectContextResolver>['resolveContext']>>;
+  metadata: {
+    archived: boolean;
+    agent?: string;
+    model?: string;
+    thinkingLevel?: ThinkingLevel;
+  };
+  parentSessionId?: string;
+}
+
+interface SessionRegistry {
+  infosById: Map<string, SessionRegistryItem>;
+  childrenById: Map<string, string[]>;
+  items: SessionRegistryItem[];
+}
+
+const listWorkspaceSessions = async (): Promise<SessionRegistry> => {
   const [workspaceScope, allSessions, metadataState] = await Promise.all([
     projectContextResolver.resolveWorkspaceScope(),
     SessionManager.listAll(),
     sessionMetadataStore.load(),
   ]);
 
-  const enriched = [];
+  const enriched: SessionRegistryItem[] = [];
   for (const info of allSessions) {
     const cwd = normalizeFsPath(info.cwd || defaultWorkspaceDir);
     const projectContext = await projectContextResolver.resolveContext(cwd);
@@ -749,7 +927,16 @@ const listWorkspaceSessions = async () => {
     }
 
     enriched.push({
-      info,
+      info: {
+        id: info.id,
+        name: info.name,
+        cwd,
+        path: info.path,
+        created: info.created,
+        modified: info.modified,
+        firstMessage: info.firstMessage,
+        parentSessionPath: info.parentSessionPath,
+      },
       cwd,
       projectContext,
       metadata: {
@@ -803,7 +990,7 @@ const listWorkspaceSessions = async () => {
     enriched.push({
       info: {
         id: sessionId,
-        name: metadata.title,
+        name: metadata.title || '',
         cwd,
         path: sessionFile,
         created: new Date(createdAt),
@@ -841,7 +1028,7 @@ const listWorkspaceSessions = async () => {
     enriched.push({
       info: {
         id: record.id,
-        name: record.session.sessionName,
+        name: record.session.sessionName || '',
         cwd,
         path: record.sessionFile,
         created: new Date(record.createdAt),
@@ -875,7 +1062,7 @@ const listWorkspaceSessions = async () => {
   const idByPath = new Map(
     enriched.map((item) => [path.resolve(item.info.path), item.info.id]),
   );
-  const childrenById = new Map();
+  const childrenById = new Map<string, string[]>();
 
   for (const item of enriched) {
     const parentId = item.info.parentSessionPath
@@ -898,7 +1085,7 @@ const listWorkspaceSessions = async () => {
   };
 };
 
-const toSessionSummary = (item) => {
+const toSessionSummary = (item: SessionRegistryItem): SessionSummary => {
   const activeRecord = activeSessions.get(item.info.id);
   const title =
     normalizeString(activeRecord?.session.sessionName) ||
@@ -909,7 +1096,7 @@ const toSessionSummary = (item) => {
     id: item.info.id,
     title,
     cwd: item.cwd,
-    status: activeRecord?.status || "idle",
+    status: activeRecord?.status || 'idle',
     createdAt: item.info.created.getTime(),
     updatedAt: Math.max(
       item.info.modified.getTime(),
@@ -934,14 +1121,22 @@ const toSessionSummary = (item) => {
   };
 };
 
-const toSessionSnapshot = async (record, sessionRegistry, options = {}) => {
+interface ToSessionSnapshotOptions {
+  limit?: number;
+}
+
+const toSessionSnapshot = async (
+  record: SessionRecord,
+  sessionRegistry: SessionRegistry | null,
+  options: ToSessionSnapshotOptions = {},
+): Promise<SessionSnapshot> => {
   const registry = sessionRegistry ?? (await listWorkspaceSessions());
   const item = registry.infosById.get(record.id);
   const summary = item
     ? toSessionSummary(item)
     : {
         id: record.id,
-        title: normalizeString(record.session.sessionName) || "新会话",
+        title: normalizeString(record.session.sessionName) || '新会话',
         cwd: record.cwd,
         status: record.status,
         createdAt: record.createdAt,
@@ -952,12 +1147,12 @@ const toSessionSnapshot = async (record, sessionRegistry, options = {}) => {
         thinkingLevel: record.explicitThinkingLevel,
         resolvedModel: record.resolvedModelSpec,
         resolvedThinkingLevel: record.resolvedThinkingLevel,
-        sessionFile: toPosixPath(record.sessionFile || ""),
-        parentSessionId: undefined,
+        sessionFile: toPosixPath(record.sessionFile || ''),
+        parentSessionId: undefined as string | undefined,
         projectId: record.cwd,
         projectRoot: toPosixPath(record.cwd),
         projectLabel: path.basename(record.cwd) || record.cwd,
-        branch: undefined,
+        branch: undefined as string | undefined,
         worktreeRoot: toPosixPath(record.cwd),
         worktreeLabel: path.basename(record.cwd) || record.cwd,
       };
@@ -965,7 +1160,7 @@ const toSessionSnapshot = async (record, sessionRegistry, options = {}) => {
   const allMessages = record.session.messages;
   const totalCount = allMessages.length;
   const requestedLimit = Number.isInteger(options.limit)
-    ? Math.max(1, Math.min(options.limit, MAX_SESSION_MESSAGE_LIMIT))
+    ? Math.max(1, Math.min(options.limit!, MAX_SESSION_MESSAGE_LIMIT))
     : DEFAULT_SESSION_MESSAGE_LIMIT;
   const effectiveLimit =
     totalCount > 0 ? Math.min(totalCount, requestedLimit) : requestedLimit;
@@ -986,7 +1181,10 @@ const toSessionSnapshot = async (record, sessionRegistry, options = {}) => {
   };
 };
 
-const buildResourceCatalog = (session, resourceLoader) => {
+const buildResourceCatalog = (
+  session: AgentSession,
+  resourceLoader: DefaultResourceLoader,
+): ResourceCatalogResponse => {
   const { prompts, diagnostics: promptDiagnostics } =
     resourceLoader.getPrompts();
   const { skills, diagnostics: skillDiagnostics } = resourceLoader.getSkills();
@@ -1009,7 +1207,7 @@ const buildResourceCatalog = (session, resourceLoader) => {
     commands: commands.map((command) => ({
       name: command.invocationName || command.name,
       description: command.description,
-      source: "extension",
+      source: 'extension',
       sourceInfo: toSourceInfo(command.sourceInfo),
     })),
     diagnostics: {
@@ -1020,7 +1218,7 @@ const buildResourceCatalog = (session, resourceLoader) => {
   };
 };
 
-const createTransientCatalogSession = async (cwd) => {
+const createTransientCatalogSession = async (cwd: string) => {
   const settingsManager = SettingsManager.create(cwd);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
@@ -1043,11 +1241,14 @@ const createTransientCatalogSession = async (cwd) => {
   };
 };
 
-const getSessionInfoOrThrow = async (sessionId, sessionRegistry) => {
+const getSessionInfoOrThrow = async (
+  sessionId: string,
+  sessionRegistry?: SessionRegistry | null,
+): Promise<SessionRegistryItem> => {
   const registry = sessionRegistry ?? (await listWorkspaceSessions());
   const item = registry.infosById.get(sessionId);
   if (!item) {
-    const error = new Error("Session not found");
+    const error = new Error('Session not found') as HttpError;
     error.statusCode = 404;
     throw error;
   }
@@ -1055,7 +1256,10 @@ const getSessionInfoOrThrow = async (sessionId, sessionRegistry) => {
   return item;
 };
 
-const ensureSessionRecord = async (sessionId, sessionRegistry) => {
+const ensureSessionRecord = async (
+  sessionId: string,
+  sessionRegistry?: SessionRegistry | null,
+): Promise<SessionRecord> => {
   const existing = activeSessions.get(sessionId);
   if (existing) {
     return existing;
@@ -1064,13 +1268,13 @@ const ensureSessionRecord = async (sessionId, sessionRegistry) => {
   const item = await getSessionInfoOrThrow(sessionId, sessionRegistry);
   const sessionManager = SessionManager.open(item.info.path);
   const settingsManager = SettingsManager.create(item.cwd);
-  const recordState = {
+  const recordState: Partial<SessionRecord> = {
     cwd: item.cwd,
     settingsManager,
     selectedAgentConfig: null,
     selectedPermissionPolicy: null,
   };
-  const resourceLoader = createSessionResourceLoader(recordState);
+  const resourceLoader = createSessionResourceLoader(recordState as SessionRecord);
   await resourceLoader.reload();
   const { session } = await createAgentSession({
     cwd: item.cwd,
@@ -1093,12 +1297,12 @@ const ensureSessionRecord = async (sessionId, sessionRegistry) => {
   return record;
 };
 
-const collectDescendantIds = (sessionId, childrenById) => {
+const collectDescendantIds = (sessionId: string, childrenById: Map<string, string[]>): string[] => {
   const collected = new Set([sessionId]);
   const queue = [sessionId];
 
   while (queue.length > 0) {
-    const current = queue.shift();
+    const current = queue.shift()!;
     const children = childrenById.get(current) ?? [];
     for (const childId of children) {
       if (collected.has(childId)) {
@@ -1113,36 +1317,38 @@ const collectDescendantIds = (sessionId, childrenById) => {
   return [...collected];
 };
 
-app.get("/health", (_req, res) => {
+// ===== Routes =====
+
+app.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-app.get("/api/system/info", (_req, res) => {
+app.get('/api/system/info', (_req: Request, res: Response) => {
   res.json({
-    appName: "Pi Web",
+    appName: 'Pi Web',
     workspaceDir: defaultWorkspaceDir,
     apiBase: `http://127.0.0.1:${port}`,
-    sdkVersion: "0.65.2",
+    sdkVersion: '0.65.2',
   });
 });
 
-app.get("/api/providers", (_req, res) => {
+app.get('/api/providers', (_req: Request, res: Response) => {
   res.json(listProviders());
 });
 
-app.get("/api/agents", async (req, res, next) => {
+app.get('/api/agents', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cwd = normalizeString(req.query?.cwd) || defaultWorkspaceDir;
     const agents = await discoverAgents(cwd);
     res.json(
-      agents.filter((agent) => agent.mode !== "task").map(createAgentSummary),
+      agents.filter((agent) => agent.mode !== 'task').map(createAgentSummary),
     );
   } catch (error) {
     next(error);
   }
 });
 
-app.get("/api/resources", async (req, res, next) => {
+app.get('/api/resources', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = resourceCatalogQuerySchema.parse(req.query ?? {});
 
@@ -1167,13 +1373,14 @@ app.get("/api/resources", async (req, res, next) => {
   }
 });
 
-app.get("/api/config/agents/:name", async (req, res, next) => {
+app.get('/api/config/agents/:name', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = agentScopeQuerySchema.parse(req.query ?? {});
     const cwd = normalizeString(query.cwd) || defaultWorkspaceDir;
-    const agent = await getAgentByName(cwd, req.params.name, query.scope);
+    const agentName = String(req.params.name);
+    const agent = await getAgentByName(cwd, agentName, query.scope);
     if (!agent) {
-      const error = new Error(`Agent 不存在: ${req.params.name}`);
+      const error = new Error(`Agent 不存在: ${agentName}`) as HttpError;
       error.statusCode = 404;
       throw error;
     }
@@ -1197,11 +1404,12 @@ app.get("/api/config/agents/:name", async (req, res, next) => {
   }
 });
 
-app.post("/api/config/agents/:name", async (req, res, next) => {
+app.post('/api/config/agents/:name', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = agentUpsertSchema.parse(req.body ?? {});
     const cwd = normalizeString(req.query?.cwd) || defaultWorkspaceDir;
-    const agent = await saveAgent(cwd, req.params.name, payload, {
+    const agentName = String(req.params.name);
+    const agent = await saveAgent(cwd, agentName, payload, {
       allowCreate: true,
       requireScope: true,
     });
@@ -1225,11 +1433,12 @@ app.post("/api/config/agents/:name", async (req, res, next) => {
   }
 });
 
-app.put("/api/config/agents/:name", async (req, res, next) => {
+app.put('/api/config/agents/:name', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = agentUpsertSchema.parse(req.body ?? {});
     const cwd = normalizeString(req.query?.cwd) || defaultWorkspaceDir;
-    const agent = await saveAgent(cwd, req.params.name, payload, {
+    const agentName = String(req.params.name);
+    const agent = await saveAgent(cwd, agentName, payload, {
       allowCreate: false,
       requireScope: false,
     });
@@ -1253,24 +1462,25 @@ app.put("/api/config/agents/:name", async (req, res, next) => {
   }
 });
 
-app.delete("/api/config/agents/:name", async (req, res, next) => {
+app.delete('/api/config/agents/:name', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = agentScopeQuerySchema.parse(req.query ?? {});
     if (!query.scope) {
-      const error = new Error("删除 agent 时必须显式指定 scope");
+      const error = new Error('删除 agent 时必须显式指定 scope') as HttpError;
       error.statusCode = 400;
       throw error;
     }
 
     const cwd = normalizeString(query.cwd) || defaultWorkspaceDir;
-    const filePath = await deleteAgent(cwd, req.params.name, query.scope);
+    const agentName = String(req.params.name);
+    const filePath = await deleteAgent(cwd, agentName, query.scope);
     res.json({ ok: true, filePath: toPosixPath(path.resolve(filePath)) });
   } catch (error) {
     next(error);
   }
 });
 
-app.get("/api/files/tree", async (req, res, next) => {
+app.get('/api/files/tree', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = fileTreeQuerySchema.parse(req.query ?? {});
     const rootPath = normalizeFsPath(query.root || defaultWorkspaceDir);
@@ -1279,8 +1489,8 @@ app.get("/api/files/tree", async (req, res, next) => {
 
     if (!isPathInAllowedRoots(rootPath, workspaceScope.allowedRoots)) {
       const error = new Error(
-        "Requested root is outside the allowed workspace scope",
-      );
+        'Requested root is outside the allowed workspace scope',
+      ) as HttpError;
       error.statusCode = 400;
       throw error;
     }
@@ -1289,7 +1499,7 @@ app.get("/api/files/tree", async (req, res, next) => {
 
     const stats = await fs.stat(targetPath);
     if (!stats.isDirectory()) {
-      const error = new Error("Requested path is not a directory");
+      const error = new Error('Requested path is not a directory') as HttpError;
       error.statusCode = 400;
       throw error;
     }
@@ -1306,7 +1516,85 @@ app.get("/api/files/tree", async (req, res, next) => {
   }
 });
 
-app.get("/api/sessions", async (_req, res, next) => {
+app.get('/api/filesystem/browse', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = filesystemBrowseQuerySchema.parse(req.query ?? {});
+    const homeDir = path.resolve(os.homedir());
+    const targetPath = normalizeFsPath(query.path || homeDir);
+
+    ensureWithinRoot(targetPath, homeDir);
+
+    const stats = await fs.stat(targetPath);
+    if (!stats.isDirectory()) {
+      const error = new Error('Requested path is not a directory') as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const entries = (await listDirectoryEntries(targetPath, homeDir)).filter(
+      (entry) => entry.kind === 'directory',
+    );
+
+    res.json({
+      homeDir: toPosixPath(homeDir),
+      path: toPosixPath(targetPath),
+      parent:
+        targetPath === homeDir
+          ? null
+          : toPosixPath(path.dirname(targetPath)),
+      entries,
+    } as FilesystemBrowseResult);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/projects', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const state = await getProjects();
+    res.json({
+      projects: state.projects
+        .map(serializeProject)
+        .sort((left, right) => (right.addedAt as number) - (left.addedAt as number)),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/projects', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = createProjectSchema.parse(req.body ?? {});
+    const homeDir = path.resolve(os.homedir());
+    const projectPath = normalizeFsPath(payload.path);
+
+    ensureWithinRoot(projectPath, homeDir);
+
+    const stats = await fs.stat(projectPath);
+    if (!stats.isDirectory()) {
+      const error = new Error('Project path must be a directory') as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const project = await addProject(projectPath);
+    res.json(serializeProject(project));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/projects/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const projectId = String(req.params.id);
+    await removeProject(projectId);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/sessions', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const sessionRegistry = await listWorkspaceSessions();
     const summaries = sessionRegistry.items
@@ -1315,7 +1603,6 @@ app.get("/api/sessions", async (_req, res, next) => {
         if (left.archived !== right.archived) {
           return left.archived ? 1 : -1;
         }
-
         return right.updatedAt - left.updatedAt;
       });
 
@@ -1325,12 +1612,12 @@ app.get("/api/sessions", async (_req, res, next) => {
   }
 });
 
-app.get("/api/sessions/:sessionId", async (req, res, next) => {
+app.get('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
     const sessionRegistry = await listWorkspaceSessions();
     const record = await ensureSessionRecord(
-      req.params.sessionId,
+      String(req.params.sessionId),
       sessionRegistry,
     );
     res.json(await toSessionSnapshot(record, sessionRegistry, query));
@@ -1339,27 +1626,27 @@ app.get("/api/sessions/:sessionId", async (req, res, next) => {
   }
 });
 
-app.get("/api/sessions/:sessionId/stream", async (req, res, next) => {
+app.get('/api/sessions/:sessionId/stream', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
     const sessionRegistry = await listWorkspaceSessions();
     const record = await ensureSessionRecord(
-      req.params.sessionId,
+      String(req.params.sessionId),
       sessionRegistry,
     );
 
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
     record.clients.add(res);
     emit(record, {
-      type: "snapshot",
+      type: 'snapshot',
       session: await toSessionSnapshot(record, sessionRegistry, query),
     });
 
-    req.on("close", () => {
+    req.on('close', () => {
       record.clients.delete(res);
     });
   } catch (error) {
@@ -1367,7 +1654,7 @@ app.get("/api/sessions/:sessionId/stream", async (req, res, next) => {
   }
 });
 
-app.post("/api/sessions", async (req, res, next) => {
+app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = createSessionSchema.parse(req.body ?? {});
     const parentSession = payload.parentSessionId
@@ -1383,24 +1670,24 @@ app.post("/api/sessions", async (req, res, next) => {
       parentSessionPath: parentSession?.info.path,
     });
     await applySessionAgentSelection(record, {
-      agentName: payload.agent,
+      agentName: payload.agent || undefined,
       model: payload.model,
       thinkingLevel: payload.thinkingLevel,
     });
     await persistSessionRecordMetadata(record);
     const sessionRegistry = await listWorkspaceSessions();
-    res.status(201).json(await toSessionSnapshot(record, sessionRegistry));
+    res.status(201).json(await toSessionSnapshot(record, sessionRegistry, {}));
   } catch (error) {
     next(error);
   }
 });
 
-app.patch("/api/sessions/:sessionId", async (req, res, next) => {
+app.patch('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = updateSessionSchema.parse(req.body ?? {});
     const sessionRegistry = await listWorkspaceSessions();
     const record = await ensureSessionRecord(
-      req.params.sessionId,
+      String(req.params.sessionId),
       sessionRegistry,
     );
 
@@ -1416,9 +1703,9 @@ app.patch("/api/sessions/:sessionId", async (req, res, next) => {
       await applySessionAgentSelection(record, {
         agentName:
           payload.agent !== undefined
-            ? payload.agent
+            ? (payload.agent || undefined)
             : record.selectedAgentName,
-        model: payload.model,
+        model: payload.model || undefined,
         thinkingLevel: payload.thinkingLevel,
       });
     }
@@ -1426,18 +1713,18 @@ app.patch("/api/sessions/:sessionId", async (req, res, next) => {
     record.updatedAt = Date.now();
     await persistSessionRecordMetadata(record);
 
-    res.json(await toSessionSnapshot(record, await listWorkspaceSessions()));
+    res.json(await toSessionSnapshot(record, await listWorkspaceSessions(), {}));
   } catch (error) {
     next(error);
   }
 });
 
-app.post("/api/sessions/:sessionId/archive", async (req, res, next) => {
+app.post('/api/sessions/:sessionId/archive', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = archiveSessionSchema.parse(req.body ?? {});
     const sessionRegistry = await listWorkspaceSessions();
     const sessionIds = collectDescendantIds(
-      req.params.sessionId,
+      String(req.params.sessionId),
       sessionRegistry.childrenById,
     );
 
@@ -1449,11 +1736,11 @@ app.post("/api/sessions/:sessionId/archive", async (req, res, next) => {
   }
 });
 
-app.delete("/api/sessions/:sessionId", async (req, res, next) => {
+app.delete('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const sessionRegistry = await listWorkspaceSessions();
     const sessionIds = collectDescendantIds(
-      req.params.sessionId,
+      String(req.params.sessionId),
       sessionRegistry.childrenById,
     );
 
@@ -1479,39 +1766,39 @@ app.delete("/api/sessions/:sessionId", async (req, res, next) => {
   }
 });
 
-app.post("/api/sessions/:sessionId/messages", async (req, res, next) => {
+app.post('/api/sessions/:sessionId/messages', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = messageSchema.parse(req.body ?? {});
     const sessionRegistry = await listWorkspaceSessions();
     const record = await ensureSessionRecord(
-      req.params.sessionId,
+      String(req.params.sessionId),
       sessionRegistry,
     );
 
     if (record.turnBudget.exhausted) {
       const error = new Error(
-        "当前 agent 的 steps 已耗尽，请重新选择 agent 或新建会话",
-      );
+        '当前 agent 的 steps 已耗尽，请重新选择 agent 或新建会话',
+      ) as HttpError;
       error.statusCode = 400;
       throw error;
     }
 
     await applySessionAgentSelection(record, {
       agentName:
-        payload.agent !== undefined ? payload.agent : record.selectedAgentName,
-      model: payload.model,
+        payload.agent !== undefined ? (payload.agent || undefined) : record.selectedAgentName,
+      model: payload.model || undefined,
       thinkingLevel: payload.thinkingLevel,
     });
     await persistSessionRecordMetadata(record);
 
-    updateStatus(record, "streaming");
+    updateStatus(record, 'streaming');
 
     void record.session
-      .prompt(payload.prompt, { source: "interactive" })
-      .catch((error) => {
-        record.status = "error";
+      .prompt(payload.prompt, { source: 'interactive' })
+      .catch((error: unknown) => {
+        record.status = 'error';
         emit(record, {
-          type: "error",
+          type: 'error',
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -1522,26 +1809,80 @@ app.post("/api/sessions/:sessionId/messages", async (req, res, next) => {
   }
 });
 
-app.post("/api/sessions/:sessionId/abort", async (req, res, next) => {
+app.post('/api/sessions/:sessionId/abort', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const record = await ensureSessionRecord(req.params.sessionId);
+    const record = await ensureSessionRecord(String(req.params.sessionId));
     await record.session.abort();
-    updateStatus(record, "idle");
+    updateStatus(record, 'idle');
     res.json({ ok: true });
   } catch (error) {
     next(error);
   }
 });
 
-app.use((error, _req, res, _next) => {
-  const statusCode = Number.isInteger(error?.statusCode)
-    ? error.statusCode
-    : 500;
-  const message =
-    error instanceof Error ? error.message : "Unknown server error";
-  res.status(statusCode).send(message);
+app.get('/api/storage/settings', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const settings = await getSettings();
+    res.json(settings);
+  } catch (error) {
+    next(error);
+  }
 });
 
+app.post('/api/storage/settings', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const settings = await setSettings(req.body ?? {});
+    res.json(settings);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/storage/favorites', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const favorites = await getFavorites();
+    res.json(favorites);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/storage/favorites', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id, name, type, data } = req.body ?? {};
+    if (!id || !name || !type) {
+      const error = new Error('Missing required fields: id, name, type') as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+    const favorites = await addFavorite({ id, name, type, data });
+    res.json(favorites);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/storage/favorites/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const favoriteId = String(req.params.id);
+    const favorites = await removeFavorite(favoriteId);
+    res.json(favorites);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===== Error Handler =====
+app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const statusCode = Number.isInteger((error as HttpError)?.statusCode)
+    ? (error as HttpError).statusCode
+    : 500;
+  const message =
+    error instanceof Error ? error.message : 'Unknown server error';
+  res.status(statusCode as number).send(message);
+});
+
+// ===== Start Server =====
 app.listen(port, () => {
   console.log(`Pi server listening on http://127.0.0.1:${port}`);
 });

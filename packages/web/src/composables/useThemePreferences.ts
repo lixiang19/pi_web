@@ -1,16 +1,19 @@
-import { computed, ref } from "vue";
-
+import { computed, ref, watchEffect } from "vue";
+import { storeToRefs } from "pinia";
 import { themeOptions, type ThemeName } from "@/assets/registry";
-import {
-  applyThemePreference,
-  getResolvedThemePreference,
-  type ThemeMode,
-} from "@/lib/theme";
+import { useSettingsStore, type ThemeMode } from "@/stores/settings";
+import { applyTheme } from "@/lib/theme";
 
 export function useThemePreferences() {
-  const initialPreference = getResolvedThemePreference();
-  const themeName = ref<ThemeName>(initialPreference.themeName);
-  const mode = ref<ThemeMode>(initialPreference.mode);
+  const settingsStore = useSettingsStore();
+  const { theme, resolvedThemeMode, isLoaded } = storeToRefs(settingsStore);
+
+  const mode = computed<Exclude<ThemeMode, "system">>({
+    get: () => resolvedThemeMode.value,
+    set: (value) => settingsStore.setTheme(value),
+  });
+
+  const themeName = ref<ThemeName>("default");
 
   const currentPreference = computed(() => ({
     themeName: themeName.value,
@@ -18,7 +21,7 @@ export function useThemePreferences() {
   }));
 
   const applyCurrentPreference = () => {
-    applyThemePreference(currentPreference.value);
+    applyTheme(themeName.value, mode.value);
   };
 
   const setTheme = (nextThemeName: ThemeName) => {
@@ -26,8 +29,8 @@ export function useThemePreferences() {
     applyCurrentPreference();
   };
 
-  const setMode = (nextMode: ThemeMode) => {
-    mode.value = nextMode;
+  const setMode = (nextMode: Exclude<ThemeMode, "system">) => {
+    settingsStore.setTheme(nextMode);
     applyCurrentPreference();
   };
 
@@ -37,13 +40,20 @@ export function useThemePreferences() {
       themeOptions[0],
   );
 
+  watchEffect(() => {
+    if (isLoaded.value) {
+      applyCurrentPreference();
+    }
+  });
+
   return {
     currentPreference,
     currentThemeOption,
     mode,
+    theme: themeName,
     setMode,
     setTheme,
-    themeName,
     themeOptions,
+    isLoaded,
   };
 }

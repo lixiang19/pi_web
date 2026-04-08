@@ -10,6 +10,16 @@
 5. 文档文件夹下的md文档是最重要的
 # 前端架构
 - 文件不能太大，积极拆分文件、拆分组件
+# 核心约束
+✅ Tauri只打包 - 不做任何功能开发
+✅ Node当服务层 - 提供API和持久化
+✅ 界面纯前端 - 文件选择用Web原生方式
+
+# 品牌与数据
+- **品牌名**：ridge
+- **数据目录**：`~/.ridge/` - 用户数据存储位置
+
+
 # 开发
 - 参考/Users/admin/Documents/GitHub/openchamber 不断的从此项目中取功能灵感。但是具体代码和样式不要抄
 - 多使用网络搜索和git搜索@mariozechner/pi-coding-agent

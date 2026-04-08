@@ -20,48 +20,35 @@ const formatMessageTime = (timestamp: number) =>
     :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
   >
     <div
-      class="relative max-w-[90%] md:max-w-[85%] px-1"
+      class="relative max-w-[92%] md:max-w-[80%]"
       :class="message.role === 'user' ? 'items-end' : 'items-start'"
     >
       <div
-        class="mb-1.5 flex items-center gap-2 px-1 text-[9px] font-black uppercase tracking-[0.2em] text-stone-500"
+        class="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"
       >
-        <div 
-          v-if="message.role !== 'user'"
-          class="size-1.5 rounded-full"
-          :class="message.role === 'assistant' ? 'bg-amber-500' : 'bg-sky-500'"
-        />
-        <span>{{
-          message.role === "user"
-            ? "COMMANDER"
-            : message.role === "assistant"
-              ? "CHAMBER_CORE"
-              : "SYSTEM_PROCESS"
-        }}</span>
-        <span class="opacity-30">/</span>
-        <span>{{ formatMessageTime(message.createdAt) }}</span>
+        <span class="font-medium">{{ formatMessageTime(message.createdAt) }}</span>
       </div>
 
       <div
-        class="rounded-[24px] border px-5 py-4 shadow-2xl transition-all duration-300"
+        class="rounded-2xl px-4 py-3.5 transition-all duration-200"
         :class="
           message.role === 'user'
-            ? 'border-amber-500/20 bg-amber-500/[0.03] text-stone-100'
+            ? 'bg-primary/10 text-foreground'
             : message.role === 'assistant'
-              ? 'border-white/5 bg-white/[0.02] text-stone-200'
-              : 'border-sky-500/20 bg-sky-500/[0.03] text-sky-100 font-mono text-xs'
+              ? 'bg-muted text-foreground'
+              : 'bg-accent text-accent-foreground font-mono text-xs'
         "
       >
         <div class="space-y-4">
           <template v-for="(block, index) in message.contentBlocks" :key="index">
             <p
               v-if="block.type === 'text' && block.text"
-              class="whitespace-pre-wrap break-words text-[15px] leading-relaxed tracking-tight"
+              class="whitespace-pre-wrap break-words text-[15px] leading-7"
             >
               {{ block.text }}
             </p>
 
-            <div v-else-if="block.type === 'image'" class="relative group/img overflow-hidden rounded-2xl border border-white/10">
+            <div v-else-if="block.type === 'image'" class="relative group/img overflow-hidden rounded-2xl border-border">
               <img
                 :src="`data:${block.mimeType};base64,${block.data}`"
                 class="max-w-full transition-transform duration-500 group-hover/img:scale-105"
@@ -90,11 +77,11 @@ const formatMessageTime = (timestamp: number) =>
           class="flex items-center gap-3 py-2"
         >
           <div class="flex gap-1">
-            <span class="size-1 bg-amber-500 animate-[bounce_1s_infinite_0ms]" />
-            <span class="size-1 bg-amber-500 animate-[bounce_1s_infinite_200ms]" />
-            <span class="size-1 bg-amber-500 animate-[bounce_1s_infinite_400ms]" />
+            <span class="size-1 bg-primary animate-[bounce_1s_infinite_0ms]" />
+            <span class="size-1 bg-primary animate-[bounce_1s_infinite_200ms]" />
+            <span class="size-1 bg-primary animate-[bounce_1s_infinite_400ms]" />
           </div>
-          <span class="text-[10px] font-bold uppercase tracking-widest text-amber-500/50">Processing Stream...</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Processing Stream...</span>
         </div>
       </div>
     </div>

@@ -274,6 +274,24 @@ export interface FileTreeResponse {
   entries: FileTreeEntry[];
 }
 
+export interface DirectoryBrowseResponse {
+  homeDir: string;
+  path: string;
+  parent: string | null;
+  entries: FileTreeEntry[];
+}
+
+export interface ProjectItem {
+  id: string;
+  name: string;
+  path: string;
+  addedAt: number;
+}
+
+export interface ProjectsResponse {
+  projects: ProjectItem[];
+}
+
 export interface SessionMutationResponse {
   ok: true;
   sessionIds: string[];

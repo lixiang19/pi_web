@@ -14,8 +14,9 @@
 - 负责在前端把消息、草稿和加载生命周期按 `sessionId` 分桶缓存，并通过邻近会话预取减少会话切换时的整份重新拉取。
 - 负责通过限窗快照和前端扩窗机制控制长会话历史加载，避免中间区默认渲染整份消息历史。
 - 负责在 Web 入口完成主题 token 注册、默认主题注入与明暗模式根节点切换，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量。
-- 负责把主题选择持久化到浏览器本地存储，保证刷新后仍能恢复用户上次选中的主题与明暗模式。
+- 负责把用户级设置、收藏和自定义项目统一持久化到 ~/.ridge/ 下的服务端 JSON 文件，而不是在 Web 层散落 localStorage。
 - 负责限制文件树访问边界，只允许浏览当前工作区及同仓库 worktree 范围内的目录。
+- 负责把“工作区文件树浏览”和“用户 Home 目录项目选择”拆成两条独立后端边界，避免混淆安全语义。
 - 不负责桌面壳原生交互、PR 状态、分享链接、复杂工具执行面板，这些仍在后续迭代范围内。
 - 服务对象包括 Web 最终用户、Tauri 桌面壳中的前端运行时，以及本仓库的开发构建流程。
 
@@ -44,6 +45,8 @@
 | useWorkbenchResourcePicker.ts|
 | useWorkbenchPage.ts         |
 | useThemePreferences.ts      |
+| useProjects.ts              |
+| useDirectoryBrowser.ts      |
 | session-sidebar.ts          |
 | lib/theme.ts                |
 | assets/registry.ts          |
@@ -54,6 +57,7 @@
 | - resource catalog          |
 | - theme token normalize     |
 | - theme bootstrap           |
+| - project browse / CRUD     |
 | - project/group/tree build  |
 +--------------+--------------+
                |
@@ -67,15 +71,19 @@
 | - agent runtime apply       |
 | - archive/delete/rename     |
 | - file tree                 |
+| - filesystem browse         |
+| - settings/favorites/projects |
 +------+----------------------+
        |                      |
   v                      v
-+------------------+   +------------------+
-| 元数据与仓库上下文 |   | Pi SDK / 文件系统 |
-| session-metadata |   | SessionManager   |
-| project-context  |   | createAgentSession |
-| agents.js        |   | DefaultResourceLoader |
-| agent-permissions|   | tool_call hooks  |
++-----------------------+   +------------------+
+| 元数据/用户存储/仓库上下文 |   | Pi SDK / 文件系统 |
+| session-metadata       |   | SessionManager   |
+| storage/index.js       |   | createAgentSession |
+| utils/paths.js         |   | DefaultResourceLoader |
+| project-context        |   | tool_call hooks  |
+| agents.js              |   |                  |
+| agent-permissions      |   |                  |
 +------------------+   +------------------+
 ```
 
@@ -206,6 +214,21 @@ export interface ResourceCatalogResponse {
 - 由服务端 `GET /api/resources` 生产，`usePiChat` 拉取后交给 `useWorkbenchResourcePicker.ts` 与 `WorkbenchResourcePicker.vue` 渲染与注入输入区。
 - 依据：`packages/server/src/index.js`，`packages/web/src/lib/api.ts`，`packages/web/src/lib/types.ts`
 
+- 抽象名称：用户级项目记录
+
+```ts
+export interface ProjectItem {
+  id: string
+  name: string
+  path: string
+  addedAt: number
+}
+```
+
+- 这是 Sidebar 自定义项目区和“添加项目”Dialog 共享的核心用户对象，表示一个持久化保存的绝对路径入口，而不是会话树里的 project group。
+- 由服务端 `GET /api/projects` 生产，`useProjects.ts`、`ProjectSelectorDialog.vue` 和 `SessionSidebar.vue` 消费。
+- 依据：`packages/web/src/lib/types.ts`，`packages/web/src/composables/useProjects.ts`，`packages/server/src/storage/index.js`
+
 - 抽象名称：主题偏好状态
 
 ```ts
@@ -220,8 +243,8 @@ export const applyThemePreference = (preference: ThemePreference) => {
 }
 ```
 
-- 这是主题系统从“启动时注入默认主题”升级为“运行时可切换且可持久化”的核心抽象。
-- `lib/theme.ts` 负责读取/写入 localStorage 并驱动 DOM，`useThemePreferences.ts` 负责页面级交互状态，`ThemesPage.vue` 负责用户界面。
+- 这是主题系统从“启动时注入默认主题”升级为“运行时可切换且由服务端设置存储驱动”的核心抽象。
+- `lib/theme.ts` 负责把偏好应用到 DOM，`useThemePreferences.ts` 负责页面级交互状态，`stores/settings.ts` 负责通过服务端设置存储恢复和写回主题模式。
 - 依据：`packages/web/src/lib/theme.ts`，`packages/web/src/composables/useThemePreferences.ts`，`packages/web/src/pages/ThemesPage.vue`
 
 - 抽象名称：agent 资源定义与发现结果
@@ -402,8 +425,12 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
   - 为什么这么做：一旦工作台不再只是单页，背景、导航、页面标题和最大宽度容器就不该散落在多个页面里重复实现，应该由共享路由壳统一承担。
 
 - 模式名：主题偏好持久化
-  - 实现位置：`getResolvedThemePreference()`、`applyThemePreference()` 与 `useThemePreferences()`，位于 `packages/web/src/lib/theme.ts`、`packages/web/src/composables/useThemePreferences.ts`
-  - 为什么这么做：主题选择属于用户偏好，刷新后丢失会破坏平台一致性，因此必须在主题系统边界直接持久化，而不是在页面层临时保存。
+  - 实现位置：`stores/settings.ts`、`lib/theme.ts` 与 `useThemePreferences()`，位于 `packages/web/src/stores/settings.ts`、`packages/web/src/lib/theme.ts`、`packages/web/src/composables/useThemePreferences.ts`
+  - 为什么这么做：主题、收藏和项目入口都属于用户级偏好，必须统一收敛到服务端 JSON 存储层，否则 Web 层状态会分散且难以迁移。
+
+- 模式名：独立浏览边界
+  - 实现位置：`GET /api/files/tree` 与 `GET /api/filesystem/browse`，位于 `packages/server/src/index.js`
+  - 为什么这么做：工作区文件树和用户 Home 目录项目选择服务的是两种不同的安全域；复用同一个 root 校验会把工作区约束和用户目录浏览混成一条规则，后续很难维护。
 
 ## Flow
 
@@ -489,6 +516,22 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 
 - 和之前不同的是，`root` 现在允许同仓库 worktree 路径，不再局限于单一工作区目录。
 
+- 场景：添加自定义项目流程
+
+```text
+[1] SessionSidebar 点击“添加项目”
+  -> [2] ProjectSelectorDialog.vue 打开
+  -> [3] useDirectoryBrowser.load()
+  -> [4] GET /api/filesystem/browse?path=...
+  -> [5] 用户确认目录
+  -> [6] useProjects.add(path)
+  -> [7] POST /api/projects
+  -> [8] ~/.ridge/projects.json 落盘并回刷 Sidebar
+```
+
+- 第 4 步只允许浏览 Home 范围内的目录，不复用工作区文件树接口。
+- 第 8 步写入的是用户级项目入口列表，点击项目时才会进一步触发新会话草稿创建。
+
 - 场景：agent 发现与输入区选择流程
 
 ```text
@@ -569,6 +612,8 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 | packages/server/src/index.js | express | 暴露 REST 与 SSE 服务 |
 | packages/server/src/index.js | zod | 校验请求参数 |
 | packages/server/src/index.js | @mariozechner/pi-coding-agent | 列出、打开、创建并驱动 Pi session |
+| packages/server/src/storage/index.js | node:crypto | 生成稳定项目 ID |
+| packages/server/src/index.js | node:os | 计算 Home 目录边界与用户数据目录 |
 | packages/server/src/agents.js | @mariozechner/pi-coding-agent | 复用 `getAgentDir` 与 `parseFrontmatter` 发现 agent |
 | packages/server/src/index.js | @mariozechner/pi-coding-agent | 复用 `DefaultResourceLoader` 把 agent prompt 与 permission gate 注入 runtime |
 | packages/server/src/project-context.js | git CLI | 解析项目 root、branch 与 worktree |
@@ -588,7 +633,10 @@ main.ts
         -> pages/WorkbenchPage.vue
           -> components/workbench/WorkbenchHeader.vue
           -> components/chat/SessionSidebar.vue
+            -> components/chat/ProjectSelectorDialog.vue
             -> components/chat/SessionSidebarSessionNode.vue
+            -> composables/useProjects.ts
+            -> composables/useDirectoryBrowser.ts
             -> lib/session-sidebar.ts
           -> components/workbench/chat/WorkbenchChatPanel.vue
             -> components/workbench/chat/WorkbenchChatHeader.vue
@@ -626,6 +674,10 @@ pages/WorkbenchPage.vue
 
 packages/server/src/index.js
   -> project-context.js
+  -> storage/index.js
+    -> utils/paths.js
+    -> utils/fs.js
+    -> utils/lock.js
   -> agents.js
   -> agent-permissions.js
   -> session-metadata.js
@@ -643,6 +695,9 @@ packages/server/src/index.js
 | packages/web/package.json | Web 包目录 | 定义 Vue 前端依赖与构建命令 |
 | packages/server/package.json | Server 包目录 | 定义服务端依赖与运行入口 |
 | .pi-web/session-sidebar.json | 工作区根目录 | 持久化 session 归档状态与会话级 agent 选择 |
+| ~/.ridge/projects.json | 用户目录 | 持久化 Sidebar 自定义项目入口列表 |
+| ~/.ridge/settings.json | 用户目录 | 持久化主题等用户级设置 |
+| ~/.ridge/favorites.json | 用户目录 | 持久化文件树收藏等用户级偏好 |
 | ~/.pi/agent/agents | 用户目录 | 用户级 agent YAML/Prompt 资源目录 |
 | .pi/agents | 当前项目或最近上级目录 | 项目级 agent YAML/Prompt 资源目录，覆盖同名 user agent |
 
@@ -657,12 +712,12 @@ packages/server/src/index.js
 ```text
 用户点击左栏 / 输入消息
   -> PlatformShell / WorkbenchPage / SessionSidebar / WorkbenchChatPanel
-  -> useWorkbenchSessionState / useWorkbenchResourcePicker / usePiChat / session-sidebar 派生层
+  -> useWorkbenchSessionState / useWorkbenchResourcePicker / usePiChat / useProjects / useDirectoryBrowser / session-sidebar 派生层
   -> lib/api.ts HTTP + SSE
   -> Express 服务层
-  -> SessionManager / DefaultResourceLoader / agent registry / git / 文件系统 / 元数据存储
-  -> 增强摘要、agent 列表与消息流返回前端
-  -> 左栏树与消息区更新
+  -> SessionManager / DefaultResourceLoader / agent registry / git / 文件系统 / 元数据存储 / 用户级 JSON 存储
+  -> 增强摘要、agent 列表、项目入口与消息流返回前端
+  -> 左栏树、自定义项目区与消息区更新
 ```
 
 ## Key Files Reference
@@ -670,6 +725,8 @@ packages/server/src/index.js
 | File | Lines | Purpose |
 | --- | --- | --- |
 | packages/server/src/index.js | 1167 | 服务端会话桥接、agent runtime 注入、历史恢复、归档删除与文件树入口 |
+| packages/server/src/storage/index.js | 214 | 用户级设置、收藏和项目入口的统一 JSON 存储层 |
+| packages/server/src/utils/paths.js | 45 | 定义 ~/.ridge/ 下各类用户数据文件路径 |
 | packages/server/src/agents.js | 502 | agent 目录发现、frontmatter 解析、CRUD 与 YAML 序列化 |
 | packages/server/src/agent-permissions.js | 262 | agent permission 归一化、工具裁剪与编辑路径 gate |
 | packages/server/src/project-context.js | 166 | 解析项目/worktree 上下文与工作区访问范围 |
@@ -678,6 +735,8 @@ packages/server/src/index.js
 | packages/web/src/composables/useWorkbenchSessionState.ts | 187 | 工作台会话派生层，承接标题、目录根、下拉选择与会话跳转动作 |
 | packages/web/src/composables/useWorkbenchResourcePicker.ts | 139 | Slash 资源面板派生层，负责过滤、注入与资源目录刷新 |
 | packages/web/src/composables/useThemePreferences.ts | 48 | 主题页交互层，负责组合当前偏好并驱动主题切换 |
+| packages/web/src/composables/useProjects.ts | 78 | 自定义项目列表状态管理与 CRUD 编排 |
+| packages/web/src/composables/useDirectoryBrowser.ts | 86 | Home 目录浏览状态管理与面包屑派生 |
 | packages/web/src/composables/useWorkbenchPage.ts | 24 | 工作台组合层，只负责拼装会话派生与资源派生 composable |
 | packages/web/src/router/index.ts | 62 | Web 路由入口，声明共享页面壳、工作台与设置/主题/详情页 |
 | packages/web/src/layouts/PlatformShell.vue | 92 | 共享页面壳，提供背景、导航和路由级标题区域 |
@@ -686,6 +745,7 @@ packages/server/src/index.js
 | packages/web/src/pages/ThemesPage.vue | 123 | 主题页，负责切换主题 token 与明暗模式 |
 | packages/web/src/pages/SessionDetailPage.vue | 134 | 会话详情页，聚焦单个会话消息流与目录上下文 |
 | packages/web/src/components/chat/SessionSidebar.vue | 390 | 左侧会话栏主组件，管理搜索、折叠、pin、recent 与动作派发 |
+| packages/web/src/components/chat/ProjectSelectorDialog.vue | 151 | 添加项目 Dialog，负责目录浏览、确认和错误展示 |
 | packages/web/src/components/chat/SessionSidebarSessionNode.vue | 229 | 递归渲染父子会话树与节点操作 |
 | packages/web/src/components/workbench/chat/WorkbenchChatPanel.vue | 107 | 中间聊天区域总装配，组合头部、消息流与输入区 |
 | packages/web/src/components/workbench/chat/WorkbenchMessageStream.vue | 228 | 消息流滚动容器，管理回到底部与历史扩窗滚动锚点 |

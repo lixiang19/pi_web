@@ -10,7 +10,7 @@ import { computed, ref } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+
 
 const route = useRoute();
 
@@ -37,7 +37,7 @@ const navItems = [
   },
 ];
 
-const pageTitle = computed(() => String(route.meta["title"] || "Pi 工作台"));
+
 
 const isNavItemActive = (name: string) => route.name === name;
 const toggleSidebar = () => {

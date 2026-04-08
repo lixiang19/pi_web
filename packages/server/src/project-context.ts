@@ -1,25 +1,32 @@
-import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import type { ProjectContext, WorkspaceScope } from './types/index.js';
 
 const execFileAsync = promisify(execFile);
 
-const normalizePath = (value) => path.resolve(value);
+const normalizePath = (value: string): string => path.resolve(value);
 
-const isPathInsideRoot = (candidatePath, rootPath) => {
+const isPathInsideRoot = (candidatePath: string, rootPath: string): boolean => {
   const relative = path.relative(rootPath, candidatePath);
   return (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
+    relative === '' ||
+    (!relative.startsWith('..') && !path.isAbsolute(relative))
   );
 };
 
-const parseBranchName = (value) => value.replace(/^refs\/heads\//, "").trim();
+const parseBranchName = (value: string): string => value.replace(/^refs\/heads\//, '').trim();
 
-const parseWorktreeList = (content) => {
-  const items = [];
+interface GitWorktreeItem {
+  path: string;
+  branch?: string;
+  gitDir?: string;
+}
+
+const parseWorktreeList = (content: string): GitWorktreeItem[] => {
+  const items: GitWorktreeItem[] = [];
   const lines = content.split(/\r?\n/);
-  let current = null;
+  let current: GitWorktreeItem | null = null;
 
   for (const line of lines) {
     if (!line.trim()) {
@@ -30,13 +37,13 @@ const parseWorktreeList = (content) => {
       continue;
     }
 
-    if (line.startsWith("worktree ")) {
+    if (line.startsWith('worktree ')) {
       if (current) {
         items.push(current);
       }
 
       current = {
-        path: normalizePath(line.slice("worktree ".length).trim()),
+        path: normalizePath(line.slice('worktree '.length).trim()),
       };
       continue;
     }
@@ -45,8 +52,8 @@ const parseWorktreeList = (content) => {
       continue;
     }
 
-    if (line.startsWith("branch ")) {
-      current.branch = parseBranchName(line.slice("branch ".length));
+    if (line.startsWith('branch ')) {
+      current.branch = parseBranchName(line.slice('branch '.length));
     }
   }
 
@@ -57,38 +64,44 @@ const parseWorktreeList = (content) => {
   return items;
 };
 
-const getBasename = (value) => path.basename(value) || value;
+const getBasename = (value: string): string => path.basename(value) || value;
 
-const getContainingWorktree = (cwd, worktrees) =>
+const getContainingWorktree = (cwd: string, worktrees: GitWorktreeItem[]): GitWorktreeItem | undefined =>
   worktrees
     .filter((item) => isPathInsideRoot(cwd, item.path))
     .sort((left, right) => right.path.length - left.path.length)[0];
 
-async function runGit(cwd, args) {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, ...args]);
+async function runGit(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync('git', ['-C', cwd, ...args]);
   return stdout.trim();
 }
 
-export function createProjectContextResolver(workspaceDir) {
-  const contextCache = new Map();
-  let workspaceScopePromise = null;
+export interface ProjectContextResolver {
+  resolveContext(cwd: string): Promise<ProjectContext>;
+  resolveWorkspaceScope(): Promise<WorkspaceScope>;
+  isPathInsideRoot(candidatePath: string, rootPath: string): boolean;
+}
 
-  const resolveContext = async (cwd) => {
+export function createProjectContextResolver(workspaceDir: string): ProjectContextResolver {
+  const contextCache = new Map<string, Promise<ProjectContext>>();
+  let workspaceScopePromise: Promise<WorkspaceScope> | null = null;
+
+  const resolveContext = async (cwd: string): Promise<ProjectContext> => {
     const normalizedCwd = normalizePath(cwd || workspaceDir);
     if (contextCache.has(normalizedCwd)) {
-      return contextCache.get(normalizedCwd);
+      return contextCache.get(normalizedCwd)!;
     }
 
-    const pending = (async () => {
+    const pending = (async (): Promise<ProjectContext> => {
       try {
         const [topLevel, commonDir, worktreeOutput] = await Promise.all([
-          runGit(normalizedCwd, ["rev-parse", "--show-toplevel"]),
+          runGit(normalizedCwd, ['rev-parse', '--show-toplevel']),
           runGit(normalizedCwd, [
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-common-dir",
+            'rev-parse',
+            '--path-format=absolute',
+            '--git-common-dir',
           ]),
-          runGit(normalizedCwd, ["worktree", "list", "--porcelain"]),
+          runGit(normalizedCwd, ['worktree', 'list', '--porcelain']),
         ]);
 
         const worktrees = parseWorktreeList(worktreeOutput);
@@ -97,9 +110,9 @@ export function createProjectContextResolver(workspaceDir) {
             ...item,
             gitDir: normalizePath(
               await runGit(item.path, [
-                "rev-parse",
-                "--path-format=absolute",
-                "--git-dir",
+                'rev-parse',
+                '--path-format=absolute',
+                '--git-dir',
               ]),
             ),
           })),
@@ -158,7 +171,7 @@ export function createProjectContextResolver(workspaceDir) {
     return pending;
   };
 
-  const resolveWorkspaceScope = async () => {
+  const resolveWorkspaceScope = async (): Promise<WorkspaceScope> => {
     if (workspaceScopePromise) {
       return workspaceScopePromise;
     }

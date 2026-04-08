@@ -44,12 +44,12 @@ const activeMenuItem = computed(() =>
   menuItems.find((item) => item.id === activeMenuId.value)
 );
 
-const handleThemeChange = (value: string) => {
-  setTheme(value as ThemeName);
+const handleThemeChange = (value: string | null) => {
+  if (value) setTheme(value as ThemeName);
 };
 
-const handleModeChange = (value: string) => {
-  setMode(value as ThemeMode);
+const handleModeChange = (value: string | null) => {
+  if (value) setMode(value as ThemeMode);
 };
 </script>
 
