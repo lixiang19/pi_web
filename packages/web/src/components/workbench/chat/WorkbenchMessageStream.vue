@@ -162,44 +162,35 @@ onBeforeUnmount(() => {
 <template>
   <div class="relative flex-1 overflow-hidden">
     <ScrollArea ref="messageScrollArea" class="h-full">
-      <div class="mx-auto flex max-w-4xl flex-col gap-8 px-6 py-8 sm:px-12">
+      <div class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
         <div
           v-if="messages.length === 0"
-          class="flex min-h-[400px] flex-col items-center justify-center gap-6 text-center"
+          class="flex flex-col items-center justify-center gap-4 py-20 text-center"
         >
-          <div
-            class="animate-pulse rounded-full border border-amber-400/20 bg-amber-500/10 p-6 text-amber-200 shadow-[0_0_40px_rgba(245,158,11,0.1)]"
-          >
-            <Brain class="size-12" />
+          <div class="rounded-full border border-border p-4 text-muted-foreground">
+            <Brain class="size-8" />
           </div>
-          <div class="space-y-4">
-            <h3
-              class="text-3xl font-black uppercase tracking-tighter text-stone-50"
-            >
-              {{ isDraftSession ? "Chamber Online" : "No Archives" }}
+          <div class="space-y-1">
+            <h3 class="text-lg font-semibold text-foreground">
+              {{ isDraftSession ? "New Session" : "No Messages" }}
             </h3>
-            <p
-              class="mx-auto max-w-xs text-sm font-medium leading-relaxed text-stone-500"
-            >
-              Ready to execute. Start by describing your objective or trigger a
-              command with "/".
+            <p class="mx-auto max-w-xs text-sm text-muted-foreground">
+              Type a message to start the conversation, or use "/" for commands.
             </p>
           </div>
         </div>
-
         <template v-else>
-          <div v-if="hasMoreAbove" class="flex justify-center pb-8">
+          <div v-if="hasMoreAbove" class="flex justify-center pb-4">
             <Button
               variant="ghost"
               size="sm"
-              class="h-8 border border-white/5 bg-white/[0.02] text-[10px] font-bold uppercase tracking-widest text-stone-500 hover:text-stone-300"
+              class="h-7 text-xs"
               :disabled="isLoadingOlder"
               @click="loadEarlierMessages"
             >
-              {{ isLoadingOlder ? "Syncing..." : "Retrieve Earlier Data" }}
+              {{ isLoadingOlder ? "Loading..." : "Load earlier messages" }}
             </Button>
           </div>
-
           <ChatMessageItem
             v-for="message in messages"
             :key="message.id"
@@ -208,25 +199,25 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </ScrollArea>
-
     <transition
-      enter-active-class="transition duration-300 ease-out"
-      enter-from-class="translate-y-4 scale-90 opacity-0"
-      enter-to-class="translate-y-0 scale-100 opacity-100"
-      leave-active-class="transition duration-200 ease-in"
-      leave-from-class="translate-y-0 scale-100 opacity-100"
-      leave-to-class="translate-y-4 scale-90 opacity-0"
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="translate-y-2 opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-2 opacity-0"
     >
       <div
         v-if="showJumpToBottom"
-        class="absolute bottom-8 left-1/2 z-10 -translate-x-1/2"
+        class="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
       >
         <Button
           size="icon"
-          class="size-10 rounded-full border border-amber-400/20 bg-amber-500/10 text-amber-200 shadow-2xl backdrop-blur-md hover:bg-amber-500/20"
+          variant="outline"
+          class="size-8 rounded-full shadow-lg"
           @click="scrollToBottom()"
         >
-          <ArrowDown class="size-5" />
+          <ArrowDown class="size-4" />
         </Button>
       </div>
     </transition>

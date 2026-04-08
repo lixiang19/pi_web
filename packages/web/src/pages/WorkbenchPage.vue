@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import SessionSidebar from "@/components/chat/SessionSidebar.vue";
 import ProjectFilePanel from "@/components/workbench/ProjectFilePanel.vue";
-import WorkbenchHeader from "@/components/workbench/WorkbenchHeader.vue";
 import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
 import { useWorkbenchPage } from "@/composables/useWorkbenchPage";
 
@@ -23,13 +22,11 @@ const {
   filteredPrompts,
   filteredSkills,
   formatProjectLabel,
-  formatShortPath,
   handleAgentSelection,
   handleModelSelection,
   handleThinkingSelection,
   hasMoreAbove,
   hasVisibleResources,
-  info,
   injectCommand,
   injectSkill,
   isDraftSession,
@@ -46,10 +43,7 @@ const {
   resourceError,
   returnToParentSession,
   sessionSidebarProps,
-  sessions,
   status,
-  statusLabel,
-  statusTone,
   submit,
   thinkingOptions,
   toggleResourcePicker,

@@ -57,7 +57,7 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="flex h-full flex-col overflow-hidden rounded-[32px] border border-white/10 bg-black/35 backdrop-blur"
+    class="flex h-full flex-col overflow-hidden bg-background"
   >
     <WorkbenchChatHeader
       :agents="agents"
