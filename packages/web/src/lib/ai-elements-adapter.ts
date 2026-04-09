@@ -70,7 +70,7 @@ export function convertContentBlockToPart(block: ContentBlock): AiElementsPart {
           toolCallId: block.id,
           toolName: block.name,
           args: block.arguments,
-          state: "pending",
+          state: "input-available",
         },
       };
 
@@ -79,9 +79,9 @@ export function convertContentBlockToPart(block: ContentBlock): AiElementsPart {
         type: "tool-invocation",
         toolInvocation: {
           toolCallId: block.toolCallId,
-          toolName: "unknown", // 需要从 toolCall 关联获取
+          toolName: block.toolName || "未知工具",
           result: block.content,
-          state: "result",
+          state: block.isError ? "output-error" : "output-available",
           isError: block.isError,
         },
       };

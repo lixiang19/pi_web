@@ -1,9 +1,11 @@
 <script setup lang="ts">
-// AiElements 重构版本
 import {
   AiElementsConversation,
   AiElementsPromptInput,
 } from "@/components/ai-elements";
+import WorkbenchResourcePicker from "./WorkbenchResourcePicker.vue";
+import { Button } from "@/components/ui/button";
+import { ChevronLeft } from "lucide-vue-next";
 import type {
   AgentSummary,
   ChatComposerState,
@@ -43,47 +45,20 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-  applyPrompt: [PromptCatalogItem];
-  injectCommand: [string];
-  injectSkill: [string];
+  applyPrompt: [item: PromptCatalogItem];
+  injectCommand: [value: string];
+  injectSkill: [value: string];
   loadEarlier: [];
   returnToParent: [];
-  selectAgent: [unknown];
-  selectModel: [unknown];
-  selectThinking: [unknown];
+  selectAgent: [value: string];
+  selectModel: [value: string];
+  selectThinking: [value: string];
   submit: [];
+  abort: [];
   toggleResourcePicker: [];
-  "update:draftText": [string];
+  "update:draftText": [text: string];
 }>();
 
-// Map agent selection to string value
-function handleAgentSelect(value: unknown) {
-  emit("selectAgent", value);
-}
-
-// Map model selection to string value
-function handleModelSelect(value: unknown) {
-  emit("selectModel", value);
-}
-
-// Map thinking level selection to string value
-function handleThinkingSelect(value: unknown) {
-  emit("selectThinking", value);
-}
-
-// Handle submit from AiElementsPromptInput
-function handleSubmit(text: string, options: {
-  model?: string;
-  thinkingLevel?: string;
-  agent?: string;
-}) {
-  // Update draft text first
-  emit("update:draftText", text);
-  // Then trigger submit
-  emit("submit");
-}
-
-// Handle draft text update
 function handleDraftUpdate(text: string) {
   emit("update:draftText", text);
 }
@@ -91,7 +66,57 @@ function handleDraftUpdate(text: string) {
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-background">
-    <!-- Conversation Area -->
+    <!-- Header -->
+    <div class="flex items-center justify-between px-4 py-2 border-b bg-card/50">
+      <div class="flex items-center gap-2">
+        <Button
+          v-if="parentSessionId"
+          variant="ghost"
+          size="sm"
+          @click="emit('returnToParent')"
+        >
+          <ChevronLeft class="h-4 w-4 mr-1" />
+          返回
+        </Button>
+        <div class="flex flex-col">
+          <span class="font-medium text-sm">{{ currentSessionTitle || '新会话' }}</span>
+          <span v-if="projectLabel" class="text-xs text-muted-foreground">{{ projectLabel }}</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span
+          v-if="status === 'streaming'"
+          class="flex items-center gap-1 text-xs text-primary"
+        >
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+          </span>
+          生成中...
+        </span>
+        <span
+          v-else-if="isDraftSession"
+          class="text-xs text-muted-foreground"
+        >
+          草稿会话
+        </span>
+      </div>
+    </div>
+
+    <!-- Resource Picker -->
+    <WorkbenchResourcePicker
+      v-if="isResourcePickerVisible"
+      :commands="commands"
+      :prompts="prompts"
+      :skills="skills"
+      :error="resourceError"
+      @apply-prompt="emit('applyPrompt', $event)"
+      @inject-command="emit('injectCommand', $event)"
+      @inject-skill="emit('injectSkill', $event)"
+    />
+
+    <!-- Conversation -->
     <AiElementsConversation
       :messages="messages"
       :session-id="activeSessionId"
@@ -101,22 +126,37 @@ function handleDraftUpdate(text: string) {
       @load-earlier="emit('loadEarlier')"
     />
 
-    <!-- Input Area -->
+    <!-- Input -->
     <AiElementsPromptInput
       :session-id="activeSessionId"
       :disabled="!activeSessionId"
       :is-sending="isSending"
       :can-abort="composer.canAbort"
+      :draft-text="composer.draftText"
+      :model-options="modelOptions"
+      :thinking-options="thinkingOptions"
+      :agents="agents"
+      :commands="commands"
+      :prompts="prompts"
+      :skills="skills"
+      :auto-model-value="autoModelValue"
+      :auto-thinking-value="autoThinkingValue"
+      :no-agent-value="noAgentValue"
       :selected-model="composer.selectedModel"
       :selected-thinking-level="composer.selectedThinkingLevel"
       :selected-agent="composer.selectedAgent"
-      :draft-text="composer.draftText"
-      @submit="handleSubmit"
-      @abort="emit('submit')"
-      @update:draft="handleDraftUpdate"
-      @update:selected-model="handleModelSelect"
-      @update:selected-thinking-level="handleThinkingSelect"
-      @update:selected-agent="handleAgentSelect"
+      :has-visible-resources="hasVisibleResources"
+      :is-resource-picker-visible="isResourcePickerVisible"
+      @submit="emit('submit')"
+      @abort="emit('abort')"
+      @update:draft-text="handleDraftUpdate"
+      @select-model="emit('selectModel', $event)"
+      @select-thinking="emit('selectThinking', $event)"
+      @select-agent="emit('selectAgent', $event)"
+      @toggle-resource-picker="emit('toggleResourcePicker')"
+      @apply-prompt="emit('applyPrompt', $event)"
+      @inject-command="emit('injectCommand', $event)"
+      @inject-skill="emit('injectSkill', $event)"
     />
   </div>
 </template>
