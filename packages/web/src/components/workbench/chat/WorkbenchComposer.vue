@@ -4,10 +4,9 @@ import {
   Brain,
   Lightbulb,
   SendHorizontal,
-  Slash,
   Square,
 } from "lucide-vue-next";
-import { computed } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -62,6 +61,58 @@ const draftText = computed({
   set: (value: string) => emit("update:value", value),
 });
 
+const isDraggingOver = ref(false);
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
+
+// 在光标位置插入文本
+const insertAtCursor = (textarea: HTMLTextAreaElement, text: string) => {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const currentValue = draftText.value;
+
+  const newValue = currentValue.substring(0, start) + text + currentValue.substring(end);
+  draftText.value = newValue;
+
+  // 恢复光标位置在插入文本之后
+  nextTick(() => {
+    const newCursorPos = start + text.length;
+    textarea.setSelectionRange(newCursorPos, newCursorPos);
+    textarea.focus();
+  });
+};
+
+// 处理拖放事件
+const handleDrop = (event: DragEvent) => {
+  event.preventDefault();
+  isDraggingOver.value = false;
+
+  const path = event.dataTransfer?.getData('text/plain');
+  if (!path) return;
+
+  const textarea = event.target as HTMLTextAreaElement;
+  if (textarea.tagName !== 'TEXTAREA') return;
+
+  // 在光标位置插入路径，并添加空格
+  insertAtCursor(textarea, path + ' ');
+};
+
+// 处理拖拽悬停
+const handleDragOver = (event: DragEvent) => {
+  event.preventDefault();
+  event.dataTransfer!.dropEffect = 'copy';
+  isDraggingOver.value = true;
+};
+
+const handleDragLeave = (event: DragEvent) => {
+  // 确保是真正离开textarea而不是进入子元素
+  const relatedTarget = event.relatedTarget as HTMLElement;
+  const textarea = event.currentTarget as HTMLElement;
+
+  if (!textarea.contains(relatedTarget)) {
+    isDraggingOver.value = false;
+  }
+};
+
 // 获取当前模型显示值
 const currentModelLabel = computed(() => {
   const val = props.composer.selectedModel || props.autoModelValue;
@@ -92,17 +143,33 @@ const currentAgentLabel = computed(() => {
     <div class="mx-auto max-w-3xl px-4 py-3">
       <!-- 输入框 -->
       <div class="relative">
-        <Textarea
-          v-model="draftText"
-          placeholder="Type a message..."
-          class="min-h-[80px] resize-none rounded-lg border bg-muted/30 px-3 py-3 pr-12 text-sm leading-6 focus-visible:ring-1 focus-visible:ring-ring/30"
-          @keydown.enter.prevent="emit('submit')"
-        />
+        <div
+          class="rounded-lg border transition-all duration-200"
+          :class="isDraggingOver
+            ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
+            : 'border-border bg-muted/30 hover:border-border/80'"
+        >
+          <Textarea
+            ref="textareaRef"
+            v-model="draftText"
+            placeholder="输入消息... (可拖拽文件到此处)"
+            class="min-h-[80px] resize-none border-0 bg-transparent px-3 py-3 pr-12 text-sm leading-6 focus-visible:ring-0 focus-visible:ring-offset-0"
+            :class="isDraggingOver ? 'placeholder:text-primary/70' : ''"
+            @keydown.enter.prevent="emit('submit')"
+            @drop="handleDrop"
+            @dragover="handleDragOver"
+            @dragleave="handleDragLeave"
+          />
+        </div>
+
         <!-- 发送按钮 -->
         <div class="absolute bottom-2.5 right-2.5">
           <Button
             size="icon"
-            class="size-8 rounded-md"
+            class="size-8 rounded-md shadow-sm transition-all duration-200"
+            :class="isSending || !value.trim()
+              ? 'opacity-50'
+              : 'hover:scale-105'"
             :disabled="isSending || !value.trim()"
             @click="emit('submit')"
           >
@@ -110,9 +177,20 @@ const currentAgentLabel = computed(() => {
             <SendHorizontal v-else class="size-4" />
           </Button>
         </div>
+
+        <!-- 拖拽提示 -->
+        <div
+          v-if="isDraggingOver"
+          class="absolute inset-0 flex items-center justify-center pointer-events-none"
+        >
+          <span class="text-xs font-medium text-primary bg-background/90 px-3 py-1 rounded-full shadow-sm border border-primary/20">
+            释放以插入文件路径
+          </span>
+        </div>
       </div>
+
       <!-- 底部工具栏 -->
-      <div class="mt-2 flex items-center justify-between">
+      <div class="mt-3 flex items-center justify-between">
         <!-- 左侧：选项选择器 -->
         <div class="flex items-center gap-1">
           <!-- 模型选择器 -->
@@ -122,10 +200,10 @@ const currentAgentLabel = computed(() => {
           >
             <SelectTrigger
               size="sm"
-              class="h-6 gap-1 border-0 bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              class="h-7 gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-md transition-all duration-200"
             >
               <Brain class="size-3.5 shrink-0" />
-              <SelectValue :placeholder="currentModelLabel" />
+              <span class="font-medium">{{ currentModelLabel }}</span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem :value="autoModelValue">Auto</SelectItem>
@@ -138,6 +216,7 @@ const currentAgentLabel = computed(() => {
               </SelectItem>
             </SelectContent>
           </Select>
+
           <!-- 思考级别选择器 -->
           <Select
             :model-value="composer.selectedThinkingLevel || autoThinkingValue"
@@ -145,10 +224,10 @@ const currentAgentLabel = computed(() => {
           >
             <SelectTrigger
               size="sm"
-              class="h-6 gap-1 border-0 bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              class="h-7 gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-md transition-all duration-200"
             >
               <Lightbulb class="size-3.5 shrink-0" />
-              <SelectValue :placeholder="currentThinkingLabel" />
+              <span class="font-medium">{{ currentThinkingLabel }}</span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem :value="autoThinkingValue">Auto</SelectItem>
@@ -161,6 +240,7 @@ const currentAgentLabel = computed(() => {
               </SelectItem>
             </SelectContent>
           </Select>
+
           <!-- Agent选择器 -->
           <Select
             :model-value="composer.selectedAgent || noAgentValue"
@@ -168,10 +248,10 @@ const currentAgentLabel = computed(() => {
           >
             <SelectTrigger
               size="sm"
-              class="h-6 max-w-[120px] gap-1 border-0 bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              class="h-7 max-w-[120px] gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-md transition-all duration-200"
             >
               <Bot class="size-3.5 shrink-0" />
-              <span class="truncate">{{ currentAgentLabel }}</span>
+              <span class="truncate font-medium">{{ currentAgentLabel }}</span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem :value="noAgentValue">Direct</SelectItem>
@@ -185,17 +265,20 @@ const currentAgentLabel = computed(() => {
             </SelectContent>
           </Select>
         </div>
+
         <!-- 右侧：资源选择按钮 -->
         <Button
           variant="ghost"
           size="sm"
-          class="h-6 gap-1 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+          class="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground rounded-md transition-all duration-200"
+          :class="isResourcePickerVisible ? 'bg-accent/50 text-foreground' : ''"
           @click="emit('toggleResourcePicker')"
         >
-          <Slash class="size-3.5" />
-          <span>Resources</span>
+          <span class="text-primary font-semibold">/</span>
+          <span class="font-medium">Resources</span>
         </Button>
       </div>
+
       <!-- 资源选择器（展开/收起） -->
       <transition
         enter-active-class="transition duration-200 ease-out"
