@@ -23,7 +23,8 @@ export interface AiElementsPart {
     toolName: string;
     args?: Record<string, unknown>;
     result?: unknown;
-    state?: "pending" | "result";
+    state?: "input-streaming" | "input-available" | "approval-requested" | "approval-responded" | "output-available" | "output-error" | "output-denied";
+    isError?: boolean;
   };
   source?: {
     sourceType: "url" | "file";
