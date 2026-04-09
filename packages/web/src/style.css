@@ -1,13 +1,31 @@
+@import "tailwindcss";
+
+/* Tailwind v4 - Theme Configuration via CSS variables */
+@theme {
+  /* Font families */
+  --font-sans: 'Manrope Variable', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* Border radius */
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+
+  /* Custom colors */
+  --color-ink-950: #09090b;
+  --color-ink-900: #111113;
+  --color-ink-800: #171717;
+
+  /* Shadows */
+  --shadow-glow: 0 24px 120px rgba(245, 158, 11, 0.16);
+}
+
+/* Import fonts */
 @import '@fontsource-variable/manrope';
 @import '@fontsource/ibm-plex-mono';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 :root {
   color-scheme: dark;
-  font-family: var(--font-sans, 'Manrope Variable', sans-serif);
+  font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -57,5 +75,5 @@ body {
 }
 
 .font-mono {
-  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+  font-family: var(--font-mono);
 }
