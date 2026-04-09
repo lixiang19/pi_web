@@ -11,7 +11,14 @@ const props = defineProps<Props>()
 
 <template>
   <div
-    :class="cn('flex items-center gap-1', props.class)"
+    :class="cn(
+      'flex items-center gap-1 rounded-lg p-1',
+      'transition-all duration-200',
+      'group-hover:bg-muted/50',
+      props.class,
+    )"
+    role="toolbar"
+    aria-label="消息操作"
     v-bind="$attrs"
   >
     <slot />

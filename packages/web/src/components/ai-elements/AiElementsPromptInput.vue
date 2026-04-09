@@ -101,34 +101,39 @@ const handleKeydown = (e: KeyboardEvent) => {
 </script>
 
 <template>
-  <div class="border-t bg-background p-4">
-    <PromptInput class="flex flex-col gap-2">
+  <div class="border-t border-border bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <PromptInput class="flex flex-col gap-3">
       <!-- Text Input -->
       <PromptInputTextarea
         v-model="inputText"
         :disabled="disabled || isSending"
-        :placeholder="disabled ? 'Select a session to start chatting...' : 'Type a message... (Shift+Enter for new line)'"
-        class="min-h-[80px] resize-none"
+        :placeholder="disabled ? '选择会话开始聊天...' : '输入消息... (Shift+Enter 换行)'"
+        class="min-h-[80px] resize-none rounded-xl bg-muted/50 transition-colors focus:bg-background"
+        :class="{ 'opacity-60': disabled }"
+        aria-label="消息输入框"
         @keydown="handleKeydown"
         @focus="isFocused = true"
         @blur="isFocused = false"
       />
 
       <!-- Footer with controls -->
-      <PromptInputFooter class="flex items-center justify-between">
+      <PromptInputFooter class="flex items-center justify-between gap-4">
         <!-- Left: Model/Thinking/Agent selectors -->
-        <PromptInputTools class="flex items-center gap-2">
+        <PromptInputTools class="flex flex-wrap items-center gap-2">
           <!-- Model Selector -->
           <Select
             :value="selectedModel"
             @update:value="emit('update:selectedModel', $event)"
             :disabled="isSending"
           >
-            <SelectTrigger class="w-[140px] h-8 text-xs">
-              <SelectValue placeholder="Model" />
+            <SelectTrigger
+              class="h-8 w-auto min-w-[100px] gap-1 rounded-lg border-border/60 bg-background px-2.5 text-xs transition-colors hover:border-border hover:bg-accent"
+              aria-label="选择模型"
+            >
+              <SelectValue placeholder="模型" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Auto</SelectItem>
+              <SelectItem value="">自动</SelectItem>
               <SelectItem value="gpt-4">GPT-4</SelectItem>
               <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
               <SelectItem value="claude-3">Claude 3</SelectItem>
@@ -141,14 +146,17 @@ const handleKeydown = (e: KeyboardEvent) => {
             @update:value="emit('update:selectedThinkingLevel', $event)"
             :disabled="isSending"
           >
-            <SelectTrigger class="w-[100px] h-8 text-xs">
-              <SelectValue placeholder="Thinking" />
+            <SelectTrigger
+              class="h-8 w-auto min-w-[80px] gap-1 rounded-lg border-border/60 bg-background px-2.5 text-xs transition-colors hover:border-border hover:bg-accent"
+              aria-label="选择思考深度"
+            >
+              <SelectValue placeholder="思考" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Auto</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="">自动</SelectItem>
+              <SelectItem value="low">低</SelectItem>
+              <SelectItem value="medium">中</SelectItem>
+              <SelectItem value="high">高</SelectItem>
             </SelectContent>
           </Select>
 
@@ -158,34 +166,42 @@ const handleKeydown = (e: KeyboardEvent) => {
             @update:value="emit('update:selectedAgent', $event)"
             :disabled="isSending"
           >
-            <SelectTrigger class="w-[120px] h-8 text-xs">
-              <SelectValue placeholder="Agent" />
+            <SelectTrigger
+              class="h-8 w-auto min-w-[90px] gap-1 rounded-lg border-border/60 bg-background px-2.5 text-xs transition-colors hover:border-border hover:bg-accent"
+              aria-label="选择智能体"
+            >
+              <SelectValue placeholder="智能体" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">No Agent</SelectItem>
-              <SelectItem value="coder">Coder</SelectItem>
-              <SelectItem value="reviewer">Reviewer</SelectItem>
+              <SelectItem value="">无智能体</SelectItem>
+              <SelectItem value="coder">编码助手</SelectItem>
+              <SelectItem value="reviewer">审查助手</SelectItem>
             </SelectContent>
           </Select>
         </PromptInputTools>
 
         <!-- Right: Submit/Abort button -->
         <div class="flex items-center gap-2">
+          <span v-if="isSending" class="text-xs text-muted-foreground">
+            发送中...
+          </span>
           <PromptInputSubmit as-child>
             <Button
               v-if="canAbort"
               variant="destructive"
               size="icon"
-              class="h-8 w-8"
+              class="h-8 w-8 rounded-lg transition-all duration-150 hover:scale-105 active:scale-95"
+              aria-label="停止生成"
               @click="handleAbort"
             >
-              <Square class="h-4 w-4" />
+              <Square class="h-4 w-4 fill-current" />
             </Button>
             <Button
               v-else
               :disabled="!canSubmit"
               size="icon"
-              class="h-8 w-8"
+              class="h-8 w-8 rounded-lg bg-primary text-primary-foreground transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+              aria-label="发送消息"
               @click="handleSubmit"
             >
               <Send class="h-4 w-4" />

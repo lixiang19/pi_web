@@ -14,7 +14,11 @@ const props = defineProps<Props>()
 
 <template>
   <Collapsible
-    :class="cn('group not-prose mb-4 w-full rounded-md border', props.class)"
+    :class="cn(
+      'group not-prose w-full rounded-lg border border-border bg-card/50',
+      'transition-colors hover:bg-card/80',
+      props.class,
+    )"
     v-bind="$attrs"
   >
     <slot />

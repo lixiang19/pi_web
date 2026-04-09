@@ -117,62 +117,76 @@ defineExpose({
 </script>
 
 <template>
-  <div class="relative flex-1 overflow-hidden">
-    <Conversation class="h-full">
+  <div class="relative flex-1 overflow-hidden bg-background">
+    <Conversation class="h-full" aria-label="对话消息列表">
       <ConversationContent
         ref="conversationRef"
-        class="h-full overflow-y-auto p-4 space-y-4"
+        class="h-full overflow-y-auto scroll-smooth p-4 space-y-6"
         @scroll="handleScroll"
+        role="log"
+        aria-live="polite"
+        aria-atomic="false"
       >
         <!-- Loading indicator for older messages -->
         <div
           v-if="isLoadingOlder"
-          class="flex justify-center py-2 text-sm text-muted-foreground"
+          class="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground"
         >
-          <span>Loading older messages...</span>
+          <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+          <span>加载历史消息...</span>
         </div>
 
         <!-- Load more trigger -->
         <div
           v-else-if="hasMoreAbove && !isLoadingOlder"
-          class="flex justify-center py-2"
+          class="flex justify-center py-4"
         >
           <Button
             variant="ghost"
             size="sm"
+            class="text-muted-foreground hover:text-foreground"
             @click="emit('loadEarlier')"
           >
-            Load more
+            加载更多
           </Button>
         </div>
 
         <!-- Messages -->
         <AiElementsMessage
-          v-for="message in messages"
+          v-for="(message, index) in messages"
           :key="message.id"
           :message="message"
-          :is-streaming="isStreaming && message === messages[messages.length - 1]"
+          :is-streaming="isStreaming && index === messages.length - 1"
+          tabindex="0"
         />
 
         <!-- Empty state -->
         <div
           v-if="messages.length === 0"
-          class="flex flex-col items-center justify-center h-full text-muted-foreground"
+          class="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground"
+          role="status"
+          aria-label="暂无消息"
         >
-          <p>No messages yet</p>
-          <p class="text-sm">Start a conversation...</p>
+          <div class="rounded-full bg-muted/50 p-4">
+            <svg class="h-6 w-6 text-muted-foreground/60" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <p class="font-medium">暂无消息</p>
+          <p class="text-sm text-muted-foreground/80">开始一段新的对话...</p>
         </div>
       </ConversationContent>
 
       <!-- Scroll to bottom button -->
       <ConversationScrollButton
         v-if="showJumpToBottom"
-        class="absolute bottom-4 right-4"
+        class="absolute bottom-4 right-4 z-10"
       >
         <Button
           variant="secondary"
           size="icon"
-          class="rounded-full shadow-lg"
+          class="h-9 w-9 rounded-full shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl"
+          aria-label="滚动到底部"
           @click="scrollToBottom(true)"
         >
           <ArrowDown class="h-4 w-4" />

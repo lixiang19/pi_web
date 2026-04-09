@@ -33,13 +33,19 @@ const md = computed(() => (slotContent.value ?? props.content ?? '') as string)
 <template>
   <CollapsibleContent
     :class="cn(
-      'mt-4 text-sm',
+      'mt-3',
       'data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2',
-      'data-[state=open]:slide-in-from-top-2 text-muted-foreground',
+      'data-[state=open]:slide-in-from-top-2',
       'outline-none data-[state=closed]:animate-out data-[state=open]:animate-in',
       props.class,
     )"
   >
-    <Markdown :content="md" />
+    <slot>
+      <Markdown
+        v-if="md"
+        :content="md"
+        class="text-sm text-muted-foreground leading-relaxed"
+      />
+    </slot>
   </CollapsibleContent>
 </template>

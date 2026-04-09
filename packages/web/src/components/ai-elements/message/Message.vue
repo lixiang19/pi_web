@@ -15,11 +15,14 @@ const props = defineProps<Props>()
   <div
     :class="
       cn(
-        'group flex w-full max-w-[80%] gap-2',
-        props.from === 'user' ? 'is-user ml-auto justify-end' : 'is-assistant',
+        'group flex w-full gap-3',
+        props.from === 'user'
+          ? 'is-user ml-auto max-w-[85%] flex-row-reverse justify-end sm:max-w-[80%]'
+          : 'is-assistant max-w-[90%] sm:max-w-[85%]',
         props.class,
       )
     "
+    :data-role="props.from"
     v-bind="$attrs"
   >
     <slot />

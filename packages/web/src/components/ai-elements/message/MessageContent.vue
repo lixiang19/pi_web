@@ -13,9 +13,14 @@ const props = defineProps<Props>()
   <div
     :class="
       cn(
-        'is-user:dark flex w-fit flex-col gap-2 overflow-hidden text-sm',
-        'group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground',
+        'flex w-fit flex-col gap-2 overflow-hidden',
+        // 用户消息样式
+        'group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:bg-secondary',
+        'group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-secondary-foreground',
+        // 助手消息样式
         'group-[.is-assistant]:text-foreground',
+        // 排版
+        'text-sm leading-relaxed',
         props.class,
       )
     "

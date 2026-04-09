@@ -29,18 +29,20 @@ const derivedName = computed(() =>
     :class="
       cn(
         'flex w-full items-center justify-between gap-4 p-3',
+        'transition-colors hover:bg-accent/50',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         props.class,
       )
     "
     v-bind="$attrs"
   >
     <div class="flex items-center gap-2">
-      <WrenchIcon class="size-4 text-muted-foreground" />
+      <WrenchIcon class="size-4 text-muted-foreground" aria-hidden="true" />
       <span class="font-medium text-sm">{{ props.title ?? derivedName }}</span>
       <StatusBadge :state="props.state" />
     </div>
     <ChevronDownIcon
-      class="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
+      class="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180"
     />
   </CollapsibleTrigger>
 </template>
