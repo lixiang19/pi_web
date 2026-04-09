@@ -5,7 +5,6 @@ import {
   convertMessageToAiElements,
   getReasoningParts,
   getToolInvocations,
-  type AiElementsMessage as AiElementsMsg,
 } from "@/lib/ai-elements-adapter";
 
 // Import ai-elements-vue components

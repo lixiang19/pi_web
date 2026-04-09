@@ -8,6 +8,7 @@ const {
   AUTO_MODEL_VALUE,
   AUTO_THINKING_VALUE,
   NO_AGENT_VALUE,
+  abort,
   activeDraftContext,
   activeSessionId,
   agents,
@@ -102,6 +103,7 @@ const {
           @select-model="handleModelSelection"
           @select-thinking="handleThinkingSelection"
           @submit="submit"
+          @abort="abort"
           @toggle-resource-picker="toggleResourcePicker"
           @update:draft-text="composer.draftText = $event"
         />

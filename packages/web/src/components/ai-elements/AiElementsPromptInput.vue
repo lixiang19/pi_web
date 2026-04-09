@@ -197,8 +197,8 @@ watch(localDraft, () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem :value="noAgentValue">无 Agent</SelectItem>
-              <SelectItem v-for="agent in agents" :key="agent.id" :value="agent.id">
-                {{ agent.name }}
+              <SelectItem v-for="agent in agents" :key="agent.name" :value="agent.name">
+                {{ agent.displayName || agent.name }}
               </SelectItem>
             </SelectContent>
           </Select>
