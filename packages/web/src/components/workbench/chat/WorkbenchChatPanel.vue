@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import WorkbenchComposer from "@/components/workbench/chat/WorkbenchComposer.vue";
-import WorkbenchMessageStream from "@/components/workbench/chat/WorkbenchMessageStream.vue";
+// AiElements 重构版本
+import {
+  AiElementsConversation,
+  AiElementsPromptInput,
+} from "@/components/ai-elements";
 import type {
   AgentSummary,
   ChatComposerState,
@@ -52,48 +55,68 @@ const emit = defineEmits<{
   toggleResourcePicker: [];
   "update:draftText": [string];
 }>();
+
+// Map agent selection to string value
+function handleAgentSelect(value: unknown) {
+  emit("selectAgent", value);
+}
+
+// Map model selection to string value
+function handleModelSelect(value: unknown) {
+  emit("selectModel", value);
+}
+
+// Map thinking level selection to string value
+function handleThinkingSelect(value: unknown) {
+  emit("selectThinking", value);
+}
+
+// Handle submit from AiElementsPromptInput
+function handleSubmit(text: string, options: {
+  model?: string;
+  thinkingLevel?: string;
+  agent?: string;
+}) {
+  // Update draft text first
+  emit("update:draftText", text);
+  // Then trigger submit
+  emit("submit");
+}
+
+// Handle draft text update
+function handleDraftUpdate(text: string) {
+  emit("update:draftText", text);
+}
 </script>
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-background">
-    <WorkbenchMessageStream
-      :active-draft-parent-session-id="activeDraftParentSessionId"
-      :active-session-id="activeSessionId"
-      :has-more-above="hasMoreAbove"
-      :is-draft-session="isDraftSession"
-      :is-loading-older="isLoadingOlder"
+    <!-- Conversation Area -->
+    <AiElementsConversation
       :messages="messages"
-      :status="status"
+      :session-id="activeSessionId"
+      :has-more-above="hasMoreAbove"
+      :is-loading-older="isLoadingOlder"
+      :is-streaming="status === 'streaming'"
       @load-earlier="emit('loadEarlier')"
     />
 
-    <WorkbenchComposer
-      :agents="agents"
-      :auto-model-value="autoModelValue"
-      :auto-thinking-value="autoThinkingValue"
-      :commands="commands"
-      :composer="composer"
-      :has-visible-resources="hasVisibleResources"
-      :is-resource-picker-visible="isResourcePickerVisible"
+    <!-- Input Area -->
+    <AiElementsPromptInput
+      :session-id="activeSessionId"
+      :disabled="!activeSessionId"
       :is-sending="isSending"
-      :model-options="modelOptions"
-      :no-agent-value="noAgentValue"
-      :parent-session-id="parentSessionId"
-      :project-label="projectLabel"
-      :prompts="prompts"
-      :resource-error="resourceError"
-      :skills="skills"
-      :thinking-options="thinkingOptions"
-      :value="composer.draftText"
-      @apply-prompt="emit('applyPrompt', $event)"
-      @inject-command="emit('injectCommand', $event)"
-      @inject-skill="emit('injectSkill', $event)"
-      @select-agent="emit('selectAgent', $event)"
-      @select-model="emit('selectModel', $event)"
-      @select-thinking="emit('selectThinking', $event)"
-      @submit="emit('submit')"
-      @toggle-resource-picker="emit('toggleResourcePicker')"
-      @update:value="emit('update:draftText', $event)"
+      :can-abort="composer.canAbort"
+      :selected-model="composer.selectedModel"
+      :selected-thinking-level="composer.selectedThinkingLevel"
+      :selected-agent="composer.selectedAgent"
+      :draft-text="composer.draftText"
+      @submit="handleSubmit"
+      @abort="emit('submit')"
+      @update:draft="handleDraftUpdate"
+      @update:selected-model="handleModelSelect"
+      @update:selected-thinking-level="handleThinkingSelect"
+      @update:selected-agent="handleAgentSelect"
     />
   </div>
 </template>
