@@ -19,3 +19,6 @@
 - [拖放实现] 原生 HTML5 Drag and Drop API 足够满足简单拖放需求，无需引入第三方库
 - [防抖模式] 使用 dragCounter 计数器解决 dragenter/dragleave 闪烁问题
 - [数据格式] 拖放数据同时存储 text/plain（路径）和 application/json（完整对象），预留扩展空间
+- [组件库适配] 第三方组件库（ai-elements-vue）的数据模型与项目不兼容时，创建适配层比修改项目数据模型更安全
+- [事件命名] Vue defineEmits 中带有冒号的事件名必须用引号包裹（"update:modelValue"）
+- [类型校验] 即使 TypeScript 编译通过，也要验证运行时数据字段（如 AgentSummary 实际无 id 字段）
