@@ -21,7 +21,7 @@
 
 
 # 开发
-- 参考/Users/admin/Documents/GitHub/openchamber 不断的从此项目中取功能灵感。但是具体代码和样式不要抄
+- 文档/examples下是pi的例子
 - 多使用网络搜索和git搜索@mariozechner/pi-coding-agent
 - 多读取@mariozechner/pi-coding-agent的源码
 - 多使用pi-extensions进行学习pi的插件开发
