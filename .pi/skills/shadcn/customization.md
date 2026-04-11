@@ -1,209 +1,154 @@
-# Customization & Theming
+# 主题定制与样式修改
 
-Components reference semantic CSS variable tokens. Change the variables to change every component.
+shadcn-vue 组件依赖语义化 CSS 变量。**优先改变量，不要在组件里硬编码颜色。**
 
-## Contents
+## 目录
 
-- How it works (CSS variables → Tailwind utilities → components)
-- Color variables and OKLCH format
-- Dark mode setup
-- Changing the theme (presets, CSS variables)
-- Adding custom colors (Tailwind v3 and v4)
-- Border radius
-- Customizing components (variants, className, wrappers)
-- Checking for updates
+- 主题变量如何生效
+- 深色模式
+- 如何切换 preset
+- 如何添加自定义颜色
+- 圆角与设计 token
+- 如何检查组件更新
 
 ---
 
-## How It Works
+## 主题变量如何生效
 
-1. CSS variables defined in `:root` (light) and `.dark` (dark mode).
-2. Tailwind maps them to utilities: `bg-primary`, `text-muted-foreground`, etc.
-3. Components use these utilities — changing a variable changes all components that reference it.
+整体链路：
 
----
+1. 在全局 CSS 中定义变量（亮色 / 暗色）
+2. Tailwind 把变量映射成工具类，例如 `bg-primary`、`text-muted-foreground`
+3. 组件使用这些工具类
+4. 你修改变量后，引用这些 token 的组件会一起更新
 
-## Color Variables
-
-Every color follows the `name` / `name-foreground` convention. The base variable is for backgrounds, `-foreground` is for text/icons on that background.
-
-| Variable                                     | Purpose                          |
-| -------------------------------------------- | -------------------------------- |
-| `--background` / `--foreground`              | Page background and default text |
-| `--card` / `--card-foreground`               | Card surfaces                    |
-| `--primary` / `--primary-foreground`         | Primary buttons and actions      |
-| `--secondary` / `--secondary-foreground`     | Secondary actions                |
-| `--muted` / `--muted-foreground`             | Muted/disabled states            |
-| `--accent` / `--accent-foreground`           | Hover and accent states          |
-| `--destructive` / `--destructive-foreground` | Error and destructive actions    |
-| `--border`                                   | Default border color             |
-| `--input`                                    | Form input borders               |
-| `--ring`                                     | Focus ring color                 |
-| `--chart-1` through `--chart-5`              | Chart/data visualization         |
-| `--sidebar-*`                                | Sidebar-specific colors          |
-| `--surface` / `--surface-foreground`         | Secondary surface                |
-
-Colors use OKLCH: `--primary: oklch(0.205 0 0)` where values are lightness (0–1), chroma (0 = gray), and hue (0–360).
+因此，**不要在业务组件里到处补丁式覆盖颜色**。
 
 ---
 
-## Dark Mode
+## 深色模式
 
-Class-based toggle via `.dark` on the root element. In Next.js, use `next-themes`:
+深色模式应由全局主题类或应用级主题方案统一驱动。核心原则：
 
-```tsx
-import { ThemeProvider } from "next-themes"
-
-<ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-  {children}
-</ThemeProvider>
-```
+- 用 CSS 变量承接明暗主题
+- 在组件内优先写语义 token，而不是一堆原始 `dark:*` 颜色值
+- 如果项目已经有自己的主题切换机制，沿用项目现有方案
 
 ---
 
-## Changing the Theme
+## 如何切换 preset
+
+shadcn-vue 没有 `apply` 命令。
+
+如果用户确实要整体切换风格，可用重新初始化方式：
 
 ```bash
-# Apply a preset code from ui.shadcn.com.
-npx shadcn@latest apply --preset a2r6bw
+# 重新初始化为某个 preset（会覆盖配置）
+npx shadcn-vue@latest init --preset reka-nova --force
 
-# Positional shorthand also works.
-npx shadcn@latest apply a2r6bw
-
-# Switch to a named preset and overwrite existing components.
-npx shadcn@latest apply --preset nova
-
-# Preserve existing components instead.
-npx shadcn@latest init --preset nova --force --no-reinstall
-
-# Use a custom theme URL.
-npx shadcn@latest apply --preset "https://ui.shadcn.com/init?base=radix&style=nova&theme=blue&..."
+# 另一个示例
+npx shadcn-vue@latest init --preset reka-mira --force
 ```
 
-Or edit CSS variables directly in `globals.css`.
+执行前必须确认：
+
+1. 用户是否接受覆盖现有配置
+2. 是否真的需要整体换 preset
+3. 能否只通过修改全局 CSS 变量解决
+
+如果只是改主题色、圆角、局部视觉风格，**优先直接编辑全局 CSS**。
 
 ---
 
-## Adding Custom Colors
+## 如何找到全局 CSS 文件
 
-Add variables to the file at `tailwindCssFile` from `npx shadcn@latest info` (typically `globals.css`). Never create a new CSS file for this.
+先执行：
+
+```bash
+npx shadcn-vue@latest info
+```
+
+然后读取其中的：
+
+- `tailwindCssFile`
+- `tailwindVersion`
+
+全局主题变量应始终写在 `tailwindCssFile` 指向的文件中。
+
+---
+
+## 添加自定义颜色
+
+### 1）先在全局 CSS 里定义变量
 
 ```css
-/* 1. Define in the global CSS file. */
 :root {
   --warning: oklch(0.84 0.16 84);
   --warning-foreground: oklch(0.28 0.07 46);
 }
+
 .dark {
   --warning: oklch(0.41 0.11 46);
   --warning-foreground: oklch(0.99 0.02 95);
 }
 ```
 
+### 2）注册到 Tailwind
+
+如果 `tailwindVersion` 是 `v4`：
+
 ```css
-/* 2a. Register with Tailwind v4 (@theme inline). */
 @theme inline {
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
 }
 ```
 
-When `tailwindVersion` is `"v3"` (check via `npx shadcn@latest info`), register in `tailwind.config.js` instead:
+如果 `tailwindVersion` 是 `v3`，则在 `tailwind.config.js/ts` 中注册扩展颜色。
 
-```js
-// 2b. Register with Tailwind v3 (tailwind.config.js).
-module.exports = {
-  theme: {
-    extend: {
-      colors: {
-        warning: "oklch(var(--warning) / <alpha-value>)",
-        "warning-foreground":
-          "oklch(var(--warning-foreground) / <alpha-value>)",
-      },
-    },
-  },
-}
-```
+### 3）在组件里使用语义类
 
-```tsx
-// 3. Use in components.
-<div className="bg-warning text-warning-foreground">Warning</div>
+```vue
+<div class="bg-warning text-warning-foreground">
+  Warning
+</div>
 ```
 
 ---
 
-## Border Radius
+## 圆角与设计 token
 
-`--radius` controls border radius globally. Components derive values from it (`rounded-lg` = `var(--radius)`, `rounded-md` = `calc(var(--radius) - 2px)`).
-
----
-
-## Customizing Components
-
-See also: [rules/styling.md](./rules/styling.md) for Incorrect/Correct examples.
-
-Prefer these approaches in order:
-
-### 1. Built-in variants
-
-```tsx
-<Button variant="outline" size="sm">
-  Click
-</Button>
-```
-
-### 2. Tailwind classes via `className`
-
-```tsx
-<Card className="mx-auto max-w-md">...</Card>
-```
-
-### 3. Add a new variant
-
-Edit the component source to add a variant via `cva`:
-
-```tsx
-// components/ui/button.tsx
-warning: "bg-warning text-warning-foreground hover:bg-warning/90",
-```
-
-### 4. Wrapper components
-
-Compose shadcn/ui primitives into higher-level components:
-
-```tsx
-export function ConfirmDialog({ title, description, onConfirm, children }) {
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>Confirm</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
-}
-```
+- 全局圆角一般由 `--radius` 一类变量控制
+- 组件应尽量复用同一套 token
+- 不要在不同组件里散落大量局部 `rounded-*` 覆盖，除非那是明确的设计要求
 
 ---
 
-## Checking for Updates
+## 组件定制顺序
+
+当你要改组件外观时，优先级如下：
+
+1. **先用组件已有 variant / size / state 能力**
+2. **再用语义 token**
+3. **再改全局 CSS 变量**
+4. **最后才考虑修改组件源码**
+
+目标是：**从设计系统根部改，不要在叶子节点到处打补丁。**
+
+---
+
+## 检查组件更新
+
+shadcn-vue 里更新检查用 `diff`：
 
 ```bash
-npx shadcn@latest add button --diff
+npx shadcn-vue@latest diff button
 ```
 
-To preview exactly what would change before updating, use `--dry-run` and `--diff`:
+适用场景：
 
-```bash
-npx shadcn@latest add button --dry-run        # see all affected files
-npx shadcn@latest add button --diff button.tsx # see the diff for a specific file
-```
+- 想看本地组件与注册表之间的差异
+- 准备更新某个组件前先了解影响
+- 想确认自定义改动是否已经偏离上游过多
 
-See [Updating Components in SKILL.md](./SKILL.md#updating-components) for the full smart merge workflow.
+> 不要再写 React CLI 那套 `add --diff`、`view`、`apply` 工作流。当前技能只认 shadcn-vue 的真实命令。

@@ -1,94 +1,31 @@
-# shadcn MCP Server
+# shadcn-vue MCP
 
-The CLI includes an MCP server that lets AI assistants search, browse, view, and install components from registries.
+shadcn-vue CLI 提供了 MCP 配置初始化能力。
 
----
-
-## Setup
+## 初始化
 
 ```bash
-shadcn mcp        # start the MCP server (stdio)
-shadcn mcp init   # write config for your editor
+npx shadcn-vue@latest mcp init --client <client>
 ```
 
-Editor config files:
+可选 client：
 
-| Editor | Config file |
-|--------|------------|
-| Claude Code | `.mcp.json` |
-| Cursor | `.cursor/mcp.json` |
-| VS Code | `.vscode/mcp.json` |
-| OpenCode | `opencode.json` |
-| Codex | `~/.codex/config.toml` (manual) |
+- `claude`
+- `cursor`
+- `vscode`
+- `codex`
+- `opencode`
 
----
+## 建议流程
 
-## Tools
+1. 先在项目目录下运行 `npx shadcn-vue@latest info`
+2. 确认 `components.json`、`aliases`、`resolvedPaths`、`tailwindCssFile`
+3. 再执行 `mcp init --client <client>` 生成对应 MCP 配置
+4. 生成后回读配置文件，确认路径与客户端位置正确
 
-> **Tip:** MCP tools handle registry operations (search, view, install). For project configuration (aliases, framework, Tailwind version), use `npx shadcn@latest info` — there is no MCP equivalent.
+## 说明
 
-### `shadcn:get_project_registries`
-
-Returns registry names from `components.json`. Errors if no `components.json` exists.
-
-**Input:** none
-
-### `shadcn:list_items_in_registries`
-
-Lists all items from one or more registries.
-
-**Input:** `registries` (string[]), `limit` (number, optional), `offset` (number, optional)
-
-### `shadcn:search_items_in_registries`
-
-Fuzzy search across registries.
-
-**Input:** `registries` (string[]), `query` (string), `limit` (number, optional), `offset` (number, optional)
-
-### `shadcn:view_items_in_registries`
-
-View item details including full file contents.
-
-**Input:** `items` (string[]) — e.g. `["@shadcn/button", "@shadcn/card"]`
-
-### `shadcn:get_item_examples_from_registries`
-
-Find usage examples and demos with source code.
-
-**Input:** `registries` (string[]), `query` (string) — e.g. `"accordion-demo"`, `"button example"`
-
-### `shadcn:get_add_command_for_items`
-
-Returns the CLI install command.
-
-**Input:** `items` (string[]) — e.g. `["@shadcn/button"]`
-
-### `shadcn:get_audit_checklist`
-
-Returns a checklist for verifying components (imports, deps, lint, TypeScript).
-
-**Input:** none
-
----
-
-## Configuring Registries
-
-Registries are set in `components.json`. The `@shadcn` registry is always built-in.
-
-```json
-{
-  "registries": {
-    "@acme": "https://acme.com/r/{name}.json",
-    "@private": {
-      "url": "https://private.com/r/{name}.json",
-      "headers": { "Authorization": "Bearer ${MY_TOKEN}" }
-    }
-  }
-}
-```
-
-- Names must start with `@`.
-- URLs must contain `{name}`.
-- `${VAR}` references are resolved from environment variables.
-
-Community registry index: `https://ui.shadcn.com/r/registries.json`
+- 这个能力属于 **shadcn-vue**，不是 React 官方 `shadcn` CLI
+- 当前技能只确认 `mcp init` 是真实可用命令
+- 项目配置判断仍然以 `npx shadcn-vue@latest info` 为准
+- 不要在这里继续引用 `npx shadcn@latest info` 或 `ui.shadcn.com` 那套官方 React CLI 工作流

@@ -1,195 +1,83 @@
-# Component Composition
+# 组件组合规则
 
-## Contents
+## 核心原则
 
-- Items always inside their Group component
-- Callouts use Alert
-- Empty states use Empty component
-- Toast notifications use sonner
-- Choosing between overlay components
-- Dialog, Sheet, and Drawer always need a Title
-- Card structure
-- Button has no isPending or isLoading prop
-- TabsTrigger must be inside TabsList
-- Avatar always needs AvatarFallback
-- Use Separator instead of raw hr or border divs
-- Use Skeleton for loading placeholders
-- Use Badge instead of custom styled spans
+1. 优先使用项目现有 UI 组件组合，不要回退成手写样式 div
+2. 弹层、卡片、头像、分隔线、加载态等常见结构应保持语义完整
+3. 先看项目已有实现，再决定新增组件的组合方式
 
 ---
 
-## Items always inside their Group component
+## 分组型组件
 
-Never render items directly inside the content container.
+像 `Select`、菜单、命令面板这类组件，条目应放在正确的分组容器里，而不是随手平铺。
 
-**Incorrect:**
-
-```tsx
-<SelectContent>
-  <SelectItem value="apple">Apple</SelectItem>
-  <SelectItem value="banana">Banana</SelectItem>
-</SelectContent>
-```
-
-**Correct:**
-
-```tsx
-<SelectContent>
-  <SelectGroup>
-    <SelectItem value="apple">Apple</SelectItem>
-    <SelectItem value="banana">Banana</SelectItem>
-  </SelectGroup>
-</SelectContent>
-```
-
-This applies to all group-based components:
-
-| Item | Group |
-|------|-------|
-| `SelectItem`, `SelectLabel` | `SelectGroup` |
-| `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuSub` | `DropdownMenuGroup` |
-| `MenubarItem` | `MenubarGroup` |
-| `ContextMenuItem` | `ContextMenuGroup` |
-| `CommandItem` | `CommandGroup` |
+如果当前项目组件实现要求 `Group` 容器，就必须遵守，不要偷懒省略。
 
 ---
 
-## Callouts use Alert
+## 弹层结构
 
-```tsx
-<Alert>
-  <AlertTitle>Warning</AlertTitle>
-  <AlertDescription>Something needs attention.</AlertDescription>
-</Alert>
-```
+`Dialog` / `Sheet` / `Drawer` 一类弹层，至少要保证：
 
----
+- 有明确标题
+- 有必要时补描述
+- 主内容区与操作区分开
 
-## Empty states use Empty component
+**示例：**
 
-```tsx
-<Empty>
-  <EmptyHeader>
-    <EmptyMedia variant="icon"><FolderIcon /></EmptyMedia>
-    <EmptyTitle>No projects yet</EmptyTitle>
-    <EmptyDescription>Get started by creating a new project.</EmptyDescription>
-  </EmptyHeader>
-  <EmptyContent>
-    <Button>Create Project</Button>
-  </EmptyContent>
-</Empty>
-```
-
----
-
-## Toast notifications use sonner
-
-```tsx
-import { toast } from "sonner"
-
-toast.success("Changes saved.")
-toast.error("Something went wrong.")
-toast("File deleted.", {
-  action: { label: "Undo", onClick: () => undoDelete() },
-})
-```
-
----
-
-## Choosing between overlay components
-
-| Use case | Component |
-|----------|-----------|
-| Focused task that requires input | `Dialog` |
-| Destructive action confirmation | `AlertDialog` |
-| Side panel with details or filters | `Sheet` |
-| Mobile-first bottom panel | `Drawer` |
-| Quick info on hover | `HoverCard` |
-| Small contextual content on click | `Popover` |
-
----
-
-## Dialog, Sheet, and Drawer always need a Title
-
-`DialogTitle`, `SheetTitle`, `DrawerTitle` are required for accessibility. Use `className="sr-only"` if visually hidden.
-
-```tsx
+```vue
 <DialogContent>
   <DialogHeader>
-    <DialogTitle>Edit Profile</DialogTitle>
-    <DialogDescription>Update your profile.</DialogDescription>
+    <DialogTitle>编辑资料</DialogTitle>
+    <DialogDescription>更新个人信息</DialogDescription>
   </DialogHeader>
-  ...
+
+  <!-- 主内容 -->
+
+  <DialogFooter>
+    <Button variant="outline">取消</Button>
+    <Button>保存</Button>
+  </DialogFooter>
 </DialogContent>
 ```
 
 ---
 
-## Card structure
+## Card 结构
 
-Use full composition — don't dump everything into `CardContent`:
+优先使用完整卡片结构：
 
-```tsx
-<Card>
-  <CardHeader>
-    <CardTitle>Team Members</CardTitle>
-    <CardDescription>Manage your team.</CardDescription>
-  </CardHeader>
-  <CardContent>...</CardContent>
-  <CardFooter>
-    <Button>Invite</Button>
-  </CardFooter>
-</Card>
-```
+- `CardHeader`
+- `CardTitle`
+- `CardDescription`
+- `CardContent`
+- `CardFooter`
+
+不要把所有内容全部粗暴塞到一个区域里。
 
 ---
 
-## Button has no isPending or isLoading prop
+## Avatar
 
-Compose with `Spinner` + `data-icon` + `disabled`:
-
-```tsx
-<Button disabled>
-  <Spinner data-icon="inline-start" />
-  Saving...
-</Button>
-```
+头像组件要有 fallback，避免图片加载失败时直接塌陷或空白。
 
 ---
 
-## TabsTrigger must be inside TabsList
+## 分隔与加载态
 
-Never render `TabsTrigger` directly inside `Tabs` — always wrap in `TabsList`:
-
-```tsx
-<Tabs defaultValue="account">
-  <TabsList>
-    <TabsTrigger value="account">Account</TabsTrigger>
-    <TabsTrigger value="password">Password</TabsTrigger>
-  </TabsList>
-  <TabsContent value="account">...</TabsContent>
-</Tabs>
-```
+- 分隔优先使用 `Separator`，不要随手写 `<hr>` 或边框占位 div
+- 加载态优先使用 `Skeleton`，不要自己堆一堆临时骨架样式
 
 ---
 
-## Avatar always needs AvatarFallback
+## 状态展示
 
-Always include `AvatarFallback` for when the image fails to load:
-
-```tsx
-<Avatar>
-  <AvatarImage src="/avatar.png" alt="User" />
-  <AvatarFallback>JD</AvatarFallback>
-</Avatar>
-```
+- 状态、小标签、数量变化优先使用已有 `Badge` / Alert / Callout 语义组件
+- 不要每次都手写一套圆角背景 + 原始颜色 span
 
 ---
 
-## Use existing components instead of custom markup
+## Toast / 提示反馈
 
-| Instead of | Use |
-|---|---|
-| `<hr>` or `<div className="border-t">` | `<Separator />` |
-| `<div className="animate-pulse">` with styled divs | `<Skeleton className="h-4 w-3/4" />` |
-| `<span className="rounded-full bg-green-100 ...">` | `<Badge variant="secondary">` |
+如果项目已经接入统一 toast 方案，就继续用统一方案，不要在业务组件里临时造新的提示机制。

@@ -1,276 +1,215 @@
-# shadcn CLI Reference
+# shadcn-vue CLI 参考
 
-Configuration is read from `components.json`.
+配置文件来自 `components.json`。
 
-> **IMPORTANT:** Always run commands using the project's package runner: `npx shadcn@latest`, `pnpm dlx shadcn@latest`, or `bunx --bun shadcn@latest`. Check `packageManager` from project context to choose the right one. Examples below use `npx shadcn@latest` but substitute the correct runner for the project.
+> **重要：** 始终使用项目自己的执行器运行命令：`npx shadcn-vue@latest`、`pnpm dlx shadcn-vue@latest` 或 `bunx --bun shadcn-vue@latest`。
+>
+> **重要：** 只使用 CLI 真正支持的命令和参数。不要编造 `apply`、`search`、`view`、`docs`、`info --json` 之类不存在的能力。
 
-> **IMPORTANT:** Only use the flags documented below. Do not invent or guess flags — if a flag isn't listed here, it doesn't exist. The CLI auto-detects the package manager from the project's lockfile; there is no `--package-manager` flag.
+## 目录
 
-## Contents
-
-- Commands: init, apply, add (dry-run, smart merge), search, view, docs, info, build
-- Templates: next, vite, start, react-router, astro
-- Presets: named, code, URL formats and fields
-- Switching presets
+- 命令：create、init、add、diff、info、build、mcp init
+- 模板：nuxt、vite、astro、laravel
+- preset：reka-vega、reka-nova、reka-maia、reka-lyra、reka-mira、reka-luma
+- 重初始化与主题切换
 
 ---
 
-## Commands
+## 命令
 
-### `init` — Initialize or create a project
-
-```bash
-npx shadcn@latest init [components...] [options]
-```
-
-Initializes shadcn/ui in an existing project or creates a new project (when `--name` is provided). Optionally installs components in the same step.
-
-| Flag                    | Short | Description                                               | Default |
-| ----------------------- | ----- | --------------------------------------------------------- | ------- |
-| `--template <template>` | `-t`  | Template (next, start, vite, next-monorepo, react-router) | —       |
-| `--preset [name]`       | `-p`  | Preset configuration (named, code, or URL)                | —       |
-| `--yes`                 | `-y`  | Skip confirmation prompt                                  | `true`  |
-| `--defaults`            | `-d`  | Use defaults (`--template=next --preset=base-nova`)       | `false` |
-| `--force`               | `-f`  | Force overwrite existing configuration                    | `false` |
-| `--cwd <cwd>`           | `-c`  | Working directory                                         | current |
-| `--name <name>`         | `-n`  | Name for new project                                      | —       |
-| `--silent`              | `-s`  | Mute output                                               | `false` |
-| `--rtl`                 |       | Enable RTL support                                        | —       |
-| `--reinstall`           |       | Re-install existing UI components                         | `false` |
-| `--monorepo`            |       | Scaffold a monorepo project                               | —       |
-| `--no-monorepo`         |       | Skip the monorepo prompt                                  | —       |
-
-`npx shadcn@latest create` is an alias for `npx shadcn@latest init`.
-
-### `apply` — Apply a preset to an existing project
+### `create` — 创建新项目
 
 ```bash
-npx shadcn@latest apply [preset] [options]
+npx shadcn-vue@latest create [name] [options]
 ```
 
-Applies a preset to an existing project, overwriting preset-driven config, fonts, CSS variables, and detected UI components.
+用于创建新的 shadcn-vue 项目。
 
-| Flag                | Short | Description                                | Default |
-| ------------------- | ----- | ------------------------------------------ | ------- |
-| `--preset <preset>` | —     | Preset configuration (named, code, or URL) | —       |
-| `--yes`             | `-y`  | Skip confirmation prompt                   | `false` |
-| `--cwd <cwd>`       | `-c`  | Working directory                          | current |
-| `--silent`          | `-s`  | Mute output                                | `false` |
+| 参数 | 简写 | 说明 |
+| --- | --- | --- |
+| `--cwd <cwd>` | `-c` | 工作目录 |
+| `--yes` | `-y` | 跳过确认 |
+| `--preset <preset>` | `-p` | preset，支持 `reka-*` 名称 |
+| `--template <template>` | `-t` | 模板：`nuxt`、`vite`、`astro`、`laravel` |
+| `--base <base>` | — | 组件底座，目前为 `reka` |
+| `--style <style>` | — | 风格：`vega`、`nova`、`maia`、`lyra`、`mira` |
+| `--icon-library <icon-library>` | — | 图标库：`lucide`、`tabler`、`hugeicons`、`phosphor`、`remixicon` |
+| `--font <font>` | — | 字体 |
+| `--base-color <base-color>` | `-b` | 基础色：`neutral`、`gray`、`zinc`、`stone`、`slate` |
+| `--src-dir` / `--no-src-dir` | — | 是否使用 `src/` 目录 |
+| `--rtl` | — | 开启 RTL |
 
-`[preset]` is a shorthand for `--preset <preset>`. If both are provided, they must match.
-If no preset is provided, the CLI offers to open the custom preset builder on `ui.shadcn.com/create`.
-
-### `add` — Add components
-
-> **IMPORTANT:** To compare local components against upstream or to preview changes, ALWAYS use `npx shadcn@latest add <component> --dry-run`, `--diff`, or `--view`. NEVER fetch raw files from GitHub or other sources manually. The CLI handles registry resolution, file paths, and CSS diffing automatically.
+### `init` — 初始化现有项目
 
 ```bash
-npx shadcn@latest add [components...] [options]
+npx shadcn-vue@latest init [components...] [options]
 ```
 
-Accepts component names, registry-prefixed names (`@magicui/shimmer-button`), URLs, or local paths.
+用于初始化现有项目，也可以在初始化阶段一并安装组件。
 
-| Flag            | Short | Description                                                                                                          | Default |
-| --------------- | ----- | -------------------------------------------------------------------------------------------------------------------- | ------- |
-| `--yes`         | `-y`  | Skip confirmation prompt                                                                                             | `false` |
-| `--overwrite`   | `-o`  | Overwrite existing files                                                                                             | `false` |
-| `--cwd <cwd>`   | `-c`  | Working directory                                                                                                    | current |
-| `--all`         | `-a`  | Add all available components                                                                                         | `false` |
-| `--path <path>` | `-p`  | Target path for the component                                                                                        | —       |
-| `--silent`      | `-s`  | Mute output                                                                                                          | `false` |
-| `--dry-run`     |       | Preview all changes without writing files                                                                            | `false` |
-| `--diff [path]` |       | Show diffs. Without a path, shows the first 5 files. With a path, shows that file only (implies `--dry-run`)         | —       |
-| `--view [path]` |       | Show file contents. Without a path, shows the first 5 files. With a path, shows that file only (implies `--dry-run`) | —       |
+| 参数 | 简写 | 说明 |
+| --- | --- | --- |
+| `--preset <preset>` | `-p` | preset，支持 `reka-*` 名称 |
+| `--template <template>` | `-t` | 模板：`nuxt`、`vite`、`astro`、`laravel` |
+| `--base <base>` | — | 组件底座，目前为 `reka` |
+| `--style <style>` | — | 风格：`vega`、`nova`、`maia`、`lyra`、`mira` |
+| `--icon-library <icon-library>` | — | 图标库 |
+| `--font <font>` | — | 字体 |
+| `--base-color <base-color>` | `-b` | 基础色 |
+| `--yes` | `-y` | 跳过确认 |
+| `--defaults` | `-d` | 使用默认配置 |
+| `--force` | `-f` | 强制覆盖现有配置 |
+| `--cwd <cwd>` | `-c` | 工作目录 |
+| `--silent` | `-s` | 静默输出 |
+| `--src-dir` / `--no-src-dir` | — | 是否使用 `src/` |
+| `--css-variables` / `--no-css-variables` | — | 是否使用 CSS 变量 |
+| `--no-base-style` | — | 不安装基础样式 |
 
-#### Dry-Run Mode
-
-Use `--dry-run` to preview what `add` would do without writing any files. `--diff` and `--view` both imply `--dry-run`.
+### `add` — 添加组件
 
 ```bash
-# Preview all changes.
-npx shadcn@latest add button --dry-run
-
-# Show diffs for all files (top 5).
-npx shadcn@latest add button --diff
-
-# Show the diff for a specific file.
-npx shadcn@latest add button --diff button.tsx
-
-# Show contents for all files (top 5).
-npx shadcn@latest add button --view
-
-# Show the full content of a specific file.
-npx shadcn@latest add button --view button.tsx
-
-# Works with URLs too.
-npx shadcn@latest add https://api.npoint.io/abc123 --dry-run
-
-# CSS diffs.
-npx shadcn@latest add button --diff globals.css
+npx shadcn-vue@latest add [components...] [options]
 ```
 
-**When to use dry-run:**
+接受组件名、URL 或本地路径。
 
-- When the user asks "what files will this add?" or "what will this change?" — use `--dry-run`.
-- Before overwriting existing components — use `--diff` to preview the changes first.
-- When the user wants to inspect component source code without installing — use `--view`.
-- When checking what CSS changes would be made to `globals.css` — use `--diff globals.css`.
-- When the user asks to review or audit third-party registry code before installing — use `--view` to inspect the source.
+| 参数 | 简写 | 说明 |
+| --- | --- | --- |
+| `--yes` | `-y` | 跳过确认 |
+| `--overwrite` | `-o` | 覆盖现有文件 |
+| `--cwd <cwd>` | `-c` | 工作目录 |
+| `--all` | `-a` | 添加所有组件 |
+| `--path <path>` | `-p` | 指定目标路径 |
+| `--silent` | `-s` | 静默输出 |
+| `--css-variables` / `--no-css-variables` | — | 是否使用 CSS 变量 |
 
-> **`npx shadcn@latest add --dry-run` vs `npx shadcn@latest view`:** Prefer `npx shadcn@latest add --dry-run/--diff/--view` over `npx shadcn@latest view` when the user wants to preview changes to their project. `npx shadcn@latest view` only shows raw registry metadata. `npx shadcn@latest add --dry-run` shows exactly what would happen in the user's project: resolved file paths, diffs against existing files, and CSS updates. Use `npx shadcn@latest view` only when the user wants to browse registry info without a project context.
-
-#### Smart Merge from Upstream
-
-See [Updating Components in SKILL.md](./SKILL.md#updating-components) for the full workflow.
-
-### `search` — Search registries
+### `diff` — 查看与注册表的差异
 
 ```bash
-npx shadcn@latest search <registries...> [options]
+npx shadcn-vue@latest diff [component]
 ```
 
-Fuzzy search across registries. Also aliased as `npx shadcn@latest list`. Without `-q`, lists all items.
+用于检查某个组件与注册表内容的差异。它是 shadcn-vue 里真实存在的更新检查入口。
 
-| Flag                | Short | Description            | Default |
-| ------------------- | ----- | ---------------------- | ------- |
-| `--query <query>`   | `-q`  | Search query           | —       |
-| `--limit <number>`  | `-l`  | Max items per registry | `100`   |
-| `--offset <number>` | `-o`  | Items to skip          | `0`     |
-| `--cwd <cwd>`       | `-c`  | Working directory      | current |
+| 参数 | 简写 | 说明 |
+| --- | --- | --- |
+| `--yes` | `-y` | 跳过确认 |
+| `--cwd <cwd>` | `-c` | 工作目录 |
 
-### `view` — View item details
+### `info` — 查看项目信息
 
 ```bash
-npx shadcn@latest view <items...> [options]
+npx shadcn-vue@latest info
 ```
 
-Displays item info including file contents. Example: `npx shadcn@latest view @shadcn/button`.
+输出项目识别结果与 `components.json` 解析结果。**这是本技能第一步应该执行的命令。**
 
-### `docs` — Get component documentation URLs
+重点读取：
+
+- `framework`
+- `typescript`
+- `isSrcDir`
+- `tailwindConfigFile`
+- `tailwindCssFile`
+- `tailwindVersion`
+- `aliasPrefix`
+- `style`
+- `iconLibrary`
+- `aliases`
+- `registries`
+- `resolvedPaths`
+
+> `info` **不支持** `--json`。
+
+### `build` — 构建自定义 registry
 
 ```bash
-npx shadcn@latest docs <components...> [options]
+npx shadcn-vue@latest build [registry] [options]
 ```
 
-Outputs resolved URLs for component documentation, examples, and API references. Accepts one or more component names. Fetch the URLs to get the actual content.
+默认输入 `./registry.json`，默认输出 `./public/r`。
 
-Example output for `npx shadcn@latest docs input button`:
+| 参数 | 简写 | 说明 |
+| --- | --- | --- |
+| `--output <path>` | `-o` | 输出目录 |
+| `--cwd <cwd>` | `-c` | 工作目录 |
 
-```
-base  radix
-
-input
-  docs      https://ui.shadcn.com/docs/components/radix/input
-  examples  https://raw.githubusercontent.com/.../examples/input-example.tsx
-
-button
-  docs      https://ui.shadcn.com/docs/components/radix/button
-  examples  https://raw.githubusercontent.com/.../examples/button-example.tsx
-```
-
-Some components include an `api` link to the underlying library (e.g. `cmdk` for the command component).
-
-### `diff` — Check for updates
-
-Do not use this command. Use `npx shadcn@latest add --diff` instead.
-
-### `info` — Project information
+### `mcp init` — 初始化 MCP 配置
 
 ```bash
-npx shadcn@latest info [options]
+npx shadcn-vue@latest mcp init --client <client>
 ```
 
-Displays project info and `components.json` configuration. Run this first to discover the project's framework, aliases, Tailwind version, and resolved paths.
+支持的 client：
 
-| Flag          | Short | Description       | Default |
-| ------------- | ----- | ----------------- | ------- |
-| `--cwd <cwd>` | `-c`  | Working directory | current |
-
-**Project Info fields:**
-
-| Field                | Type      | Meaning                                                            |
-| -------------------- | --------- | ------------------------------------------------------------------ |
-| `framework`          | `string`  | Detected framework (`next`, `vite`, `react-router`, `start`, etc.) |
-| `frameworkVersion`   | `string`  | Framework version (e.g. `15.2.4`)                                  |
-| `isSrcDir`           | `boolean` | Whether the project uses a `src/` directory                        |
-| `isRSC`              | `boolean` | Whether React Server Components are enabled                        |
-| `isTsx`              | `boolean` | Whether the project uses TypeScript                                |
-| `tailwindVersion`    | `string`  | `"v3"` or `"v4"`                                                   |
-| `tailwindConfigFile` | `string`  | Path to the Tailwind config file                                   |
-| `tailwindCssFile`    | `string`  | Path to the global CSS file                                        |
-| `aliasPrefix`        | `string`  | Import alias prefix (e.g. `@`, `~`, `@/`)                          |
-| `packageManager`     | `string`  | Detected package manager (`npm`, `pnpm`, `yarn`, `bun`)            |
-
-**Components.json fields:**
-
-| Field                | Type      | Meaning                                                                                    |
-| -------------------- | --------- | ------------------------------------------------------------------------------------------ |
-| `base`               | `string`  | Primitive library (`radix` or `base`) — determines component APIs and available props      |
-| `style`              | `string`  | Visual style (e.g. `nova`, `vega`)                                                         |
-| `rsc`                | `boolean` | RSC flag from config                                                                       |
-| `tsx`                | `boolean` | TypeScript flag                                                                            |
-| `tailwind.config`    | `string`  | Tailwind config path                                                                       |
-| `tailwind.css`       | `string`  | Global CSS path — this is where custom CSS variables go                                    |
-| `iconLibrary`        | `string`  | Icon library — determines icon import package (e.g. `lucide-react`, `@tabler/icons-react`) |
-| `aliases.components` | `string`  | Component import alias (e.g. `@/components`)                                               |
-| `aliases.utils`      | `string`  | Utils import alias (e.g. `@/lib/utils`)                                                    |
-| `aliases.ui`         | `string`  | UI component alias (e.g. `@/components/ui`)                                                |
-| `aliases.lib`        | `string`  | Lib alias (e.g. `@/lib`)                                                                   |
-| `aliases.hooks`      | `string`  | Hooks alias (e.g. `@/hooks`)                                                               |
-| `resolvedPaths`      | `object`  | Absolute file-system paths for each alias                                                  |
-| `registries`         | `object`  | Configured custom registries                                                               |
-
-**Links fields:**
-
-The `info` output includes a **Links** section with templated URLs for component docs, source, and examples. For resolved URLs, use `npx shadcn@latest docs <component>` instead.
-
-### `build` — Build a custom registry
-
-```bash
-npx shadcn@latest build [registry] [options]
-```
-
-Builds `registry.json` into individual JSON files for distribution. Default input: `./registry.json`, default output: `./public/r`.
-
-| Flag              | Short | Description       | Default      |
-| ----------------- | ----- | ----------------- | ------------ |
-| `--output <path>` | `-o`  | Output directory  | `./public/r` |
-| `--cwd <cwd>`     | `-c`  | Working directory | current      |
+- `claude`
+- `cursor`
+- `vscode`
+- `codex`
+- `opencode`
 
 ---
 
-## Templates
+## 模板
 
-| Value          | Framework      | Monorepo support |
-| -------------- | -------------- | ---------------- |
-| `next`         | Next.js        | Yes              |
-| `vite`         | Vite           | Yes              |
-| `start`        | TanStack Start | Yes              |
-| `react-router` | React Router   | Yes              |
-| `astro`        | Astro          | Yes              |
-| `laravel`      | Laravel        | No               |
-
-All templates support monorepo scaffolding via the `--monorepo` flag. When passed, the CLI uses a monorepo-specific template directory (e.g. `next-monorepo`, `vite-monorepo`). When neither `--monorepo` nor `--no-monorepo` is passed, the CLI prompts interactively. Laravel does not support monorepo scaffolding.
+| 值 | 说明 |
+| --- | --- |
+| `nuxt` | Nuxt 项目 |
+| `vite` | Vite 项目 |
+| `astro` | Astro 项目 |
+| `laravel` | Laravel 项目 |
 
 ---
 
-## Presets
+## preset
 
-Three ways to specify a preset via `--preset`:
+当前 CLI 可见 preset：
 
-1. **Named:** `--preset nova` or `--preset lyra`
-2. **Code:** `--preset a2r6bw` (version-prefixed base62 string, e.g. `a2r6bw` or `b0`)
-3. **URL:** `--preset "https://ui.shadcn.com/init?base=radix&style=nova&..."`
+- `reka-vega`
+- `reka-nova`
+- `reka-maia`
+- `reka-lyra`
+- `reka-mira`
+- `reka-luma`
 
-> **IMPORTANT:** Never try to decode, fetch, or resolve preset codes manually. Preset codes are opaque — pass them directly to `npx shadcn@latest init --preset <code>` and let the CLI handle resolution.
-> Use `npx shadcn@latest apply --preset <code>` when overwriting an existing project's preset.
+常见示例：
 
-## Switching Presets
+```bash
+# 初始化现有项目
+npx shadcn-vue@latest init --preset reka-mira
 
-Ask the user first: **overwrite**, **merge**, or **skip** existing components?
+# 强制重初始化
+npx shadcn-vue@latest init --preset reka-nova --force
 
-- **Overwrite / Re-install** → `npx shadcn@latest apply --preset <code>`. Overwrites all detected component files with the new preset styles. Use when the user hasn't customized components.
-- **Merge** → `npx shadcn@latest init --preset <code> --force --no-reinstall`, then run `npx shadcn@latest info` to get the list of installed components and use the [smart merge workflow](./SKILL.md#updating-components) to update them one by one, preserving local changes. Use when the user has customized components.
-- **Skip** → `npx shadcn@latest init --preset <code> --force --no-reinstall`. Only updates config and CSS variables, leaves existing components as-is.
+# 创建新项目
+npx shadcn-vue@latest create my-app --template vite --preset reka-mira
+```
 
-Always run preset commands inside the user's project directory. `apply` only works in an existing project with a `components.json` file. The CLI automatically preserves the current base (`base` vs `radix`) from `components.json`. If you must use a scratch/temp directory (e.g. for `--dry-run` comparisons), pass `--base <current-base>` explicitly — preset codes do not encode the base.
+---
+
+## 主题切换与重初始化
+
+shadcn-vue **没有** React 官方 shadcn CLI 的 `apply` 命令。
+
+因此切换风格时遵循下面原则：
+
+1. **如果只是调颜色/圆角/局部主题，优先直接改全局 CSS 变量**
+2. **如果要整体换 preset，再执行 `init --preset <preset> --force`**
+3. 执行前先确认用户是否接受覆盖现有配置
+4. 执行后必须回读变更文件，不要假设 CLI 一定完全符合项目约定
+
+---
+
+## 不允许的错误做法
+
+以下都属于错误：
+
+```bash
+npx shadcn@latest info --json
+npx shadcn@latest add button
+npx shadcn@latest apply --preset nova
+npx shadcn@latest search @shadcn -q "sidebar"
+npx shadcn@latest docs button
+```
+
+对于 shadcn-vue 项目，这些命令要么来自错误生态，要么在当前 CLI 中根本不存在。

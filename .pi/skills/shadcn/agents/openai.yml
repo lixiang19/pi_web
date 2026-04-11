@@ -1,5 +1,5 @@
 interface:
-  display_name: "shadcn/ui"
-  short_description: "Manages shadcn/ui components — adding, searching, fixing, debugging, styling, and composing UI."
+  display_name: "shadcn-vue"
+  short_description: "管理 shadcn-vue 组件与项目初始化、主题配置、差异检查和 MCP 配置。"
   icon_small: "./assets/shadcn-small.png"
   icon_large: "./assets/shadcn.png"

@@ -1,46 +1,43 @@
 {
-  "skill_name": "shadcn",
+  "skill_name": "shadcn-vue",
   "evals": [
     {
       "id": 1,
-      "prompt": "I'm building a Next.js app with shadcn/ui (base-nova preset, lucide icons). Create a settings form component with fields for: full name, email address, and notification preferences (email, SMS, push notifications as toggle options). Add validation states for required fields.",
-      "expected_output": "A React component using FieldGroup, Field, ToggleGroup, data-invalid/aria-invalid validation, gap-* spacing, and semantic colors.",
+      "prompt": "我在一个 Vite + Vue 3 项目中使用 shadcn-vue（reka-mira，lucide 图标）。请创建一个设置表单组件，包含姓名、邮箱和通知偏好（邮件、短信、推送），并使用语义化颜色与一致的间距。",
+      "expected_output": "一个 Vue 组件，使用项目已有 UI 组件、语义化颜色 token、gap 间距，并避免 React 专属写法。",
       "files": [],
       "expectations": [
-        "Uses FieldGroup and Field components for form layout instead of raw div with space-y",
-        "Uses Switch for independent on/off notification toggles (not looping Button with manual active state)",
-        "Uses data-invalid on Field and aria-invalid on the input control for validation states",
-        "Uses gap-* (e.g. gap-4, gap-6) instead of space-y-* or space-x-* for spacing",
-        "Uses semantic color tokens (e.g. bg-background, text-muted-foreground, text-destructive) instead of raw colors like bg-red-500",
-        "No manual dark: color overrides"
+        "使用 Vue 语法而不是 React / JSX 专属写法",
+        "使用 class 而不是 className",
+        "优先使用语义化颜色 token，而不是原始 Tailwind 颜色值",
+        "间距优先使用 gap-*，而不是继续堆 space-y-* / space-x-*",
+        "图标导入遵循 Vue 图标包，而不是 lucide-react"
       ]
     },
     {
       "id": 2,
-      "prompt": "Create a dialog component for editing a user profile. It should have the user's avatar at the top, input fields for name and bio, and Save/Cancel buttons with appropriate icons. Using shadcn/ui with radix-nova preset and tabler icons.",
-      "expected_output": "A React component with DialogTitle, Avatar+AvatarFallback, data-icon on icon buttons, no icon sizing classes, tabler icon imports.",
+      "prompt": "为 shadcn-vue 项目创建一个编辑资料弹窗，顶部有头像，包含姓名和简介输入区，以及保存/取消操作。要求结构完整、可访问性正确，并符合 Vue 项目的组件导入方式。",
+      "expected_output": "一个结构完整的 Vue 弹窗组件，包含标题、描述、头像 fallback、正确导入和无 React 术语。",
       "files": [],
       "expectations": [
-        "Includes DialogTitle for accessibility (visible or with sr-only class)",
-        "Avatar component includes AvatarFallback",
-        "Icons on buttons use the data-icon attribute (data-icon=\"inline-start\" or data-icon=\"inline-end\")",
-        "No sizing classes on icons inside components (no size-4, w-4, h-4, etc.)",
-        "Uses tabler icons (@tabler/icons-react) instead of lucide-react",
-        "Uses asChild for custom triggers (radix preset)"
+        "弹层结构包含标题与描述区",
+        "Avatar 具备 fallback",
+        "不出现 className、lucide-react、isRSC 等 React 专属术语",
+        "导入路径遵循项目 aliases / resolvedPaths",
+        "整体结构符合 Vue SFC 或 Vue 组件写法"
       ]
     },
     {
       "id": 3,
-      "prompt": "Create a dashboard component that shows 4 stat cards in a grid. Each card has a title, large number, percentage change badge, and a loading skeleton state. Using shadcn/ui with base-nova preset and lucide icons.",
-      "expected_output": "A React component with full Card composition, Skeleton for loading, Badge for changes, semantic colors, gap-* spacing.",
+      "prompt": "请为 shadcn-vue 仪表盘实现 4 个统计卡片，展示标题、主数值、变化趋势和加载态。要求使用完整卡片结构、语义化主题 token，并避免手写原始颜色。",
+      "expected_output": "一个 Vue 仪表盘片段，使用完整卡片结构、语义化颜色、统一间距，并避免 React 官方 shadcn CLI 语境。",
       "files": [],
       "expectations": [
-        "Uses full Card composition with CardHeader, CardTitle, CardContent (not dumping everything into CardContent)",
-        "Uses Skeleton component for loading placeholders instead of custom animate-pulse divs",
-        "Uses Badge component for percentage change instead of custom styled spans",
-        "Uses semantic color tokens instead of raw color values like bg-green-500 or text-red-600",
-        "Uses gap-* instead of space-y-* or space-x-* for spacing",
-        "Uses size-* when width and height are equal instead of separate w-* h-*"
+        "卡片结构清晰，不把所有内容粗暴塞进一个区域",
+        "使用语义化 token，而不是 bg-green-500 / text-red-600 这类原始颜色",
+        "间距使用 gap-*",
+        "不出现 React CLI 命令或 React 组件语法",
+        "整体输出明确面向 shadcn-vue"
       ]
     }
   ]

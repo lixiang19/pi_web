@@ -1,3 +1,4 @@
+import ridgeTheme from './ridge.css?raw'
 import defaultTheme from './default.css?raw'
 import amberTheme from './amber.css?raw'
 import amethystTheme from './amethyst.css?raw'
@@ -14,6 +15,7 @@ const normalizeThemeCss = (themeCss: string) => {
 }
 
 export const themes = {
+  ridge: normalizeThemeCss(ridgeTheme),
   default: normalizeThemeCss(defaultTheme),
   amber: normalizeThemeCss(amberTheme),
   amethyst: normalizeThemeCss(amethystTheme),
@@ -25,10 +27,11 @@ export const themes = {
 
 export type ThemeName = keyof typeof themes
 
-export const DEFAULT_THEME_NAME: ThemeName = 'default'
+export const DEFAULT_THEME_NAME: ThemeName = 'ridge'
 export const DEFAULT_THEME_MODE = 'dark'
 
 export const themeOptions = [
+  { label: 'ridge', value: 'ridge' },
   { label: '默认', value: 'default' },
   { label: '琥珀', value: 'amber' },
   { label: '紫水晶', value: 'amethyst' },

@@ -1,192 +1,82 @@
-# Forms & Inputs
+# 表单规则
 
-## Contents
+## 核心原则
 
-- Forms use FieldGroup + Field
-- InputGroup requires InputGroupInput/InputGroupTextarea
-- Buttons inside inputs use InputGroup + InputGroupAddon
-- Option sets (2–7 choices) use ToggleGroup
-- FieldSet + FieldLegend for grouping related fields
-- Field validation and disabled states
+1. 使用项目里已经存在的表单原语，不要重复造基础输入组件
+2. 标签、控件、说明、错误信息要形成稳定结构
+3. 校验状态优先通过语义属性和现有组件能力表达
+4. 不要用绝对定位补丁去拼输入框 + 按钮组合
 
 ---
 
-## Forms use FieldGroup + Field
+## 字段结构
 
-Always use `FieldGroup` + `Field` — never raw `div` with `space-y-*`:
+推荐每个字段都包含这些部分：
 
-```tsx
-<FieldGroup>
-  <Field>
-    <FieldLabel htmlFor="email">Email</FieldLabel>
-    <Input id="email" type="email" />
-  </Field>
-  <Field>
-    <FieldLabel htmlFor="password">Password</FieldLabel>
-    <Input id="password" type="password" />
-  </Field>
-</FieldGroup>
-```
+- Label
+- Control
+- Description（可选）
+- Error / Validation message（可选）
 
-Use `Field orientation="horizontal"` for settings pages. Use `FieldLabel className="sr-only"` for visually hidden labels.
+**示例：**
 
-**Choosing form controls:**
-
-- Simple text input → `Input`
-- Dropdown with predefined options → `Select`
-- Searchable dropdown → `Combobox`
-- Native HTML select (no JS) → `native-select`
-- Boolean toggle → `Switch` (for settings) or `Checkbox` (for forms)
-- Single choice from few options → `RadioGroup`
-- Toggle between 2–5 options → `ToggleGroup` + `ToggleGroupItem`
-- OTP/verification code → `InputOTP`
-- Multi-line text → `Textarea`
-
----
-
-## InputGroup requires InputGroupInput/InputGroupTextarea
-
-Never use raw `Input` or `Textarea` inside an `InputGroup`.
-
-**Incorrect:**
-
-```tsx
-<InputGroup>
-  <Input placeholder="Search..." />
-</InputGroup>
-```
-
-**Correct:**
-
-```tsx
-import { InputGroup, InputGroupInput } from "@/components/ui/input-group"
-
-<InputGroup>
-  <InputGroupInput placeholder="Search..." />
-</InputGroup>
-```
-
----
-
-## Buttons inside inputs use InputGroup + InputGroupAddon
-
-Never place a `Button` directly inside or adjacent to an `Input` with custom positioning.
-
-**Incorrect:**
-
-```tsx
-<div className="relative">
-  <Input placeholder="Search..." className="pr-10" />
-  <Button className="absolute right-0 top-0" size="icon">
-    <SearchIcon />
-  </Button>
-</div>
-```
-
-**Correct:**
-
-```tsx
-import { InputGroup, InputGroupInput, InputGroupAddon } from "@/components/ui/input-group"
-
-<InputGroup>
-  <InputGroupInput placeholder="Search..." />
-  <InputGroupAddon>
-    <Button size="icon">
-      <SearchIcon data-icon="inline-start" />
-    </Button>
-  </InputGroupAddon>
-</InputGroup>
-```
-
----
-
-## Option sets (2–7 choices) use ToggleGroup
-
-Don't manually loop `Button` components with active state.
-
-**Incorrect:**
-
-```tsx
-const [selected, setSelected] = useState("daily")
-
-<div className="flex gap-2">
-  {["daily", "weekly", "monthly"].map((option) => (
-    <Button
-      key={option}
-      variant={selected === option ? "default" : "outline"}
-      onClick={() => setSelected(option)}
-    >
-      {option}
-    </Button>
-  ))}
-</div>
-```
-
-**Correct:**
-
-```tsx
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-
-<ToggleGroup spacing={2}>
-  <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
-  <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
-  <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
-</ToggleGroup>
-```
-
-Combine with `Field` for labelled toggle groups:
-
-```tsx
-<Field orientation="horizontal">
-  <FieldTitle id="theme-label">Theme</FieldTitle>
-  <ToggleGroup aria-labelledby="theme-label" spacing={2}>
-    <ToggleGroupItem value="light">Light</ToggleGroupItem>
-    <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
-    <ToggleGroupItem value="system">System</ToggleGroupItem>
-  </ToggleGroup>
+```vue
+<Field>
+  <FieldLabel for="email">邮箱</FieldLabel>
+  <Input id="email" type="email" />
+  <FieldDescription>用于接收通知</FieldDescription>
 </Field>
 ```
 
-> **Note:** `defaultValue` and `type`/`multiple` props differ between base and radix. See [base-vs-radix.md](./base-vs-radix.md#togglegroup).
+如果项目没有 `Field` 体系，也要保持同样的职责拆分，不要把文字、输入、错误提示乱堆在一起。
 
 ---
 
-## FieldSet + FieldLegend for grouping related fields
+## 控件选择
 
-Use `FieldSet` + `FieldLegend` for related checkboxes, radios, or switches — not `div` with a heading:
-
-```tsx
-<FieldSet>
-  <FieldLegend variant="label">Preferences</FieldLegend>
-  <FieldDescription>Select all that apply.</FieldDescription>
-  <FieldGroup className="gap-3">
-    <Field orientation="horizontal">
-      <Checkbox id="dark" />
-      <FieldLabel htmlFor="dark" className="font-normal">Dark mode</FieldLabel>
-    </Field>
-  </FieldGroup>
-</FieldSet>
-```
+- 文本输入：`Input`
+- 多行输入：`Textarea`
+- 布尔开关：`Switch` / `Checkbox`
+- 单选：`RadioGroup`
+- 预定义选项：`Select`
+- 少量互斥选项：优先使用项目已有的切换组件，不要手搓按钮组选中态
 
 ---
 
-## Field validation and disabled states
+## 输入框与附加按钮
 
-Both attributes are needed — `data-invalid`/`data-disabled` styles the field (label, description), while `aria-invalid`/`disabled` styles the control.
+**错误思路：** 通过 `relative + absolute` 手写一套输入框内按钮布局。
 
-```tsx
-// Invalid.
-<Field data-invalid>
-  <FieldLabel htmlFor="email">Email</FieldLabel>
-  <Input id="email" aria-invalid />
-  <FieldDescription>Invalid email address.</FieldDescription>
-</Field>
+**更好的方式：**
 
-// Disabled.
-<Field data-disabled>
-  <FieldLabel htmlFor="email">Email</FieldLabel>
-  <Input id="email" disabled />
-</Field>
-```
+- 优先使用项目已有的 input group / addon 方案
+- 如果项目没有现成组件，再实现明确的组合结构
+- 不要因为赶时间就在输入框上硬塞定位补丁
 
-Works for all controls: `Input`, `Textarea`, `Select`, `Checkbox`, `RadioGroupItem`, `Switch`, `Slider`, `NativeSelect`, `InputOTP`.
+---
+
+## 校验状态
+
+校验时应同时保证：
+
+- 视觉上可见
+- 语义上可读
+- DOM 结构清晰
+
+常见做法：
+
+- 给控件加 `aria-invalid`
+- 给字段容器加错误态标记（如果项目组件支持）
+- 在字段附近渲染明确的错误说明文本
+
+---
+
+## 间距
+
+表单布局统一使用：
+
+- `gap-*`
+- 合理的纵向分组
+- 统一的标签与控件间距
+
+不要继续使用 `space-y-*` 作为默认表单布局策略。

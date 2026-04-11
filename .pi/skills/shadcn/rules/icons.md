@@ -1,101 +1,67 @@
-# Icons
+# 图标规则
 
-**Always use the project's configured `iconLibrary` for imports.** Check the `iconLibrary` field from project context: `lucide` → `lucide-react`, `tabler` → `@tabler/icons-react`, etc. Never assume `lucide-react`.
+## 基本原则
 
----
-
-## Icons in Button use data-icon attribute
-
-Add `data-icon="inline-start"` (prefix) or `data-icon="inline-end"` (suffix) to the icon. No sizing classes on the icon.
-
-**Incorrect:**
-
-```tsx
-<Button>
-  <SearchIcon className="mr-2 size-4" />
-  Search
-</Button>
-```
-
-**Correct:**
-
-```tsx
-<Button>
-  <SearchIcon data-icon="inline-start"/>
-  Search
-</Button>
-
-<Button>
-  Next
-  <ArrowRightIcon data-icon="inline-end"/>
-</Button>
-```
+- 图标包必须与项目 `iconLibrary` 一致
+- 当前是 **Vue 语境**，不要写 `lucide-react`
+- 对于 lucide，优先使用当前项目已安装的 `lucide-vue-next`
+- 没有证据时，不要臆测别的图标包导入路径
 
 ---
 
-## No sizing classes on icons inside components
+## 不要写死错误生态
 
-Components handle icon sizing via CSS. Don't add `size-4`, `w-4 h-4`, or other sizing classes to icons inside `Button`, `DropdownMenuItem`, `Alert`, `Sidebar*`, or other shadcn components. Unless the user explicitly asks for custom icon sizes.
+**错误：**
 
-**Incorrect:**
-
-```tsx
-<Button>
-  <SearchIcon className="size-4" data-icon="inline-start" />
-  Search
-</Button>
-
-<DropdownMenuItem>
-  <SettingsIcon className="mr-2 size-4" />
-  Settings
-</DropdownMenuItem>
+```ts
+import { CheckIcon } from "lucide-react"
 ```
 
-**Correct:**
+**正确：**
 
-```tsx
-<Button>
-  <SearchIcon data-icon="inline-start" />
-  Search
-</Button>
-
-<DropdownMenuItem>
-  <SettingsIcon />
-  Settings
-</DropdownMenuItem>
+```ts
+import { Check } from "lucide-vue-next"
 ```
+
+如果项目 `iconLibrary` 不是 lucide，就按项目真实依赖调整。
 
 ---
 
-## Pass icons as component objects, not string keys
+## 图标尺寸
 
-Use `icon={CheckIcon}`, not a string key to a lookup map.
+- 优先让按钮、菜单项、输入控件等宿主组件控制图标尺寸
+- 没有明确设计要求时，不要在图标上散落大量 `w-* h-*` / `size-*` 覆盖
+- 如果确实需要自定义尺寸，先确认这不是因为组件结构写错了
 
-**Incorrect:**
+---
 
-```tsx
+## 传递方式
+
+在 Vue 中，优先直接传组件引用，而不是传字符串 key 再做一层脆弱映射。
+
+**不推荐：**
+
+```ts
 const iconMap = {
-  check: CheckIcon,
-  alert: AlertIcon,
+  check: Check,
 }
+```
 
-function StatusBadge({ icon }: { icon: string }) {
-  const Icon = iconMap[icon]
-  return <Icon />
-}
-
+```vue
 <StatusBadge icon="check" />
 ```
 
-**Correct:**
+**更推荐：**
 
-```tsx
-// Import from the project's configured iconLibrary (e.g. lucide-react, @tabler/icons-react).
-import { CheckIcon } from "lucide-react"
+```vue
+<script setup lang="ts">
+import type { Component } from "vue"
+defineProps<{ icon: Component }>()
+</script>
 
-function StatusBadge({ icon: Icon }: { icon: React.ComponentType }) {
-  return <Icon />
-}
-
-<StatusBadge icon={CheckIcon} />
+<template>
+  <component :is="icon" />
+</template>
 ```
+
+这样更直接，也更适合 Vue 组件组合。

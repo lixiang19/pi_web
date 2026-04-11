@@ -1,246 +1,173 @@
 ---
-name: shadcn
-description: Manages shadcn components and projects — adding, searching, fixing, debugging, styling, and composing UI. Provides project context, component docs, and usage examples. Applies when working with shadcn/ui, component registries, presets, --preset codes, or any project with a components.json file. Also triggers for "shadcn init", "create an app with --preset", or "switch to --preset".
+name: shadcn-vue
+description: 仅用于 shadcn-vue / Vue 项目。负责初始化、添加组件、查看项目信息、主题定制、注册表构建与 MCP 配置。禁止在该技能中使用官方 React 的 shadcn CLI。
 user-invocable: false
-allowed-tools: Bash(npx shadcn@latest *), Bash(pnpm dlx shadcn@latest *), Bash(bunx --bun shadcn@latest *)
+allowed-tools: Bash(npx shadcn-vue@latest *), Bash(pnpm dlx shadcn-vue@latest *), Bash(bunx --bun shadcn-vue@latest *)
 ---
 
-# shadcn/ui
+# shadcn-vue
 
-A framework for building ui, components and design systems. Components are added as source code to the user's project via the CLI.
+该技能**只适用于 shadcn-vue**。
 
-> **IMPORTANT:** Run all CLI commands using the project's package runner: `npx shadcn@latest`, `pnpm dlx shadcn@latest`, or `bunx --bun shadcn@latest` — based on the project's `packageManager`. Examples below use `npx shadcn@latest` but substitute the correct runner for the project.
+- 这是 **Vue + shadcn-vue + Reka UI** 语境。
+- **禁止**使用官方 React CLI：`npx shadcn@latest ...`
+- **必须**使用：`npx shadcn-vue@latest ...`
 
-## Current Project Context
+> **重要：** 所有 CLI 命令都要使用项目自己的包管理器执行器：`npx shadcn-vue@latest`、`pnpm dlx shadcn-vue@latest` 或 `bunx --bun shadcn-vue@latest`。示例默认使用 `npx shadcn-vue@latest`。
 
-```json
-!`npx shadcn@latest info --json`
-```
-
-The JSON above contains the project config and installed components. Use `npx shadcn@latest docs <component>` to get documentation and example URLs for any component.
-
-## Principles
-
-1. **Use existing components first.** Use `npx shadcn@latest search` to check registries before writing custom UI. Check community registries too.
-2. **Compose, don't reinvent.** Settings page = Tabs + Card + form controls. Dashboard = Sidebar + Card + Chart + Table.
-3. **Use built-in variants before custom styles.** `variant="outline"`, `size="sm"`, etc.
-4. **Use semantic colors.** `bg-primary`, `text-muted-foreground` — never raw values like `bg-blue-500`.
-
-## Critical Rules
-
-These rules are **always enforced**. Each links to a file with Incorrect/Correct code pairs.
-
-### Styling & Tailwind → [styling.md](./rules/styling.md)
-
-- **`className` for layout, not styling.** Never override component colors or typography.
-- **No `space-x-*` or `space-y-*`.** Use `flex` with `gap-*`. For vertical stacks, `flex flex-col gap-*`.
-- **Use `size-*` when width and height are equal.** `size-10` not `w-10 h-10`.
-- **Use `truncate` shorthand.** Not `overflow-hidden text-ellipsis whitespace-nowrap`.
-- **No manual `dark:` color overrides.** Use semantic tokens (`bg-background`, `text-muted-foreground`).
-- **Use `cn()` for conditional classes.** Don't write manual template literal ternaries.
-- **No manual `z-index` on overlay components.** Dialog, Sheet, Popover, etc. handle their own stacking.
-
-### Forms & Inputs → [forms.md](./rules/forms.md)
-
-- **Forms use `FieldGroup` + `Field`.** Never use raw `div` with `space-y-*` or `grid gap-*` for form layout.
-- **`InputGroup` uses `InputGroupInput`/`InputGroupTextarea`.** Never raw `Input`/`Textarea` inside `InputGroup`.
-- **Buttons inside inputs use `InputGroup` + `InputGroupAddon`.**
-- **Option sets (2–7 choices) use `ToggleGroup`.** Don't loop `Button` with manual active state.
-- **`FieldSet` + `FieldLegend` for grouping related checkboxes/radios.** Don't use a `div` with a heading.
-- **Field validation uses `data-invalid` + `aria-invalid`.** `data-invalid` on `Field`, `aria-invalid` on the control. For disabled: `data-disabled` on `Field`, `disabled` on the control.
-
-### Component Structure → [composition.md](./rules/composition.md)
-
-- **Items always inside their Group.** `SelectItem` → `SelectGroup`. `DropdownMenuItem` → `DropdownMenuGroup`. `CommandItem` → `CommandGroup`.
-- **Use `asChild` (radix) or `render` (base) for custom triggers.** Check `base` field from `npx shadcn@latest info`. → [base-vs-radix.md](./rules/base-vs-radix.md)
-- **Dialog, Sheet, and Drawer always need a Title.** `DialogTitle`, `SheetTitle`, `DrawerTitle` required for accessibility. Use `className="sr-only"` if visually hidden.
-- **Use full Card composition.** `CardHeader`/`CardTitle`/`CardDescription`/`CardContent`/`CardFooter`. Don't dump everything in `CardContent`.
-- **Button has no `isPending`/`isLoading`.** Compose with `Spinner` + `data-icon` + `disabled`.
-- **`TabsTrigger` must be inside `TabsList`.** Never render triggers directly in `Tabs`.
-- **`Avatar` always needs `AvatarFallback`.** For when the image fails to load.
-
-### Use Components, Not Custom Markup → [composition.md](./rules/composition.md)
-
-- **Use existing components before custom markup.** Check if a component exists before writing a styled `div`.
-- **Callouts use `Alert`.** Don't build custom styled divs.
-- **Empty states use `Empty`.** Don't build custom empty state markup.
-- **Toast via `sonner`.** Use `toast()` from `sonner`.
-- **Use `Separator`** instead of `<hr>` or `<div className="border-t">`.
-- **Use `Skeleton`** for loading placeholders. No custom `animate-pulse` divs.
-- **Use `Badge`** instead of custom styled spans.
-
-### Icons → [icons.md](./rules/icons.md)
-
-- **Icons in `Button` use `data-icon`.** `data-icon="inline-start"` or `data-icon="inline-end"` on the icon.
-- **No sizing classes on icons inside components.** Components handle icon sizing via CSS. No `size-4` or `w-4 h-4`.
-- **Pass icons as objects, not string keys.** `icon={CheckIcon}`, not a string lookup.
-
-### CLI
-
-- **Never decode or fetch preset codes manually.** Pass them directly to `npx shadcn@latest apply --preset <code>` for existing projects, or `npx shadcn@latest init --preset <code>` when initializing.
-
-## Key Patterns
-
-These are the most common patterns that differentiate correct shadcn/ui code. For edge cases, see the linked rule files above.
-
-```tsx
-// Form layout: FieldGroup + Field, not div + Label.
-<FieldGroup>
-  <Field>
-    <FieldLabel htmlFor="email">Email</FieldLabel>
-    <Input id="email" />
-  </Field>
-</FieldGroup>
-
-// Validation: data-invalid on Field, aria-invalid on the control.
-<Field data-invalid>
-  <FieldLabel>Email</FieldLabel>
-  <Input aria-invalid />
-  <FieldDescription>Invalid email.</FieldDescription>
-</Field>
-
-// Icons in buttons: data-icon, no sizing classes.
-<Button>
-  <SearchIcon data-icon="inline-start" />
-  Search
-</Button>
-
-// Spacing: gap-*, not space-y-*.
-<div className="flex flex-col gap-4">  // correct
-<div className="space-y-4">           // wrong
-
-// Equal dimensions: size-*, not w-* h-*.
-<Avatar className="size-10">   // correct
-<Avatar className="w-10 h-10"> // wrong
-
-// Status colors: Badge variants or semantic tokens, not raw colors.
-<Badge variant="secondary">+20.1%</Badge>    // correct
-<span className="text-emerald-600">+20.1%</span> // wrong
-```
-
-## Component Selection
-
-| Need                       | Use                                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------------------------- |
-| Button/action              | `Button` with appropriate variant                                                                   |
-| Form inputs                | `Input`, `Select`, `Combobox`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider` |
-| Toggle between 2–5 options | `ToggleGroup` + `ToggleGroupItem`                                                                   |
-| Data display               | `Table`, `Card`, `Badge`, `Avatar`                                                                  |
-| Navigation                 | `Sidebar`, `NavigationMenu`, `Breadcrumb`, `Tabs`, `Pagination`                                     |
-| Overlays                   | `Dialog` (modal), `Sheet` (side panel), `Drawer` (bottom sheet), `AlertDialog` (confirmation)       |
-| Feedback                   | `sonner` (toast), `Alert`, `Progress`, `Skeleton`, `Spinner`                                        |
-| Command palette            | `Command` inside `Dialog`                                                                           |
-| Charts                     | `Chart` (wraps Recharts)                                                                            |
-| Layout                     | `Card`, `Separator`, `Resizable`, `ScrollArea`, `Accordion`, `Collapsible`                          |
-| Empty states               | `Empty`                                                                                             |
-| Menus                      | `DropdownMenu`, `ContextMenu`, `Menubar`                                                            |
-| Tooltips/info              | `Tooltip`, `HoverCard`, `Popover`                                                                   |
-
-## Key Fields
-
-The injected project context contains these key fields:
-
-- **`aliases`** → use the actual alias prefix for imports (e.g. `@/`, `~/`), never hardcode.
-- **`isRSC`** → when `true`, components using `useState`, `useEffect`, event handlers, or browser APIs need `"use client"` at the top of the file. Always reference this field when advising on the directive.
-- **`tailwindVersion`** → `"v4"` uses `@theme inline` blocks; `"v3"` uses `tailwind.config.js`.
-- **`tailwindCssFile`** → the global CSS file where custom CSS variables are defined. Always edit this file, never create a new one.
-- **`style`** → component visual treatment (e.g. `nova`, `vega`).
-- **`base`** → primitive library (`radix` or `base`). Affects component APIs and available props.
-- **`iconLibrary`** → determines icon imports. Use `lucide-react` for `lucide`, `@tabler/icons-react` for `tabler`, etc. Never assume `lucide-react`.
-- **`resolvedPaths`** → exact file-system destinations for components, utils, hooks, etc.
-- **`framework`** → routing and file conventions (e.g. Next.js App Router vs Vite SPA).
-- **`packageManager`** → use this for any non-shadcn dependency installs (e.g. `pnpm add date-fns` vs `npm install date-fns`).
-
-See [cli.md — `info` command](./cli.md) for the full field reference.
-
-## Component Docs, Examples, and Usage
-
-Run `npx shadcn@latest docs <component>` to get the URLs for a component's documentation, examples, and API reference. Fetch these URLs to get the actual content.
+## 当前项目上下文
 
 ```bash
-npx shadcn@latest docs button dialog select
+!`npx shadcn-vue@latest info`
 ```
 
-**When creating, fixing, debugging, or using a component, always run `npx shadcn@latest docs` and fetch the URLs first.** This ensures you're working with the correct API and usage patterns rather than guessing.
+`info` 输出是**纯文本项目摘要**，不是 `--json`。先读取它，再决定组件路径、Tailwind 文件、图标库与样式风格。
 
-## Workflow
+## 核心原则
 
-1. **Get project context** — already injected above. Run `npx shadcn@latest info` again if you need to refresh.
-2. **Check installed components first** — before running `add`, always check the `components` list from project context or list the `resolvedPaths.ui` directory. Don't import components that haven't been added, and don't re-add ones already installed.
-3. **Find components** — `npx shadcn@latest search`.
-4. **Get docs and examples** — run `npx shadcn@latest docs <component>` to get URLs, then fetch them. Use `npx shadcn@latest view` to browse registry items you haven't installed. To preview changes to installed components, use `npx shadcn@latest add --diff`.
-5. **Install or update** — `npx shadcn@latest add`. When updating existing components, use `--dry-run` and `--diff` to preview changes first (see [Updating Components](#updating-components) below).
-6. **Fix imports in third-party components** — After adding components from community registries (e.g. `@bundui`, `@magicui`), check the added non-UI files for hardcoded import paths like `@/components/ui/...`. These won't match the project's actual aliases. Use `npx shadcn@latest info` to get the correct `ui` alias (e.g. `@workspace/ui/components`) and rewrite the imports accordingly. The CLI rewrites imports for its own UI files, but third-party registry components may use default paths that don't match the project.
-7. **Review added components** — After adding a component or block from any registry, **always read the added files and verify they are correct**. Check for missing sub-components (e.g. `SelectItem` without `SelectGroup`), missing imports, incorrect composition, or violations of the [Critical Rules](#critical-rules). Also replace any icon imports with the project's `iconLibrary` from the project context (e.g. if the registry item uses `lucide-react` but the project uses `hugeicons`, swap the imports and icon names accordingly). Fix all issues before moving on.
-8. **Registry must be explicit** — When the user asks to add a block or component, **do not guess the registry**. If no registry is specified (e.g. user says "add a login block" without specifying `@shadcn`, `@tailark`, etc.), ask which registry to use. Never default to a registry on behalf of the user.
-9. **Switching presets** — Ask the user first: **overwrite**, **merge**, or **skip**?
-   - **Overwrite**: `npx shadcn@latest apply --preset <code>`. Overwrites detected components, fonts, and CSS variables.
-   - **Merge**: `npx shadcn@latest init --preset <code> --force --no-reinstall`, then run `npx shadcn@latest info` to list installed components, then for each installed component use `--dry-run` and `--diff` to [smart merge](#updating-components) it individually.
-   - **Skip**: `npx shadcn@latest init --preset <code> --force --no-reinstall`. Only updates config and CSS, leaves components as-is.
-   - **Important**: Always run preset commands inside the user's project directory. `apply` only works in an existing project with a `components.json` file. The CLI automatically preserves the current base (`base` vs `radix`) from `components.json`. If you must use a scratch/temp directory (e.g. for `--dry-run` comparisons), pass `--base <current-base>` explicitly — preset codes do not encode the base.
+1. **先确认这是 shadcn-vue 项目。** 重点看 `components.json` 的 schema、`info` 输出、Vue 目录结构。
+2. **先读取项目真实路径。** 只使用 `aliases` / `resolvedPaths` 里的路径，不要手写猜测导入。
+3. **只使用 shadcn-vue 已支持的命令。** 不要虚构 `apply`、`search`、`view`、`docs`、`info --json` 之类不存在的命令。
+4. **先查已安装组件，再决定 add。** 不要重复添加，也不要引用项目里还没安装的 UI 组件。
+5. **优先修改主题变量，不要硬写颜色。** 主题入口是 `tailwindCssFile` 对应的全局 CSS 文件。
+6. **新增组件后必须复查生成结果。** 检查导入路径、Vue 图标包、Tailwind 类、SFC 结构、是否符合当前项目约定。
 
-## Updating Components
+## 关键规则
 
-When the user asks to update a component from upstream while keeping their local changes, use `--dry-run` and `--diff` to intelligently merge. **NEVER fetch raw files from GitHub manually — always use the CLI.**
+### 1. CLI 规则
 
-1. Run `npx shadcn@latest add <component> --dry-run` to see all files that would be affected.
-2. For each file, run `npx shadcn@latest add <component> --diff <file>` to see what changed upstream vs local.
-3. Decide per file based on the diff:
-   - No local changes → safe to overwrite.
-   - Has local changes → read the local file, analyze the diff, and apply upstream updates while preserving local modifications.
-   - User says "just update everything" → use `--overwrite`, but confirm first.
-4. **Never use `--overwrite` without the user's explicit approval.**
+只允许使用 shadcn-vue 实际存在的命令：
 
-## Quick Reference
+- `create`
+- `init`
+- `add`
+- `diff`
+- `info`
+- `build`
+- `mcp init`
+
+**禁止继续沿用官方 shadcn 的命令心智：**
+
+- 不要用 `npx shadcn@latest ...`
+- 不要用 `apply`
+- 不要用 `search`
+- 不要用 `view`
+- 不要用 `docs`
+- 不要用 `info --json`
+
+### 2. 样式规则
+
+- 在 Vue 模板里使用 `class`，不是 `className`
+- 间距优先 `gap-*`，不要继续堆 `space-x-*` / `space-y-*`
+- 等宽高优先 `size-*`
+- 截断优先 `truncate`
+- 颜色优先语义 token：`bg-background`、`text-foreground`、`text-muted-foreground`、`text-destructive`
+- 不要在组件里硬写原始颜色值去替代主题系统
+- 不要手写一堆 `dark:` 覆盖去绕开 CSS 变量
+
+### 3. 组件规则
+
+- 优先使用已存在的 `src/components/ui` 组件，而不是自己重新造基础组件
+- `Dialog` / `Sheet` / `Drawer` 一类弹层必须补齐标题与描述结构
+- `Avatar` 要有 fallback
+- `Card` 尽量使用完整组合结构，不要把所有内容都塞进同一个内容区
+- 新增组件后，必须回读文件，确认没有遗留 React 用法、错误导入或错误图标包
+
+### 4. 图标规则
+
+- 图标包必须与项目 `iconLibrary` 一致
+- 在 Vue 项目里，不要写 `lucide-react`
+- 对于 lucide，优先使用当前项目已经安装的 Vue 包，例如 `lucide-vue-next`
+- 不要把图标字符串 key 当作运行时映射的唯一来源，优先直接传组件引用
+
+## 重点字段
+
+运行 `npx shadcn-vue@latest info` 后，重点关注：
+
+- `framework`
+- `typescript`
+- `isSrcDir`
+- `tailwindVersion`
+- `tailwindConfigFile`
+- `tailwindCssFile`
+- `aliasPrefix`
+- `style`
+- `iconLibrary`
+- `aliases`
+- `registries`
+- `resolvedPaths`
+
+## 工作流
+
+1. **读取项目上下文**：先跑 `npx shadcn-vue@latest info`
+2. **检查现有 UI 组件目录**：确认哪些组件已经存在
+3. **再执行 `add` 或 `diff`**
+4. **回读新增文件**：检查是否存在错误路径、错误图标导入、Vue 语法问题
+5. **需要换主题时优先改 CSS 变量**，必要时再重新 `init --preset ... --force`
+6. **最终做项目级检查**：至少跑类型检查 / lint / 构建检查（按项目约定）
+
+## 快速参考
 
 ```bash
-# Create a new project.
-npx shadcn@latest init --name my-app --preset base-nova
-npx shadcn@latest init --name my-app --preset a2r6bw --template vite
+# 查看项目信息
+npx shadcn-vue@latest info
 
-# Create a monorepo project.
-npx shadcn@latest init --name my-app --preset base-nova --monorepo
-npx shadcn@latest init --name my-app --preset base-nova --template next --monorepo
+# 初始化现有项目
+npx shadcn-vue@latest init
 
-# Initialize existing project.
-npx shadcn@latest init --preset base-nova
-npx shadcn@latest init --defaults  # shortcut: --template=next --preset=nova (base style implied)
+# 以 preset 初始化/重初始化
+npx shadcn-vue@latest init --preset reka-mira --force
 
-# Apply a preset to an existing project.
-npx shadcn@latest apply --preset a2r6bw
-npx shadcn@latest apply a2r6bw
+# 创建新项目
+npx shadcn-vue@latest create my-app --template vite --preset reka-mira
 
-# Add components.
-npx shadcn@latest add button card dialog
-npx shadcn@latest add @magicui/shimmer-button
-npx shadcn@latest add --all
+# 添加组件
+npx shadcn-vue@latest add button card dialog sidebar
 
-# Preview changes before adding/updating.
-npx shadcn@latest add button --dry-run
-npx shadcn@latest add button --diff button.tsx
-npx shadcn@latest add @acme/form --view button.tsx
+# 查看某个组件与注册表差异
+npx shadcn-vue@latest diff button
 
-# Search registries.
-npx shadcn@latest search @shadcn -q "sidebar"
-npx shadcn@latest search @tailark -q "stats"
+# 构建自定义 registry
+npx shadcn-vue@latest build
 
-# Get component docs and example URLs.
-npx shadcn@latest docs button dialog select
-
-# View registry item details (for items not yet installed).
-npx shadcn@latest view @shadcn/button
+# 初始化 MCP 配置
+npx shadcn-vue@latest mcp init --client codex
 ```
 
-**Named presets:** `nova`, `vega`, `maia`, `lyra`, `mira`, `luma`
-**Templates:** `next`, `vite`, `start`, `react-router`, `astro` (all support `--monorepo`) and `laravel` (not supported for monorepo)
-**Preset codes:** Version-prefixed base62 strings (e.g. `a2r6bw` or `b0`), from [ui.shadcn.com](https://ui.shadcn.com).
+## 主题与 preset
 
-## Detailed References
+当前已知 preset 风格名称来自 shadcn-vue CLI：
 
-- [rules/forms.md](./rules/forms.md) — FieldGroup, Field, InputGroup, ToggleGroup, FieldSet, validation states
-- [rules/composition.md](./rules/composition.md) — Groups, overlays, Card, Tabs, Avatar, Alert, Empty, Toast, Separator, Skeleton, Badge, Button loading
-- [rules/icons.md](./rules/icons.md) — data-icon, icon sizing, passing icons as objects
-- [rules/styling.md](./rules/styling.md) — Semantic colors, variants, className, spacing, size, truncate, dark mode, cn(), z-index
-- [rules/base-vs-radix.md](./rules/base-vs-radix.md) — asChild vs render, Select, ToggleGroup, Slider, Accordion
-- [cli.md](./cli.md) — Commands, flags, presets, templates
-- [customization.md](./customization.md) — Theming, CSS variables, extending components
+- `reka-vega`
+- `reka-nova`
+- `reka-maia`
+- `reka-lyra`
+- `reka-mira`
+- `reka-luma`
+
+切换 preset 时：
+
+- 先和用户确认是否允许覆盖现有配置
+- 如果只是改主题颜色，优先直接编辑全局 CSS 变量
+- 如果确实要整体重初始化，再使用 `init --preset <preset> --force`
+- **不要**再使用 React CLI 里的 `apply`
+
+## 组件文档策略
+
+shadcn-vue 没有官方 shadcn CLI 那套 `docs/search/view` 命令工作流。
+
+因此：
+
+- 组件 API 以 **shadcn-vue 官网文档** 与项目现有源码为准
+- 注册表/安装相关信息以 `add`、`diff`、`build`、`mcp` 为准
+- 不要伪造不存在的“先 docs 后 add”流程
+
+## 明确禁止
+
+以下做法都视为错误：
+
+- 把 Vue 项目当成 React `shadcn/ui` 项目处理
+- 看到 `components.json` 就默认执行 `npx shadcn@latest ...`
+- 给 shadcn-vue 项目写 React 专属术语：`isRSC`、`className`、`lucide-react`
+- 在没有证据的情况下编造 CLI 参数或命令
+- 不检查生成文件，直接假设 CLI 输出一定正确

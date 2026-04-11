@@ -1,162 +1,106 @@
-# Styling & Customization
+# 样式规则
 
-See [customization.md](../customization.md) for theming, CSS variables, and adding custom colors.
+参见 [customization.md](../customization.md) 了解主题变量、Tailwind 注册和自定义颜色。
 
-## Contents
+## 核心原则
 
-- Semantic colors
-- Built-in variants first
-- className for layout only
-- No space-x-* / space-y-*
-- Prefer size-* over w-* h-* when equal
-- Prefer truncate shorthand
-- No manual dark: color overrides
-- Use cn() for conditional classes
-- No manual z-index on overlay components
+1. **先用语义 token，再谈局部覆盖**
+2. **在 Vue 模板里使用 `class`，不是 `className`**
+3. **布局优先 `gap-*`，不要堆 `space-x-*` / `space-y-*`**
+4. **等宽高优先 `size-*`**
+5. **优先 `truncate`，不要手写整套文本截断类**
+6. **不要用原始颜色值破坏主题系统**
+7. **不要在组件里写大量 `dark:*` 去绕开变量体系**
 
 ---
 
-## Semantic colors
+## 语义颜色
 
-**Incorrect:**
+**错误：**
 
-```tsx
-<div className="bg-blue-500 text-white">
-  <p className="text-gray-600">Secondary text</p>
+```vue
+<div class="bg-blue-500 text-white">
+  <p class="text-gray-600">Secondary text</p>
 </div>
 ```
 
-**Correct:**
+**正确：**
 
-```tsx
-<div className="bg-primary text-primary-foreground">
-  <p className="text-muted-foreground">Secondary text</p>
+```vue
+<div class="bg-primary text-primary-foreground">
+  <p class="text-muted-foreground">Secondary text</p>
 </div>
 ```
 
 ---
 
-## No raw color values for status/state indicators
+## 状态颜色
 
-For positive, negative, or status indicators, use Badge variants, semantic tokens like `text-destructive`, or define custom CSS variables — don't reach for raw Tailwind colors.
+成功、失败、警告、次要信息等状态，优先用：
 
-**Incorrect:**
+- `text-destructive`
+- 主题里定义的自定义 token
+- 项目已有的 Badge / Alert / Callout 语义组件
 
-```tsx
-<span className="text-emerald-600">+20.1%</span>
-<span className="text-green-500">Active</span>
-<span className="text-red-600">-3.2%</span>
-```
+不要直接写：
 
-**Correct:**
+- `text-green-500`
+- `bg-red-100`
+- `text-emerald-600`
 
-```tsx
-<Badge variant="secondary">+20.1%</Badge>
-<Badge>Active</Badge>
-<span className="text-destructive">-3.2%</span>
-```
-
-If you need a success/positive color that doesn't exist as a semantic token, use a Badge variant or ask the user about adding a custom CSS variable to the theme (see [customization.md](../customization.md)).
+除非设计系统已经明确允许。
 
 ---
 
-## Built-in variants first
+## 布局间距
 
-**Incorrect:**
+**错误：**
 
-```tsx
-<Button className="border border-input bg-transparent hover:bg-accent">
-  Click me
-</Button>
-```
-
-**Correct:**
-
-```tsx
-<Button variant="outline">Click me</Button>
-```
-
----
-
-## className for layout only
-
-Use `className` for layout (e.g. `max-w-md`, `mx-auto`, `mt-4`), **not** for overriding component colors or typography. To change colors, use semantic tokens, built-in variants, or CSS variables.
-
-**Incorrect:**
-
-```tsx
-<Card className="bg-blue-100 text-blue-900 font-bold">
-  <CardContent>Dashboard</CardContent>
-</Card>
-```
-
-**Correct:**
-
-```tsx
-<Card className="max-w-md mx-auto">
-  <CardContent>Dashboard</CardContent>
-</Card>
-```
-
-To customize a component's appearance, prefer these approaches in order:
-1. **Built-in variants** — `variant="outline"`, `variant="destructive"`, etc.
-2. **Semantic color tokens** — `bg-primary`, `text-muted-foreground`.
-3. **CSS variables** — define custom colors in the global CSS file (see [customization.md](../customization.md)).
-
----
-
-## No space-x-* / space-y-*
-
-Use `gap-*` instead. `space-y-4` → `flex flex-col gap-4`. `space-x-2` → `flex gap-2`.
-
-```tsx
-<div className="flex flex-col gap-4">
+```vue
+<div class="space-y-4">
   <Input />
   <Input />
-  <Button>Submit</Button>
+</div>
+```
+
+**正确：**
+
+```vue
+<div class="flex flex-col gap-4">
+  <Input />
+  <Input />
 </div>
 ```
 
 ---
 
-## Prefer size-* over w-* h-* when equal
+## 等宽高
 
-`size-10` not `w-10 h-10`. Applies to icons, avatars, skeletons, etc.
+**错误：**
 
----
-
-## Prefer truncate shorthand
-
-`truncate` not `overflow-hidden text-ellipsis whitespace-nowrap`.
-
----
-
-## No manual dark: color overrides
-
-Use semantic tokens — they handle light/dark via CSS variables. `bg-background text-foreground` not `bg-white dark:bg-gray-950`.
-
----
-
-## Use cn() for conditional classes
-
-Use the `cn()` utility from the project for conditional or merged class names. Don't write manual ternaries in className strings.
-
-**Incorrect:**
-
-```tsx
-<div className={`flex items-center ${isActive ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+```vue
+<Avatar class="w-10 h-10" />
 ```
 
-**Correct:**
+**正确：**
 
-```tsx
-import { cn } from "@/lib/utils"
-
-<div className={cn("flex items-center", isActive ? "bg-primary text-primary-foreground" : "bg-muted")}>
+```vue
+<Avatar class="size-10" />
 ```
 
 ---
 
-## No manual z-index on overlay components
+## 深色模式
 
-`Dialog`, `Sheet`, `Drawer`, `AlertDialog`, `DropdownMenu`, `Popover`, `Tooltip`, `HoverCard` handle their own stacking. Never add `z-50` or `z-[999]`.
+**错误思路：** 在组件里散落大量 `dark:bg-*`、`dark:text-*` 试图硬改主题。
+
+**正确思路：**
+
+- 让明暗主题由全局 CSS 变量驱动
+- 组件里写 `bg-background`、`text-foreground`、`text-muted-foreground` 这类语义类
+
+---
+
+## 条件类名
+
+如果项目已有 `cn()` / `clsx` / `tailwind-merge` 封装，优先使用统一工具，不要在每个组件里重复拼接复杂字符串。

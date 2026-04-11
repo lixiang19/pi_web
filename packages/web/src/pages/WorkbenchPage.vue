@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import SessionSidebar from "@/components/chat/SessionSidebar.vue";
+import SessionSidebarSlack from "@/components/chat/SessionSidebarSlack.vue";
 import ProjectFilePanel from "@/components/workbench/ProjectFilePanel.vue";
 import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
 import { useWorkbenchPage } from "@/composables/useWorkbenchPage";
@@ -54,8 +54,8 @@ const {
 <template>
   <div class="h-full">
     <div class="flex h-full divide-x">
-      <aside class="w-72 flex shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
-        <SessionSidebar
+      <aside class="w-72 flex shrink-0 flex-col">
+        <SessionSidebarSlack
           v-bind="sessionSidebarProps"
           class="flex-1"
           @archive="archiveSession"
