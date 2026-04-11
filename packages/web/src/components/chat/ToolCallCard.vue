@@ -31,9 +31,9 @@ const toggleExpand = () => {
 
 <template>
   <div
-    class="overflow-hidden rounded-lg border bg-muted/50 transition-all"
+    class="overflow-hidden rounded-lg bg-muted/50 shadow-sm transition-all"
     :class="[
-      isResult && (block as ToolResultContentBlock).isError ? 'border-destructive/30' : 'border-border',
+      isResult && (block as ToolResultContentBlock).isError ? 'bg-destructive/5 ring-1 ring-destructive/20' : '',
       isExpanded ? 'ring-1 ring-primary/20' : ''
     ]"
   >
@@ -68,7 +68,7 @@ const toggleExpand = () => {
       </div>
     </button>
 
-    <div v-show="isExpanded" class="border-t px-3 py-3">
+    <div v-show="isExpanded" class="ridge-panel-inset mx-2 mb-2 rounded-md px-3 py-3">
       <div class="whitespace-pre-wrap font-mono text-xs leading-5 text-foreground/70">
         <template v-if="isToolCall">
           {{ JSON.stringify((block as ToolCallContentBlock).arguments, null, 2) }}

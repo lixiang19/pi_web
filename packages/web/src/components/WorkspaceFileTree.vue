@@ -245,7 +245,7 @@ onMounted(() => {
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-background">
     <!-- Header -->
-    <div class="border-b px-3 py-2.5 bg-muted/30">
+    <div class="ridge-panel-header px-3 py-2.5">
       <div class="flex items-center justify-between gap-2">
         <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Explorer

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import SessionSidebarSlack from "@/components/chat/SessionSidebarSlack.vue";
+import SessionSidebar from "@/components/chat/SessionSidebar.vue";
 import ProjectFilePanel from "@/components/workbench/ProjectFilePanel.vue";
 import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
 import { useWorkbenchPage } from "@/composables/useWorkbenchPage";
@@ -16,6 +16,7 @@ const {
   archiveSession,
   composer,
   createSidebarSession,
+  setDraftProjectPath,
   currentSessionTitle,
   deleteSession,
   fileTreeRoot,
@@ -53,9 +54,9 @@ const {
 
 <template>
   <div class="h-full">
-    <div class="flex h-full divide-x">
-      <aside class="w-72 flex shrink-0 flex-col">
-        <SessionSidebarSlack
+    <div class="flex h-full">
+      <aside class="w-72 flex shrink-0 flex-col bg-sidebar">
+        <SessionSidebar
           v-bind="sessionSidebarProps"
           class="flex-1"
           @archive="archiveSession"
@@ -88,6 +89,7 @@ const {
           :no-agent-value="NO_AGENT_VALUE"
           :parent-session-id="parentSessionId"
           :project-label="formatProjectLabel(fileTreeRoot || 'workspace')"
+          :current-project-path="fileTreeRoot"
           :prompts="filteredPrompts"
           :resource-error="resourceError"
           :skills="filteredSkills"
@@ -100,6 +102,7 @@ const {
           @inject-skill="injectSkill"
           @load-earlier="loadEarlier"
           @return-to-parent="returnToParentSession"
+          @select-project-path="setDraftProjectPath($event)"
           @select-agent="handleAgentSelection"
           @select-model="handleModelSelection"
           @select-thinking="handleThinkingSelection"

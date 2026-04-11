@@ -14,7 +14,7 @@ defineProps<{
   <div
     class="flex flex-1 flex-col overflow-hidden"
   >
-    <div class="flex h-12 items-center justify-between border-b px-4">
+    <div class="ridge-panel-header flex h-12 items-center justify-between px-4">
       <div class="flex items-center gap-2">
         <FolderKanban class="size-3.5 text-foreground/40" />
         <h3 class="text-[10px] font-black uppercase tracking-widest text-foreground/60">

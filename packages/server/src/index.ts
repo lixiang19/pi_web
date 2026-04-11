@@ -1524,7 +1524,7 @@ app.get('/api/filesystem/browse', async (req: Request, res: Response, next: Next
     }
 
     const entries = (await listDirectoryEntries(targetPath, homeDir)).filter(
-      (entry) => entry.kind === 'directory',
+      (entry) => entry.kind === 'directory' && !entry.name.startsWith('.'),
     );
 
     res.json({

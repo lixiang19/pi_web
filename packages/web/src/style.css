@@ -36,3 +36,43 @@ body {
 .font-mono {
   font-family: 'IBM Plex Mono', monospace;
 }
+
+/* === 全局滚动条 - 细且淡 === */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 113, 108, 0.35) transparent;
+}
+
+.dark * {
+  scrollbar-color: rgba(154, 145, 138, 0.3) transparent;
+}
+::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 113, 108, 0.35);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 113, 108, 0.55);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(154, 145, 138, 0.3);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(154, 145, 138, 0.5);
+}
+
+.ridge-panel-header {
+  background: color-mix(in oklab, var(--background) 78%, var(--muted));
+}
+
+.ridge-panel-inset {
+  background: color-mix(in oklab, var(--background) 88%, var(--muted));
+}

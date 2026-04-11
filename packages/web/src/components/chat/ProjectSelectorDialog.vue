@@ -69,7 +69,7 @@ watch(
 
 <template>
   <Dialog v-model:open="open">
-    <DialogContent>
+    <DialogContent class="overflow-hidden">
       <DialogHeader>
         <DialogTitle>选择项目文件夹</DialogTitle>
         <DialogDescription>
@@ -77,7 +77,7 @@ watch(
         </DialogDescription>
       </DialogHeader>
 
-      <div class="flex min-h-[420px] flex-col">
+      <div class="flex h-[420px] flex-col">
         <div class="flex flex-wrap items-center gap-1 px-5 py-3 text-xs text-muted-foreground">
           <button
             v-for="(crumb, index) in breadcrumbs"
@@ -93,10 +93,11 @@ watch(
 
         <Separator />
 
-        <div class="flex items-center justify-between px-5 py-3">
+        <div class="flex items-center gap-3 px-5 py-3">
           <Button
             variant="ghost"
             size="sm"
+            class="shrink-0"
             :disabled="!parentPath || isLoading"
             @click="goParent()"
           >
@@ -104,14 +105,17 @@ watch(
             返回上一级
           </Button>
 
-          <p class="truncate text-xs text-muted-foreground" :title="selectedPath">
+          <p
+            class="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground"
+            :title="selectedPath"
+          >
             当前选择：{{ selectedPath || "-" }}
           </p>
         </div>
 
         <Separator />
 
-        <ScrollArea class="flex-1 px-3 py-3">
+        <ScrollArea class="flex-1 min-h-0 px-3 py-3">
           <div v-if="isLoading" class="flex min-h-[240px] items-center justify-center text-sm text-muted-foreground">
             <LoaderCircle class="size-4 animate-spin" />
           </div>

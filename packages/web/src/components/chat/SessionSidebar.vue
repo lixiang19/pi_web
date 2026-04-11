@@ -5,19 +5,40 @@ import { useLocalStorage } from "@vueuse/core";
 import {
   ChevronDown,
   ChevronRight,
+  Folder,
   Plus,
   Search,
   Settings,
-  Folder,
 } from "lucide-vue-next";
-import { Input } from "@/components/ui/input";
-import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
 import SessionSidebarSessionNode from "@/components/chat/SessionSidebarSessionNode.vue";
+import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
 import { useProjects } from "@/composables/useProjects";
-import { buildSessionProjects } from "@/lib/session-sidebar";
-import type { SessionSummary } from "@/lib/types";
+import {
+  buildSessionProjects,
+  formatRelativeProjectPath,
+} from "@/lib/session-sidebar";
+import type { ProjectItem, SessionSummary } from "@/lib/types";
 
 const MAX_RECENT_SESSIONS = 10;
+const DEFAULT_VISIBLE_SESSION_COUNT = 3;
+const RECENT_GROUP_KEY = "__recent__";
+
 const router = useRouter();
 
 const props = defineProps<{
@@ -36,55 +57,82 @@ const emit = defineEmits<{
   remove: [sessionId: string];
 }>();
 
-// Search
 const searchQuery = ref("");
-
-// Local state
 const editingSessionId = ref("");
 const editingTitle = ref("");
+const expandedGroupKeys = ref<string[]>([]);
 
 const collapsedProjects = useLocalStorage<Record<string, boolean>>(
   "pi.sessions.projectCollapse",
-  {}
+  {},
 );
+const recentSessionIds = useLocalStorage<string[]>("pi.sessions.recent", []);
 
-const pinnedSessionIds = useLocalStorage<string[]>("pi.sessions.pinned", []);
-
-// Recent sessions: ordered list of session IDs (most recent first)
-const recentSessionIds = useLocalStorage<string[]>(
-  "pi.sessions.recent",
-  []
-);
-
-// Projects
 const projectState = useProjects();
 const {
   add: addProjectToList,
   error: projectError,
   isLoading: isProjectLoading,
   load: loadProjects,
+  projects: storedProjects,
 } = projectState;
 
 const isProjectDialogOpen = ref(false);
-
 const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase());
+const isSearching = computed(() => normalizedQuery.value.length > 0);
 
-// Build projects with search filter
-const projects = computed(() =>
-  buildSessionProjects({
+const normalizePath = (value: string) =>
+  value.replace(/\\/g, "/").replace(/\/+$/, "");
+
+const createEmptyProjectView = (project: ProjectItem) => ({
+  id: `stored:${project.id}`,
+  label: project.name,
+  projectRoot: normalizePath(project.path),
+  pathLabel: formatRelativeProjectPath(project.path, props.workspaceDir),
+  lastUpdatedAt: project.addedAt,
+  sessions: [],
+  groups: [],
+});
+
+const projects = computed(() => {
+  const sessionProjects = buildSessionProjects({
     sessions: props.sessions,
-    pinnedIds: pinnedSessionIds.value,
     query: normalizedQuery.value,
     ...(props.workspaceDir ? { workspaceDir: props.workspaceDir } : {}),
-  })
-);
+  });
 
-// Recent sessions: get session objects from stored IDs
+  const mergedProjects = new Map(
+    sessionProjects.map((project) => [normalizePath(project.projectRoot), project]),
+  );
+
+  for (const project of storedProjects.value) {
+    const normalizedProjectPath = normalizePath(project.path);
+    if (mergedProjects.has(normalizedProjectPath)) {
+      continue;
+    }
+
+    const query = normalizedQuery.value;
+    const matchesQuery =
+      !query ||
+      `${project.name} ${normalizedProjectPath}`.toLowerCase().includes(query);
+
+    if (!matchesQuery) {
+      continue;
+    }
+
+    mergedProjects.set(normalizedProjectPath, createEmptyProjectView(project));
+  }
+
+  return [...mergedProjects.values()].sort(
+    (left, right) => right.lastUpdatedAt - left.lastUpdatedAt,
+  );
+});
+
 const recentSessions = computed(() => {
   const sessionMap = new Map(
-    props.sessions.map((session) => [session.id, session])
+    props.sessions.map((session) => [session.id, session]),
   );
-  
+
   return recentSessionIds.value
     .map((id) => sessionMap.get(id))
     .filter((session): session is SessionSummary => Boolean(session))
@@ -92,16 +140,43 @@ const recentSessions = computed(() => {
     .slice(0, MAX_RECENT_SESSIONS);
 });
 
-// Record a session as recently accessed
+const isProjectCollapsed = (projectId: string) =>
+  collapsedProjects.value[projectId] === true;
+
+const isGroupExpanded = (groupKey: string) =>
+  expandedGroupKeys.value.includes(groupKey);
+
+const getVisibleCount = (total: number, groupKey: string) => {
+  if (isSearching.value || isGroupExpanded(groupKey)) {
+    return total;
+  }
+
+  return Math.min(total, DEFAULT_VISIBLE_SESSION_COUNT);
+};
+
+const getVisibleNodes = <T>(nodes: T[], groupKey: string) =>
+  nodes.slice(0, getVisibleCount(nodes.length, groupKey));
+
+const getHiddenCount = (total: number, groupKey: string) =>
+  Math.max(0, total - getVisibleCount(total, groupKey));
+
+const toggleGroupExpansion = (groupKey: string) => {
+  if (isGroupExpanded(groupKey)) {
+    expandedGroupKeys.value = expandedGroupKeys.value.filter(
+      (key) => key !== groupKey,
+    );
+    return;
+  }
+
+  expandedGroupKeys.value = [...expandedGroupKeys.value, groupKey];
+};
+
 const recordRecentSession = (sessionId: string) => {
   const current = new Set(recentSessionIds.value);
-  // Remove if exists (will be added to front)
   current.delete(sessionId);
-  // Add to front
   recentSessionIds.value = [sessionId, ...current].slice(0, MAX_RECENT_SESSIONS);
 };
 
-// Actions
 const openProjectDialog = () => {
   isProjectDialogOpen.value = true;
 };
@@ -112,11 +187,6 @@ const handleAddProject = async (projectPath: string) => {
   isProjectDialogOpen.value = false;
 };
 
-
-
-const isProjectCollapsed = (projectId: string) =>
-  collapsedProjects.value[projectId] === true;
-
 const toggleProject = (projectId: string) => {
   collapsedProjects.value = {
     ...collapsedProjects.value,
@@ -124,20 +194,9 @@ const toggleProject = (projectId: string) => {
   };
 };
 
-// Handle session selection with recent tracking
 const handleSelect = (sessionId: string) => {
   recordRecentSession(sessionId);
   emit("select", sessionId);
-};
-
-const togglePin = (sessionId: string) => {
-  const next = new Set(pinnedSessionIds.value);
-  if (next.has(sessionId)) {
-    next.delete(sessionId);
-  } else {
-    next.add(sessionId);
-  }
-  pinnedSessionIds.value = [...next];
 };
 
 const startRename = (sessionId: string, currentTitle: string) => {
@@ -166,9 +225,6 @@ const updateEditingTitle = (value: string) => {
   editingTitle.value = value;
 };
 
-// Watchers
-
-// Watch active session to record recent access
 watch(
   () => props.activeSessionId,
   (sessionId) => {
@@ -176,26 +232,18 @@ watch(
       recordRecentSession(sessionId);
     }
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 watch(
   () => props.sessions,
   (sessions) => {
-    const sessionIds = new Set(sessions.map((session) => session.id));
-    
-    // Clean up pinned list: remove deleted sessions
-    pinnedSessionIds.value = pinnedSessionIds.value.filter((sessionId) =>
-      sessionIds.has(sessionId)
-    );
-    
-    // Clean up recent list: remove deleted or archived sessions
     recentSessionIds.value = recentSessionIds.value.filter((sessionId) => {
-      const session = sessions.find((s) => s.id === sessionId);
+      const session = sessions.find((item) => item.id === sessionId);
       return session && !session.archived;
     });
   },
-  { immediate: true, deep: true }
+  { immediate: true, deep: true },
 );
 
 onMounted(() => {
@@ -204,159 +252,217 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-[#fbfbfa] dark:bg-[#191919]">
-    <!-- Header -->
-    <div class="shrink-0 px-3 pt-4 pb-2">
-      <div class="mb-3 flex items-center justify-between px-2">
-        <h2 class="text-[11px] font-bold uppercase tracking-wider text-foreground/40">会话</h2>
-        <div class="flex items-center gap-0.5">
-          <button
-            class="p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-accent/50 rounded-md transition-colors"
-            title="添加项目"
-            :disabled="isProjectLoading"
-            @click="openProjectDialog"
-          >
-            <Folder class="size-4" />
-          </button>
-          <button
-            class="p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-accent/50 rounded-md transition-colors"
-            title="新建会话"
-            :disabled="isSending"
-            @click="emit('create', {})"
-          >
-            <Plus class="size-4" />
-          </button>
-        </div>
-      </div>
-
-      <div class="relative group px-1">
-        <Search
-          class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50"
-        />
-        <Input
-          v-model="searchQuery"
-          placeholder="搜索会话..."
-          class="h-8 border-none bg-accent/40 hover:bg-accent/60 focus-visible:ring-1 focus-visible:bg-background transition-colors pl-9 text-[13px] rounded-md shadow-none"
-        />
-      </div>
-    </div>
-
-    <!-- Content -->
-    <div class="flex-1 min-h-0 overflow-y-auto px-2 py-2">
-      <!-- Recent Section -->
-      <section v-if="recentSessions.length > 0 && !searchQuery" class="mb-6">
-        <div class="mb-1 flex items-center gap-2 px-3">
-          <span class="text-[11px] font-bold uppercase tracking-wider text-foreground/40">最近访问</span>
-        </div>
-        <div class="space-y-0.5">
-          <SessionSidebarSessionNode
-            v-for="session in recentSessions"
-            :key="`recent-${session.id}`"
-            :node="{ session, children: [] }"
-            :depth="0"
-            :active-session-id="activeSessionId"
-            :editing-session-id="editingSessionId"
-            :editing-title="editingTitle"
-            :expanded-parent-ids="[]"
-            :pinned-session-ids="pinnedSessionIds"
-            @select="handleSelect"
-            @prefetch="emit('prefetch', $event)"
-            @start-rename="startRename"
-            @update-editing-title="updateEditingTitle"
-            @save-rename="saveRename"
-            @cancel-rename="cancelRename"
-            @toggle-pin="togglePin"
-            @remove="removeSession"
-          />
-        </div>
-      </section>
-
-      <!-- Projects Section -->
-      <section class="min-h-0">
-        <div class="mb-1 flex items-center gap-2 px-3">
-          <span class="text-[11px] font-bold uppercase tracking-wider text-foreground/40">
-            {{ searchQuery ? "搜索结果" : "浏览项目" }}
-          </span>
-        </div>
-
-        <div v-if="projects.length === 0" class="py-12 text-center">
-          <p class="text-[12px] text-muted-foreground/50">无会话记录</p>
-        </div>
-
-        <div v-else class="space-y-4 pb-4">
-          <div v-for="project in projects" :key="project.id" class="space-y-0.5">
-            <div class="group relative flex items-center gap-1 rounded-md px-2 py-1 hover:bg-[#efefee] dark:hover:bg-[#202020] transition-colors">
-              <button
-                type="button"
-                class="flex min-w-0 flex-1 items-center gap-2 text-left"
-                @click="toggleProject(project.id)"
-              >
-                <component
-                  :is="isProjectCollapsed(project.id) ? ChevronRight : ChevronDown"
-                  class="size-3.5 shrink-0 text-muted-foreground/60 transition-transform"
-                />
-                <div class="min-w-0">
-                  <p class="truncate text-[13px] font-semibold text-foreground/90">
-                    {{ project.label }}
-                  </p>
-                </div>
-              </button>
-              <button
-                type="button"
-                class="rounded p-1 text-muted-foreground/40 opacity-0 transition-opacity hover:text-foreground hover:bg-background/50 group-hover:opacity-100 shadow-sm border border-transparent hover:border-border/10"
-                title="在该项目下新建会话"
-                @click="emit('create', { cwd: project.projectRoot })"
-              >
-                <Plus class="size-3.5" />
-              </button>
+  <SidebarProvider class="h-full min-h-0 w-full" :default-open="true">
+    <Sidebar collapsible="none" class="w-full border-r-0 bg-sidebar">
+      <SidebarHeader class="px-4 pt-5 pb-2">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="flex h-6 w-6 items-center justify-center rounded-md bg-primary">
+              <span class="text-[11px] font-bold italic text-primary-foreground">R</span>
             </div>
-
-            <div v-if="!isProjectCollapsed(project.id)" class="mt-0.5">
-              <template v-for="group in project.groups" :key="group.key">
-                <div
-                  v-if="group.kind !== 'project-root'"
-                  class="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-foreground/30"
+            <span class="text-sm font-bold tracking-tight text-sidebar-foreground">ridge</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  class="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  aria-label="添加项目"
+                  :disabled="isProjectLoading"
+                  @click="openProjectDialog"
                 >
-                  {{ group.label }}
-                </div>
-
-                <div v-for="node in group.tree" :key="node.session.id">
-                  <SessionSidebarSessionNode
-                    :node="node"
-                    :depth="1"
-                    :active-session-id="activeSessionId"
-                    :editing-session-id="editingSessionId"
-                    :editing-title="editingTitle"
-                    :expanded-parent-ids="[]"
-                    :pinned-session-ids="pinnedSessionIds"
-                    @select="handleSelect"
-                    @prefetch="emit('prefetch', $event)"
-                    @start-rename="startRename"
-                    @update-editing-title="updateEditingTitle"
-                    @save-rename="saveRename"
-                    @cancel-rename="cancelRename"
-                    @toggle-pin="togglePin"
-                    @remove="removeSession"
-                  />
-                </div>
-              </template>
-            </div>
+                  <Folder class="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="center">
+                <p>添加项目</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  class="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  aria-label="新建会话"
+                  :disabled="isSending"
+                  @click="emit('create', {})"
+                >
+                  <Plus class="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="center">
+                <p>新建会话</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
-      </section>
-    </div>
 
-    <!-- Footer -->
-    <div class="shrink-0 px-4 py-3">
-      <button
-        type="button"
-        class="flex w-full items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium text-foreground/60 transition-all hover:bg-[#efefee] dark:hover:bg-[#202020] hover:text-foreground"
-        @click="router.push('/settings')"
-      >
-        <Settings class="size-4 opacity-70" />
-        <span>设置</span>
-      </button>
-    </div>
+        <div class="group relative">
+          <Search
+            class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-sidebar-foreground/40"
+          />
+          <Input
+            v-model="searchQuery"
+            placeholder="搜索会话..."
+            class="h-8 rounded-md border-none bg-sidebar-accent/50 pl-9 text-[13px] shadow-none transition-colors placeholder:text-sidebar-foreground/30 hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:ring-1"
+          />
+        </div>
+      </SidebarHeader>
+
+      <SidebarContent class="px-2">
+        <SidebarGroup v-if="recentSessions.length > 0 && !isSearching">
+          <SidebarGroupLabel class="px-2">最近访问</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SessionSidebarSessionNode
+                v-for="session in getVisibleNodes(recentSessions, RECENT_GROUP_KEY)"
+                :key="`recent-${session.id}`"
+                :node="{ session, children: [] }"
+                :depth="0"
+                :active-session-id="activeSessionId"
+                :editing-session-id="editingSessionId"
+                :editing-title="editingTitle"
+                :expanded-parent-ids="[]"
+                @select="handleSelect"
+                @prefetch="emit('prefetch', $event)"
+                @start-rename="startRename"
+                @update-editing-title="updateEditingTitle"
+                @save-rename="saveRename"
+                @cancel-rename="cancelRename"
+                @remove="removeSession"
+              />
+            </SidebarMenu>
+            <div
+              v-if="getHiddenCount(recentSessions.length, RECENT_GROUP_KEY) > 0"
+              class="px-2 pt-1"
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-7 px-2 text-[12px] text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                @click="toggleGroupExpansion(RECENT_GROUP_KEY)"
+              >
+                展开更多（还有 {{ getHiddenCount(recentSessions.length, RECENT_GROUP_KEY) }} 条）
+              </Button>
+            </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel class="px-2">
+            {{ isSearching ? "搜索结果" : "浏览项目" }}
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <div v-if="projects.length === 0" class="py-12 text-center">
+              <p class="text-[12px] text-sidebar-foreground/30">无会话记录</p>
+            </div>
+
+            <SidebarMenu v-else class="space-y-1">
+              <div v-for="project in projects" :key="project.id" class="space-y-0.5">
+                <SidebarMenuItem>
+                  <div class="flex items-center gap-1">
+                    <SidebarMenuButton
+                      as-child
+                      :is-active="false"
+                      class="min-w-0 flex-1 hover:bg-sidebar-accent/40"
+                    >
+                      <button type="button" class="flex w-full items-center gap-2" @click="toggleProject(project.id)">
+                        <component
+                          :is="isProjectCollapsed(project.id) ? ChevronRight : ChevronDown"
+                          class="size-3.5 shrink-0 text-sidebar-foreground/40 transition-transform"
+                        />
+                        <span class="truncate text-[13px] font-bold tracking-tight text-sidebar-foreground/80 uppercase">
+                          {{ project.label }}
+                        </span>
+                      </button>
+                    </SidebarMenuButton>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      class="h-7 shrink-0 px-2 text-[12px] font-medium text-sidebar-foreground/45 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                      @click="emit('create', { cwd: project.projectRoot })"
+                    >
+                      新建会话
+                    </Button>
+                  </div>
+
+                  <div v-if="!isProjectCollapsed(project.id)" class="mt-0.5 ml-1">
+                    <div
+                      v-if="project.groups.length === 0"
+                      class="mx-2 rounded-md bg-sidebar-accent/20 px-3 py-3"
+                    >
+                      <p class="text-[12px] text-sidebar-foreground/50">暂无会话</p>
+                    </div>
+
+                    <template v-for="group in project.groups" :key="group.key">
+                      <div
+                        v-if="group.kind !== 'project-root'"
+                        class="px-2 py-1.5 text-[10px] font-bold tracking-wider text-sidebar-foreground/25 uppercase"
+                      >
+                        {{ group.label }}
+                      </div>
+
+                      <div
+                        v-for="node in getVisibleNodes(group.tree, group.key)"
+                        :key="node.session.id"
+                      >
+                        <SessionSidebarSessionNode
+                          :node="node"
+                          :depth="1"
+                          :active-session-id="activeSessionId"
+                          :editing-session-id="editingSessionId"
+                          :editing-title="editingTitle"
+                          :expanded-parent-ids="[]"
+                          @select="handleSelect"
+                          @prefetch="emit('prefetch', $event)"
+                          @start-rename="startRename"
+                          @update-editing-title="updateEditingTitle"
+                          @save-rename="saveRename"
+                          @cancel-rename="cancelRename"
+                          @remove="removeSession"
+                        />
+                      </div>
+
+                      <div
+                        v-if="getHiddenCount(group.tree.length, group.key) > 0"
+                        class="px-2 pb-1"
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          class="h-7 px-2 text-[12px] text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                          @click="toggleGroupExpansion(group.key)"
+                        >
+                          展开更多（还有 {{ getHiddenCount(group.tree.length, group.key) }} 条）
+                        </Button>
+                      </div>
+                    </template>
+                  </div>
+                </SidebarMenuItem>
+              </div>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter class="px-4 py-4">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              class="w-full justify-start gap-3 rounded-md text-sidebar-foreground/50 transition-all hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              @click="router.push('/settings')"
+            >
+              <Settings class="size-4" />
+              <span class="text-[13px] font-medium">设置</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+    </Sidebar>
 
     <ProjectSelectorDialog
       v-model:open="isProjectDialogOpen"
@@ -364,5 +470,5 @@ onMounted(() => {
       :error="projectError"
       @confirm="handleAddProject"
     />
-  </div>
+  </SidebarProvider>
 </template>

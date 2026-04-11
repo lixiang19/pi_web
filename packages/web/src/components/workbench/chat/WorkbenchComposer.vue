@@ -138,7 +138,7 @@ const currentAgentLabel = computed(() => {
 </script>
 
 <template>
-  <div class="shrink-0 border-t border-border bg-background">
+  <div class="ridge-panel-header shrink-0">
     <div class="mx-auto max-w-3xl px-4 py-3">
       <!-- 输入框 -->
       <div class="relative">

@@ -152,6 +152,10 @@ export function useWorkbenchSessionState(chat: PiChatState) {
     await chat.openSessionDraft(draftOptions);
   };
 
+  const setDraftProjectPath = async (cwd: string) => {
+    await chat.setDraftProjectPath(cwd);
+  };
+
   const openSession = async (sessionId: string) => {
     if (sessionId === chat.activeSessionId.value) {
       return;
@@ -181,6 +185,7 @@ export function useWorkbenchSessionState(chat: PiChatState) {
     openSession,
     parentSessionId,
     returnToParentSession,
+    setDraftProjectPath,
     sessionSidebarProps,
     statusLabel,
     statusTone,

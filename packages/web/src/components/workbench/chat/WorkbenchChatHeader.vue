@@ -35,7 +35,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+  <div class="ridge-panel-header flex shrink-0 items-center justify-between px-4 py-3">
     <div class="flex min-w-0 items-center gap-3">
       <h2 class="truncate text-sm font-semibold text-foreground">
         {{ currentSessionTitle }}

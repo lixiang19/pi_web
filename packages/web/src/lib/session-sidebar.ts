@@ -26,11 +26,6 @@ export type SessionProjectView = {
   groups: SessionGroupView[];
 };
 
-export type SessionListItem = {
-  session: SessionSummary;
-  isPinned: boolean;
-};
-
 const normalizePath = (value: string) =>
   value.replace(/\\/g, "/").replace(/\/+$/, "");
 
@@ -48,31 +43,17 @@ const relativeLabel = (value: string, workspaceDir?: string) => {
   return normalizedValue;
 };
 
-export const compareSessionsByPinnedAndTime = (
-  left: SessionSummary,
-  right: SessionSummary,
-  pinnedIds: Set<string>
-) => {
-  const leftPinned = pinnedIds.has(left.id);
-  const rightPinned = pinnedIds.has(right.id);
-
-  if (leftPinned !== rightPinned) {
-    return leftPinned ? -1 : 1;
-  }
-
-  return right.updatedAt - left.updatedAt;
-};
+const compareSessionsByTime = (left: SessionSummary, right: SessionSummary) =>
+  right.updatedAt - left.updatedAt;
 
 /**
  * Build session projects with flat list (no tree structure)
  */
 export const buildSessionProjects = (options: {
   sessions: SessionSummary[];
-  pinnedIds: string[];
   query?: string;
   workspaceDir?: string;
 }) => {
-  const pinnedIdSet = new Set(options.pinnedIds);
   const normalizedQuery = (options.query ?? "").trim().toLowerCase();
   const projectsById = new Map<string, SessionProjectView>();
 
@@ -80,10 +61,7 @@ export const buildSessionProjects = (options: {
     const existing = projectsById.get(session.projectId);
     if (existing) {
       existing.sessions.push(session);
-      existing.lastUpdatedAt = Math.max(
-        existing.lastUpdatedAt,
-        session.updatedAt
-      );
+      existing.lastUpdatedAt = Math.max(existing.lastUpdatedAt, session.updatedAt);
       continue;
     }
 
@@ -107,23 +85,19 @@ export const buildSessionProjects = (options: {
           .includes(normalizedQuery);
 
       const activeSessions = project.sessions.filter(
-        (session) => !session.archived
+        (session) => !session.archived,
       );
       const archivedSessions = project.sessions.filter(
-        (session) => session.archived
+        (session) => session.archived,
       );
 
       const groups: SessionGroupView[] = [];
 
-      // Project root sessions
       const rootSessions = activeSessions.filter(
-        (session) => session.worktreeRoot === session.projectRoot
+        (session) => session.worktreeRoot === session.projectRoot,
       );
       if (rootSessions.length > 0) {
-        // Sort by pinned first, then time
-        const sortedSessions = [...rootSessions].sort((a, b) =>
-          compareSessionsByPinnedAndTime(a, b, pinnedIdSet)
-        );
+        const sortedSessions = [...rootSessions].sort(compareSessionsByTime);
 
         const groupMatchesQuery =
           !normalizedQuery ||
@@ -131,10 +105,10 @@ export const buildSessionProjects = (options: {
             .toLowerCase()
             .includes(normalizedQuery);
 
-        // Filter sessions by search query
         const filteredSessions = sortedSessions.filter((session) => {
-          if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery)
+          if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
             return true;
+          }
           const haystack = `${session.title} ${session.cwd}`.toLowerCase();
           return haystack.includes(normalizedQuery);
         });
@@ -151,7 +125,7 @@ export const buildSessionProjects = (options: {
               children: [],
             })),
             lastUpdatedAt: Math.max(
-              ...rootSessions.map((session) => session.updatedAt)
+              ...rootSessions.map((session) => session.updatedAt),
             ),
             ...(rootSessions[0]?.branch
               ? { branch: rootSessions[0].branch }
@@ -160,7 +134,6 @@ export const buildSessionProjects = (options: {
         }
       }
 
-      // Worktree sessions
       const worktreeMap = new Map<string, SessionSummary[]>();
       for (const session of activeSessions) {
         if (session.worktreeRoot === session.projectRoot) {
@@ -174,10 +147,7 @@ export const buildSessionProjects = (options: {
 
       const worktreeGroups = [...worktreeMap.entries()]
         .map<SessionGroupView | null>(([worktreeRoot, sessions]) => {
-          // Sort by pinned first, then time
-          const sortedSessions = [...sessions].sort((a, b) =>
-            compareSessionsByPinnedAndTime(a, b, pinnedIdSet)
-          );
+          const sortedSessions = [...sessions].sort(compareSessionsByTime);
 
           const groupMatchesQuery =
             !normalizedQuery ||
@@ -185,10 +155,10 @@ export const buildSessionProjects = (options: {
               .toLowerCase()
               .includes(normalizedQuery);
 
-          // Filter sessions by search query
           const filteredSessions = sortedSessions.filter((session) => {
-            if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery)
+            if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
               return true;
+            }
             const haystack = `${session.title} ${session.cwd}`.toLowerCase();
             return haystack.includes(normalizedQuery);
           });
@@ -210,7 +180,7 @@ export const buildSessionProjects = (options: {
               children: [],
             })),
             lastUpdatedAt: Math.max(
-              ...sessions.map((session) => session.updatedAt)
+              ...sessions.map((session) => session.updatedAt),
             ),
             ...(sessions[0]?.branch ? { branch: sessions[0].branch } : {}),
           };
@@ -220,18 +190,16 @@ export const buildSessionProjects = (options: {
 
       groups.push(...worktreeGroups);
 
-      // Archived sessions
       if (archivedSessions.length > 0) {
-        const sortedSessions = [...archivedSessions].sort((a, b) =>
-          compareSessionsByPinnedAndTime(a, b, pinnedIdSet)
-        );
+        const sortedSessions = [...archivedSessions].sort(compareSessionsByTime);
 
         const groupMatchesQuery =
           !normalizedQuery || "archived".includes(normalizedQuery);
 
         const filteredSessions = sortedSessions.filter((session) => {
-          if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery)
+          if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
             return true;
+          }
           const haystack = `${session.title} ${session.cwd}`.toLowerCase();
           return haystack.includes(normalizedQuery);
         });
@@ -248,7 +216,7 @@ export const buildSessionProjects = (options: {
               children: [],
             })),
             lastUpdatedAt: Math.max(
-              ...archivedSessions.map((session) => session.updatedAt)
+              ...archivedSessions.map((session) => session.updatedAt),
             ),
           });
         }

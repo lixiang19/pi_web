@@ -711,6 +711,23 @@ export function usePiChat() {
     }
   };
 
+  const setDraftProjectPath = async (cwd: string) => {
+    const normalizedCwd = cwd.trim();
+    if (!normalizedCwd || activeSessionId.value) {
+      return;
+    }
+
+    activeDraftContext.value = {
+      cwd: normalizedCwd,
+      parentSessionId: activeDraftContext.value?.parentSessionId || "",
+    };
+
+    await Promise.all([
+      refreshAgents(normalizedCwd),
+      refreshResources({ cwd: normalizedCwd }),
+    ]);
+  };
+
   const refreshAgents = async (cwd?: string) => {
     agents.value = await getAgents(
       cwd ?? activeSession.value?.cwd ?? info.value?.workspaceDir,
@@ -1516,6 +1533,7 @@ export function usePiChat() {
     messages,
     models,
     openSessionDraft,
+    setDraftProjectPath,
     prefetchSession,
     refreshAgents,
     refreshResources,

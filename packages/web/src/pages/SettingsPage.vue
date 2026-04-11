@@ -267,7 +267,7 @@ const ridgeInfo = {
 
           <!-- shadcn Component Showcase -->
           <Card>
-            <CardHeader class="border-b">
+            <CardHeader class="ridge-panel-header rounded-t-lg pb-6">
               <div class="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 <span class="w-2 h-2 rounded-full bg-primary"></span>
                 shadcn-vue 组件展示
@@ -349,7 +349,7 @@ const ridgeInfo = {
 
           <!-- Ridge Terrain Color Layers -->
           <Card>
-            <CardHeader class="border-b">
+            <CardHeader class="ridge-panel-header rounded-t-lg pb-6">
               <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 山脊色彩层次 - 从山脚到山顶
               </div>

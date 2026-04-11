@@ -14,6 +14,7 @@
 - 负责在前端把消息、草稿和加载生命周期按 `sessionId` 分桶缓存，并通过邻近会话预取减少会话切换时的整份重新拉取。
 - 负责通过限窗快照和前端扩窗机制控制长会话历史加载，避免中间区默认渲染整份消息历史。
 - 负责在 Web 入口完成主题 token 注册、默认主题注入与明暗模式根节点切换，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量。
+- 负责约束工作台分隔策略：ridge 主题下优先使用 surface 层次与留白，不依赖裸 `border-*` 做结构分隔，避免 Tailwind 默认 `currentColor` 污染边框颜色。
 - 负责把用户级设置、收藏和自定义项目统一持久化到 ~/.ridge/ 下的服务端 JSON 文件，而不是在 Web 层散落 localStorage。
 - 负责限制文件树访问边界，只允许浏览当前工作区及同仓库 worktree 范围内的目录。
 - 负责把“工作区文件树浏览”和“用户 Home 目录项目选择”拆成两条独立后端边界，避免混淆安全语义。
@@ -56,6 +57,7 @@
 | - model/thinking/agent      |
 | - resource catalog          |
 | - theme token normalize     |
+| - ridge surface header/inset |
 | - theme bootstrap           |
 | - project browse / CRUD     |
 | - project/group/tree build  |
@@ -469,7 +471,8 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
   -> [5] 建立 /stream SSE 订阅并消费 snapshot
   -> [6] 中间消息区、资源目录与右侧文件树更新
 ```
-
+- **2026-04-11 侧栏分组收敛更新**：左栏“最近访问”、`project root`、`worktree`、`archived` 各实际渲染分组默认只投影前 3 条，会话余量通过组内“展开更多”一次性展开；该展开状态只属于当前页面会话，不持久化到 localStorage，搜索态则直接展示全部命中结果。
+- **2026-04-11 左栏标记收敛更新**：会话节点右侧不再渲染 Git 分支图标；左栏 pin 能力已从根上删除，包括节点 pin 图标、hover pin 按钮、`pi.sessions.pinned` 本地存储和按 pinned 优先的排序逻辑，列表统一回归按 `updatedAt` 倒序。
 - 关键分支 A：如果该 session 已经 hydrated，前端直接复用缓存桶，避免切换阻塞在整份快照请求上。
 - 关键分支 B：如果该 session 尚未在运行时打开，服务端会先通过 `SessionManager.open()` 与 `createAgentSession()` 恢复它。
 
