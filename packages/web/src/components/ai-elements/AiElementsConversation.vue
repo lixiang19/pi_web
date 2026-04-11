@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, watch, nextTick, onMounted } from "vue";
 import { ArrowDown } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import type { ChatMessage } from "@/lib/types";

@@ -1,6 +1,5 @@
 import pluginVue from 'eslint-plugin-vue'
 import pluginTypeScript from '@vue/eslint-config-typescript'
-import prettierConfig from '@vue/eslint-config-prettier'
 import globals from 'globals'
 
 export default [
@@ -32,7 +31,6 @@ export default [
   },
   ...pluginVue.configs['flat/essential'],
   ...pluginTypeScript(),
-  prettierConfig,
   {
     name: 'app/custom-rules',
     rules: {

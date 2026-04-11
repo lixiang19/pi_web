@@ -1,5 +1,4 @@
 import {
-  DEFAULT_THEME_MODE,
   DEFAULT_THEME_NAME,
   themes,
   type ThemeName,
@@ -12,11 +11,6 @@ export type ThemePreference = {
 };
 
 const THEME_STYLE_ELEMENT_ID = "pi-web-theme-tokens";
-
-const isThemeName = (value: string): value is ThemeName => value in themes;
-
-const isThemeMode = (value: string): value is Exclude<ThemeMode, "system"> =>
-  value === "light" || value === "dark";
 
 const ensureThemeStyleElement = () => {
   const existingElement = document.getElementById(THEME_STYLE_ELEMENT_ID);
@@ -40,14 +34,17 @@ export const applyTheme = (themeName: ThemeName, mode: Exclude<ThemeMode, "syste
   root.style.colorScheme = mode;
 };
 
-export const getResolvedThemePreference = (): ThemePreference => {
+const getThemePreferenceFromStore = (): ThemePreference => {
   const settingsStore = useSettingsStore();
-  const mode = settingsStore.resolvedThemeMode;
 
   return {
-    themeName: DEFAULT_THEME_NAME,
-    mode,
+    themeName: settingsStore.themeName ?? DEFAULT_THEME_NAME,
+    mode: settingsStore.resolvedThemeMode,
   };
+};
+
+export const getResolvedThemePreference = (): ThemePreference => {
+  return getThemePreferenceFromStore();
 };
 
 export const applyThemePreference = (preference: ThemePreference) => {
@@ -55,22 +52,11 @@ export const applyThemePreference = (preference: ThemePreference) => {
 };
 
 export const initializeThemeSystem = () => {
-  const settingsStore = useSettingsStore();
-  const preference: ThemePreference = {
-    themeName: DEFAULT_THEME_NAME,
-    mode: settingsStore.resolvedThemeMode,
-  };
-  applyThemePreference(preference);
+  applyThemePreference(getThemePreferenceFromStore());
 };
 
 export const setThemeMode = async (mode: ThemeMode) => {
   const settingsStore = useSettingsStore();
   await settingsStore.setTheme(mode);
-
-  const resolvedMode = settingsStore.resolvedThemeMode;
-  const preference: ThemePreference = {
-    themeName: DEFAULT_THEME_NAME,
-    mode: resolvedMode,
-  };
-  applyThemePreference(preference);
+  applyThemePreference(getThemePreferenceFromStore());
 };

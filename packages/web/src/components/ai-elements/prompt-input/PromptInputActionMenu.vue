@@ -1,15 +1,12 @@
 <script setup lang="ts">
+import type { DropdownMenuRootProps } from 'reka-ui'
 import { DropdownMenu } from '@/components/ui/dropdown-menu'
 
-type DropdownMenuProps = InstanceType<typeof DropdownMenu>['$props']
-
-interface Props extends /* @vue-ignore */ DropdownMenuProps {}
-
-const props = defineProps<Props>()
+defineProps<DropdownMenuRootProps>()
 </script>
 
 <template>
-  <DropdownMenu v-bind="props">
+  <DropdownMenu v-bind="$props">
     <slot />
   </DropdownMenu>
 </template>

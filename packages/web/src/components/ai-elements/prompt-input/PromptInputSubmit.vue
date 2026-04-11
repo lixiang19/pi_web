@@ -41,7 +41,7 @@ const iconClass = computed(() => {
   return 'size-4'
 })
 
-const { status, size, variant, class: _, ...restProps } = props
+const { size, variant, ...restProps } = props
 </script>
 
 <template>

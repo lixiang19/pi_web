@@ -4,7 +4,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { ServerResponse } from 'node:http';
 
-import express, { type Request, type Response, type NextFunction, type RequestHandler } from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import {
   AuthStorage,
@@ -15,7 +15,7 @@ import {
   createAgentSession,
 } from '@mariozechner/pi-coding-agent';
 import { z } from 'zod';
-import type { AgentSession, MessageContent, SessionEvent, ModelInfo } from '@mariozechner/pi-coding-agent';
+import type { AgentSession, SessionEvent, ModelInfo } from '@mariozechner/pi-coding-agent';
 
 import { createProjectContextResolver } from './project-context.js';
 import {
@@ -45,11 +45,9 @@ import {
 } from './storage/index.js';
 import type {
   SessionRecord,
-  SessionMetadata,
   SessionSummary,
   SessionSnapshot,
   FileTreeEntry,
-  FileTreeResult,
   FilesystemBrowseResult,
   AgentSummary,
   ProviderInfo,
@@ -302,12 +300,6 @@ const normalizeContent = (content: unknown): ContentBlock[] => {
     };
   });
 };
-
-const contentToText = (content: unknown): string =>
-  normalizeContent(content)
-    .filter((item) => item.type === 'text')
-    .map((item) => item.text || '')
-    .join('');
 
 const extractContentBlocks = (content: unknown): ContentBlock[] => {
   if (typeof content === 'string') {

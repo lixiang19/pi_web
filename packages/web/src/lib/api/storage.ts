@@ -1,9 +1,11 @@
+
 import type { ThemeName } from "@/assets/registry";
 
 export type ThemeMode = "light" | "dark" | "system";
 
 export interface Settings {
   theme: ThemeMode;
+  themeName: ThemeName;
   language: string;
   sidebarCollapsed: boolean;
   notifications: boolean;
@@ -23,6 +25,7 @@ export interface Favorites {
 
 const DEFAULT_SETTINGS: Settings = {
   theme: "system",
+  themeName: "default",
   language: "zh-CN",
   sidebarCollapsed: false,
   notifications: true,

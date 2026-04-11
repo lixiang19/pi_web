@@ -1,11 +1,11 @@
 import { ref, computed } from "vue";
 import { defineStore } from "pinia";
+import { DEFAULT_THEME_NAME, type ThemeName } from "@/assets/registry";
 import {
   getSettings,
   setSettings,
   type Settings,
 } from "@/lib/api/storage";
-import { type ThemeName } from "@/assets/registry";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -18,6 +18,9 @@ export const useSettingsStore = defineStore("settings", () => {
   const isLoaded = computed(() => settings.value !== null);
 
   const theme = computed<ThemeMode>(() => settings.value?.theme ?? "system");
+  const themeName = computed<ThemeName>(
+    () => settings.value?.themeName ?? DEFAULT_THEME_NAME,
+  );
   const language = computed(() => settings.value?.language ?? "zh-CN");
   const sidebarCollapsed = computed(() => settings.value?.sidebarCollapsed ?? false);
   const notifications = computed(() => settings.value?.notifications ?? true);
@@ -70,6 +73,10 @@ export const useSettingsStore = defineStore("settings", () => {
     await save({ theme });
   }
 
+  async function setThemeName(themeName: ThemeName): Promise<void> {
+    await save({ themeName });
+  }
+
   async function setLanguage(language: string): Promise<void> {
     await save({ language });
   }
@@ -93,6 +100,7 @@ export const useSettingsStore = defineStore("settings", () => {
     isLoaded,
     error,
     theme,
+    themeName,
     language,
     sidebarCollapsed,
     notifications,
@@ -100,6 +108,7 @@ export const useSettingsStore = defineStore("settings", () => {
     load,
     save,
     setTheme,
+    setThemeName,
     setLanguage,
     setSidebarCollapsed,
     setNotifications,

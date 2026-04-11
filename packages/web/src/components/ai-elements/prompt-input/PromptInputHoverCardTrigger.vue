@@ -1,15 +1,12 @@
 <script setup lang="ts">
+import type { HoverCardTriggerProps } from 'reka-ui'
 import { HoverCardTrigger } from '@/components/ui/hover-card'
 
-type PromptInputHoverCardTriggerProps = InstanceType<typeof HoverCardTrigger>['$props']
-
-interface Props extends /* @vue-ignore */ PromptInputHoverCardTriggerProps {}
-
-const props = defineProps<Props>()
+defineProps<HoverCardTriggerProps>()
 </script>
 
 <template>
-  <HoverCardTrigger v-bind="props">
+  <HoverCardTrigger v-bind="$props">
     <slot />
   </HoverCardTrigger>
 </template>

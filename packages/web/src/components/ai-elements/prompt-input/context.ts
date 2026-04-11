@@ -8,7 +8,7 @@ export function usePromptInputProvider(props: {
   maxFiles?: number
   maxFileSize?: number
   accept?: string
-  onSubmit?: (message: { text: string, files: any[] }) => void | Promise<void>
+  onSubmit?: (message: { text: string, files: AttachmentFile[] }) => void | Promise<void>
   onError?: (err: { code: string, message: string }) => void
 }) {
   const textInput = ref(props.initialInput || '')

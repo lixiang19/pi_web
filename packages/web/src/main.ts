@@ -8,8 +8,6 @@ import { useSettingsStore } from "./stores/settings";
 import { useFavoritesStore } from "./stores/favorites";
 
 async function initialize() {
-  initializeThemeSystem();
-
   const app = createApp(App);
   const pinia = createPinia();
 
@@ -20,6 +18,8 @@ async function initialize() {
   const favoritesStore = useFavoritesStore();
 
   await Promise.all([settingsStore.load(), favoritesStore.load()]);
+
+  initializeThemeSystem();
 
   app.mount("#app");
 }

@@ -17,11 +17,13 @@ type ToolHeaderProps = {
 
 const props = defineProps<ToolHeaderProps>()
 
-const derivedName = computed(() =>
-  props.type === 'dynamic-tool'
-    ? props.toolName
-    : props.type.split('-').slice(1).join('-'),
-)
+const derivedName = computed(() => {
+  if (props.type === 'dynamic-tool')
+    return props.toolName
+  if (!props.type)
+    return 'tool'
+  return props.type.split('-').slice(1).join('-') || 'tool'
+})
 </script>
 
 <template>

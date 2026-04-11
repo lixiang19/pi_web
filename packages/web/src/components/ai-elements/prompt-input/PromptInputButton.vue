@@ -2,14 +2,14 @@
 import type { HTMLAttributes } from 'vue'
 import { InputGroupButton } from '@/components/ui/input-group'
 import { cn } from '@/lib/utils'
-import { Comment, computed, Text, toRef, useSlots } from 'vue'
+import { Comment, computed, Text, useSlots } from 'vue'
+import type { ButtonVariants } from '@/components/ui/button'
+import type { InputGroupButtonVariants } from '@/components/ui/input-group'
 
-type InputGroupButtonProps = InstanceType<typeof InputGroupButton>['$props']
-
-interface Props extends /* @vue-ignore */ InputGroupButtonProps {
+interface Props {
   class?: HTMLAttributes['class']
-  variant?: InputGroupButtonProps['variant']
-  size?: InputGroupButtonProps['size']
+  variant?: ButtonVariants['variant']
+  size?: InputGroupButtonVariants['size']
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -37,19 +37,14 @@ const computedSize = computed(() => {
 
   return validChildren.length > 1 ? 'sm' : 'icon-sm'
 })
-
-const variant = toRef(props, 'variant')
-
-const { size, variant: _, class: __, ...restProps } = props
 </script>
 
 <template>
   <InputGroupButton
     type="button"
     :size="computedSize"
-    :class="cn($props.class)"
-    :variant="variant"
-    v-bind="restProps"
+    :class="cn(props.class)"
+    :variant="props.variant"
   >
     <slot />
   </InputGroupButton>

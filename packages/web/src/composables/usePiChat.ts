@@ -756,16 +756,11 @@ export function usePiChat() {
     const activeSummary = nextSessions.find(
       (session) => session.id === activeSessionId.value,
     );
+    // 当前会话被删除后，不自动回退到其他会话，保持未选中状态
     if (!activeSummary) {
-      const fallback =
-        nextSessions.find((session) => !session.archived) ?? null;
-      if (fallback) {
-        await loadSession(fallback.id);
-      } else {
-        resetActiveSession();
-        if (info.value?.workspaceDir) {
-          await refreshResources({ cwd: info.value.workspaceDir });
-        }
+      resetActiveSession();
+      if (info.value?.workspaceDir) {
+        await refreshResources({ cwd: info.value.workspaceDir });
       }
       return nextSessions;
     }
@@ -1125,15 +1120,11 @@ export function usePiChat() {
 
     await refreshAgents(systemInfo.workspaceDir);
 
-    const firstSession =
-      sessionList.find((session) => !session.archived) ?? sessionList[0];
-    if (firstSession) {
-      await loadSession(firstSession.id);
-      return;
+    // 初始化时不自动选中任何会话，保持未选中状态
+    resetActiveSession();
+    if (info.value?.workspaceDir) {
+      await refreshResources({ cwd: info.value.workspaceDir });
     }
-
-    applyDraftForSession(null);
-    await refreshResources({ cwd: systemInfo.workspaceDir });
   };
 
   const loadEarlier = async () => {

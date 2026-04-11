@@ -16,6 +16,7 @@ const projectsLock = createFileLock();
 
 const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
+  themeName: 'default',
   language: 'zh-CN',
   sidebarCollapsed: false,
   notifications: true,

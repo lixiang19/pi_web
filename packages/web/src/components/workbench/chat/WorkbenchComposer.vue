@@ -13,7 +13,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import WorkbenchResourcePicker from "@/components/workbench/chat/WorkbenchResourcePicker.vue";

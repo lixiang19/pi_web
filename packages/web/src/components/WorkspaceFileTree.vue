@@ -155,8 +155,12 @@ const fileFavorites = computed(() => {
   return favoritesStore.itemsByType.get("file") ?? [];
 });
 
-const getFavoritePath = (favorite: { id: string; data?: Record<string, unknown> }): string => {
-  return (favorite.data?.path as string) || favorite.id;
+const getFavoritePath = (favorite: {
+  id: string;
+  data?: Record<string, unknown>;
+}): string => {
+  const favoritePath = favorite.data?.["path"];
+  return typeof favoritePath === "string" ? favoritePath : favorite.id;
 };
 
 const isFavorited = (path: string): boolean => {
@@ -301,12 +305,11 @@ onMounted(() => {
 
           <!-- File Tree -->
           <div v-else class="py-2">
-            <button
+            <div
               v-for="node in visibleNodes"
               :key="node.entry.path"
-              type="button"
               draggable="true"
-              class="group relative flex w-full items-center gap-2 px-3 py-1.5 text-left transition-all duration-200 ease-out hover:bg-accent/50 cursor-grab active:cursor-grabbing"
+              class="group relative transition-all duration-200 ease-out hover:bg-accent/50 cursor-grab active:cursor-grabbing"
               :class="[
                 isDirectoryExpanded(node.entry.path) && node.entry.kind === 'directory'
                   ? 'bg-accent/30'
@@ -318,8 +321,6 @@ onMounted(() => {
                   ? 'opacity-50'
                   : ''
               ]"
-              :style="{ paddingLeft: `${node.depth * 14 + 12}px` }"
-              @click="toggleDirectory(node.entry)"
               @dragstart="handleDragStart($event, node.entry)"
               @dragend="handleDragEnd"
             >
@@ -329,39 +330,47 @@ onMounted(() => {
                 class="absolute left-0 top-0 bottom-0 w-0.5 bg-primary/60"
               />
 
-              <!-- Expand Icon -->
-              <component
-                :is="node.entry.kind === 'directory'
-                    ? isDirectoryExpanded(node.entry.path) ? ChevronDown : ChevronRight
-                    : ChevronRight"
-                class="size-4 shrink-0 transition-transform duration-200"
-                :class="node.entry.kind === 'directory' ? 'text-muted-foreground' : 'text-transparent'"
-              />
-
-              <!-- File/Folder Icon -->
-              <component
-                :is="node.entry.kind === 'directory'
-                    ? isDirectoryExpanded(node.entry.path) ? FolderOpen : Folder
-                    : FileCode2"
-                class="size-4 shrink-0 transition-colors duration-200"
-                :class="node.entry.kind === 'directory'
-                    ? 'text-muted-foreground group-hover:text-foreground'
-                    : 'text-foreground/70 group-hover:text-foreground'"
-              />
-
-              <!-- Name -->
-              <span
-                class="min-w-0 flex-1 truncate text-sm transition-colors duration-200"
-                :class="node.entry.kind === 'directory'
-                    ? 'text-foreground/80 font-medium uppercase text-xs tracking-wide group-hover:text-foreground'
-                    : 'text-foreground group-hover:text-foreground'"
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 px-3 py-1.5 pr-10 text-left"
+                :style="{ paddingLeft: `${node.depth * 14 + 12}px` }"
+                @click="toggleDirectory(node.entry)"
               >
-                {{ node.entry.name }}
-              </span>
+                <!-- Expand Icon -->
+                <component
+                  :is="node.entry.kind === 'directory'
+                      ? isDirectoryExpanded(node.entry.path) ? ChevronDown : ChevronRight
+                      : ChevronRight"
+                  class="size-4 shrink-0 transition-transform duration-200"
+                  :class="node.entry.kind === 'directory' ? 'text-muted-foreground' : 'text-transparent'"
+                />
+
+                <!-- File/Folder Icon -->
+                <component
+                  :is="node.entry.kind === 'directory'
+                      ? isDirectoryExpanded(node.entry.path) ? FolderOpen : Folder
+                      : FileCode2"
+                  class="size-4 shrink-0 transition-colors duration-200"
+                  :class="node.entry.kind === 'directory'
+                      ? 'text-muted-foreground group-hover:text-foreground'
+                      : 'text-foreground/70 group-hover:text-foreground'"
+                />
+
+                <!-- Name -->
+                <span
+                  class="min-w-0 flex-1 truncate text-sm transition-colors duration-200"
+                  :class="node.entry.kind === 'directory'
+                      ? 'text-foreground/80 font-medium uppercase text-xs tracking-wide group-hover:text-foreground'
+                      : 'text-foreground group-hover:text-foreground'"
+                >
+                  {{ node.entry.name }}
+                </span>
+              </button>
 
               <!-- Favorite Button -->
               <button
-                class="flex items-center justify-center size-6 rounded-md opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-accent"
+                type="button"
+                class="absolute right-3 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md opacity-0 transition-all duration-200 hover:bg-accent group-hover:opacity-100"
                 :class="isFavorited(node.entry.path)
                     ? 'opacity-100 text-amber-500'
                     : 'text-muted-foreground hover:text-amber-500'"
@@ -372,7 +381,7 @@ onMounted(() => {
                   class="size-4"
                 />
               </button>
-            </button>
+            </div>
           </div>
         </div>
       </TabsContent>
@@ -397,36 +406,41 @@ onMounted(() => {
 
           <!-- Favorites List -->
           <div v-else class="space-y-1.5">
-            <button
+            <div
               v-for="favorite in fileFavorites"
               :key="favorite.id"
-              type="button"
-              class="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-200 ease-out hover:bg-accent/50 border border-transparent hover:border-accent"
-              @click="handleFavoriteClick(favorite)"
+              class="group relative w-full rounded-lg border border-transparent transition-all duration-200 ease-out hover:border-accent hover:bg-accent/50"
             >
-              <!-- Icon Container -->
-              <div class="flex items-center justify-center size-9 rounded-lg bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 shrink-0 transition-transform duration-200 group-hover:scale-105">
-                <Star class="size-4.5" />
-              </div>
+              <button
+                type="button"
+                class="flex w-full items-center gap-3 px-3 py-2.5 pr-12 text-left"
+                @click="handleFavoriteClick(favorite)"
+              >
+                <!-- Icon Container -->
+                <div class="flex items-center justify-center size-9 rounded-lg bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 shrink-0 transition-transform duration-200 group-hover:scale-105">
+                  <Star class="size-4.5" />
+                </div>
 
-              <!-- Info -->
-              <div class="min-w-0 flex-1">
-                <p class="text-sm font-medium text-foreground truncate">
-                  {{ favorite.name }}
-                </p>
-                <p class="text-xs text-muted-foreground font-mono truncate">
-                  {{ getFavoritePath(favorite) }}
-                </p>
-              </div>
+                <!-- Info -->
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium text-foreground truncate">
+                    {{ favorite.name }}
+                  </p>
+                  <p class="text-xs text-muted-foreground font-mono truncate">
+                    {{ getFavoritePath(favorite) }}
+                  </p>
+                </div>
+              </button>
 
               <!-- Remove Button -->
               <button
-                class="flex items-center justify-center size-7 rounded-md opacity-0 group-hover:opacity-100 transition-all duration-200 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                @click.stop="handleRemoveFavorite(favorite.id)"
+                type="button"
+                class="absolute right-3 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md opacity-0 transition-all duration-200 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                @click="handleRemoveFavorite(favorite.id)"
               >
                 <Trash2 class="size-4" />
               </button>
-            </button>
+            </div>
           </div>
         </div>
       </TabsContent>

@@ -11,7 +11,7 @@ import {
 } from "lucide-vue-next";
 import { Input } from "@/components/ui/input";
 import type { SessionTreeNode } from "@/lib/session-sidebar";
-import type { SessionSummary } from "@/lib/types";
+
 defineOptions({
   name: "SessionSidebarSessionNode",
 });
@@ -37,9 +37,6 @@ const emit = defineEmits<{
   archive: [sessionId: string, archived: boolean];
   remove: [sessionId: string];
 }>();
-const relativeTimeFormatter = new Intl.RelativeTimeFormat("zh-CN", {
-  numeric: "auto",
-});
 const hasChildren = computed(() => props.node.children.length > 0);
 const isExpanded = computed(() =>
   props.expandedParentIds.includes(props.node.session.id),
@@ -53,39 +50,21 @@ const isEditing = computed(
 const isPinned = computed(() =>
   props.pinnedSessionIds.includes(props.node.session.id),
 );
-const formatRelativeTime = (timestamp: number) => {
-  const delta = timestamp - Date.now();
-  const minute = 60 * 100;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  if (Math.abs(delta) < hour) {
-    return relativeTimeFormatter.format(Math.round(delta / minute), "minute");
-  }
-  if (Math.abs(delta) < day) {
-    return relativeTimeFormatter.format(Math.round(delta / hour), "hour");
-  }
-  return relativeTimeFormatter.format(Math.round(delta / day), "day");
-};
 </script>
 <template>
-  <div class="space-y-0">
+  <div class="space-y-0.5">
     <div
-      class="group relative flex items-start gap-1.5 px-2 py-1.5 rounded-md transition-colors"
+      class="group relative flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors duration-150 select-none"
       :class="
         isActive
-          ? 'bg-sidebar-accent'
-          : 'hover:bg-sidebar-accent/50'
+          ? 'bg-[#efefee] dark:bg-[#202020]'
+          : 'hover:bg-[#efefee]/60 dark:hover:bg-[#202020]/60'
       "
-      :style="{ paddingLeft: `${8 + depth * 16}px` }"
+      :style="{ paddingLeft: `${12 + depth * 12}px` }"
     >
-      <!-- Active Indicator -->
-      <div
-        v-if="isActive"
-        class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary rounded-full"
-      />
       <button
         type="button"
-        class="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 hover:text-sidebar-foreground transition-colors rounded"
+        class="flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors rounded"
         :class="hasChildren ? '' : 'pointer-events-none opacity-0'"
         @click.stop="hasChildren && emit('toggleExpand', node.session.id)"
       >
@@ -94,62 +73,66 @@ const formatRelativeTime = (timestamp: number) => {
           class="size-3.5"
         />
       </button>
+
       <button
         type="button"
         class="min-w-0 flex-1 text-left"
         @mouseenter="emit('prefetch', node.session.id)"
         @click="emit('select', node.session.id)"
       >
-        <div v-if="isEditing" class="flex flex-col gap-1.5">
+        <div v-if="isEditing" class="py-0.5">
           <Input
             :model-value="editingTitle"
-            class="w-full h-7 text-sm"
+            class="h-6 w-full text-[13px] bg-background px-1 focus-visible:ring-1 border-none shadow-none"
             @update:model-value="emit('updateEditingTitle', $event)"
             @keydown.enter.prevent="emit('saveRename', node.session.id)"
             @keydown.esc.prevent="emit('cancelRename')"
             v-focus
           />
         </div>
-        <div v-else class="min-w-0">
+        <div v-else class="min-w-0 pr-6">
           <div class="flex items-center gap-1.5">
             <p
-              class="truncate text-sm font-medium transition-colors"
-              :class="isActive ? 'text-sidebar-foreground' : 'text-sidebar-foreground/90 group-hover:text-sidebar-foreground'"
+              class="truncate text-[13.5px] font-medium leading-tight"
+              :class="isActive ? 'text-foreground' : 'text-foreground/80 group-hover:text-foreground'"
             >
               {{ node.session.title || '无标题' }}
             </p>
-            <Pin v-if="isPinned" class="size-3 shrink-0 text-primary/80" />
-            <LoaderCircle v-if="node.session.status === 'streaming'" class="size-3 shrink-0 text-amber-500 animate-spin" />
+            <Pin v-if="isPinned" class="size-3 shrink-0 text-muted-foreground/50" />
+            <LoaderCircle v-if="node.session.status === 'streaming'" class="size-3 shrink-0 text-primary animate-spin" />
           </div>
-          <div class="mt-0.5 flex items-center gap-2">
-            <span v-if="node.session.branch" class="flex items-center gap-1 text-xs text-muted-foreground/70">
-              <GitBranchPlus class="size-3" />
-              {{ node.session.branch }}
-            </span>
-            <span class="text-xs text-muted-foreground/60 tabular-nums">{{ formatRelativeTime(node.session.updatedAt) }}</span>
+          <div v-if="node.session.branch" class="mt-0.5 flex items-center gap-1 opacity-60">
+            <GitBranchPlus class="size-3" />
+            <span class="text-[10px] truncate leading-none">{{ node.session.branch }}</span>
           </div>
         </div>
       </button>
+
       <!-- Hover Actions -->
-      <div v-if="!isEditing" class="absolute right-1 top-1 hidden items-center gap-0.5 group-hover:flex bg-sidebar-accent/90 rounded px-1">
-        <button
-          class="p-1 text-muted-foreground/70 hover:text-primary transition-colors rounded"
-          @click.stop="emit('togglePin', node.session.id)"
-        >
-          <Pin class="size-3.5" :class="isPinned ? 'fill-current' : ''" />
-        </button>
-        <button
-          class="p-1 text-muted-foreground/70 hover:text-sidebar-foreground transition-colors rounded"
-          @click.stop="emit('startRename', node.session.id, node.session.title)"
-        >
-          <Pencil class="size-3.5" />
-        </button>
-        <button
-          class="p-1 text-muted-foreground/70 hover:text-destructive transition-colors rounded"
-          @click.stop="emit('remove', node.session.id)"
-        >
-          <Trash2 class="size-3.5" />
-        </button>
+      <div v-if="!isEditing" class="absolute right-2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+        <div class="flex items-center gap-0.5 h-6 px-1 rounded-md border bg-background shadow-sm">
+          <button
+            class="p-1 text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors rounded-sm"
+            title="固定"
+            @click.stop="emit('togglePin', node.session.id)"
+          >
+            <Pin class="size-3" :class="isPinned ? 'fill-current' : ''" />
+          </button>
+          <button
+            class="p-1 text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors rounded-sm"
+            title="重命名"
+            @click.stop="emit('startRename', node.session.id, node.session.title)"
+          >
+            <Pencil class="size-3" />
+          </button>
+          <button
+            class="p-1 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors rounded-sm"
+            title="删除"
+            @click.stop="emit('remove', node.session.id)"
+          >
+            <Trash2 class="size-3" />
+          </button>
+        </div>
       </div>
     </div>
     <!-- Recursive Children -->

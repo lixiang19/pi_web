@@ -1,8 +1,10 @@
 // ===== Express Extensions =====
 import type { AgentSession, DefaultResourceLoader, SettingsManager } from '@mariozechner/pi-coding-agent';
 
+/* eslint-disable @typescript-eslint/no-namespace */
 declare global {
   namespace Express {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface Request {
       // 扩展请求类型如有需要
     }
@@ -168,6 +170,7 @@ export interface FileTreeResult {
 // ===== Storage Types =====
 export interface Settings {
   theme: 'system' | 'light' | 'dark';
+  themeName: string;
   language: string;
   sidebarCollapsed: boolean;
   notifications: boolean;

@@ -4,6 +4,7 @@ import {
   AiElementsPromptInput,
 } from "@/components/ai-elements";
 import WorkbenchResourcePicker from "./WorkbenchResourcePicker.vue";
+import WelcomeEmptyState from "@/components/workbench/WelcomeEmptyState.vue";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft } from "lucide-vue-next";
 import type {
@@ -46,6 +47,7 @@ defineProps<{
 
 const emit = defineEmits<{
   applyPrompt: [item: PromptCatalogItem];
+  createSession: [];
   injectCommand: [value: string];
   injectSkill: [value: string];
   loadEarlier: [];
@@ -116,8 +118,16 @@ function handleDraftUpdate(text: string) {
       @inject-skill="emit('injectSkill', $event)"
     />
 
+    <!-- Welcome State -->
+    <WelcomeEmptyState
+      v-if="!activeSessionId"
+      class="flex-1"
+      @create="emit('createSession')"
+    />
+
     <!-- Conversation -->
     <AiElementsConversation
+      v-else
       :messages="messages"
       :session-id="activeSessionId"
       :has-more-above="hasMoreAbove"

@@ -16,7 +16,7 @@ const { currentBranch, setBranches } = useMessageBranchContext()
 const branchVNodes = computed(() => {
   const nodes = slots.default?.() ?? []
 
-  const extractChildren = (node: any): any[] => {
+  const extractChildren = (node: unknown): unknown[] => {
     if (isVNode(node) && node.type === Fragment) {
       return Array.isArray(node.children) ? node.children : []
     }
@@ -25,7 +25,7 @@ const branchVNodes = computed(() => {
 
   const allNodes = nodes.flatMap(extractChildren)
 
-  return allNodes.filter((node) => {
+  return allNodes.filter((node): node is import('vue').VNode => {
     if (!isVNode(node))
       return false
     return node.type && typeof node.type === 'object'
@@ -40,7 +40,7 @@ const baseClasses = computed(() => cn('grid gap-2 overflow-hidden [&>div]:pb-0',
 </script>
 
 <template>
-  <template v-for="(node, index) in branchVNodes" :key="(node.key as any) ?? index">
+  <template v-for="(node, index) in branchVNodes" :key="(node.key as string | number | symbol | undefined) ?? index">
     <div
       :class="cn(baseClasses, index === currentBranch ? 'block' : 'hidden')"
       v-bind="$attrs"

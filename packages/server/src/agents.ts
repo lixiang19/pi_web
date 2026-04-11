@@ -4,7 +4,6 @@ import path from 'node:path';
 import { getAgentDir, parseFrontmatter } from '@mariozechner/pi-coding-agent';
 import { normalizeAgentPermission } from './agent-permissions.js';
 import type {
-  AgentConfig,
   AgentMode,
   AgentScope,
   ThinkingLevel,

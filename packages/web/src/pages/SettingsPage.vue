@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useThemePreferences } from "@/composables/useThemePreferences";
-import type { ThemeMode } from "@/lib/theme";
+import type { ThemeMode } from "@/stores/settings";
 import { cn } from "@/lib/utils";
 
 // 侧边栏菜单项
@@ -104,7 +104,7 @@ const handleModeChange = (value: string | null) => {
             <!-- Theme Select -->
             <div class="space-y-2">
               <label class="text-sm font-medium">主题</label>
-              <Select :value="themeName" @update:model-value="handleThemeChange">
+              <Select :model-value="themeName" @update:model-value="handleThemeChange">
                 <SelectTrigger class="w-full">
                   <SelectValue placeholder="选择主题" />
                 </SelectTrigger>
@@ -123,7 +123,7 @@ const handleModeChange = (value: string | null) => {
             <!-- Mode Select -->
             <div class="space-y-2">
               <label class="text-sm font-medium">模式</label>
-              <Select :value="mode" @update:model-value="handleModeChange">
+              <Select :model-value="mode" @update:model-value="handleModeChange">
                 <SelectTrigger class="w-full">
                   <SelectValue placeholder="选择模式" />
                 </SelectTrigger>

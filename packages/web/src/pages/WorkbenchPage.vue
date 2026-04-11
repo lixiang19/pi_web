@@ -95,6 +95,7 @@ const {
           :thinking-options="thinkingOptions"
           class="flex-1"
           @apply-prompt="applyPrompt"
+          @create-session="createSidebarSession({})"
           @inject-command="injectCommand"
           @inject-skill="injectSkill"
           @load-earlier="loadEarlier"

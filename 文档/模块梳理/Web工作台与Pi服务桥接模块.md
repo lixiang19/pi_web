@@ -232,19 +232,23 @@ export interface ProjectItem {
 - 抽象名称：主题偏好状态
 
 ```ts
+export interface Settings {
+  theme: 'system' | 'light' | 'dark'
+  themeName: ThemeName
+}
+
 export type ThemePreference = {
   themeName: ThemeName
-  mode: ThemeMode
+  mode: 'light' | 'dark'
 }
 
 export const applyThemePreference = (preference: ThemePreference) => {
   applyTheme(preference.themeName, preference.mode)
-  localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(preference))
 }
 ```
 
 - 这是主题系统从“启动时注入默认主题”升级为“运行时可切换且由服务端设置存储驱动”的核心抽象。
-- `lib/theme.ts` 负责把偏好应用到 DOM，`useThemePreferences.ts` 负责页面级交互状态，`stores/settings.ts` 负责通过服务端设置存储恢复和写回主题模式。
+- `lib/theme.ts` 负责把偏好应用到 DOM，`useThemePreferences.ts` 负责页面级交互状态，`stores/settings.ts` 负责通过服务端设置存储恢复和写回主题模式与主题名。
 - 依据：`packages/web/src/lib/theme.ts`，`packages/web/src/composables/useThemePreferences.ts`，`packages/web/src/pages/ThemesPage.vue`
 
 - 抽象名称：agent 资源定义与发现结果
@@ -337,11 +341,16 @@ const {
 - 抽象名称：主题注册表与运行时注入器
 
 ```ts
+@import './assets/theme-contract.css'
+
 export const themes = {
   default: normalizeThemeCss(defaultTheme),
   amber: normalizeThemeCss(amberTheme),
   // ...
 }
+
+const normalizeThemeCss = (themeCss: string) =>
+  themeCss.replace(/\n@theme\s+inline\s*\{[\s\S]*?\}\s*$/m, '')
 
 export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
   ensureThemeStyleElement().textContent = themes[themeName]
@@ -350,8 +359,8 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 }
 ```
 
-- 这是 Web 主题系统的核心抽象，前半段把主题资产统一编译成当前 Tailwind 配色约定可消费的 token，后半段在启动时把默认主题真实写入 DOM，而不是在组件里散落硬编码颜色。
-- `registry.ts` 负责主题 token 的归一化与导出，`theme.ts` 负责默认主题样式挂载、`data-theme` 标记和 `.dark` 根类切换，`main.ts` 在 Vue app mount 前执行初始化。
+- 这是 Web 主题系统的核心抽象，构建期由 `theme-contract.css` 向 Tailwind 暴露语义色契约，运行时由 `registry.ts + theme.ts` 只注入浏览器可执行的真实 CSS 变量。
+- `registry.ts` 负责剥离构建期专用 `@theme inline` 块并导出主题样式，`theme.ts` 负责样式挂载、`data-theme` 标记和 `.dark` 根类切换，`main.ts` 在设置加载完成后再执行初始化。
 - 依据：`packages/web/src/assets/registry.ts`，`packages/web/src/lib/theme.ts`，`packages/web/src/main.ts`
 
 ### Design Patterns
@@ -418,7 +427,7 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 
 - 模式名：主题资产归一化 + 启动期样式注入
   - 实现位置：`normalizeThemeCss()` 与 `initializeThemeSystem()`，位于 `packages/web/src/assets/registry.ts`、`packages/web/src/lib/theme.ts`
-  - 为什么这么做：主题源文件保存的是完整 `hsl(...)` 字符串，而当前工作台的 Tailwind 颜色系统消费的是原始 HSL token；必须在注册边界统一归一化，再在入口一次性注入，才能让 `bg-background`、`text-foreground`、`dark:*` 和全局背景渐变共用同一套主题变量。
+  - 为什么这么做：Tailwind v4 只会为构建期看得见的语义 token 生成工具类，因此必须先用 `theme-contract.css` 暴露主题契约；运行时再剥离 `@theme inline` 并注入真实变量，避免把构建期 DSL 当成浏览器 CSS 执行。
 
 - 模式名：共享路由壳 + 子页面装配
   - 实现位置：`PlatformShell.vue` 与 `router/index.ts`，位于 `packages/web/src/layouts/PlatformShell.vue`、`packages/web/src/router/index.ts`
@@ -581,8 +590,9 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
   -> [2] RouterLink 跳转 /settings 或 /themes
   -> [3] 对应 page setup 执行 composable
   -> [4] SettingsPage.vue 展示运行态摘要
-  -> [5] ThemesPage.vue 调用 useThemePreferences()
-  -> [6] applyThemePreference() 写入 DOM 与 localStorage
+  -> [5] SettingsPage.vue / ThemesPage.vue 调用 useThemePreferences()
+  -> [6] stores/settings.ts 写回 ~/.ridge/settings.json 中的 theme + themeName
+  -> [7] lib/theme.ts 监听并写入 DOM
 ```
 
 - 设置页不直接管理主题 token，只负责导航和运行态摘要。
@@ -591,17 +601,18 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 - 场景：Web 工作台主题启动流程
 
 ```text
-[1] main.ts import style.css + initializeThemeSystem()
-  -> [2] assets/registry.ts normalizeThemeCss()
-  -> [3] lib/theme.ts getResolvedThemePreference()
-  -> [4] lib/theme.ts ensureThemeStyleElement()
-  -> [5] 写入已持久化或默认主题 token 到 <style>
-  -> [6] html.dataset.theme/theme mode 同步到根节点
-  -> [7] router + 页面组件统一读取主题变量
+[1] main.ts load settings -> import style.css + theme-contract.css
+  -> [2] Tailwind 在构建期生成 bg-background/text-foreground 等语义类
+  -> [3] assets/registry.ts normalizeThemeCss() 去掉 @theme inline
+  -> [4] lib/theme.ts getResolvedThemePreference()
+  -> [5] lib/theme.ts ensureThemeStyleElement()
+  -> [6] 写入已持久化或默认主题 CSS 变量到 <style>
+  -> [7] html.dataset.theme/theme mode 同步到根节点
+  -> [8] router + 页面组件统一读取主题变量
 ```
 
-- 第 2 步把主题资产中的完整 `hsl(...)` 颜色声明转换成 Tailwind 配色系统使用的原始 token。
-- 第 3 到 6 步在应用挂载前完成，因此首屏渲染不会再依赖 `style.css` 中的写死配色，刷新后也能恢复用户上次主题。
+- 第 2 步解决“语义主题类未生成”的构建期问题。
+- 第 3 到 7 步在应用挂载前完成，因此首屏渲染能恢复用户上次主题，且运行时只依赖标准 CSS 变量注入。
 
 ## Integration
 

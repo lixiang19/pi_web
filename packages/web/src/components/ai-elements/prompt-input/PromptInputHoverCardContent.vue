@@ -1,15 +1,13 @@
 <script setup lang="ts">
+import type { HoverCardContentProps } from 'reka-ui'
 import { HoverCardContent } from '@/components/ui/hover-card'
 
-type PromptInputHoverCardContentProps = InstanceType<typeof HoverCardContent>['$props']
-
-interface Props extends /* @vue-ignore */ PromptInputHoverCardContentProps {}
-
-const props = withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<HoverCardContentProps>(), {
   align: 'start',
 })
 
-const { align, ...restProps } = props
+const restProps = { ...props, align: undefined };
+delete (restProps as Record<string, unknown>).align;
 </script>
 
 <template>

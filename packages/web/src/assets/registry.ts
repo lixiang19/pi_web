@@ -6,55 +6,11 @@ import caffeineTheme from './caffeine.css?raw'
 import northernLightsTheme from './northernLights.css?raw'
 import pastelDreamsTheme from './pastelDreams.css?raw'
 
-const colorTokenNames = [
-  'background',
-  'foreground',
-  'card',
-  'card-foreground',
-  'popover',
-  'popover-foreground',
-  'primary',
-  'primary-foreground',
-  'secondary',
-  'secondary-foreground',
-  'muted',
-  'muted-foreground',
-  'accent',
-  'accent-foreground',
-  'destructive',
-  'destructive-foreground',
-  'border',
-  'input',
-  'ring',
-  'chart-1',
-  'chart-2',
-  'chart-3',
-  'chart-4',
-  'chart-5',
-  'sidebar',
-  'sidebar-foreground',
-  'sidebar-primary',
-  'sidebar-primary-foreground',
-  'sidebar-accent',
-  'sidebar-accent-foreground',
-  'sidebar-border',
-  'sidebar-ring'
-] as const
-
 const normalizeThemeCss = (themeCss: string) => {
-  const withoutTailwindThemeBlock = themeCss.replace(
+  return themeCss.replace(
     /\n@theme\s+inline\s*\{[\s\S]*?\}\s*$/m,
     ''
   )
-
-  return colorTokenNames.reduce((css, tokenName) => {
-    const tokenPattern = new RegExp(
-      `(--${tokenName}\\s*:\\s*)hsl\\(([^)]+)\\)(\\s*;)`,
-      'g'
-    )
-
-    return css.replace(tokenPattern, '$1$2$3')
-  }, withoutTailwindThemeBlock)
 }
 
 export const themes = {
