@@ -1,6 +1,7 @@
 import { computed } from "vue";
 
 import { usePiChat } from "@/composables/usePiChat";
+import { useEffectiveDirectory } from "@/composables/useEffectiveDirectory";
 import type { ThinkingLevel } from "@/lib/types";
 
 export const NO_AGENT_VALUE = "__pi-no-agent__";
@@ -72,13 +73,9 @@ export function useWorkbenchSessionState(chat: PiChatState) {
       "",
   );
 
-  const fileTreeRoot = computed(
-    () =>
-      chat.activeSession.value?.cwd ||
-      chat.activeDraftContext.value?.cwd ||
-      chat.info.value?.workspaceDir ||
-      "",
-  );
+  const { effectiveDirectory } = useEffectiveDirectory(chat);
+
+  const fileTreeRoot = effectiveDirectory;
 
   const sessionSidebarProps = computed(() => {
     const nextProps: {

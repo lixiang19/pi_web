@@ -6,12 +6,15 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  GitBranch,
   Plus,
   Search,
   Settings,
+  Trash2,
 } from "lucide-vue-next";
 import SessionSidebarSessionNode from "@/components/chat/SessionSidebarSessionNode.vue";
 import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
+import NewWorktreeDialog from "@/components/chat/NewWorktreeDialog.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -29,10 +32,12 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { useProjects } from "@/composables/useProjects";
+import { useProjectWorktrees } from "@/composables/useProjectWorktrees";
 import {
   buildSessionProjects,
   formatRelativeProjectPath,
 } from "@/lib/session-sidebar";
+import { deleteWorktree } from "@/lib/api";
 import type { ProjectItem, SessionSummary } from "@/lib/types";
 
 const MAX_RECENT_SESSIONS = 10;
@@ -55,6 +60,7 @@ const emit = defineEmits<{
   rename: [sessionId: string, title: string];
   archive: [sessionId: string, archived: boolean];
   remove: [sessionId: string];
+  "worktree-created": [worktreePath: string];
 }>();
 
 const searchQuery = ref("");
@@ -77,7 +83,12 @@ const {
   projects: storedProjects,
 } = projectState;
 
+const worktreeState = useProjectWorktrees();
+
 const isProjectDialogOpen = ref(false);
+const isWorktreeDialogOpen = ref(false);
+const worktreeDialogProjectId = ref("");
+const worktreeDialogProjectRoot = ref("");
 const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase());
 const isSearching = computed(() => normalizedQuery.value.length > 0);
 
@@ -90,13 +101,15 @@ const createEmptyProjectView = (project: ProjectItem) => ({
   projectRoot: normalizePath(project.path),
   pathLabel: formatRelativeProjectPath(project.path, props.workspaceDir),
   lastUpdatedAt: project.addedAt,
-  sessions: [],
+  sessions: [] as SessionSummary[],
   groups: [],
+  isGit: false,
 });
 
 const projects = computed(() => {
   const sessionProjects = buildSessionProjects({
     sessions: props.sessions,
+    availableWorktreesByProject: worktreeState.worktreesByProject.value,
     query: normalizedQuery.value,
     ...(props.workspaceDir ? { workspaceDir: props.workspaceDir } : {}),
   });
@@ -225,6 +238,50 @@ const updateEditingTitle = (value: string) => {
   editingTitle.value = value;
 };
 
+const openWorktreeDialog = (projectId: string, projectRoot: string) => {
+  worktreeDialogProjectId.value = projectId;
+  worktreeDialogProjectRoot.value = projectRoot;
+  isWorktreeDialogOpen.value = true;
+};
+
+const handleWorktreeCreated = async (worktreePath: string) => {
+  isWorktreeDialogOpen.value = false;
+  // 刷新 worktree 列表
+  if (worktreeDialogProjectId.value) {
+    await worktreeState.refresh(worktreeDialogProjectId.value);
+  }
+  emit("worktree-created", worktreePath);
+};
+
+const handleDeleteWorktree = async (projectId: string, worktreeRoot: string) => {
+  const confirmed = window.confirm(
+    `确定要删除此 worktree？\n\n路径：${worktreeRoot}\n\n将同时删除：\n- worktree 目录\n- 关联的本地分支\n- 关联的远程分支\n- 该 worktree 下的所有会话`,
+  );
+  if (!confirmed) return;
+
+  try {
+    await deleteWorktree(projectId, {
+      worktreePath: worktreeRoot,
+      deleteLocalBranch: true,
+      deleteRemoteBranch: true,
+    });
+    await worktreeState.refresh(projectId);
+  } catch (error) {
+    window.alert(
+      `删除失败：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+};
+
+// 获取 project 对应的 stored project id（用于 worktree API）
+const findStoredProjectId = (projectRoot: string): string | null => {
+  const normalized = normalizePath(projectRoot);
+  const stored = storedProjects.value.find(
+    (p) => normalizePath(p.path) === normalized,
+  );
+  return stored?.id ?? null;
+};
+
 watch(
   () => props.activeSessionId,
   (sessionId) => {
@@ -244,6 +301,18 @@ watch(
     });
   },
   { immediate: true, deep: true },
+);
+
+// 加载 worktree 列表
+watch(
+  () => storedProjects.value,
+  (projects) => {
+    if (projects.length > 0) {
+      const projectIds = projects.map((p) => p.id);
+      void worktreeState.loadAll(projectIds);
+    }
+  },
+  { immediate: true },
 );
 
 onMounted(() => {
@@ -379,15 +448,40 @@ onMounted(() => {
                         </span>
                       </button>
                     </SidebarMenuButton>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      class="h-7 shrink-0 px-2 text-[12px] font-medium text-sidebar-foreground/45 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                      @click="emit('create', { cwd: project.projectRoot })"
-                    >
-                      新建会话
-                    </Button>
+                    <div class="flex shrink-0 items-center gap-0.5">
+                      <Tooltip v-if="findStoredProjectId(project.projectRoot)">
+                        <TooltipTrigger as-child>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            class="text-sidebar-foreground/35 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                            @click="openWorktreeDialog(findStoredProjectId(project.projectRoot)!, project.projectRoot)"
+                          >
+                            <GitBranch class="size-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>新建 worktree</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger as-child>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            class="text-sidebar-foreground/35 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                            @click="emit('create', { cwd: project.projectRoot })"
+                          >
+                            <Plus class="size-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>新建会话</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </div>
 
                   <div v-if="!isProjectCollapsed(project.id)" class="mt-0.5 ml-1">
@@ -399,11 +493,43 @@ onMounted(() => {
                     </div>
 
                     <template v-for="group in project.groups" :key="group.key">
+                      <!-- worktree / archived group header -->
                       <div
                         v-if="group.kind !== 'project-root'"
-                        class="px-2 py-1.5 text-[10px] font-bold tracking-wider text-sidebar-foreground/25 uppercase"
+                        class="group/gh flex items-center justify-between px-2 py-1.5"
                       >
-                        {{ group.label }}
+                        <span class="text-[10px] font-bold tracking-wider text-sidebar-foreground/25 uppercase">
+                          {{ group.label }}
+                        </span>
+                        <div class="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/gh:opacity-100">
+                          <!-- worktree group: 新建会话 + 删除 -->
+                          <template v-if="group.kind === 'worktree'">
+                            <Tooltip>
+                              <TooltipTrigger as-child>
+                                <button
+                                  type="button"
+                                  class="inline-flex h-5 w-5 items-center justify-center rounded text-sidebar-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                                  @click="emit('create', { cwd: group.worktreeRoot })"
+                                >
+                                  <Plus class="size-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom"><p>新建会话</p></TooltipContent>
+                            </Tooltip>
+                            <Tooltip v-if="findStoredProjectId(project.projectRoot)">
+                              <TooltipTrigger as-child>
+                                <button
+                                  type="button"
+                                  class="inline-flex h-5 w-5 items-center justify-center rounded text-sidebar-foreground/40 hover:text-destructive hover:bg-destructive/10"
+                                  @click="handleDeleteWorktree(findStoredProjectId(project.projectRoot)!, group.worktreeRoot)"
+                                >
+                                  <Trash2 class="size-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom"><p>删除 worktree</p></TooltipContent>
+                            </Tooltip>
+                          </template>
+                        </div>
                       </div>
 
                       <div
@@ -425,6 +551,14 @@ onMounted(() => {
                           @cancel-rename="cancelRename"
                           @remove="removeSession"
                         />
+                      </div>
+
+                      <!-- 空 worktree group 提示 -->
+                      <div
+                        v-if="group.kind === 'worktree' && group.tree.length === 0"
+                        class="mx-2 rounded-md bg-sidebar-accent/10 px-3 py-2"
+                      >
+                        <p class="text-[11px] text-sidebar-foreground/30">暂无会话</p>
                       </div>
 
                       <div
@@ -469,6 +603,13 @@ onMounted(() => {
       :pending="isProjectLoading"
       :error="projectError"
       @confirm="handleAddProject"
+    />
+
+    <NewWorktreeDialog
+      v-model:open="isWorktreeDialogOpen"
+      :project-id="worktreeDialogProjectId"
+      :project-root="worktreeDialogProjectRoot"
+      @created="handleWorktreeCreated"
     />
   </SidebarProvider>
 </template>

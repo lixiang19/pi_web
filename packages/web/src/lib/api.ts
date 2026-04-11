@@ -12,6 +12,15 @@ import type {
   SessionSummary,
   ThinkingLevel,
   SystemInfo,
+  WorktreeApiInfo,
+  WorktreesResponse,
+  ValidateWorktreeRequest,
+  ValidateWorktreeResponse,
+  CreateWorktreeRequest,
+  DeleteWorktreeRequest,
+  GitStatusResponse,
+  GitBranchesResponse,
+  GitRemoteInfo,
 } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -190,5 +199,137 @@ export function addProject(path: string) {
 export function deleteProject(id: string) {
   return request<{ ok: true }>(`/api/projects/${id}`, {
     method: "DELETE",
+  });
+}
+
+// ============================================================================
+// Worktree API
+// ============================================================================
+
+export function getProjectWorktrees(projectId: string) {
+  return request<WorktreesResponse>(`/api/projects/${projectId}/worktrees`);
+}
+
+export function validateWorktree(
+  projectId: string,
+  payload: ValidateWorktreeRequest,
+) {
+  return request<ValidateWorktreeResponse>(
+    `/api/projects/${projectId}/worktrees/validate`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function createWorktree(
+  projectId: string,
+  payload: CreateWorktreeRequest,
+) {
+  return request<WorktreeApiInfo>(
+    `/api/projects/${projectId}/worktrees`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function deleteWorktree(
+  projectId: string,
+  payload: DeleteWorktreeRequest,
+) {
+  return request<{ ok: true; deletedBranch?: string }>(
+    `/api/projects/${projectId}/worktrees`,
+    {
+      method: "DELETE",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+// ============================================================================
+// Git API
+// ============================================================================
+
+export function getGitStatus(cwd: string) {
+  return request<GitStatusResponse>(
+    `/api/git/status?cwd=${encodeURIComponent(cwd)}`,
+  );
+}
+
+export function getGitBranches(cwd: string) {
+  return request<GitBranchesResponse>(
+    `/api/git/branches?cwd=${encodeURIComponent(cwd)}`,
+  );
+}
+
+export function getGitRemotes(cwd: string) {
+  return request<GitRemoteInfo[]>(
+    `/api/git/remotes?cwd=${encodeURIComponent(cwd)}`,
+  );
+}
+
+export function gitFetch(payload: { cwd: string; remote?: string; branch?: string }) {
+  return request<{ ok: true }>("/api/git/fetch", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function gitPull(payload: { cwd: string; remote?: string }) {
+  return request<{ ok: true }>("/api/git/pull", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function gitPush(payload: { cwd: string; remote?: string; branch?: string; force?: boolean }) {
+  return request<{ ok: true }>("/api/git/push", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function gitCommit(payload: { cwd: string; message: string; files: string[] }) {
+  return request<{ ok: true; hash?: string }>("/api/git/commit", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function gitCreateBranch(payload: { cwd: string; branchName: string; fromRef?: string }) {
+  return request<{ ok: true }>("/api/git/create-branch", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function gitCheckout(payload: { cwd: string; branchName: string }) {
+  return request<{ ok: true }>("/api/git/checkout", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function gitRenameBranch(payload: { cwd: string; oldName: string; newName: string }) {
+  return request<{ ok: true }>("/api/git/rename-branch", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function gitMerge(payload: { cwd: string; branchName: string }) {
+  return request<{ ok: true }>("/api/git/merge", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function gitRebase(payload: { cwd: string; branchName: string }) {
+  return request<{ ok: true }>("/api/git/rebase", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }

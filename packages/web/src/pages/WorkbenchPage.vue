@@ -50,6 +50,10 @@ const {
   thinkingOptions,
   toggleResourcePicker,
 } = useWorkbenchPage();
+const handleWorktreeCreated = async (worktreePath: string) => {
+  // 创建 worktree 后立即创建会话并切换
+  await createSidebarSession({ cwd: worktreePath });
+};
 </script>
 
 <template>
@@ -65,6 +69,7 @@ const {
           @remove="deleteSession"
           @rename="renameSession"
           @select="openSession"
+          @worktree-created="handleWorktreeCreated"
         />
       </aside>
 

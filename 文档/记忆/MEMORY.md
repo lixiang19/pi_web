@@ -13,6 +13,7 @@
 - [主题规范] 禁止硬编码颜色值，必须用 shadcn 主题变量（暗色模式会失效）
 - [主题链路] Tailwind 语义主题类必须在构建期通过 theme contract 暴露，运行时只负责注入真实 CSS 变量
 - [边框治理] Tailwind 裸 `border-*` 在未显式指定颜色时会回退到 `currentColor`，在 ridge 主题中必须改用语义化 surface 分层，不能依赖细线分隔
+- [主题边界] `style.css` 是唯一的 Tailwind 构建期基础入口；主题文件（如 `ridge.css`、`default.css`）只能保存运行时 token，禁止再塞 `@import "tailwindcss"`、`@custom-variant`、`@layer base` 这类构建期指令
 - [透明度] 用 `/95`、`/80`、`/20` 后缀，不用 `bg-white/[0.x]` 语法
 - [双Agent检查] 检查阶段两个 agent 必须互不可见结果，避免自查盲区
 - [P0修复] 审查发现的严重问题（安全/命名冲突）必须立即修复，不拖到下次迭代

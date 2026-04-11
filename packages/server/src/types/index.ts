@@ -315,6 +315,69 @@ export interface FilesystemBrowseResult {
   entries: FileTreeEntry[];
 }
 
+// ===== Worktree API Types =====
+export interface WorktreeApiInfo {
+  path: string;
+  branch?: string;
+  label: string;
+  projectRoot: string;
+}
+
+export interface CreateWorktreeRequest {
+  mode: 'new' | 'existing';
+  branchName?: string;
+  existingBranch?: string;
+  worktreeName?: string;
+  startRef?: string;
+}
+
+export interface ValidateWorktreeRequest {
+  mode: 'new' | 'existing';
+  branchName?: string;
+  existingBranch?: string;
+  worktreeName?: string;
+}
+
+export interface ValidateWorktreeResponse {
+  ok: boolean;
+  branchError?: string;
+  worktreeError?: string;
+  resolvedPath?: string;
+}
+
+export interface DeleteWorktreeRequest {
+  worktreePath: string;
+  deleteLocalBranch?: boolean;
+  deleteRemoteBranch?: boolean;
+}
+
+// ===== Git API Types =====
+export interface GitFileStatusItem {
+  path: string;
+  index: string;
+  working_dir: string;
+}
+
+export interface GitStatusApiResponse {
+  current: string | null;
+  tracking: string | null;
+  files: GitFileStatusItem[];
+  ahead: number;
+  behind: number;
+}
+
+export interface GitBranchesApiResponse {
+  current: string | null;
+  all: string[];
+  branches: Record<string, { current: boolean; tracking?: string }>;
+}
+
+export interface GitRemoteApiInfo {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
+}
+
 // ===== Error Types =====
 export interface HttpError extends Error {
   statusCode: number;

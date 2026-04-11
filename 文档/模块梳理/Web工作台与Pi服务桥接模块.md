@@ -13,8 +13,9 @@
 - 负责把输入区升级为会话级输入编排器，统一管理草稿、发送态、模型/thinking/agent 显式选择、`@agent` 提及与 `/` 资源选择。
 - 负责在前端把消息、草稿和加载生命周期按 `sessionId` 分桶缓存，并通过邻近会话预取减少会话切换时的整份重新拉取。
 - 负责通过限窗快照和前端扩窗机制控制长会话历史加载，避免中间区默认渲染整份消息历史。
-- 负责在 Web 入口完成主题 token 注册、默认主题注入与明暗模式根节点切换，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量。
+- 负责在 Web 入口完成主题契约导入、全局 base 规则注入、默认主题 token 注册与明暗模式根节点切换，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量。
 - 负责约束工作台分隔策略：ridge 主题下优先使用 surface 层次与留白，不依赖裸 `border-*` 做结构分隔，避免 Tailwind 默认 `currentColor` 污染边框颜色。
+- 负责约束主题资产边界：`style.css` 只承载 Tailwind 构建期入口与全局 base，`assets/*.css` 主题文件只承载运行时 token，禁止把 `@import "tailwindcss"`、`@custom-variant`、`@layer base` 注入运行时主题样式。
 - 负责把用户级设置、收藏和自定义项目统一持久化到 ~/.ridge/ 下的服务端 JSON 文件，而不是在 Web 层散落 localStorage。
 - 负责限制文件树访问边界，只允许浏览当前工作区及同仓库 worktree 范围内的目录。
 - 负责把“工作区文件树浏览”和“用户 Home 目录项目选择”拆成两条独立后端边界，避免混淆安全语义。
@@ -361,8 +362,8 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 }
 ```
 
-- 这是 Web 主题系统的核心抽象，构建期由 `theme-contract.css` 向 Tailwind 暴露语义色契约，运行时由 `registry.ts + theme.ts` 只注入浏览器可执行的真实 CSS 变量。
-- `registry.ts` 负责剥离构建期专用 `@theme inline` 块并导出主题样式，`theme.ts` 负责样式挂载、`data-theme` 标记和 `.dark` 根类切换，`main.ts` 在设置加载完成后再执行初始化。
+- 这是 Web 主题系统的核心抽象，构建期由 `style.css + theme-contract.css` 暴露 Tailwind 语义类和全局 base 规则，运行时由 `registry.ts + theme.ts` 只注入浏览器可执行的真实 CSS 变量。
+- `registry.ts` 负责剥离构建期专用 `@theme inline` 块并导出主题样式，`theme.ts` 负责样式挂载、`data-theme` 标记和 `.dark` 根类切换；主题文件保持 token-only，`main.ts` 在设置加载完成后再执行初始化。
 - 依据：`packages/web/src/assets/registry.ts`，`packages/web/src/lib/theme.ts`，`packages/web/src/main.ts`
 
 ### Design Patterns
@@ -427,9 +428,9 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
   - 实现位置：`buildResourceCatalog()` 与 `GET /api/resources`，位于 `packages/server/src/index.js`
   - 为什么这么做：prompt chips、skill 插入和 slash command 列表都必须来自 Pi SDK 真实资源发现，前端不能继续硬编码演示数据。
 
-- 模式名：主题资产归一化 + 启动期样式注入
+- 模式名：主题资产归一化 + 启动期样式注入 + 构建期基础层收口
   - 实现位置：`normalizeThemeCss()` 与 `initializeThemeSystem()`，位于 `packages/web/src/assets/registry.ts`、`packages/web/src/lib/theme.ts`
-  - 为什么这么做：Tailwind v4 只会为构建期看得见的语义 token 生成工具类，因此必须先用 `theme-contract.css` 暴露主题契约；运行时再剥离 `@theme inline` 并注入真实变量，避免把构建期 DSL 当成浏览器 CSS 执行。
+  - 为什么这么做：Tailwind v4 只会为构建期看得见的语义 token 和 base 规则生成结果，因此必须把 `style.css` 固定为唯一构建期入口，把 `theme-contract.css` 固定为契约层；运行时主题文件只能保留 token，避免把构建期 DSL 当成浏览器 CSS 执行。
 
 - 模式名：共享路由壳 + 子页面装配
   - 实现位置：`PlatformShell.vue` 与 `router/index.ts`，位于 `packages/web/src/layouts/PlatformShell.vue`、`packages/web/src/router/index.ts`

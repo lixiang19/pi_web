@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { ChevronDown, FolderSearch, Mountain } from "lucide-vue-next";
+import { FolderSearch, Mountain } from "lucide-vue-next";
 
 import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
 import {
@@ -8,6 +8,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { useProjects } from "@/composables/useProjects";
 
@@ -35,7 +36,6 @@ const {
 
 const currentProjectPathValue = computed(() => normalizePath(props.currentProjectPath || ""));
 
-// 合并已保存项目和当前路径，去重
 const selectablePaths = computed(() => {
   const currentPath = currentProjectPathValue.value;
   const paths = new Set<string>();
@@ -82,88 +82,63 @@ onMounted(() => {
     class="flex h-full flex-col items-center justify-center p-6"
     style="background: #faf9f6"
   >
-    <!-- 背景微量装饰：极淡的网格或渐变 -->
-    <div class="absolute inset-0 pointer-events-none opacity-[0.03]" style="background-image: radial-gradient(#e07a5f 0.5px, transparent 0.5px); background-size: 24px 24px;"></div>
+    <!-- 背景微量装饰 -->
+    <div
+      class="pointer-events-none absolute inset-0 opacity-[0.03]"
+      style="background-image: radial-gradient(#e07a5f 0.5px, transparent 0.5px); background-size: 24px 24px"
+    ></div>
 
-    <!-- 仪式感卡片：登山起点 -->
+    <!-- 内容区 -->
     <div class="relative w-full max-w-lg animate-in fade-in zoom-in duration-500">
-      <!-- 视觉隐喻：微缩图标 -->
+      <!-- 图标 + 标题 + 引导语 -->
       <div class="mb-10 flex flex-col items-center gap-4">
-        <div 
+        <div
           class="flex size-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.03]"
         >
           <Mountain class="size-7" style="color: #e07a5f" />
         </div>
-        <div class="text-center space-y-2">
-          <h2 class="text-[10px] font-bold tracking-[0.2em] text-[#e07a5f]/80 uppercase">
+        <div class="space-y-2 text-center">
+          <h2 class="text-[10px] font-bold uppercase tracking-[0.2em] text-[#e07a5f]/80">
             Start From Project
           </h2>
-          <p class="text-sm text-muted-foreground/60 max-w-xs mx-auto leading-relaxed">
+          <p class="mx-auto max-w-xs text-sm leading-relaxed text-muted-foreground/60">
             确认当前工作目录，我们会在这里与你并肩，开启一段新的探索旅程。
           </p>
         </div>
       </div>
 
-      <!-- 核心卡片：路径选择器 -->
+      <!-- 标准下拉框 -->
       <Select
         :model-value="currentProjectPathValue || undefined"
         @update:model-value="handleProjectChange"
       >
-        <SelectTrigger
-          class="group relative flex h-auto w-full flex-col items-start gap-1 overflow-hidden rounded-xl border-none bg-white p-6 text-left shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/[0.02] transition-all hover:shadow-[0_20px_40px_rgb(0,0,0,0.06)] hover:ring-black/[0.05]"
-        >
-          <div class="flex w-full items-center justify-between gap-6">
-            <div class="min-w-0 flex-1 space-y-1.5">
-              <span class="block text-[10px] font-bold text-[#e07a5f]/60 uppercase tracking-widest">
-                Current Location
-              </span>
-              <p class="truncate font-mono text-[14px] font-bold text-foreground/90">
-                {{ currentProjectPathValue || "Browse a folder to start..." }}
-              </p>
-            </div>
-            <!-- 统一图标：垂直居中且不再歪斜 -->
-            <div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted/30 text-muted-foreground/40 transition-all group-hover:bg-[#e07a5f]/10 group-hover:text-[#e07a5f]">
-              <ChevronDown class="size-4.5" />
-            </div>
-          </div>
+        <SelectTrigger class="w-full">
+          <SelectValue placeholder="选择工作目录..." />
         </SelectTrigger>
-        
-        <SelectContent class="max-h-80 min-w-[var(--radix-select-trigger-width)] rounded-xl border-none bg-white p-2 shadow-2xl ring-1 ring-black/[0.05] z-50">
-          <div class="px-2 py-2 pb-2 text-[10px] font-bold tracking-widest text-muted-foreground/30 uppercase">
-            Saved Locations
-          </div>
+        <SelectContent>
           <SelectItem
             v-for="path in selectablePaths"
             :key="path"
             :value="path"
-            class="rounded-lg py-3 focus:bg-[#e07a5f]/5 focus:text-foreground cursor-pointer"
           >
-            <div class="flex flex-col gap-0.5">
-              <span class="break-all font-mono text-[13px] font-medium">{{ path }}</span>
-            </div>
+            {{ path }}
           </SelectItem>
-          
-          <div class="my-1.5 h-px bg-muted/40 mx-2"></div>
-          
-          <SelectItem 
-            :value="SELECT_OTHER_VALUE" 
-            class="rounded-lg py-3 focus:bg-[#e07a5f]/5 focus:text-foreground cursor-pointer"
-          >
-            <div class="flex items-center gap-3">
-              <FolderSearch class="size-4 text-muted-foreground/60" />
-              <span class="text-[13px] font-semibold">Browse other folders...</span>
+          <SelectItem :value="SELECT_OTHER_VALUE">
+            <div class="flex items-center gap-2">
+              <FolderSearch class="size-4" />
+              <span>浏览其他文件夹...</span>
             </div>
           </SelectItem>
         </SelectContent>
       </Select>
 
       <!-- 状态提示 -->
-      <div class="mt-6 flex justify-center h-4">
-        <p v-if="projectError" class="text-[10px] font-bold text-destructive/90 animate-in fade-in slide-in-from-top-1">
+      <div class="mt-3 flex h-4 justify-center">
+        <p v-if="projectError" class="text-xs text-destructive">
           {{ projectError }}
         </p>
-        <p v-else-if="isProjectLoading" class="text-[10px] font-bold text-muted-foreground/30 animate-pulse">
-          Loading projects...
+        <p v-else-if="isProjectLoading" class="text-xs text-muted-foreground/40">
+          加载项目列表...
         </p>
       </div>
     </div>
@@ -176,15 +151,3 @@ onMounted(() => {
     />
   </div>
 </template>
-
-<style scoped>
-/* 移除 Select 组件默认渲染，完全在 Trigger 内通过手动布局控制，确保垂直居中和路径显性 */
-:deep([data-radix-select-value]) {
-  display: none;
-}
-
-/* 隐藏 shadcn 原生自带的、可能导致歪斜的图标 */
-:deep(svg:not(.lucide)) {
-  display: none;
-}
-</style>

@@ -6,7 +6,7 @@
 /* Tailwind v4 - 构建期主题契约 + 运行时变量注入 */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
   font-family: 'Manrope Variable', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -16,6 +16,11 @@
 
 * {
   box-sizing: border-box;
+  --lightningcss-light: initial;
+  --lightningcss-dark: ;
+  color-scheme: light dark;
+  border-color: var(--color-border, var(--border));
+  outline-color: var(--color-ring, var(--ring));
 }
 
 html,
@@ -42,7 +47,6 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(120, 113, 108, 0.35) transparent;
 }
-
 .dark * {
   scrollbar-color: rgba(154, 145, 138, 0.3) transparent;
 }

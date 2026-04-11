@@ -18,6 +18,8 @@ import { z } from 'zod';
 import type { AgentSession, SessionEvent, ModelInfo } from '@mariozechner/pi-coding-agent';
 
 import { createProjectContextResolver } from './project-context.js';
+import { createGitService } from './git-service.js';
+import { createWorktreeService } from './worktree-service.js';
 import {
   deleteAgent,
   discoverAgents,
@@ -75,6 +77,8 @@ const modelRegistry = ModelRegistry.create(authStorage);
 const activeSessions = new Map<string, SessionRecord>();
 const projectContextResolver = createProjectContextResolver(defaultWorkspaceDir);
 const sessionMetadataStore = createSessionMetadataStore(defaultWorkspaceDir);
+const gitService = createGitService();
+const worktreeService = createWorktreeService(gitService);
 
 // ===== Zod Schemas =====
 const createSessionSchema = z.object({
@@ -1864,6 +1868,254 @@ app.delete('/api/storage/favorites/:id', async (req: Request, res: Response, nex
   }
 });
 
+// ===== Worktree API =====
+
+const worktreeValidateSchema = z.object({
+  mode: z.enum(['new', 'existing']),
+  branchName: z.string().optional(),
+  existingBranch: z.string().optional(),
+  worktreeName: z.string().optional(),
+});
+
+const worktreeCreateSchema = z.object({
+  mode: z.enum(['new', 'existing']),
+  branchName: z.string().optional(),
+  existingBranch: z.string().optional(),
+  worktreeName: z.string().optional(),
+  startRef: z.string().optional(),
+});
+
+const worktreeDeleteSchema = z.object({
+  worktreePath: z.string(),
+  deleteLocalBranch: z.boolean().optional(),
+  deleteRemoteBranch: z.boolean().optional(),
+});
+
+const resolveProjectRoot = async (projectId: string): Promise<string> => {
+  const projects = await getProjects();
+  const project = projects.projects.find((p) => p.id === projectId);
+  if (!project) {
+    const error = new Error(`Project not found: ${projectId}`) as HttpError;
+    error.statusCode = 404;
+    throw error;
+  }
+  return path.resolve(project.path);
+};
+
+app.get('/api/projects/:id/worktrees', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const projectRoot = await resolveProjectRoot(String(req.params.id));
+    const isGit = await gitService.isGitRepository(projectRoot);
+    if (!isGit) {
+      res.json({ worktrees: [] });
+      return;
+    }
+    const worktrees = await worktreeService.list(projectRoot);
+    res.json({ worktrees });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/projects/:id/worktrees/validate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const projectRoot = await resolveProjectRoot(String(req.params.id));
+    const payload = worktreeValidateSchema.parse(req.body ?? {});
+    const result = await worktreeService.validate(projectRoot, payload);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/projects/:id/worktrees', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const projectRoot = await resolveProjectRoot(String(req.params.id));
+    const payload = worktreeCreateSchema.parse(req.body ?? {});
+    const metadata = await worktreeService.create(projectRoot, payload);
+    // 清除 project context 缓存以便后续解析能看到新 worktree
+    projectContextResolver.resolveContext(projectRoot);
+    res.status(201).json(metadata);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/projects/:id/worktrees', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const projectRoot = await resolveProjectRoot(String(req.params.id));
+    const payload = worktreeDeleteSchema.parse(req.body ?? {});
+    const result = await worktreeService.remove(projectRoot, payload);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===== Git API =====
+
+const gitCwdQuerySchema = z.object({ cwd: z.string().optional() });
+
+const resolveGitCwd = (rawCwd?: string): string => {
+  return path.resolve(rawCwd || defaultWorkspaceDir);
+};
+
+app.get('/api/git/status', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = gitCwdQuerySchema.parse(req.query ?? {});
+    const cwd = resolveGitCwd(query.cwd);
+    const status = await gitService.getStatus(cwd);
+    res.json(status);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/git/branches', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = gitCwdQuerySchema.parse(req.query ?? {});
+    const cwd = resolveGitCwd(query.cwd);
+    const branches = await gitService.getBranches(cwd);
+    res.json(branches);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/git/remotes', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = gitCwdQuerySchema.parse(req.query ?? {});
+    const cwd = resolveGitCwd(query.cwd);
+    const remotes = await gitService.getRemotes(cwd);
+    res.json(remotes);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/fetch', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, remote, branch } = z.object({
+      cwd: z.string(),
+      remote: z.string().optional(),
+      branch: z.string().optional(),
+    }).parse(req.body ?? {});
+    await gitService.fetch(resolveGitCwd(cwd), { remote, branch });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/pull', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, remote } = z.object({
+      cwd: z.string(),
+      remote: z.string().optional(),
+    }).parse(req.body ?? {});
+    await gitService.pull(resolveGitCwd(cwd), { remote });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/push', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, remote, branch, force } = z.object({
+      cwd: z.string(),
+      remote: z.string().optional(),
+      branch: z.string().optional(),
+      force: z.boolean().optional(),
+    }).parse(req.body ?? {});
+    await gitService.push(resolveGitCwd(cwd), { remote, branch, force });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/commit', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, message, files } = z.object({
+      cwd: z.string(),
+      message: z.string(),
+      files: z.array(z.string()),
+    }).parse(req.body ?? {});
+    const result = await gitService.commit(resolveGitCwd(cwd), message, files);
+    res.json({ ok: true, hash: result.hash });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/create-branch', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, branchName, fromRef } = z.object({
+      cwd: z.string(),
+      branchName: z.string(),
+      fromRef: z.string().optional(),
+    }).parse(req.body ?? {});
+    await gitService.createBranch(resolveGitCwd(cwd), branchName, fromRef);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/checkout', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, branchName } = z.object({
+      cwd: z.string(),
+      branchName: z.string(),
+    }).parse(req.body ?? {});
+    await gitService.checkoutBranch(resolveGitCwd(cwd), branchName);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/rename-branch', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, oldName, newName } = z.object({
+      cwd: z.string(),
+      oldName: z.string(),
+      newName: z.string(),
+    }).parse(req.body ?? {});
+    await gitService.renameBranch(resolveGitCwd(cwd), oldName, newName);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/merge', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, branchName } = z.object({
+      cwd: z.string(),
+      branchName: z.string(),
+    }).parse(req.body ?? {});
+    await gitService.merge(resolveGitCwd(cwd), branchName);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/git/rebase', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cwd, branchName } = z.object({
+      cwd: z.string(),
+      branchName: z.string(),
+    }).parse(req.body ?? {});
+    await gitService.rebase(resolveGitCwd(cwd), branchName);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ===== Error Handler =====
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   const statusCode = Number.isInteger((error as HttpError)?.statusCode)
@@ -1876,5 +2128,5 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 // ===== Start Server =====
 app.listen(port, () => {
-  console.log(`Pi server listening on http://127.0.0.1:${port}`);
+  console.warn(`Pi server listening on http://127.0.0.1:${port}`);
 });

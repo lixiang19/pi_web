@@ -49,21 +49,21 @@ watch(
   <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
     <main class="space-y-3">
       <section
-        class="rounded-[32px] border border-white/10 bg-black/35 p-6 backdrop-blur"
+        class="ridge-panel-header rounded-[32px] border border-border/40 p-6 shadow-sm"
       >
         <div
           class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
         >
           <div>
             <p
-              class="text-[10px] font-black uppercase tracking-[0.24em] text-amber-300/80"
+              class="text-[10px] font-black uppercase tracking-[0.24em] text-primary/70"
             >
               Session Detail
             </p>
-            <h2 class="mt-3 text-3xl font-black tracking-tight text-stone-50">
+            <h2 class="mt-3 text-3xl font-black tracking-tight text-foreground">
               {{ activeSession?.title || "正在加载会话" }}
             </h2>
-            <p class="mt-3 max-w-3xl text-sm leading-7 text-stone-400">
+            <p class="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">
               详情页只聚焦当前会话的上下文、消息流和目录根，不再混入左侧多会话导航，适合查看单个会话的执行轨迹。
             </p>
           </div>
@@ -71,7 +71,7 @@ watch(
           <Button
             as-child
             variant="outline"
-            class="rounded-2xl border-white/10 bg-white/[0.03] text-stone-200 hover:bg-white/[0.06]"
+            class="rounded-2xl border-input bg-card text-foreground hover:bg-secondary"
           >
             <RouterLink to="/">
               <ArrowLeft class="mr-2 size-4" />
@@ -81,47 +81,47 @@ watch(
         </div>
 
         <div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div class="flex items-center gap-2 text-stone-400">
+          <div class="ridge-panel-inset rounded-2xl border border-border/30 p-4 shadow-xs">
+            <div class="flex items-center gap-2 text-muted-foreground">
               <Binary class="size-4" />
               <span class="text-[10px] font-black uppercase tracking-[0.2em]"
                 >Session ID</span
               >
             </div>
-            <p class="mt-3 truncate font-mono text-xs text-stone-200">
+            <p class="mt-3 truncate font-mono text-xs text-foreground">
               {{ activeSession?.id || sessionId }}
             </p>
           </div>
-          <div class="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div class="flex items-center gap-2 text-stone-400">
+          <div class="ridge-panel-inset rounded-2xl border border-border/30 p-4 shadow-xs">
+            <div class="flex items-center gap-2 text-muted-foreground">
               <FolderTree class="size-4" />
               <span class="text-[10px] font-black uppercase tracking-[0.2em]"
                 >Project</span
               >
             </div>
-            <p class="mt-3 text-sm font-bold text-stone-100">
+            <p class="mt-3 text-sm font-bold text-foreground">
               {{ formatProjectLabel(fileTreeRoot || "workspace") }}
             </p>
           </div>
-          <div class="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div class="flex items-center gap-2 text-stone-400">
+          <div class="ridge-panel-inset rounded-2xl border border-border/30 p-4 shadow-xs">
+            <div class="flex items-center gap-2 text-muted-foreground">
               <GitBranch class="size-4" />
               <span class="text-[10px] font-black uppercase tracking-[0.2em]"
                 >Branch</span
               >
             </div>
-            <p class="mt-3 text-sm font-bold text-stone-100">
+            <p class="mt-3 text-sm font-bold text-foreground">
               {{ activeSession?.branch || "unknown" }}
             </p>
           </div>
-          <div class="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div class="flex items-center gap-2 text-stone-400">
+          <div class="ridge-panel-inset rounded-2xl border border-border/30 p-4 shadow-xs">
+            <div class="flex items-center gap-2 text-muted-foreground">
               <MessageSquareText class="size-4" />
               <span class="text-[10px] font-black uppercase tracking-[0.2em]"
                 >Messages</span
               >
             </div>
-            <p class="mt-3 text-2xl font-black text-stone-50">
+            <p class="mt-3 text-2xl font-black text-foreground">
               {{ messages.length }}
             </p>
           </div>
@@ -130,26 +130,26 @@ watch(
         <div class="mt-5 flex flex-wrap items-center gap-2">
           <Badge
             variant="outline"
-            class="border-white/10 bg-white/[0.03] text-stone-300"
+            class="border-input bg-secondary/70 text-secondary-foreground"
           >
             Status: {{ status }}
           </Badge>
           <Badge
             variant="outline"
-            class="border-white/10 bg-white/[0.03] text-stone-300"
+            class="border-input bg-secondary/70 text-secondary-foreground"
           >
             Agent: {{ activeSession?.agent || "default" }}
           </Badge>
           <Badge
             variant="outline"
-            class="border-white/10 bg-white/[0.03] text-stone-300"
+            class="border-input bg-secondary/70 text-secondary-foreground"
           >
             Model:
             {{ activeSession?.resolvedModel || activeSession?.model || "auto" }}
           </Badge>
           <Badge
             variant="outline"
-            class="border-white/10 bg-white/[0.03] text-stone-300"
+            class="border-input bg-secondary/70 text-secondary-foreground"
           >
             Thinking:
             {{
@@ -163,7 +163,7 @@ watch(
 
       <section class="min-h-[560px] xl:h-[calc(100vh-23rem)]">
         <div
-          class="flex h-full flex-col overflow-hidden rounded-[32px] border border-white/10 bg-black/35 backdrop-blur"
+          class="flex h-full flex-col overflow-hidden rounded-[32px] border border-border/40 bg-card shadow-sm"
         >
           <WorkbenchMessageStream
             :active-session-id="activeSessionId"

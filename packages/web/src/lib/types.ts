@@ -336,3 +336,76 @@ export interface SendMessagePayload {
   agent?: string | null;
   thinkingLevel?: ThinkingLevel;
 }
+
+// ============================================================================
+// Worktree API Types
+// ============================================================================
+
+export interface WorktreeApiInfo {
+  path: string;
+  branch?: string;
+  label: string;
+  projectRoot: string;
+}
+
+export interface WorktreesResponse {
+  worktrees: WorktreeApiInfo[];
+}
+
+export interface ValidateWorktreeRequest {
+  mode: "new" | "existing";
+  branchName?: string;
+  existingBranch?: string;
+  worktreeName?: string;
+}
+
+export interface ValidateWorktreeResponse {
+  ok: boolean;
+  branchError?: string;
+  worktreeError?: string;
+  resolvedPath?: string;
+}
+
+export interface CreateWorktreeRequest {
+  mode: "new" | "existing";
+  branchName?: string;
+  existingBranch?: string;
+  worktreeName?: string;
+  startRef?: string;
+}
+
+export interface DeleteWorktreeRequest {
+  worktreePath: string;
+  deleteLocalBranch?: boolean;
+  deleteRemoteBranch?: boolean;
+}
+
+// ============================================================================
+// Git API Types
+// ============================================================================
+
+export interface GitFileStatusItem {
+  path: string;
+  index: string;
+  working_dir: string;
+}
+
+export interface GitStatusResponse {
+  current: string | null;
+  tracking: string | null;
+  files: GitFileStatusItem[];
+  ahead: number;
+  behind: number;
+}
+
+export interface GitBranchesResponse {
+  current: string | null;
+  all: string[];
+  branches: Record<string, { current: boolean; tracking?: string }>;
+}
+
+export interface GitRemoteInfo {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
+}
