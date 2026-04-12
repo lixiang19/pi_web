@@ -72,7 +72,7 @@ function handleDraftUpdate(text: string) {
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-background">
-    <div class="ridge-panel-header shrink-0 border-b border-border/60">
+    <div class="ridge-panel-header shrink-0">
       <div class="flex items-center justify-between px-4 py-2.5">
         <div class="flex min-w-0 items-center gap-2">
           <Button

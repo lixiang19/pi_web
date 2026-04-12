@@ -82,7 +82,11 @@ const createRawMessage = (message?: StreamEvent["message"], overrides?: Partial<
       : typeof message.content === "string"
         ? message.content
         : message.content,
-  timestamp: overrides?.timestamp ?? Date.now(),
+  timestamp: overrides?.timestamp ?? message?.timestamp ?? Date.now(),
+  toolCallId: overrides?.toolCallId ?? message?.toolCallId,
+  toolName: overrides?.toolName ?? message?.toolName,
+  details: overrides?.details ?? message?.details,
+  isError: overrides?.isError ?? message?.isError,
   pending: overrides?.pending,
   localId: overrides?.localId,
 });

@@ -36,7 +36,9 @@ declare module '@mariozechner/pi-coding-agent' {
     static inMemory(cwd: string): SessionManager;
 
     getCwd(): string;
-    newSession(options?: { parentSession?: string }): void;
+    newSession(options?: { parentSession?: string; id?: string }): string | undefined;
+    getSessionId(): string;
+    getSessionFile(): string;
     flushed?: boolean;
     _rewriteFile?(): void;
   }
@@ -143,6 +145,7 @@ declare module '@mariozechner/pi-coding-agent' {
   export interface PiExtensionAPI {
     on(event: 'tool_call', handler: (event: ToolCallEvent) => Promise<ToolCallResult | undefined>): void;
     registerTool(tool: ToolDefinition): void;
+    sendUserMessage?(content: string | Array<unknown>, options?: { deliverAs?: 'steer' | 'followUp' }): void;
   }
 
   // ===== Session & Messaging =====
@@ -162,6 +165,10 @@ declare module '@mariozechner/pi-coding-agent' {
     role: MessageRole;
     content: string | MessageContent[];
     timestamp?: number;
+    toolCallId?: string;
+    toolName?: string;
+    details?: unknown;
+    isError?: boolean;
   }
 
   export interface AssistantMessageEvent {
@@ -170,9 +177,19 @@ declare module '@mariozechner/pi-coding-agent' {
   }
 
   export interface SessionEvent {
-    type: 'turn_start' | 'agent_start' | 'message_start' | 'message_update' | 'message_end' | 'agent_end' | 'turn_end';
+    type:
+      | 'turn_start'
+      | 'agent_start'
+      | 'message_start'
+      | 'message_update'
+      | 'message_end'
+      | 'agent_end'
+      | 'turn_end'
+      | 'tool_execution_start'
+      | 'tool_execution_end';
     message?: SessionMessage;
     assistantMessageEvent?: AssistantMessageEvent;
+    toolName?: string;
   }
 
   export type SessionEventHandler = (event: SessionEvent) => void;
@@ -191,8 +208,17 @@ declare module '@mariozechner/pi-coding-agent' {
     };
 
     subscribe(handler: SessionEventHandler): Unsubscribe;
-    prompt(prompt: string, options?: { source?: string }): Promise<void>;
+    prompt(
+      prompt: string,
+      options?: {
+        source?: string;
+        streamingBehavior?: 'steer' | 'followUp';
+        expandPromptTemplates?: boolean;
+        images?: unknown[];
+      },
+    ): Promise<void>;
     abort(): Promise<void>;
+    steer?(text: string, images?: unknown[]): Promise<void>;
     setModel(model: ModelInfo): Promise<void>;
     setThinkingLevel(level: string): Promise<void>;
     setSessionName(name: string): void;
@@ -209,6 +235,7 @@ declare module '@mariozechner/pi-coding-agent' {
     sessionManager: SessionManager;
     settingsManager: SettingsManager;
     resourceLoader: DefaultResourceLoader;
+    tools?: AgentTool<unknown>[];
   }
 
   export interface CreateAgentSessionResult {

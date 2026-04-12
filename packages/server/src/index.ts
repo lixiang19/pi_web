@@ -38,6 +38,7 @@ import {
   buildResolvedAskResult,
   createAskExtension,
 } from './ask-extension.js';
+import { createSubagentToolExtension } from './subagents.js';
 import { createSessionMetadataStore } from './session-metadata.js';
 import {
   getSettings,
@@ -141,7 +142,10 @@ const agentUpsertSchema = z
       .enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
       .nullable()
       .optional(),
-    steps: z.number().int().min(1).nullable().optional(),
+    max_turns: z.number().int().min(1).nullable().optional(),
+    skills: z.union([z.string(), z.array(z.string())]).nullable().optional(),
+    inherit_context: z.boolean().nullable().optional(),
+    run_in_background: z.boolean().nullable().optional(),
     enabled: z.boolean().optional(),
     permission: z.record(z.string(), z.any()).optional(),
     prompt: z.string().optional(),
@@ -157,6 +161,7 @@ const agentScopeQuerySchema = z.object({
 const archiveSessionSchema = z.object({
   archived: z.boolean(),
 });
+
 
 const askAnswerSchema = z.object({
   questionId: z.string().min(1),
@@ -266,6 +271,7 @@ const emitSessionSnapshot = async (
     session: await toSessionSnapshot(record, registry, {}),
   });
 };
+
 
 const normalizeAskAnswers = (
   record: SessionRecord,
@@ -418,13 +424,29 @@ interface SerializedMessage {
   role: 'system' | 'user' | 'assistant' | 'tool' | 'toolResult';
   content: RawMessageContent;
   timestamp?: number;
+  toolCallId?: string;
+  toolName?: string;
+  details?: unknown;
+  isError?: boolean;
 }
 
-const serializeMessage = (message: { role?: string; content?: unknown; timestamp?: number }): SerializedMessage => ({
+const serializeMessage = (message: {
+  role?: string;
+  content?: unknown;
+  timestamp?: number;
+  toolCallId?: unknown;
+  toolName?: unknown;
+  details?: unknown;
+  isError?: unknown;
+}): SerializedMessage => ({
   role: (normalizeString(message?.role) || 'system') as SerializedMessage['role'],
   content: passthroughContent(message?.content),
   timestamp:
     typeof message?.timestamp === 'number' ? message.timestamp : undefined,
+  toolCallId: normalizeString(message?.toolCallId) || undefined,
+  toolName: normalizeString(message?.toolName) || undefined,
+  details: message?.details,
+  isError: message?.isError === true ? true : undefined,
 });
 
 const getAvailableModels = (): ModelInfo[] => {
@@ -451,6 +473,7 @@ const formatModelSpec = (model: ModelInfo | null | undefined): string | undefine
   }
   return `${model.provider}/${model.id}`;
 };
+
 
 interface SourceInfoOut {
   path: string;
@@ -514,6 +537,10 @@ const listProviders = (): ProvidersResponse => {
   };
 };
 
+const serializeAgentSource = (agent: AgentConfigInternal): string =>
+  agent.sourceScope === 'default'
+    ? agent.source
+    : toPosixPath(path.resolve(agent.source));
 const createAgentSummary = (agent: AgentConfigInternal): AgentSummary => ({
   name: agent.name,
   description: agent.description,
@@ -521,9 +548,32 @@ const createAgentSummary = (agent: AgentConfigInternal): AgentSummary => ({
   mode: agent.mode,
   model: agent.model,
   thinking: agent.thinking,
-  steps: agent.steps,
+  maxTurns: agent.maxTurns,
+  skills: agent.skills,
+  inheritContext: agent.inheritContext,
+  runInBackground: agent.runInBackground,
+  enabled: agent.enabled !== false,
+  permission: agent.permission,
   sourceScope: agent.sourceScope,
-  source: toPosixPath(path.resolve(agent.source)),
+  source: serializeAgentSource(agent),
+});
+
+const createAgentConfigResponse = (agent: AgentConfigInternal) => ({
+  name: agent.name,
+  description: agent.description,
+  display_name: agent.displayName,
+  mode: agent.mode,
+  model: agent.model ?? null,
+  thinking: agent.thinking ?? null,
+  max_turns: agent.maxTurns ?? null,
+  skills: agent.skills ?? null,
+  inherit_context: agent.inheritContext ?? null,
+  run_in_background: agent.runInBackground ?? null,
+  enabled: agent.enabled !== false,
+  permission: agent.permission,
+  prompt: agent.systemPrompt,
+  scope: agent.sourceScope,
+  source: serializeAgentSource(agent),
 });
 
 const createSessionResourceLoader = (record: SessionRecord) =>
@@ -548,29 +598,34 @@ const createSessionResourceLoader = (record: SessionRecord) =>
           await emitSessionSnapshot(sessionRecord);
         },
       }),
+      createSubagentToolExtension(record, { authStorage, modelRegistry, resolveModel: findModel }),
     ],
   });
 
+const isEnabledAgent = (agent: AgentConfigInternal | null | undefined): boolean =>
+  Boolean(agent && agent.enabled !== false);
 const isPrimarySessionAgent = (agent: AgentConfigInternal | null | undefined): boolean =>
-  Boolean(agent && agent.mode !== 'task');
-
+  Boolean(isEnabledAgent(agent) && agent!.mode !== 'task');
 const ensurePrimaryAgentOrThrow = (agentName: string | null | undefined, agent: AgentConfigInternal | null | undefined): AgentConfigInternal | null => {
   if (!agentName) {
     return null;
   }
-
   if (!agent) {
     const error = new Error(`Agent 不存在: ${agentName}`) as HttpError;
     error.statusCode = 404;
     throw error;
   }
 
+  if (!isEnabledAgent(agent)) {
+    const error = new Error(`Agent 已禁用: ${agentName}`) as HttpError;
+    error.statusCode = 400;
+    throw error;
+  }
   if (!isPrimarySessionAgent(agent)) {
     const error = new Error(`Agent ${agentName} 仅允许 task 模式调用`) as HttpError;
     error.statusCode = 400;
     throw error;
   }
-
   return agent;
 };
 
@@ -604,9 +659,9 @@ const applySessionAgentSelection = async (
     agent?.permission as AgentPermission | undefined,
     record.defaultToolNames,
   );
-  if (shouldReload || record.turnBudget.maxTurns !== agent?.steps) {
+  if (shouldReload || record.turnBudget.maxTurns !== agent?.maxTurns) {
     record.turnBudget = {
-      maxTurns: agent?.steps,
+      maxTurns: agent?.maxTurns,
       usedTurns: 0,
       exhausted: false,
     };
@@ -1335,7 +1390,9 @@ app.get('/api/agents', async (req: Request, res: Response, next: NextFunction) =
     const cwd = normalizeString(req.query?.cwd) || defaultWorkspaceDir;
     const agents = await discoverAgents(cwd);
     res.json(
-      agents.filter((agent) => agent.mode !== 'task').map(createAgentSummary),
+      agents
+        .filter((agent) => agent.enabled !== false && agent.mode !== 'task')
+        .map(createAgentSummary),
     );
   } catch (error) {
     next(error);
@@ -1379,20 +1436,7 @@ app.get('/api/config/agents/:name', async (req: Request, res: Response, next: Ne
       throw error;
     }
 
-    res.json({
-      name: agent.name,
-      description: agent.description,
-      display_name: agent.displayName,
-      mode: agent.mode,
-      model: agent.model ?? null,
-      thinking: agent.thinking ?? null,
-      steps: agent.steps ?? null,
-      enabled: agent.enabled !== false,
-      permission: agent.permission,
-      prompt: agent.systemPrompt,
-      scope: agent.sourceScope,
-      source: toPosixPath(path.resolve(agent.source)),
-    });
+    res.json(createAgentConfigResponse(agent));
   } catch (error) {
     next(error);
   }
@@ -1408,20 +1452,7 @@ app.post('/api/config/agents/:name', async (req: Request, res: Response, next: N
       requireScope: true,
     });
 
-    res.status(201).json({
-      name: agent.name,
-      description: agent.description,
-      display_name: agent.displayName,
-      mode: agent.mode,
-      model: agent.model ?? null,
-      thinking: agent.thinking ?? null,
-      steps: agent.steps ?? null,
-      enabled: agent.enabled !== false,
-      permission: agent.permission,
-      prompt: agent.systemPrompt,
-      scope: agent.sourceScope,
-      source: toPosixPath(path.resolve(agent.source)),
-    });
+    res.status(201).json(createAgentConfigResponse(agent));
   } catch (error) {
     next(error);
   }
@@ -1437,20 +1468,7 @@ app.put('/api/config/agents/:name', async (req: Request, res: Response, next: Ne
       requireScope: false,
     });
 
-    res.json({
-      name: agent.name,
-      description: agent.description,
-      display_name: agent.displayName,
-      mode: agent.mode,
-      model: agent.model ?? null,
-      thinking: agent.thinking ?? null,
-      steps: agent.steps ?? null,
-      enabled: agent.enabled !== false,
-      permission: agent.permission,
-      prompt: agent.systemPrompt,
-      scope: agent.sourceScope,
-      source: toPosixPath(path.resolve(agent.source)),
-    });
+    res.json(createAgentConfigResponse(agent));
   } catch (error) {
     next(error);
   }
@@ -1771,7 +1789,7 @@ app.post('/api/sessions/:sessionId/messages', async (req: Request, res: Response
 
     if (record.turnBudget.exhausted) {
       const error = new Error(
-        '当前 agent 的 steps 已耗尽，请重新选择 agent 或新建会话',
+        '当前 agent 的最大轮次已耗尽，请重新选择 agent 或新建会话',
       ) as HttpError;
       error.statusCode = 400;
       throw error;
@@ -1802,6 +1820,7 @@ app.post('/api/sessions/:sessionId/messages', async (req: Request, res: Response
     next(error);
   }
 });
+
 
 app.post('/api/sessions/:sessionId/asks/:askId/respond', async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -264,15 +264,20 @@ export interface AgentSummary {
   mode: 'primary' | 'task' | 'all'
   model?: string
   thinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
-  steps?: number
-  sourceScope: 'user' | 'project'
+  maxTurns?: number
+  skills?: string[]
+  inheritContext?: boolean
+  runInBackground?: boolean
+  enabled: boolean
+  permission?: AgentPermission
+  sourceScope: 'default' | 'user' | 'project'
   source: string
 }
 ```
 
-- 这是输入区 agent 选择器和服务端运行时注入之间的契约对象，包含 YAML frontmatter 投影后的核心字段。
-- 由服务端 `discoverAgents()` 和 `GET /api/agents` 生产，`usePiChat` 与 `WorkbenchChatHeader.vue` 消费。
-- 依据：`packages/server/src/agents.js`，`packages/web/src/lib/types.ts`
+- 这是输入区 agent 选择器和服务端运行时注入之间的契约对象，包含统一 agent schema 中会影响主会话与后续 task runtime 的核心字段。
+- discovery 先合并内置默认 agent，再叠加 `~/.pi/agent/agents` 与最近 `.pi/agents`，最后由 `GET /api/agents` 过滤掉 disabled 与 task-only agent 返回主会话可选列表。
+- 依据：`packages/server/src/default-agents.js`，`packages/server/src/agents.js`，`packages/web/src/lib/types.ts`
 
 - 抽象名称：agent permission 编译结果
 
@@ -551,12 +556,12 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 [1] WorkbenchPage.vue / usePiChat.boot()
   -> [2] GET /api/agents?cwd=...
   -> [3] discoverAgents(cwd)
-  -> [4] 合并 ~/.pi/agent/agents 与最近 .pi/agents
-  -> [5] 过滤 task-only agent
-  -> [6] WorkbenchChatHeader Select 展示可选 agent
+  -> [4] 合并内置默认 agent、~/.pi/agent/agents 与最近 .pi/agents
+  -> [5] 过滤 disabled 与 task-only agent
+  -> [6] WorkbenchChatHeader Select 展示主会话可选 agent
 ```
 
-- 关键分支：若 project scope 与 user scope 存在同名 agent，则 project 版本覆盖 user 版本。
+- 关键分支：若 project scope 与 user scope 存在同名 agent，则 project 版本覆盖 user 版本；若同名用户/项目 agent 覆盖内置默认 agent，则覆盖结果进入最终注册表。
 - 严格分支：若 agent 文件含未知 frontmatter 字段或非法 permission，会被直接跳过并记录服务端日志，而不是带病进入前端列表。
 
 - 场景：输入编排与资源注入流程
@@ -584,7 +589,7 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
   -> [6] prompt() 进入真实 agent runtime
 ```
 
-- 第 3 步会同步应用 system prompt、model、thinking、steps 预算与 active tools。
+- 第 3 步会同步应用 system prompt、model、thinking、maxTurns 预算与 active tools。
 - 第 4 到 5 步保证 agent 改动不是 UI 状态，而是会真正改变 Pi session 的执行上下文。
 
  - 场景：设置页与主题页导航流程
@@ -798,3 +803,34 @@ LLM 调用 ask tool
 - ask 现在是 Web 工作台第一条真实阻塞式交互链路
 - 仍然没有开放通用 `ctx.ui.custom()` 浏览器适配
 - 当前只支持 ask，不把协议泛化成任意 interactive request 容器
+
+## 2026-04-12 ask 历史回放桥接修正
+### 根因
+- server 原先只把消息投影成 `role/content/timestamp`
+- Pi runtime 的 `toolResult` 真实还有 `toolCallId/toolName/details/isError`
+- 这些字段丢失后，Web 无法判断 ask 结果属于哪个工具，也拿不到问答详情
+
+### 修正内容
+- `packages/server/src/index.ts` 的 `serializeMessage()` 现在保留：
+  - `toolCallId`
+  - `toolName`
+  - `details`
+  - `isError`
+- `packages/server/src/types/index.ts`
+- `packages/server/src/types/pi-sdk.d.ts`
+- `packages/web/src/lib/types.ts`
+
+### 结果
+```text
+Pi runtime SessionMessage
+  -> server serializeMessage 完整投影工具元数据
+  -> SessionSnapshot.messages
+  -> usePiChat/createRawMessage 保留 tool 元字段
+  -> ChatProcessGroup 识别 ask toolCall/toolResult
+  -> 历史回放显示问题摘要 / 答案摘要 / 完整问答对
+```
+
+### 设计结论
+- pending ask 与历史 ask 必须分两条线
+- 但历史 ask 绝不能再做独立协议，必须回归普通工具消息
+- Web 若继续做工具定制渲染，前提都是 **消息元数据不能在桥接层丢失**

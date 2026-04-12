@@ -6,6 +6,7 @@
 - [Pi SDK] 只能用 SDK 模式，禁止 RPC（官方限制，无替代方案）
 - [数据存储] 统一用服务端 JSON 文件存储（~/.ridge/），不混用 localStorage（架构简单统一）
 - [前后端分离] server 负责 runtime + 权限 + 持久化，web 只做投影消费，禁止在 Web 层伪造会话语义
+- [Agent注册表] agent 系统不能只依赖磁盘发现，必须先有内置默认 agent，再让 project/user 配置覆盖；否则 schema 一收紧，功能会出现“系统支持但列表为空”的假故障
 - [输入安全] 所有服务端写入必须白名单校验，防止原型污染（__proto__ 注入）
 - [目录边界] 工作区文件树与 Home 目录项目选择必须拆成两个接口，不能共用一套 root 校验（安全语义不同）
 
@@ -28,5 +29,6 @@
 - [类型校验] 即使 TypeScript 编译通过，也要验证运行时数据字段（如 AgentSummary 实际无 id 字段）
 - [共享列表状态] 同一份项目列表如果会被侧栏、空态、弹窗同时消费，composable 必须提升为模块级共享状态并做请求去重，否则不同区域会出现数据不同步
 
-- [ask 交互] 阻塞式 ask 不能伪装成普通消息，必须建模为“挂起中的 tool + 独立 interactiveRequests”，否则恢复执行、重连快照和消息回放会乱
+- [ask 交互] 阻塞式 ask 要拆成两条线：pending 阶段走 `interactiveRequests` 底部表单，历史阶段回到普通工具消息；两者不能混成一种投影
 - [server 类型补洞] 当 workspace 没有完整第三方类型包时，可在 `packages/server/src/types/` 放最小 shim 保住 server `tsc --noEmit`，但 shim 只补边界，不扩散到业务层
+- [消息桥接] Web 想做真实工具回放，server 绝不能把 Pi `toolResult` 压扁成只剩 `role/content/timestamp`；`toolCallId/toolName/details/isError` 缺一个，关联、摘要、专属渲染都会废

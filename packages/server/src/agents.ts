@@ -3,9 +3,12 @@ import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { getAgentDir, parseFrontmatter } from '@mariozechner/pi-coding-agent';
 import { normalizeAgentPermission } from './agent-permissions.js';
+import { DEFAULT_AGENTS } from './default-agents.js';
 import type {
   AgentMode,
   AgentScope,
+  AgentSourceScope,
+  AgentPermission,
   ThinkingLevel,
   HttpError,
 } from './types/index.js';
@@ -28,7 +31,10 @@ const SUPPORTED_FRONTMATTER_FIELDS = new Set([
   'mode',
   'model',
   'thinking',
-  'steps',
+  'max_turns',
+  'skills',
+  'inherit_context',
+  'run_in_background',
   'enabled',
   'permission',
 ]);
@@ -83,6 +89,56 @@ const normalizeInteger = (value: unknown): number | undefined => {
 
   return undefined;
 };
+
+const normalizeOptionalBoolean = (value: unknown, key: string): boolean | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') {
+      return true;
+    }
+    if (normalized === 'false') {
+      return false;
+    }
+  }
+
+  throw createAgentError(
+    'INVALID_AGENT_BOOLEAN',
+    `agent 的 ${key} 配置必须是 boolean: ${String(value)}`,
+  );
+};
+
+const normalizeStringList = (value: unknown, key: string): string[] | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const normalized = value.map((item) => normalizeString(item)).filter(Boolean);
+    if (normalized.length === 0) {
+      throw createAgentError('INVALID_AGENT_LIST', `agent 的 ${key} 不能为空列表`);
+    }
+    return normalized;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.split(',').map((item) => item.trim()).filter(Boolean);
+    if (normalized.length === 0) {
+      throw createAgentError('INVALID_AGENT_LIST', `agent 的 ${key} 不能为空列表`);
+    }
+    return normalized;
+  }
+
+  throw createAgentError('INVALID_AGENT_LIST', `agent 的 ${key} 必须是字符串或字符串数组`);
+};
+
 
 export const normalizeThinkingLevel = (value: unknown): ThinkingLevel | undefined => {
   const normalized = normalizeString(value).toLowerCase();
@@ -162,12 +218,15 @@ interface ParsedAgent {
   mode: AgentMode;
   model?: string;
   thinking?: ThinkingLevel;
-  steps?: number;
+  maxTurns?: number;
+  skills?: string[];
+  inheritContext?: boolean;
+  runInBackground?: boolean;
   enabled: boolean;
-  permission: unknown;
+  permission?: AgentPermission;
   systemPrompt: string;
   source: string;
-  sourceScope: AgentScope;
+  sourceScope: AgentSourceScope;
 }
 
 const parseAgentFile = (rawContent: string, filePath: string, sourceScope: AgentScope): ParsedAgent => {
@@ -217,20 +276,26 @@ const parseAgentFile = (rawContent: string, filePath: string, sourceScope: Agent
     );
   }
 
-  const steps =
-    frontmatter.steps === undefined
+  const maxTurns =
+    frontmatter.max_turns === undefined
       ? undefined
-      : normalizeInteger(frontmatter.steps);
-  if (frontmatter.steps !== undefined && steps === undefined) {
+      : normalizeInteger(frontmatter.max_turns);
+  if (frontmatter.max_turns !== undefined && maxTurns === undefined) {
     throw createAgentError(
-      'INVALID_AGENT_STEPS',
-      `agent 的 steps 必须是大于等于 1 的整数: ${filePath}`,
+      'INVALID_AGENT_MAX_TURNS',
+      `agent 的 max_turns 必须是大于等于 1 的整数: ${filePath}`,
     );
   }
 
+  const skills = normalizeStringList(frontmatter.skills, 'skills');
+  const inheritContext = normalizeOptionalBoolean(frontmatter.inherit_context, 'inherit_context');
+  const runInBackground = normalizeOptionalBoolean(
+    frontmatter.run_in_background,
+    'run_in_background',
+  );
   const enabled = normalizeBoolean(frontmatter.enabled, true);
 
-  let permission: unknown;
+  let permission: AgentPermission | undefined;
   try {
     permission = normalizeAgentPermission(frontmatter.permission);
   } catch (error) {
@@ -247,7 +312,10 @@ const parseAgentFile = (rawContent: string, filePath: string, sourceScope: Agent
     mode,
     model,
     thinking,
-    steps,
+    maxTurns,
+    skills,
+    inheritContext,
+    runInBackground,
     enabled,
     permission,
     systemPrompt,
@@ -282,10 +350,6 @@ const loadAgentsFromDir = async (dirPath: string, sourceScope: AgentScope): Prom
     try {
       const rawContent = await fs.readFile(filePath, 'utf8');
       const agent = parseAgentFile(rawContent, filePath, sourceScope);
-      if (agent.enabled === false) {
-        continue;
-      }
-
       agents.push(agent);
     } catch (error) {
       console.warn(`加载 agent 失败 ${filePath}:`, (error as Error)?.message || error);
@@ -295,8 +359,16 @@ const loadAgentsFromDir = async (dirPath: string, sourceScope: AgentScope): Prom
   return agents;
 };
 
-const mergeAgents = (userAgents: ParsedAgent[], projectAgents: ParsedAgent[]): ParsedAgent[] => {
+const mergeAgents = (
+  defaultAgents: ParsedAgent[],
+  userAgents: ParsedAgent[],
+  projectAgents: ParsedAgent[],
+): ParsedAgent[] => {
   const merged = new Map<string, ParsedAgent>();
+  for (const agent of defaultAgents) {
+    merged.set(agent.name, agent);
+  }
+
   for (const agent of userAgents) {
     merged.set(agent.name, agent);
   }
@@ -325,7 +397,10 @@ export const getAgentConfigSignature = (agent: ParsedAgent | null | undefined): 
     systemPrompt: agent.systemPrompt || '',
     model: agent.model || '',
     thinking: agent.thinking || '',
-    steps: agent.steps || 0,
+    maxTurns: agent.maxTurns || 0,
+    skills: agent.skills || [],
+    inheritContext: agent.inheritContext ?? null,
+    runInBackground: agent.runInBackground ?? null,
     permission: agent.permission || {},
     enabled: agent.enabled !== false,
   });
@@ -343,7 +418,7 @@ export async function discoverAgents(cwd: string): Promise<ParsedAgent[]> {
       : Promise.resolve([]),
   ]);
 
-  return mergeAgents(userAgents, projectAgents);
+  return mergeAgents(DEFAULT_AGENTS as ParsedAgent[], userAgents, projectAgents);
 }
 
 export async function getAgentByName(
@@ -381,6 +456,17 @@ export async function getAgentByName(
 
 const quoteYamlString = (value: string): string => JSON.stringify(String(value));
 
+const serializeStringList = (value: string | string[] | null | undefined): string | undefined => {
+  if (typeof value === 'string') {
+    return value.trim() || undefined;
+  }
+
+  if (!value || value.length === 0) {
+    return undefined;
+  }
+  return value.join(',');
+};
+
 const pushYamlValue = (
   lines: string[],
   key: string,
@@ -417,9 +503,12 @@ interface AgentPayload {
   mode: AgentMode;
   model: string | null;
   thinking: ThinkingLevel | null;
-  steps: number | null;
+  max_turns: number | null;
+  skills: string[] | string | null;
+  inherit_context: boolean | null;
+  run_in_background: boolean | null;
   enabled: boolean;
-  permission: unknown;
+  permission?: AgentPermission;
   prompt: string;
   scope: AgentScope;
 }
@@ -432,7 +521,10 @@ const serializeAgentFile = (config: AgentPayload): string => {
   pushYamlValue(lines, 'mode', config.mode);
   pushYamlValue(lines, 'model', config.model ?? undefined);
   pushYamlValue(lines, 'thinking', config.thinking);
-  pushYamlValue(lines, 'steps', config.steps);
+  pushYamlValue(lines, 'max_turns', config.max_turns);
+  pushYamlValue(lines, 'skills', serializeStringList(config.skills));
+  pushYamlValue(lines, 'inherit_context', config.inherit_context ?? undefined);
+  pushYamlValue(lines, 'run_in_background', config.run_in_background ?? undefined);
   pushYamlValue(lines, 'enabled', config.enabled);
   pushYamlValue(lines, 'permission', config.permission);
   lines.push('---');
@@ -463,7 +555,10 @@ const normalizeAgentPayload = (
     'mode',
     'model',
     'thinking',
-    'steps',
+    'max_turns',
+    'skills',
+    'inherit_context',
+    'run_in_background',
     'enabled',
     'permission',
     'prompt',
@@ -524,23 +619,47 @@ const normalizeAgentPayload = (
     throw createAgentError('INVALID_AGENT_THINKING', 'agent thinking 配置非法');
   }
 
-  const steps =
-    payload.steps === undefined
-      ? options.existing?.steps
-      : normalizeInteger(payload.steps);
-  if (payload.steps !== undefined && steps === undefined) {
+  const maxTurns =
+    payload.max_turns === undefined
+      ? options.existing?.maxTurns
+      : normalizeInteger(payload.max_turns);
+  if (payload.max_turns !== undefined && maxTurns === undefined) {
     throw createAgentError(
-      'INVALID_AGENT_STEPS',
-      'agent steps 必须是大于等于 1 的整数',
+      'INVALID_AGENT_MAX_TURNS',
+      'agent max_turns 必须是大于等于 1 的整数',
     );
   }
+
+  const skills =
+    payload.skills === undefined
+      ? options.existing?.skills
+      : payload.skills === null
+        ? undefined
+        : normalizeStringList(payload.skills, 'skills');
+
+  const inheritContext =
+    payload.inherit_context === undefined
+      ? options.existing?.inheritContext
+      : payload.inherit_context === null
+        ? undefined
+        : normalizeOptionalBoolean(payload.inherit_context, 'inherit_context');
+
+  const runInBackground =
+    payload.run_in_background === undefined
+      ? options.existing?.runInBackground
+      : payload.run_in_background === null
+        ? undefined
+        : normalizeOptionalBoolean(
+            payload.run_in_background,
+            'run_in_background',
+          );
 
   const enabled =
     payload.enabled === undefined
       ? (options.existing?.enabled ?? true)
       : normalizeBoolean(payload.enabled, true);
 
-  let permission: unknown;
+  let permission: AgentPermission | undefined;
   try {
     permission =
       payload.permission === undefined
@@ -570,7 +689,10 @@ const normalizeAgentPayload = (
     mode,
     model: normalizeString(payload.model ?? options.existing?.model) || null,
     thinking: thinking ?? null,
-    steps: steps ?? null,
+    max_turns: maxTurns ?? null,
+    skills: skills ?? null,
+    inherit_context: inheritContext ?? null,
+    run_in_background: runInBackground ?? null,
     enabled,
     permission,
     prompt,

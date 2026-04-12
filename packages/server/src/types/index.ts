@@ -14,8 +14,8 @@ declare global {
 // ===== Agent Types =====
 export type AgentMode = 'primary' | 'task' | 'all';
 export type AgentScope = 'user' | 'project';
+export type AgentSourceScope = 'default' | AgentScope;
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-
 export interface AgentConfig {
   name: string;
   description: string;
@@ -23,12 +23,15 @@ export interface AgentConfig {
   mode: AgentMode;
   model?: string;
   thinking?: ThinkingLevel;
-  steps?: number;
+  maxTurns?: number;
+  skills?: string[];
+  inheritContext?: boolean;
+  runInBackground?: boolean;
   enabled: boolean;
   permission?: AgentPermission;
   systemPrompt: string;
   source: string;
-  sourceScope: AgentScope;
+  sourceScope: AgentSourceScope;
 }
 
 export interface AgentPermission {
@@ -123,21 +126,7 @@ export interface SessionRecord {
   defaultToolNames: string[];
   pendingAskRecords: Map<string, PendingAskRecord>;
   selectedAgentName?: string;
-  // AgentConfigInternal from agents.ts
-  selectedAgentConfig: {
-    name: string;
-    description: string;
-    displayName?: string;
-    mode: AgentMode;
-    model?: string;
-    thinking?: ThinkingLevel;
-    steps?: number;
-    enabled: boolean;
-    permission: unknown;
-    systemPrompt: string;
-    source: string;
-    sourceScope: AgentScope;
-  } | null;
+  selectedAgentConfig: AgentConfig | null;
   selectedAgentSignature: string;
   explicitModelSpec?: string;
   explicitThinkingLevel?: ThinkingLevel;
@@ -349,10 +338,16 @@ export interface AgentSummary {
   mode: AgentMode;
   model?: string;
   thinking?: ThinkingLevel;
-  steps?: number;
-  sourceScope: AgentScope;
+  maxTurns?: number;
+  skills?: string[];
+  inheritContext?: boolean;
+  runInBackground?: boolean;
+  enabled: boolean;
+  permission?: AgentPermission;
+  sourceScope: AgentSourceScope;
   source: string;
 }
+
 
 export interface ResourceCatalogResponse {
   prompts: Array<{

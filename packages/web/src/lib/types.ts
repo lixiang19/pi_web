@@ -85,6 +85,18 @@ export interface AskInteractiveRequest {
   createdAt: number;
 }
 
+export interface AskToolCallArguments {
+  title?: string;
+  message?: string;
+  questions: AskQuestion[];
+}
+
+export interface AskToolResultDetails {
+  request: AskInteractiveRequest;
+  answers: AskQuestionAnswer[];
+  dismissed: boolean;
+}
+
 // ============================================================================
 // Pi 原始消息协议
 // ============================================================================
@@ -144,6 +156,10 @@ export interface ChatMessage {
   role: MessageRole;
   content: string | ContentBlock[];
   timestamp?: number;
+  toolCallId?: string;
+  toolName?: string;
+  details?: unknown;
+  isError?: boolean;
   pending?: boolean;
   localId?: string;
 }
@@ -182,8 +198,13 @@ export interface AgentSummary {
   mode: "primary" | "task" | "all";
   model?: string;
   thinking?: ThinkingLevel;
-  steps?: number;
-  sourceScope: "user" | "project";
+  maxTurns?: number;
+  skills?: string[];
+  inheritContext?: boolean;
+  runInBackground?: boolean;
+  enabled: boolean;
+  permission?: Record<string, unknown>;
+  sourceScope: "default" | "user" | "project";
   source: string;
 }
 

@@ -151,7 +151,7 @@ const currentAgentLabel = computed(() => {
 </script>
 
 <template>
-  <div class="ridge-panel-header shrink-0 border-t border-border/60 bg-background">
+  <div class="ridge-panel-header shrink-0 bg-background">
     <div class="mx-auto max-w-3xl px-4 py-3">
       <div class="relative rounded-xl bg-card shadow-[0_1px_4px_rgba(61,50,41,0.06),0_0_0_1px_rgba(45,52,54,0.05)] transition-shadow duration-200">
         <div
