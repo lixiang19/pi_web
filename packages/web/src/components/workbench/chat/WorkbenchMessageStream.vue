@@ -4,12 +4,14 @@ import { ArrowDown, Brain } from "lucide-vue-next";
 
 import ChatMessageItem from "@/components/chat/ChatMessageItem.vue";
 import AskCard from "@/components/chat/AskCard.vue";
+import PermissionRequestCard from "@/components/chat/PermissionRequestCard.vue";
 import ChatProcessGroup from "@/components/chat/ChatProcessGroup.vue";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type {
   AskQuestionAnswer,
   AskInteractiveRequest,
+  PermissionInteractiveRequest,
   ChatMessage,
   ContentBlock,
   SessionSummary,
@@ -20,6 +22,7 @@ const props = defineProps<{
   activeSessionId: string;
   hasMoreAbove: boolean;
   interactiveRequests: AskInteractiveRequest[];
+  permissionRequests: PermissionInteractiveRequest[];
   isDraftSession: boolean;
   isLoadingOlder: boolean;
   messages: ChatMessage[];
@@ -30,6 +33,7 @@ const emit = defineEmits<{
   dismissAsk: [askId: string];
   loadEarlier: [];
   submitAsk: [askId: string, answers: AskQuestionAnswer[]];
+  submitPermission: [requestId: string, action: "once" | "always" | "reject"];
 }>();
 
 const messageScrollArea = ref<HTMLElement | { $el?: Element } | null>(null);
@@ -246,7 +250,7 @@ watch(
 );
 
 watch(
-  () => props.interactiveRequests.length,
+  () => props.interactiveRequests.length + props.permissionRequests.length,
   async (nextLength, previousLength) => {
     await nextTick();
     if (nextLength > previousLength) {
@@ -270,7 +274,7 @@ onBeforeUnmount(() => {
     <ScrollArea ref="messageScrollArea" class="h-full">
       <div class="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-4">
         <div
-          v-if="messages.length === 0 && interactiveRequests.length === 0"
+          v-if="messages.length === 0 && interactiveRequests.length === 0 && permissionRequests.length === 0"
           class="flex flex-col items-center justify-center gap-4 py-20 text-center"
         >
           <div class="rounded-full border border-border p-4 text-muted-foreground">
@@ -318,6 +322,17 @@ onBeforeUnmount(() => {
             />
           </template>
 
+          <div
+            v-if="permissionRequests.length"
+            class="space-y-3"
+          >
+            <PermissionRequestCard
+              v-for="request in permissionRequests"
+              :key="request.id"
+              :request="request"
+              @submit="emit('submitPermission', request.id, $event)"
+            />
+          </div>
           <div
             v-if="interactiveRequests.length"
             class="space-y-3"

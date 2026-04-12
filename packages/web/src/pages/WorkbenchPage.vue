@@ -5,8 +5,6 @@ import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.v
 import { useWorkbenchPage } from "@/composables/useWorkbenchPage";
 
 const {
-  AUTO_MODEL_VALUE,
-  AUTO_THINKING_VALUE,
   NO_AGENT_VALUE,
   abort,
   activeDraftContext,
@@ -32,6 +30,7 @@ const {
   injectCommand,
   injectSkill,
   interactiveRequests,
+  permissionRequests,
   isDraftSession,
   isLoadingOlder,
   isResourcePickerVisible,
@@ -45,6 +44,7 @@ const {
   renameSession,
   resourceError,
   respondToPendingAsk,
+  respondToPendingPermission,
   dismissPendingAsk,
   returnToParentSession,
   sessionSidebarProps,
@@ -81,13 +81,13 @@ const handleWorktreeCreated = async (worktreePath: string) => {
           :active-draft-parent-session-id="activeDraftContext?.parentSessionId"
           :active-session-id="activeSessionId"
           :agents="agents"
-          :auto-model-value="AUTO_MODEL_VALUE"
-          :auto-thinking-value="AUTO_THINKING_VALUE"
           :commands="filteredCommands"
           :composer="composer"
           :current-session-title="currentSessionTitle"
           :has-more-above="hasMoreAbove"
           :interactive-requests="interactiveRequests"
+
+          :permission-requests="permissionRequests"
           :has-visible-resources="hasVisibleResources"
           :is-draft-session="isDraftSession"
           :is-loading-older="isLoadingOlder"
@@ -97,7 +97,7 @@ const handleWorktreeCreated = async (worktreePath: string) => {
           :model-options="models"
           :no-agent-value="NO_AGENT_VALUE"
           :parent-session-id="parentSessionId"
-          :project-label="formatProjectLabel(fileTreeRoot || 'workspace')"
+          :project-label="fileTreeRoot ? formatProjectLabel(fileTreeRoot) : '未选择项目'"
           :current-project-path="fileTreeRoot"
           :prompts="filteredPrompts"
           :resource-error="resourceError"
@@ -112,6 +112,8 @@ const handleWorktreeCreated = async (worktreePath: string) => {
           @load-earlier="loadEarlier"
           @dismiss-ask="dismissPendingAsk(activeSessionId, $event)"
           @respond-ask="(askId, answers) => respondToPendingAsk(activeSessionId, askId, answers)"
+
+          @respond-permission="(requestId, action) => respondToPendingPermission(activeSessionId, requestId, action)"
           @return-to-parent="returnToParentSession"
           @select-project-path="setDraftProjectPath($event)"
           @select-agent="handleAgentSelection"
@@ -128,7 +130,7 @@ const handleWorktreeCreated = async (worktreePath: string) => {
         class="w-80 flex shrink-0 flex-col bg-background"
       >
         <ProjectFilePanel
-          :project-label="formatProjectLabel(fileTreeRoot)"
+          :project-label="fileTreeRoot ? formatProjectLabel(fileTreeRoot) : '未选择项目'"
           :root-dir="fileTreeRoot"
           class="flex-1"
         />

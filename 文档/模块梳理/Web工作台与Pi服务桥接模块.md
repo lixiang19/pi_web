@@ -834,3 +834,124 @@ Pi runtime SessionMessage
 - pending ask 与历史 ask 必须分两条线
 - 但历史 ask 绝不能再做独立协议，必须回归普通工具消息
 - Web 若继续做工具定制渲染，前提都是 **消息元数据不能在桥接层丢失**
+
+## 2026-04-12 permission 审批对齐 opencode
+### 服务桥接变化
+- `AgentPermission` / `PermissionRule` 现在统一支持 `allow | ask | deny`
+- `CompiledPermissionPolicy` 从 `editRules + toolActions` 收敛为 `rulesByPermission`
+- `createPermissionGateExtension()` 从仅拦截 edit，升级为统一拦截全部 permission key
+- `SessionRecord` 新增 `pendingPermissionRecords` 与会话级 `runtimePermissionRules`
+- `SessionSnapshot` 新增 `permissionRequests`
+- 新增接口：`POST /api/sessions/:sessionId/permissions/:requestId/respond`
+
+### 当前链路
+```text
+LLM 发起普通 toolCall
+  -> server permission gate 匹配 allow/ask/deny
+  -> ask 命中时创建 pending permission request
+  -> SessionRecord.pendingPermissionRecords 挂起当前 tool_call
+  -> SSE snapshot 推送 permissionRequests
+  -> Web 底部 PermissionRequestCard 渲染
+  -> 用户选择 once / always / reject
+  -> POST /api/sessions/:id/permissions/:requestId/respond
+  -> server 继续放行 或 返回拒绝
+  -> 原 toolCall 继续执行/失败
+```
+
+### 设计边界
+- 审批不是 ask 工具，也不是独立工具历史
+- `always` 只作用于当前 session，靠 `runtimePermissionRules` 追加最小白名单
+- 规则对象未命中默认 `allow`
+- 当前 Web 只渲染 pending 审批卡片，不保留审批历史 UI
+
+## 2026-04-12 Git项目显隐收敛
+### 变更目的
+- 左侧会话列表里的 Git worktree 按钮、worktree 删除按钮，只在项目真实属于 Git 仓库时显示。
+- 右侧 `ProjectFilePanel` 不再依赖 `getGitStatus()` 报错来“被动证明”非 Git；改为先走轻量探测，再决定是否渲染 Git Tab。
+
+### 当前链路
+```text
+ProjectFilePanel(rootDir)
+  -> useIsGitRepo(rootDir)
+  -> GET /api/git/is-repo?cwd=...
+  -> gitService.isGitRepository(cwd)
+  -> isGitRepo:boolean
+  -> Git Tab 显示 / 隐藏
+```
+
+### 设计结论
+- Git 面板显隐属于“仓库能力探测”，不属于 `getGitStatus()` 错误分支；两者职责必须拆开。
+- 右侧面板在非 Git 项目时只保留文件视图，不显示 Git Tab，不再把错误文案暴露给用户当作正常状态。
+- 服务端 `SessionSummary` 现在显式携带 `isGit`；左侧 Sidebar 基于真实项目上下文投影 `SessionProjectView.isGit`，不再把“有 session”错误等价成“Git 项目”。
+- 未解析出 Git 上下文的空项目视图，默认不显示 Git worktree 操作。
+
+### 受影响文件
+- `packages/server/src/index.ts`
+- `packages/web/src/lib/api.ts`
+- `packages/web/src/lib/types.ts`
+- `packages/web/src/composables/useIsGitRepo.ts`
+- `packages/web/src/components/workbench/ProjectFilePanel.vue`
+- `packages/web/src/components/chat/SessionSidebar.vue`
+
+## 2026-04-12 Pi 资源隔离开关
+### 变更目的
+- 允许 Web 服务端在**不动全局 auth/models/sessions** 的前提下，临时切断 `~/.pi/agent` 资源发现。
+- 目标只限 `DefaultResourceLoader` 相关资源：prompts、skills、extensions、themes、AGENTS 附加指令；不改模型登录、全局会话索引、provider 注册。
+
+### 当前链路
+```text
+RIDGE_PI_ISOLATED=1
+  -> server createResourceDiscoverySettingsManager(cwd)
+  -> DefaultResourceLoader 使用隔离 agentDir
+  -> 全局 ~/.pi/agent 资源不再参与发现
+  -> 项目 cwd/.pi 资源仍然保留
+  -> createAgentSession 继续使用正常 SettingsManager/AuthStorage/ModelRegistry
+```
+
+### 设计结论
+- 资源隔离和运行时凭证隔离必须拆开；否则“想禁全局 skill”会误伤登录和模型可用性。
+- 隔离开关必须下沉到 `DefaultResourceLoader` 的 settings/agentDir 边界，不能靠前端隐藏资源列表伪装。
+- 子代理 runtime 也必须跟随同一开关；否则主会话隔离，子代理又从全局吃 skill，链路会重新漏回去。
+
+### 受影响文件
+- `packages/server/src/index.ts`
+- `packages/server/src/subagents.ts`
+- `packages/server/src/pi-resource-scope.ts`
+- `packages/server/src/types/pi-sdk.d.ts`
+
+## 2026-04-12 项目真源收敛
+### 变更目的
+- 左侧“浏览项目”只能显示用户**手动添加**的项目，禁止再从会话摘要反推项目节点。
+- 会话、文件树、worktree 归属统一收敛到“已添加项目”这一个真源，去掉 server 启动目录衍生出的静态 workspace scope。
+- 未选中项目时，工作台保持空态，不自动落回 `workspaceDir`。
+
+### 当前链路
+```text
+已添加项目列表 ~/.pi/ridge-settings.json
+  -> server buildManagedProjectScopes()
+  -> /api/sessions 只返回命中已添加项目作用域的 session
+  -> SessionSummary.projectId/projectRoot/projectLabel 对齐已添加项目
+  -> web buildSessionProjects(storedProjects + sessions)
+  -> 左栏只渲染已添加项目节点
+
+当前文件树 root
+  -> /api/files/tree?root=...
+  -> ensureManagedProjectScope(root)
+  -> 只允许访问已添加项目目录及其 worktree
+```
+
+### 设计结论
+- `workspaceDir` 现在只保留为系统信息/相对路径参考，不再作为项目、会话、文件树的默认真源。
+- `/api/sessions` 虽仍返回扁平数组，但内部语义已改成“先按已添加项目建作用域，再汇总会话”，不再按全局 workspace 扫描后反推项目。
+- 新建会话必须带入某个已添加项目目录；未选项目时只能停留在草稿空态，不能偷偷创建到 server 启动目录。
+- `SessionSummary.projectId` 现在对齐 `ProjectItem.id`，worktree 仍通过 `worktreeRoot/worktreeLabel/branch` 表达，不再拿 git common dir 当左栏项目主键。
+
+### 受影响文件
+- `packages/server/src/index.ts`
+- `packages/server/src/project-context.ts`
+- `packages/server/src/types/index.ts`
+- `packages/web/src/composables/usePiChat.ts`
+- `packages/web/src/composables/useEffectiveDirectory.ts`
+- `packages/web/src/lib/session-sidebar.ts`
+- `packages/web/src/components/chat/SessionSidebar.vue`
+- `packages/web/src/pages/WorkbenchPage.vue`

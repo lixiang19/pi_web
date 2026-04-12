@@ -34,39 +34,43 @@ export interface AgentConfig {
   sourceScope: AgentSourceScope;
 }
 
+export type PermissionAction = 'allow' | 'ask' | 'deny';
+export type LogicalPermissionKey =
+  | 'read'
+  | 'grep'
+  | 'find'
+  | 'ls'
+  | 'bash'
+  | 'ask'
+  | 'task'
+  | 'edit';
 export interface AgentPermission {
-  read?: 'allow' | 'deny' | PermissionRules;
-  grep?: 'allow' | 'deny' | PermissionRules;
-  find?: 'allow' | 'deny' | PermissionRules;
-  ls?: 'allow' | 'deny' | PermissionRules;
-  bash?: 'allow' | 'deny' | PermissionRules;
-  ask?: 'allow' | 'deny' | PermissionRules;
-  task?: 'allow' | 'deny' | PermissionRules;
-  edit?: 'allow' | 'deny' | PermissionRules | PermissionRule[];
+  read?: PermissionAction | PermissionRules;
+  grep?: PermissionAction | PermissionRules;
+  find?: PermissionAction | PermissionRules;
+  ls?: PermissionAction | PermissionRules;
+  bash?: PermissionAction | PermissionRules;
+  ask?: PermissionAction | PermissionRules;
+  task?: PermissionAction | PermissionRules;
+  edit?: PermissionAction | PermissionRules | PermissionRule[];
 }
-
 export interface PermissionRule {
   pattern: string;
-  action: 'allow' | 'deny';
+  action: PermissionAction;
 }
-
 export interface PermissionRules {
-  [pattern: string]: 'allow' | 'deny';
+  [pattern: string]: PermissionAction;
 }
-
 export interface CompiledPermissionPolicy {
   raw: AgentPermission;
   cwd: string;
   activeToolNames: string[];
-  editRules: PermissionRule[];
-  toolActions: Record<string, string>;
+  rulesByPermission: Partial<Record<LogicalPermissionKey, PermissionRule[]>>;
 }
-
 export interface AskOption {
   label: string;
   description?: string;
 }
-
 export interface AskQuestion {
   id: string;
   header?: string;
@@ -76,12 +80,10 @@ export interface AskQuestion {
   multiple?: boolean;
   allowCustom?: boolean;
 }
-
 export interface AskQuestionAnswer {
   questionId: string;
   values: string[];
 }
-
 export interface AskInteractiveRequest {
   id: string;
   toolCallId: string;
@@ -90,16 +92,33 @@ export interface AskInteractiveRequest {
   questions: AskQuestion[];
   createdAt: number;
 }
-
 export interface AskToolResultDetails {
   request: AskInteractiveRequest;
   answers: AskQuestionAnswer[];
   dismissed: boolean;
 }
-
 export interface PendingAskRecord extends AskInteractiveRequest {
   settled: boolean;
   resolve: (result: AgentToolResult<AskToolResultDetails>) => void;
+  reject: (error: Error) => void;
+}
+
+export type PermissionDecisionAction = 'once' | 'always' | 'reject';
+
+export interface PermissionInteractiveRequest {
+  id: string;
+  toolCallId: string;
+  toolName: string;
+  permissionKey: LogicalPermissionKey;
+  title: string;
+  message: string;
+  subject: string;
+  suggestedPattern?: string;
+  createdAt: number;
+}
+
+export interface PendingPermissionRecord extends PermissionInteractiveRequest {
+  resolve: (action: PermissionDecisionAction) => void;
   reject: (error: Error) => void;
 }
 
@@ -125,6 +144,8 @@ export interface SessionRecord {
   clients: Set<import('http').ServerResponse>;
   defaultToolNames: string[];
   pendingAskRecords: Map<string, PendingAskRecord>;
+  pendingPermissionRecords: Map<string, PendingPermissionRecord>;
+  runtimePermissionRules: Partial<Record<LogicalPermissionKey, PermissionRule[]>>;
   selectedAgentName?: string;
   selectedAgentConfig: AgentConfig | null;
   selectedAgentSignature: string;
@@ -179,10 +200,6 @@ export interface ProjectContext {
   worktrees: WorktreeInfo[];
 }
 
-export interface WorkspaceScope {
-  workspaceProjectId: string;
-  allowedRoots: string[];
-}
 
 // ===== File Tree Types =====
 export interface FileTreeEntry {
@@ -199,14 +216,7 @@ export interface FileTreeResult {
 }
 
 // ===== Storage Types =====
-export interface Settings {
-  theme: 'system' | 'light' | 'dark';
-  themeName: string;
-  language: string;
-  sidebarCollapsed: boolean;
-  notifications: boolean;
-}
-
+// ===== Storage Types =====
 export interface FavoriteItem {
   id: string;
   name: string;
@@ -214,11 +224,6 @@ export interface FavoriteItem {
   data?: unknown;
   createdAt: number;
 }
-
-export interface FavoritesState {
-  items: FavoriteItem[];
-}
-
 export interface Project {
   id: string;
   name: string;
@@ -226,10 +231,32 @@ export interface Project {
   addedAt: number;
 }
 
-export interface ProjectsState {
+/**
+ * Unified settings stored in ~/.pi/ridge-settings.json
+ */
+export interface RidgeSettings {
   version: number;
+  // Core UI settings
+  theme: 'system' | 'light' | 'dark';
+  themeName: string;
+  language: string;
+  sidebarCollapsed: boolean;
+  notifications: boolean;
+  // Default composer selections (persisted preferences)
+  defaultModel: string;
+  defaultAgent: string;
+  defaultThinkingLevel: ThinkingLevel;
+  // Collections
   projects: Project[];
+  favorites: FavoriteItem[];
 }
+
+/**
+ * Legacy types kept for API backward compatibility
+ */
+export type Settings = Omit<RidgeSettings, 'version' | 'projects' | 'favorites'>;
+export type FavoritesState = { items: FavoriteItem[] };
+export type ProjectsState = { version: number; projects: Project[] };
 
 // ===== API Response Types =====
 export interface SessionSummary {
@@ -250,6 +277,7 @@ export interface SessionSummary {
   projectId: string;
   projectRoot: string;
   projectLabel: string;
+  isGit: boolean;
   branch?: string;
   worktreeRoot: string;
   worktreeLabel: string;
@@ -312,6 +340,7 @@ export interface SessionSnapshot extends SessionSummary {
     limit: number;
   };
   interactiveRequests: AskInteractiveRequest[];
+  permissionRequests: PermissionInteractiveRequest[];
 }
 
 export interface ProviderInfo {

@@ -14,6 +14,10 @@ import {
 } from '@mariozechner/pi-coding-agent';
 
 import { compileAgentPermission, createPermissionGateExtension } from './agent-permissions.js';
+import {
+  createResourceDiscoverySettingsManager,
+  isPiResourceIsolationEnabled,
+} from './pi-resource-scope.js';
 import { discoverAgents, normalizeThinkingLevel, type AgentConfigInternal } from './agents.js';
 import type { HttpError, SessionRecord, ThinkingLevel } from './types/index.js';
 
@@ -152,7 +156,10 @@ const loadSkillBlocks = async (cwd: string, names: string[] | undefined): Promis
 
   const projectDir = await findNearestProjectSkillsDir(cwd);
   const globalDir = path.join(os.homedir(), '.pi', 'skills');
-  const searchDirs = [projectDir, globalDir].filter((dir): dir is string => Boolean(dir));
+  const searchDirs = [
+    projectDir,
+    isPiResourceIsolationEnabled() ? null : globalDir,
+  ].filter((dir): dir is string => Boolean(dir));
   const blocks: string[] = [];
 
   for (const rawName of names) {
@@ -281,6 +288,7 @@ const runChildSession = async (
   },
 ): Promise<void> => {
   const settingsManager = SettingsManager.create(parentRecord.cwd);
+  const resourceSettingsManager = createResourceDiscoverySettingsManager(parentRecord.cwd);
   let permissionPolicy: ReturnType<typeof compileAgentPermission> | null = null;
 
   const childSystemPrompt = await buildSubagentSystemPrompt(
@@ -291,7 +299,7 @@ const runChildSession = async (
 
   const resourceLoader = new DefaultResourceLoader({
     cwd: parentRecord.cwd,
-    settingsManager,
+    settingsManager: resourceSettingsManager,
     appendSystemPromptOverride: (base: string[]) => [...base, childSystemPrompt],
     extensionFactories: [createPermissionGateExtension(() => permissionPolicy)],
   });

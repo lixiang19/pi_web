@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeApiInfo } from "./types";
+import type { ProjectItem, SessionSummary, WorktreeApiInfo } from "./types";
 
 export type SessionTreeNode = {
   session: SessionSummary;
@@ -47,76 +47,49 @@ const relativeLabel = (value: string, workspaceDir?: string) => {
 const compareSessionsByTime = (left: SessionSummary, right: SessionSummary) =>
   right.updatedAt - left.updatedAt;
 
-/**
- * Build session projects with worktree-aware grouping.
- *
- * 新模型：project + availableWorktrees + sessions 三者联合构造。
- * - worktree groups 来自 availableWorktreesByProject，即使没有 session 也会显示
- * - session 按 worktreeRoot 挂入对应 group
- */
+const createTree = (sessions: SessionSummary[]): SessionTreeNode[] =>
+  sessions.map((session) => ({ session, children: [] }));
+
 export const buildSessionProjects = (options: {
   sessions: SessionSummary[];
+  storedProjects?: ProjectItem[];
   availableWorktreesByProject?: Record<string, WorktreeApiInfo[]>;
+  pinnedIds?: string[];
   query?: string;
   workspaceDir?: string;
 }) => {
   const normalizedQuery = (options.query ?? "").trim().toLowerCase();
-  const projectsById = new Map<string, SessionProjectView>();
+  const storedProjects = options.storedProjects ?? [];
   const availableWorktrees = options.availableWorktreesByProject ?? {};
+  const sessionsByProjectId = new Map<string, SessionSummary[]>();
 
-  // 第一遍：按 session 收集 project
   for (const session of options.sessions) {
-    const existing = projectsById.get(session.projectId);
-    if (existing) {
-      existing.sessions.push(session);
-      existing.lastUpdatedAt = Math.max(
-        existing.lastUpdatedAt,
-        session.updatedAt,
-      );
-      continue;
-    }
-
-    projectsById.set(session.projectId, {
-      id: session.projectId,
-      label: session.projectLabel,
-      projectRoot: session.projectRoot,
-      pathLabel: relativeLabel(session.projectRoot, options.workspaceDir),
-      lastUpdatedAt: session.updatedAt,
-      sessions: [session],
-      groups: [],
-      isGit: true, // 有 session 来自 project-context，默认 git
-    });
+    const current = sessionsByProjectId.get(session.projectId) ?? [];
+    current.push(session);
+    sessionsByProjectId.set(session.projectId, current);
   }
 
-  return [...projectsById.values()]
+  return storedProjects
     .map((project) => {
+      const projectSessions = sessionsByProjectId.get(project.id) ?? [];
+      const projectRoot = normalizePath(project.path);
       const projectMatchesQuery =
         !normalizedQuery ||
-        `${project.label} ${project.projectRoot}`
-          .toLowerCase()
-          .includes(normalizedQuery);
+        `${project.name} ${projectRoot}`.toLowerCase().includes(normalizedQuery);
 
-      const activeSessions = project.sessions.filter(
-        (session) => !session.archived,
-      );
-      const archivedSessions = project.sessions.filter(
-        (session) => session.archived,
-      );
-
+      const activeSessions = projectSessions.filter((session) => !session.archived);
+      const archivedSessions = projectSessions.filter((session) => session.archived);
+      const projectWorktrees = availableWorktrees[project.id] ?? [];
       const groups: SessionGroupView[] = [];
 
-      // === project root group ===
       const rootSessions = activeSessions.filter(
-        (session) => session.worktreeRoot === session.projectRoot,
+        (session) => normalizePath(session.worktreeRoot) === projectRoot,
       );
       if (rootSessions.length > 0) {
         const sortedSessions = [...rootSessions].sort(compareSessionsByTime);
-
         const groupMatchesQuery =
           !normalizedQuery ||
-          `project root ${rootSessions[0]?.branch || ""} ${project.projectRoot}`
-            .toLowerCase()
-            .includes(normalizedQuery);
+          `project root ${projectRoot}`.toLowerCase().includes(normalizedQuery);
 
         const filteredSessions = sortedSessions.filter((session) => {
           if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
@@ -128,46 +101,33 @@ export const buildSessionProjects = (options: {
 
         if (filteredSessions.length > 0) {
           groups.push({
-            key: `${project.id}:project-root:${project.projectRoot}`,
+            key: `${project.id}:project-root:${projectRoot}`,
             kind: "project-root",
             label: "project root",
-            worktreeRoot: project.projectRoot,
+            worktreeRoot: projectRoot,
             sessions: rootSessions,
-            tree: filteredSessions.map((session) => ({
-              session,
-              children: [],
-            })),
+            tree: createTree(filteredSessions),
             lastUpdatedAt: Math.max(
               ...rootSessions.map((session) => session.updatedAt),
             ),
-            ...(rootSessions[0]?.branch
-              ? { branch: rootSessions[0].branch }
-              : {}),
           });
         }
       }
 
-      // === worktree groups（基于 availableWorktrees + session 挂载）===
-      // 先拿该 project 的 available worktrees
-      const projectWorktrees = availableWorktrees[project.id] ?? [];
-
-      // 收集所有 worktree 路径（合并 available 和 session 来源）
       const worktreeMap = new Map<
         string,
         { info?: WorktreeApiInfo; sessions: SessionSummary[] }
       >();
 
-      // 先注册 available worktrees
       for (const wt of projectWorktrees) {
         const normalizedWtPath = normalizePath(wt.path);
-        if (normalizedWtPath === normalizePath(project.projectRoot)) continue;
+        if (normalizedWtPath === projectRoot) continue;
         worktreeMap.set(normalizedWtPath, { info: wt, sessions: [] });
       }
 
-      // 再把 session 挂载到对应 worktree
       for (const session of activeSessions) {
         const normalizedWt = normalizePath(session.worktreeRoot);
-        if (normalizedWt === normalizePath(session.projectRoot)) continue;
+        if (normalizedWt === projectRoot) continue;
 
         const existing = worktreeMap.get(normalizedWt);
         if (existing) {
@@ -177,7 +137,6 @@ export const buildSessionProjects = (options: {
         }
       }
 
-      // 构造 worktree groups
       const worktreeGroups = [...worktreeMap.entries()]
         .map<SessionGroupView | null>(([worktreeRoot, { info, sessions }]) => {
           const sortedSessions = [...sessions].sort(compareSessionsByTime);
@@ -186,7 +145,6 @@ export const buildSessionProjects = (options: {
             sessions[0]?.worktreeLabel ||
             relativeLabel(worktreeRoot, options.workspaceDir);
           const branch = info?.branch || sessions[0]?.branch;
-
           const groupMatchesQuery =
             !normalizedQuery ||
             `${label} ${branch || ""} ${worktreeRoot}`
@@ -201,20 +159,23 @@ export const buildSessionProjects = (options: {
             return haystack.includes(normalizedQuery);
           });
 
-          // 即使没有 session，只要 available worktree 存在就显示（搜索时若不匹配则不显示）
           if (filteredSessions.length === 0 && !info) return null;
-          if (filteredSessions.length === 0 && normalizedQuery && !groupMatchesQuery && !projectMatchesQuery) return null;
+          if (
+            filteredSessions.length === 0 &&
+            normalizedQuery &&
+            !groupMatchesQuery &&
+            !projectMatchesQuery
+          ) {
+            return null;
+          }
 
           return {
             key: `${project.id}:worktree:${worktreeRoot}`,
-            kind: "worktree" as const,
+            kind: "worktree",
             label,
             worktreeRoot,
             sessions,
-            tree: filteredSessions.map((session) => ({
-              session,
-              children: [],
-            })),
+            tree: createTree(filteredSessions),
             lastUpdatedAt:
               sessions.length > 0
                 ? Math.max(...sessions.map((session) => session.updatedAt))
@@ -224,7 +185,6 @@ export const buildSessionProjects = (options: {
         })
         .filter((group): group is SessionGroupView => group !== null)
         .sort((left, right) => {
-          // 有活跃 session 的排前面
           const leftActive = left.sessions.length > 0;
           const rightActive = right.sessions.length > 0;
           if (leftActive !== rightActive) return leftActive ? -1 : 1;
@@ -234,12 +194,8 @@ export const buildSessionProjects = (options: {
 
       groups.push(...worktreeGroups);
 
-      // === archived group ===
       if (archivedSessions.length > 0) {
-        const sortedSessions = [...archivedSessions].sort(
-          compareSessionsByTime,
-        );
-
+        const sortedSessions = [...archivedSessions].sort(compareSessionsByTime);
         const groupMatchesQuery =
           !normalizedQuery || "archived".includes(normalizedQuery);
 
@@ -253,15 +209,12 @@ export const buildSessionProjects = (options: {
 
         if (filteredSessions.length > 0) {
           groups.push({
-            key: `${project.id}:archived:${project.projectRoot}`,
+            key: `${project.id}:archived:${projectRoot}`,
             kind: "archived",
             label: "archived",
-            worktreeRoot: project.projectRoot,
+            worktreeRoot: projectRoot,
             sessions: archivedSessions,
-            tree: filteredSessions.map((session) => ({
-              session,
-              children: [],
-            })),
+            tree: createTree(filteredSessions),
             lastUpdatedAt: Math.max(
               ...archivedSessions.map((session) => session.updatedAt),
             ),
@@ -269,12 +222,35 @@ export const buildSessionProjects = (options: {
         }
       }
 
+      const lastUpdatedAt =
+        projectSessions.length > 0
+          ? Math.max(...projectSessions.map((session) => session.updatedAt))
+          : project.addedAt;
+
+      const isGit =
+        projectWorktrees.length > 0 || projectSessions.some((session) => session.isGit);
+
       return {
-        ...project,
+        id: project.id,
+        label: project.name,
+        projectRoot,
+        pathLabel: relativeLabel(project.path, options.workspaceDir),
+        lastUpdatedAt,
+        sessions: projectSessions,
         groups,
-      };
+        isGit,
+      } satisfies SessionProjectView;
     })
     .filter((project) => project.groups.length > 0 || normalizedQuery === "")
+    .filter((project) => {
+      if (!normalizedQuery) {
+        return true;
+      }
+      return (
+        `${project.label} ${project.projectRoot}`.toLowerCase().includes(normalizedQuery) ||
+        project.groups.length > 0
+      );
+    })
     .sort((left, right) => right.lastUpdatedAt - left.lastUpdatedAt);
 };
 

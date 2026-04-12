@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { ProjectContext, WorkspaceScope } from './types/index.js';
+import type { ProjectContext } from './types/index.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -78,13 +78,11 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
 
 export interface ProjectContextResolver {
   resolveContext(cwd: string): Promise<ProjectContext>;
-  resolveWorkspaceScope(): Promise<WorkspaceScope>;
   isPathInsideRoot(candidatePath: string, rootPath: string): boolean;
 }
 
 export function createProjectContextResolver(workspaceDir: string): ProjectContextResolver {
   const contextCache = new Map<string, Promise<ProjectContext>>();
-  let workspaceScopePromise: Promise<WorkspaceScope> | null = null;
 
   const resolveContext = async (cwd: string): Promise<ProjectContext> => {
     const normalizedCwd = normalizePath(cwd || workspaceDir);
@@ -171,31 +169,8 @@ export function createProjectContextResolver(workspaceDir: string): ProjectConte
     return pending;
   };
 
-  const resolveWorkspaceScope = async (): Promise<WorkspaceScope> => {
-    if (workspaceScopePromise) {
-      return workspaceScopePromise;
-    }
-
-    workspaceScopePromise = (async () => {
-      const workspaceContext = await resolveContext(workspaceDir);
-      const allowedRoots = new Set([normalizePath(workspaceDir)]);
-
-      for (const worktree of workspaceContext.worktrees) {
-        allowedRoots.add(worktree.path);
-      }
-
-      return {
-        workspaceProjectId: workspaceContext.projectId,
-        allowedRoots: [...allowedRoots],
-      };
-    })();
-
-    return workspaceScopePromise;
-  };
-
   return {
     resolveContext,
-    resolveWorkspaceScope,
     isPathInsideRoot,
   };
 }

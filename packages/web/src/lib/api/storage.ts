@@ -1,5 +1,6 @@
 
 import type { ThemeName } from "@/assets/registry";
+import type { ThinkingLevel } from "@/lib/types";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -9,6 +10,10 @@ export interface Settings {
   language: string;
   sidebarCollapsed: boolean;
   notifications: boolean;
+  // Default composer selections (persisted preferences)
+  defaultModel: string;
+  defaultAgent: string;
+  defaultThinkingLevel: ThinkingLevel;
 }
 
 export interface FavoriteItem {
@@ -29,6 +34,9 @@ const DEFAULT_SETTINGS: Settings = {
   language: "zh-CN",
   sidebarCollapsed: false,
   notifications: true,
+  defaultModel: "",
+  defaultAgent: "",
+  defaultThinkingLevel: "medium",
 };
 
 const DEFAULT_FAVORITES: Favorites = {

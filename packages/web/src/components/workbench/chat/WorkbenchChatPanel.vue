@@ -8,6 +8,7 @@ import type {
   AgentSummary,
   AskInteractiveRequest,
   AskQuestionAnswer,
+  PermissionInteractiveRequest,
   ChatComposerState,
   ChatMessage,
   CommandCatalogItem,
@@ -21,13 +22,12 @@ defineProps<{
   activeDraftParentSessionId?: string | undefined;
   activeSessionId: string;
   agents: AgentSummary[];
-  autoModelValue: string;
-  autoThinkingValue: string;
   commands: CommandCatalogItem[];
   composer: ChatComposerState;
   currentSessionTitle: string;
   hasMoreAbove: boolean;
   interactiveRequests: AskInteractiveRequest[];
+  permissionRequests: PermissionInteractiveRequest[];
   hasVisibleResources: boolean;
   isDraftSession: boolean;
   isLoadingOlder: boolean;
@@ -54,6 +54,7 @@ const emit = defineEmits<{
   injectSkill: [value: string];
   loadEarlier: [];
   respondAsk: [askId: string, answers: AskQuestionAnswer[]];
+  respondPermission: [requestId: string, action: "once" | "always" | "reject"];
   returnToParent: [];
   selectAgent: [value: string];
   selectModel: [value: string];
@@ -115,9 +116,7 @@ function handleDraftUpdate(text: string) {
 
     <WelcomeEmptyState
       v-if="!activeSessionId"
-      :current-project-path="currentProjectPath"
       class="flex-1"
-      @select-path="emit('selectProjectPath', $event)"
     />
 
     <WorkbenchMessageStream
@@ -126,6 +125,8 @@ function handleDraftUpdate(text: string) {
       :active-session-id="activeSessionId"
       :has-more-above="hasMoreAbove"
       :interactive-requests="interactiveRequests"
+
+      :permission-requests="permissionRequests"
       :is-draft-session="isDraftSession"
       :is-loading-older="isLoadingOlder"
       :messages="messages"
@@ -133,14 +134,15 @@ function handleDraftUpdate(text: string) {
       @load-earlier="emit('loadEarlier')"
       @dismiss-ask="emit('dismissAsk', $event)"
       @submit-ask="(askId, answers) => emit('respondAsk', askId, answers)"
+
+      @submit-permission="(requestId, action) => emit('respondPermission', requestId, action)"
     />
 
     <WorkbenchComposer
       :agents="agents"
-      :auto-model-value="autoModelValue"
-      :auto-thinking-value="autoThinkingValue"
       :commands="commands"
       :composer="composer"
+      :current-project-path="currentProjectPath"
       :has-visible-resources="hasVisibleResources"
       :is-resource-picker-visible="isResourcePickerVisible"
       :is-sending="isSending"
@@ -157,6 +159,7 @@ function handleDraftUpdate(text: string) {
       @select-agent="emit('selectAgent', $event)"
       @select-model="emit('selectModel', $event)"
       @select-thinking="emit('selectThinking', $event)"
+      @select-project-path="emit('selectProjectPath', $event)"
       @submit="emit('submit')"
       @abort="emit('abort')"
       @toggle-resource-picker="emit('toggleResourcePicker')"

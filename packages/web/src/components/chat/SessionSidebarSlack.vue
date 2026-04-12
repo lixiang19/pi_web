@@ -55,6 +55,7 @@ const {
   error: projectError,
   isLoading: isProjectLoading,
   load: loadProjects,
+  projects: storedProjects,
 } = projectState;
 
 const isProjectDialogOpen = ref(false);
@@ -65,7 +66,7 @@ const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase());
 const projects = computed(() =>
   buildSessionProjects({
     sessions: props.sessions,
-    pinnedIds: pinnedSessionIds.value,
+    storedProjects: storedProjects.value,
     query: normalizedQuery.value,
     ...(props.workspaceDir ? { workspaceDir: props.workspaceDir } : {}),
   })

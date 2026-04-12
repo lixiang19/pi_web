@@ -111,8 +111,7 @@ export function useWorkbenchResourcePicker(
     }
 
     const resourceOptions: { cwd?: string; sessionId?: string } = {};
-    const resolvedCwd = fileTreeRoot.value || chat.info.value?.workspaceDir;
-
+    const resolvedCwd = fileTreeRoot.value;
     if (resolvedCwd) {
       resourceOptions.cwd = resolvedCwd;
     }

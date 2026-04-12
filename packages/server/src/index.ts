@@ -17,6 +17,7 @@ import {
 import { z } from 'zod';
 import type { AgentSession, ModelInfo } from '@mariozechner/pi-coding-agent';
 
+import { createResourceDiscoverySettingsManager } from './pi-resource-scope.js';
 import { createProjectContextResolver } from './project-context.js';
 import { createGitService } from './git-service.js';
 import { createWorktreeService } from './worktree-service.js';
@@ -66,6 +67,11 @@ import type {
   AgentPermission,
   AskInteractiveRequest,
   AskQuestionAnswer,
+  LogicalPermissionKey,
+  PendingPermissionRecord,
+  PermissionDecisionAction,
+  PermissionInteractiveRequest,
+  PermissionRule,
 } from './types/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -178,6 +184,10 @@ const askActionSchema = z.discriminatedUnion('action', [
   }),
 ]);
 
+const permissionActionSchema = z.object({
+  action: z.enum(['once', 'always', 'reject']),
+});
+
 const fileTreeQuerySchema = z.object({
   root: z.string().optional(),
   path: z.string().optional(),
@@ -217,6 +227,13 @@ const normalizeString = (value: unknown): string => {
 
 const normalizeFsPath = (value: unknown): string =>
   path.resolve(normalizeString(value) || defaultWorkspaceDir);
+const normalizeOptionalFsPath = (value: unknown): string => {
+  const normalized = normalizeString(value);
+  return normalized ? path.resolve(normalized) : '';
+};
+
+const resolveDiscoveryCwd = (value: unknown): string =>
+  normalizeOptionalFsPath(value) || path.resolve(os.homedir());
 
 const ensureWithinRoot = (candidatePath: string, rootPath: string): string => {
   const relative = path.relative(rootPath, candidatePath);
@@ -261,11 +278,55 @@ const getInteractiveRequests = (record: SessionRecord): AskInteractiveRequest[] 
     createdAt: pendingAsk.createdAt,
   }));
 
+
+const getPermissionRequests = (
+  record: SessionRecord,
+): PermissionInteractiveRequest[] =>
+  [...record.pendingPermissionRecords.values()].map((pendingRequest) => ({
+    id: pendingRequest.id,
+    toolCallId: pendingRequest.toolCallId,
+    toolName: pendingRequest.toolName,
+    permissionKey: pendingRequest.permissionKey,
+    title: pendingRequest.title,
+    message: pendingRequest.message,
+    subject: pendingRequest.subject,
+    suggestedPattern: pendingRequest.suggestedPattern,
+    createdAt: pendingRequest.createdAt,
+  }));
+
+const appendRuntimePermissionRule = (
+  record: SessionRecord,
+  permissionKey: LogicalPermissionKey,
+  rule: PermissionRule,
+): void => {
+  record.runtimePermissionRules = {
+    ...record.runtimePermissionRules,
+    [permissionKey]: [
+      ...(record.runtimePermissionRules[permissionKey] || []),
+      rule,
+    ],
+  };
+};
+
+const requestPendingPermission = async (
+  record: SessionRecord,
+  request: PermissionInteractiveRequest,
+): Promise<PermissionDecisionAction> =>
+  await new Promise<PermissionDecisionAction>((resolve, reject) => {
+    const pendingRequest: PendingPermissionRecord = {
+      ...request,
+      resolve,
+      reject,
+    };
+    record.pendingPermissionRecords.set(request.id, pendingRequest);
+    void emitSessionSnapshot(record);
+  });
+
 const emitSessionSnapshot = async (
   record: SessionRecord,
-  sessionRegistry?: Awaited<ReturnType<typeof listWorkspaceSessions>> | null,
+  sessionRegistry?: Awaited<ReturnType<typeof listProjectSessions>> | null,
 ): Promise<void> => {
-  const registry = sessionRegistry ?? (await listWorkspaceSessions());
+  const registry = sessionRegistry ?? (await listProjectSessions());
   emit(record, {
     type: 'snapshot',
     session: await toSessionSnapshot(record, registry, {}),
@@ -359,6 +420,39 @@ const cancelPendingAsks = (record: SessionRecord, reason: string): void => {
   record.pendingAskRecords.clear();
   for (const pendingAsk of pendingAsks) {
     pendingAsk.reject(new Error(reason));
+  }
+};
+
+
+const settlePendingPermission = async (
+  record: SessionRecord,
+  requestId: string,
+  action: PermissionDecisionAction,
+): Promise<void> => {
+  const pendingRequest = record.pendingPermissionRecords.get(requestId);
+  if (!pendingRequest) {
+    const error = new Error(`Permission request 不存在: ${requestId}`) as HttpError;
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (action === 'always' && !pendingRequest.suggestedPattern) {
+    const error = new Error(`Permission request 缺少 suggestedPattern: ${requestId}`) as HttpError;
+    error.statusCode = 400;
+    throw error;
+  }
+
+  record.pendingPermissionRecords.delete(requestId);
+
+  await emitSessionSnapshot(record);
+  pendingRequest.resolve(action);
+};
+
+const cancelPendingPermissions = (record: SessionRecord, reason: string): void => {
+  const pendingRequests = [...record.pendingPermissionRecords.values()];
+  record.pendingPermissionRecords.clear();
+  for (const pendingRequest of pendingRequests) {
+    pendingRequest.reject(new Error(reason));
   }
 };
 
@@ -579,7 +673,7 @@ const createAgentConfigResponse = (agent: AgentConfigInternal) => ({
 const createSessionResourceLoader = (record: SessionRecord) =>
   new DefaultResourceLoader({
     cwd: record.cwd,
-    settingsManager: record.settingsManager,
+    settingsManager: createResourceDiscoverySettingsManager(record.cwd),
     appendSystemPromptOverride: (base: string[]) => {
       const sections = [...base];
       const systemPrompt = normalizeString(
@@ -591,7 +685,19 @@ const createSessionResourceLoader = (record: SessionRecord) =>
       return sections;
     },
     extensionFactories: [
-      createPermissionGateExtension(() => record.selectedPermissionPolicy),
+      createPermissionGateExtension(() => record.selectedPermissionPolicy, {
+        getRuntimeRules: () => record.runtimePermissionRules,
+        onGrantAlways: (permissionKey, pattern) => {
+          appendRuntimePermissionRule(record, permissionKey, {
+            pattern,
+            action: 'allow',
+          });
+        },
+        requestPermission: async (request) => {
+          updateStatus(record, 'streaming');
+          return await requestPendingPermission(record, request);
+        },
+      }),
       createAskExtension(record, {
         onPendingAskChange: async (sessionRecord) => {
           updateStatus(sessionRecord, 'streaming');
@@ -769,8 +875,10 @@ const emit = (record: SessionRecord, payload: unknown): void => {
 };
 
 const updateStatus = (record: SessionRecord, nextStatus: SessionRecord['status']): void => {
+  const hasPendingInteractive =
+    record.pendingAskRecords.size > 0 || record.pendingPermissionRecords.size > 0;
   const resolvedStatus =
-    nextStatus === 'idle' && record.pendingAskRecords.size > 0 ? 'streaming' : nextStatus;
+    nextStatus === 'idle' && hasPendingInteractive ? 'streaming' : nextStatus;
   record.status = resolvedStatus;
   record.updatedAt = Date.now();
   emit(record, { type: 'status', status: resolvedStatus });
@@ -808,6 +916,8 @@ const createActiveSessionRecord = ({
     clients: new Set<ServerResponse>(),
     defaultToolNames: [...session.getActiveToolNames()],
     pendingAskRecords: stateRef?.pendingAskRecords || new Map(),
+    pendingPermissionRecords: stateRef?.pendingPermissionRecords || new Map(),
+    runtimePermissionRules: stateRef?.runtimePermissionRules || {},
     selectedAgentName: undefined as string | undefined,
     selectedAgentConfig: null as AgentConfigInternal | null,
     selectedAgentSignature: '',
@@ -849,6 +959,8 @@ const createSessionRecord = async ({
     cwd,
     settingsManager,
     pendingAskRecords: new Map(),
+    pendingPermissionRecords: new Map(),
+    runtimePermissionRules: {},
     selectedAgentConfig: null,
     selectedPermissionPolicy: null,
   };
@@ -889,6 +1001,7 @@ const createSessionRecord = async ({
 
 const destroySessionRecord = (record: SessionRecord): void => {
   cancelPendingAsks(record, 'Session closed');
+  cancelPendingPermissions(record, 'Session closed');
   record.unsubscribe?.();
   closeClients(record);
   activeSessions.delete(record.id);
@@ -928,6 +1041,15 @@ const persistSessionRecordMetadata = async (record: SessionRecord): Promise<void
   });
 };
 
+type ProjectContextInfo = Awaited<
+  ReturnType<ReturnType<typeof createProjectContextResolver>['resolveContext']>
+>;
+
+interface ManagedProjectScope {
+  project: Project;
+  allowedRoots: string[];
+  projectContext: ProjectContextInfo;
+}
 interface SessionRegistryItem {
   info: {
     id: string;
@@ -940,7 +1062,8 @@ interface SessionRegistryItem {
     parentSessionPath?: string;
   };
   cwd: string;
-  projectContext: Awaited<ReturnType<ReturnType<typeof createProjectContextResolver>['resolveContext']>>;
+  project: Project;
+  projectContext: ProjectContextInfo;
   metadata: {
     archived: boolean;
     agent?: string;
@@ -949,51 +1072,127 @@ interface SessionRegistryItem {
   };
   parentSessionId?: string;
 }
-
 interface SessionRegistry {
   infosById: Map<string, SessionRegistryItem>;
   childrenById: Map<string, string[]>;
   items: SessionRegistryItem[];
 }
 
-const listWorkspaceSessions = async (): Promise<SessionRegistry> => {
-  const [workspaceScope, allSessions, metadataState] = await Promise.all([
-    projectContextResolver.resolveWorkspaceScope(),
+const buildManagedProjectScopes = async (): Promise<ManagedProjectScope[]> => {
+  const state = await getProjects();
+  return Promise.all(
+    state.projects.map(async (project) => {
+      const normalizedPath = normalizeFsPath(project.path);
+      const projectContext = await projectContextResolver.resolveContext(normalizedPath);
+      const allowedRoots = new Set<string>([
+        normalizedPath,
+        normalizeFsPath(projectContext.projectRoot),
+      ]);
+
+      for (const worktree of projectContext.worktrees) {
+        allowedRoots.add(normalizeFsPath(worktree.path));
+      }
+
+      return {
+        project: {
+          ...project,
+          path: normalizedPath,
+        },
+        allowedRoots: [...allowedRoots],
+        projectContext,
+      };
+    }),
+  );
+};
+
+const resolveManagedProjectScope = (
+  candidatePath: string,
+  scopes: ManagedProjectScope[],
+): ManagedProjectScope | null =>
+  scopes.find((scope) => isPathInAllowedRoots(candidatePath, scope.allowedRoots)) ?? null;
+
+const ensureManagedProjectScope = async (
+  candidatePath: string,
+  scopes?: ManagedProjectScope[],
+): Promise<ManagedProjectScope> => {
+  const resolvedScopes = scopes ?? await buildManagedProjectScopes();
+  const scope = resolveManagedProjectScope(candidatePath, resolvedScopes);
+  if (scope) {
+    return scope;
+  }
+
+  const error = new Error('Requested path is outside added projects') as HttpError;
+  error.statusCode = 400;
+  throw error;
+};
+
+const listProjectSessions = async (): Promise<SessionRegistry> => {
+  const [projectScopes, allSessions, metadataState] = await Promise.all([
+    buildManagedProjectScopes(),
     SessionManager.listAll(),
     sessionMetadataStore.load(),
   ]);
 
   const enriched: SessionRegistryItem[] = [];
-  for (const info of allSessions) {
-    const cwd = normalizeFsPath(info.cwd || defaultWorkspaceDir);
-    const projectContext = await projectContextResolver.resolveContext(cwd);
 
-    if (
-      !isPathInAllowedRoots(cwd, workspaceScope.allowedRoots) &&
-      projectContext.projectId !== workspaceScope.workspaceProjectId
-    ) {
-      continue;
+  const appendSession = async (entry: {
+    id: string;
+    name: string;
+    cwd?: string;
+    path: string;
+    created: Date;
+    modified: Date;
+    firstMessage?: unknown;
+    parentSessionPath?: string;
+    metadata: {
+      archived: boolean;
+      agent?: string;
+      model?: string;
+      thinkingLevel?: ThinkingLevel;
+    };
+  }) => {
+    const cwd = normalizeOptionalFsPath(entry.cwd);
+    if (!cwd) {
+      return;
     }
 
+    const projectScope = resolveManagedProjectScope(cwd, projectScopes);
+    if (!projectScope) {
+      return;
+    }
+
+    const projectContext = await projectContextResolver.resolveContext(cwd);
     enriched.push({
       info: {
-        id: info.id,
-        name: info.name,
+        id: entry.id,
+        name: entry.name,
         cwd,
-        path: info.path,
-        created: info.created,
-        modified: info.modified,
-        firstMessage: info.firstMessage,
-        parentSessionPath: info.parentSessionPath,
+        path: entry.path,
+        created: entry.created,
+        modified: entry.modified,
+        firstMessage: entry.firstMessage,
+        parentSessionPath: entry.parentSessionPath,
       },
       cwd,
+      project: projectScope.project,
       projectContext,
+      metadata: entry.metadata,
+    });
+  };
+  for (const info of allSessions) {
+    await appendSession({
+      id: info.id,
+      name: info.name,
+      cwd: info.cwd,
+      path: info.path,
+      created: info.created,
+      modified: info.modified,
+      firstMessage: info.firstMessage,
+      parentSessionPath: info.parentSessionPath,
       metadata: {
         archived: metadataState.sessions[info.id]?.archived === true,
-        agent:
-          normalizeString(metadataState.sessions[info.id]?.agent) || undefined,
-        model:
-          normalizeString(metadataState.sessions[info.id]?.model) || undefined,
+        agent: normalizeString(metadataState.sessions[info.id]?.agent) || undefined,
+        model: normalizeString(metadataState.sessions[info.id]?.model) || undefined,
         thinkingLevel: normalizeThinkingLevel(
           metadataState.sessions[info.id]?.thinkingLevel,
         ),
@@ -1002,7 +1201,6 @@ const listWorkspaceSessions = async (): Promise<SessionRegistry> => {
   }
 
   const knownSessionIds = new Set(enriched.map((item) => item.info.id));
-
   for (const [sessionId, metadata] of Object.entries(metadataState.sessions)) {
     if (
       knownSessionIds.has(sessionId) ||
@@ -1018,37 +1216,20 @@ const listWorkspaceSessions = async (): Promise<SessionRegistry> => {
     } catch {
       continue;
     }
-
-    const cwd = normalizeFsPath(metadata.cwd || defaultWorkspaceDir);
-    const projectContext = await projectContextResolver.resolveContext(cwd);
-
-    if (
-      !isPathInAllowedRoots(cwd, workspaceScope.allowedRoots) &&
-      projectContext.projectId !== workspaceScope.workspaceProjectId
-    ) {
-      continue;
-    }
-
     const createdAt = Number.isFinite(metadata.createdAt)
       ? metadata.createdAt
       : Date.now();
     const updatedAt = Number.isFinite(metadata.updatedAt)
       ? metadata.updatedAt
       : createdAt;
-
-    enriched.push({
-      info: {
-        id: sessionId,
-        name: metadata.title || '',
-        cwd,
-        path: sessionFile,
-        created: new Date(createdAt),
-        modified: new Date(updatedAt),
-        firstMessage: undefined,
-        parentSessionPath: metadata.parentSessionPath,
-      },
-      cwd,
-      projectContext,
+    await appendSession({
+      id: sessionId,
+      name: metadata.title || '',
+      cwd: metadata.cwd,
+      path: sessionFile,
+      created: new Date(createdAt),
+      modified: new Date(updatedAt),
+      parentSessionPath: metadata.parentSessionPath,
       metadata: {
         archived: metadata.archived === true,
         agent: normalizeString(metadata.agent) || undefined,
@@ -1058,35 +1239,20 @@ const listWorkspaceSessions = async (): Promise<SessionRegistry> => {
     });
     knownSessionIds.add(sessionId);
   }
-
   for (const record of activeSessions.values()) {
     if (knownSessionIds.has(record.id)) {
       continue;
     }
 
-    const cwd = normalizeFsPath(record.cwd || defaultWorkspaceDir);
-    const projectContext = await projectContextResolver.resolveContext(cwd);
-
-    if (
-      !isPathInAllowedRoots(cwd, workspaceScope.allowedRoots) &&
-      projectContext.projectId !== workspaceScope.workspaceProjectId
-    ) {
-      continue;
-    }
-
-    enriched.push({
-      info: {
-        id: record.id,
-        name: record.session.sessionName || '',
-        cwd,
-        path: record.sessionFile,
-        created: new Date(record.createdAt),
-        modified: new Date(record.updatedAt),
-        firstMessage: record.session.messages[0]?.content,
-        parentSessionPath: record.parentSessionPath,
-      },
-      cwd,
-      projectContext,
+    await appendSession({
+      id: record.id,
+      name: record.session.sessionName || '',
+      cwd: record.cwd,
+      path: record.sessionFile,
+      created: new Date(record.createdAt),
+      modified: new Date(record.updatedAt),
+      firstMessage: record.session.messages[0]?.content,
+      parentSessionPath: record.parentSessionPath,
       metadata: {
         archived: metadataState.sessions[record.id]?.archived === true,
         agent:
@@ -1106,20 +1272,16 @@ const listWorkspaceSessions = async (): Promise<SessionRegistry> => {
     });
     knownSessionIds.add(record.id);
   }
-
   const infosById = new Map(enriched.map((item) => [item.info.id, item]));
   const idByPath = new Map(
     enriched.map((item) => [path.resolve(item.info.path), item.info.id]),
   );
   const childrenById = new Map<string, string[]>();
-
   for (const item of enriched) {
     const parentId = item.info.parentSessionPath
       ? idByPath.get(path.resolve(item.info.parentSessionPath))
       : undefined;
-
     item.parentSessionId = parentId;
-
     if (parentId) {
       const current = childrenById.get(parentId) ?? [];
       current.push(item.info.id);
@@ -1161,9 +1323,10 @@ const toSessionSummary = (item: SessionRegistryItem): SessionSummary => {
       activeRecord?.resolvedThinkingLevel || item.metadata.thinkingLevel,
     sessionFile: toPosixPath(path.resolve(item.info.path)),
     parentSessionId: item.parentSessionId,
-    projectId: item.projectContext.projectId,
-    projectRoot: toPosixPath(item.projectContext.projectRoot),
-    projectLabel: item.projectContext.projectLabel,
+    projectId: item.project.id,
+    projectRoot: toPosixPath(path.resolve(item.project.path)),
+    projectLabel: item.project.name,
+    isGit: item.projectContext.isGit,
     branch: item.projectContext.branch,
     worktreeRoot: toPosixPath(item.projectContext.worktreeRoot),
     worktreeLabel: item.projectContext.worktreeLabel,
@@ -1179,8 +1342,14 @@ const toSessionSnapshot = async (
   sessionRegistry: SessionRegistry | null,
   options: ToSessionSnapshotOptions = {},
 ): Promise<SessionSnapshot> => {
-  const registry = sessionRegistry ?? (await listWorkspaceSessions());
+  const registry = sessionRegistry ?? (await listProjectSessions());
   const item = registry.infosById.get(record.id);
+  const fallbackProjectScope = item
+    ? null
+    : await ensureManagedProjectScope(record.cwd);
+  const fallbackProjectContext = item
+    ? null
+    : await projectContextResolver.resolveContext(record.cwd);
   const summary = item
     ? toSessionSummary(item)
     : {
@@ -1198,12 +1367,13 @@ const toSessionSnapshot = async (
         resolvedThinkingLevel: record.resolvedThinkingLevel,
         sessionFile: toPosixPath(record.sessionFile || ''),
         parentSessionId: undefined as string | undefined,
-        projectId: record.cwd,
-        projectRoot: toPosixPath(record.cwd),
-        projectLabel: path.basename(record.cwd) || record.cwd,
-        branch: undefined as string | undefined,
-        worktreeRoot: toPosixPath(record.cwd),
-        worktreeLabel: path.basename(record.cwd) || record.cwd,
+        projectId: fallbackProjectScope!.project.id,
+        projectRoot: toPosixPath(path.resolve(fallbackProjectScope!.project.path)),
+        projectLabel: fallbackProjectScope!.project.name,
+        isGit: fallbackProjectContext!.isGit,
+        branch: fallbackProjectContext!.branch,
+        worktreeRoot: toPosixPath(fallbackProjectContext!.worktreeRoot),
+        worktreeLabel: fallbackProjectContext!.worktreeLabel,
       };
 
   const allMessages = record.session.messages;
@@ -1226,7 +1396,8 @@ const toSessionSnapshot = async (
       limit: effectiveLimit,
     },
     interactiveRequests: getInteractiveRequests(record),
-  };
+    permissionRequests: getPermissionRequests(record),
+};
 };
 
 const buildResourceCatalog = (
@@ -1270,7 +1441,7 @@ const createTransientCatalogSession = async (cwd: string) => {
   const settingsManager = SettingsManager.create(cwd);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
-    settingsManager,
+    settingsManager: createResourceDiscoverySettingsManager(cwd),
   });
   await resourceLoader.reload();
 
@@ -1293,7 +1464,7 @@ const getSessionInfoOrThrow = async (
   sessionId: string,
   sessionRegistry?: SessionRegistry | null,
 ): Promise<SessionRegistryItem> => {
-  const registry = sessionRegistry ?? (await listWorkspaceSessions());
+  const registry = sessionRegistry ?? (await listProjectSessions());
   const item = registry.infosById.get(sessionId);
   if (!item) {
     const error = new Error('Session not found') as HttpError;
@@ -1319,6 +1490,8 @@ const ensureSessionRecord = async (
   const recordState: Partial<SessionRecord> = {
     cwd: item.cwd,
     pendingAskRecords: new Map(),
+    pendingPermissionRecords: new Map(),
+    runtimePermissionRules: {},
     settingsManager,
     selectedAgentConfig: null,
     selectedPermissionPolicy: null,
@@ -1387,7 +1560,7 @@ app.get('/api/providers', (_req: Request, res: Response) => {
 
 app.get('/api/agents', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const cwd = normalizeString(req.query?.cwd) || defaultWorkspaceDir;
+    const cwd = resolveDiscoveryCwd(req.query?.cwd);
     const agents = await discoverAgents(cwd);
     res.json(
       agents
@@ -1409,7 +1582,7 @@ app.get('/api/resources', async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    const cwd = normalizeString(query.cwd) || defaultWorkspaceDir;
+    const cwd = resolveDiscoveryCwd(query.cwd);
     const transient = await createTransientCatalogSession(cwd);
 
     try {
@@ -1495,17 +1668,15 @@ app.delete('/api/config/agents/:name', async (req: Request, res: Response, next:
 app.get('/api/files/tree', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = fileTreeQuerySchema.parse(req.query ?? {});
-    const rootPath = normalizeFsPath(query.root || defaultWorkspaceDir);
-    const targetPath = normalizeFsPath(query.path || rootPath);
-    const workspaceScope = await projectContextResolver.resolveWorkspaceScope();
-
-    if (!isPathInAllowedRoots(rootPath, workspaceScope.allowedRoots)) {
-      const error = new Error(
-        'Requested root is outside the allowed workspace scope',
-      ) as HttpError;
+    const rootPath = normalizeOptionalFsPath(query.root);
+    if (!rootPath) {
+      const error = new Error('File tree root is required') as HttpError;
       error.statusCode = 400;
       throw error;
     }
+
+    const targetPath = normalizeOptionalFsPath(query.path) || rootPath;
+    await ensureManagedProjectScope(rootPath);
 
     ensureWithinRoot(targetPath, rootPath);
 
@@ -1608,7 +1779,7 @@ app.delete('/api/projects/:id', async (req: Request, res: Response, next: NextFu
 
 app.get('/api/sessions', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const sessionRegistry = await listWorkspaceSessions();
+    const sessionRegistry = await listProjectSessions();
     const summaries = sessionRegistry.items
       .map((item) => toSessionSummary(item))
       .sort((left, right) => {
@@ -1627,7 +1798,7 @@ app.get('/api/sessions', async (_req: Request, res: Response, next: NextFunction
 app.get('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
-    const sessionRegistry = await listWorkspaceSessions();
+    const sessionRegistry = await listProjectSessions();
     const record = await ensureSessionRecord(
       String(req.params.sessionId),
       sessionRegistry,
@@ -1641,7 +1812,7 @@ app.get('/api/sessions/:sessionId', async (req: Request, res: Response, next: Ne
 app.get('/api/sessions/:sessionId/stream', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
-    const sessionRegistry = await listWorkspaceSessions();
+    const sessionRegistry = await listProjectSessions();
     const record = await ensureSessionRecord(
       String(req.params.sessionId),
       sessionRegistry,
@@ -1672,11 +1843,16 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
     const parentSession = payload.parentSessionId
       ? await getSessionInfoOrThrow(payload.parentSessionId)
       : null;
+    const sessionCwd = normalizeOptionalFsPath(payload.cwd) || parentSession?.cwd || '';
+    if (!sessionCwd) {
+      const error = new Error('Session project is required') as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await ensureManagedProjectScope(sessionCwd);
     const record = await createSessionRecord({
-      cwd:
-        normalizeString(payload.cwd) ||
-        parentSession?.cwd ||
-        defaultWorkspaceDir,
+      cwd: sessionCwd,
       title: payload.title,
       model: payload.model,
       parentSessionPath: parentSession?.info.path,
@@ -1687,7 +1863,7 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
       thinkingLevel: payload.thinkingLevel,
     });
     await persistSessionRecordMetadata(record);
-    const sessionRegistry = await listWorkspaceSessions();
+    const sessionRegistry = await listProjectSessions();
     res.status(201).json(await toSessionSnapshot(record, sessionRegistry, {}));
   } catch (error) {
     next(error);
@@ -1697,7 +1873,7 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
 app.patch('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = updateSessionSchema.parse(req.body ?? {});
-    const sessionRegistry = await listWorkspaceSessions();
+    const sessionRegistry = await listProjectSessions();
     const record = await ensureSessionRecord(
       String(req.params.sessionId),
       sessionRegistry,
@@ -1725,7 +1901,7 @@ app.patch('/api/sessions/:sessionId', async (req: Request, res: Response, next: 
     record.updatedAt = Date.now();
     await persistSessionRecordMetadata(record);
 
-    res.json(await toSessionSnapshot(record, await listWorkspaceSessions(), {}));
+    res.json(await toSessionSnapshot(record, await listProjectSessions(), {}));
   } catch (error) {
     next(error);
   }
@@ -1734,7 +1910,7 @@ app.patch('/api/sessions/:sessionId', async (req: Request, res: Response, next: 
 app.post('/api/sessions/:sessionId/archive', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = archiveSessionSchema.parse(req.body ?? {});
-    const sessionRegistry = await listWorkspaceSessions();
+    const sessionRegistry = await listProjectSessions();
     const sessionIds = collectDescendantIds(
       String(req.params.sessionId),
       sessionRegistry.childrenById,
@@ -1750,7 +1926,7 @@ app.post('/api/sessions/:sessionId/archive', async (req: Request, res: Response,
 
 app.delete('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const sessionRegistry = await listWorkspaceSessions();
+    const sessionRegistry = await listProjectSessions();
     const sessionIds = collectDescendantIds(
       String(req.params.sessionId),
       sessionRegistry.childrenById,
@@ -1781,7 +1957,7 @@ app.delete('/api/sessions/:sessionId', async (req: Request, res: Response, next:
 app.post('/api/sessions/:sessionId/messages', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = messageSchema.parse(req.body ?? {});
-    const sessionRegistry = await listWorkspaceSessions();
+    const sessionRegistry = await listProjectSessions();
     const record = await ensureSessionRecord(
       String(req.params.sessionId),
       sessionRegistry,
@@ -1842,10 +2018,25 @@ app.post('/api/sessions/:sessionId/asks/:askId/respond', async (req: Request, re
   }
 });
 
+
+app.post('/api/sessions/:sessionId/permissions/:requestId/respond', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = permissionActionSchema.parse(req.body ?? {});
+    const record = await ensureSessionRecord(String(req.params.sessionId));
+    const requestId = String(req.params.requestId);
+
+    await settlePendingPermission(record, requestId, payload.action);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/sessions/:sessionId/abort', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const record = await ensureSessionRecord(String(req.params.sessionId));
     await record.session.abort();
+    cancelPendingPermissions(record, 'Session aborted');
     updateStatus(record, 'idle');
     res.json({ ok: true });
   } catch (error) {
@@ -1996,6 +2187,17 @@ const gitCwdQuerySchema = z.object({ cwd: z.string().optional() });
 const resolveGitCwd = (rawCwd?: string): string => {
   return path.resolve(rawCwd || defaultWorkspaceDir);
 };
+
+app.get('/api/git/is-repo', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = gitCwdQuerySchema.parse(req.query ?? {});
+    const cwd = resolveGitCwd(query.cwd);
+    const isGitRepo = await gitService.isGitRepository(cwd);
+    res.json({ isGitRepo });
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.get('/api/git/status', async (req: Request, res: Response, next: NextFunction) => {
   try {

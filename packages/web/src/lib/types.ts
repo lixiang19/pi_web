@@ -51,6 +51,7 @@ export interface SessionSummary {
   projectId: string;
   projectRoot: string;
   projectLabel: string;
+  isGit: boolean;
   branch?: string;
   worktreeRoot: string;
   worktreeLabel: string;
@@ -60,7 +61,6 @@ export interface AskOption {
   label: string;
   description?: string;
 }
-
 export interface AskQuestion {
   id: string;
   header?: string;
@@ -70,12 +70,10 @@ export interface AskQuestion {
   multiple?: boolean;
   allowCustom?: boolean;
 }
-
 export interface AskQuestionAnswer {
   questionId: string;
   values: string[];
 }
-
 export interface AskInteractiveRequest {
   id: string;
   toolCallId: string;
@@ -84,17 +82,37 @@ export interface AskInteractiveRequest {
   questions: AskQuestion[];
   createdAt: number;
 }
-
 export interface AskToolCallArguments {
   title?: string;
   message?: string;
   questions: AskQuestion[];
 }
-
 export interface AskToolResultDetails {
   request: AskInteractiveRequest;
   answers: AskQuestionAnswer[];
   dismissed: boolean;
+}
+
+export type PermissionDecisionAction = "once" | "always" | "reject";
+
+export interface PermissionInteractiveRequest {
+  id: string;
+  toolCallId: string;
+  toolName: string;
+  permissionKey:
+    | "read"
+    | "grep"
+    | "find"
+    | "ls"
+    | "bash"
+    | "ask"
+    | "task"
+    | "edit";
+  title: string;
+  message: string;
+  subject: string;
+  suggestedPattern?: string;
+  createdAt: number;
 }
 
 // ============================================================================
@@ -177,7 +195,7 @@ export interface ChatComposerState {
   isSending: boolean;
   canAbort: boolean;
   selectedModel: string;
-  selectedThinkingLevel: ThinkingLevel | "";
+  selectedThinkingLevel: ThinkingLevel;
   selectedAgent: string;
   hasDraft: boolean;
   isFocused: boolean;
@@ -189,6 +207,7 @@ export interface SessionSnapshot extends SessionSummary {
   messages: ChatMessage[];
   historyMeta: SessionHistoryMeta;
   interactiveRequests: AskInteractiveRequest[];
+  permissionRequests: PermissionInteractiveRequest[];
 }
 
 export interface AgentSummary {
@@ -404,4 +423,8 @@ export interface GitRemoteInfo {
   name: string;
   fetchUrl: string;
   pushUrl: string;
+}
+
+export interface GitRepositoryStatusResponse {
+  isGitRepo: boolean;
 }

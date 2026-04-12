@@ -1,7 +1,6 @@
-import { getVersionsPath } from './paths.js';
-import { readJsonFile, writeJsonFile } from './fs.js';
+import type { RidgeSettings } from '../types/index.js';
 
-export const CURRENT_VERSION = 1;
+export const CURRENT_VERSION = 2;
 
 interface Migration {
   version: number;
@@ -15,42 +14,26 @@ const MIGRATIONS: Migration[] = [
     description: 'Initial schema',
     migrate: (data) => data,
   },
+  {
+    version: 2,
+    description: 'Unified ridge-settings with composer defaults',
+    migrate: (data) => data,
+  },
 ];
 
-interface Versions {
-  settings?: number;
-  favorites?: number;
-}
-
-export const getVersions = async (): Promise<Versions> => {
-  const versions = await readJsonFile<Versions>(await getVersionsPath(), {});
-  return {
-    settings: versions?.settings || 0,
-    favorites: versions?.favorites || 0,
-  };
-};
-
-export const saveVersions = async (versions: Versions): Promise<void> => {
-  await writeJsonFile(await getVersionsPath(), versions);
-};
-
-export const migrateData = async <T>(type: keyof Versions, data: T): Promise<T> => {
-  const versions = await getVersions();
-  const currentVersion = versions[type] || 0;
-
+export const migrateRidgeSettings = (data: RidgeSettings): RidgeSettings => {
+  const currentVersion = data.version || 0;
   if (currentVersion >= CURRENT_VERSION) {
     return data;
   }
 
-  let migratedData: unknown = data;
+  let migratedData: unknown = { ...data };
   for (const migration of MIGRATIONS) {
     if (migration.version > currentVersion) {
       migratedData = migration.migrate(migratedData);
     }
   }
 
-  versions[type] = CURRENT_VERSION;
-  await saveVersions(versions);
-
-  return migratedData as T;
+  (migratedData as RidgeSettings).version = CURRENT_VERSION;
+  return migratedData as RidgeSettings;
 };

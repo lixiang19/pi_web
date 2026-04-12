@@ -45,7 +45,7 @@ declare module '@mariozechner/pi-coding-agent' {
 
   // ===== Settings =====
   export class SettingsManager {
-    static create(cwd: string): SettingsManager;
+    static create(cwd: string, agentDir?: string): SettingsManager;
   }
 
   // ===== Resource Loading =====

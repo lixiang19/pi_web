@@ -27,7 +27,9 @@ const {
   loadSession,
   messages,
   interactiveRequests,
+  permissionRequests,
   respondToPendingAsk,
+  respondToPendingPermission,
   dismissPendingAsk,
   status,
 } = chat;
@@ -172,6 +174,8 @@ watch(
             :active-session-id="activeSessionId"
             :has-more-above="hasMoreAbove"
             :interactive-requests="interactiveRequests"
+
+            :permission-requests="permissionRequests"
             :is-draft-session="false"
             :is-loading-older="isLoadingOlder"
             :messages="messages"
@@ -179,6 +183,8 @@ watch(
             @load-earlier="loadEarlier"
             @dismiss-ask="dismissPendingAsk(activeSessionId, $event)"
             @submit-ask="(askId, answers) => respondToPendingAsk(activeSessionId, askId, answers)"
+
+            @submit-permission="(requestId, action) => respondToPendingPermission(activeSessionId, requestId, action)"
           />
         </div>
       </section>

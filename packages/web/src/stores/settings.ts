@@ -6,6 +6,7 @@ import {
   setSettings,
   type Settings,
 } from "@/lib/api/storage";
+import type { ThinkingLevel } from "@/lib/types";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -24,6 +25,13 @@ export const useSettingsStore = defineStore("settings", () => {
   const language = computed(() => settings.value?.language ?? "zh-CN");
   const sidebarCollapsed = computed(() => settings.value?.sidebarCollapsed ?? false);
   const notifications = computed(() => settings.value?.notifications ?? true);
+
+  // Default composer selections
+  const defaultModel = computed(() => settings.value?.defaultModel ?? "");
+  const defaultAgent = computed(() => settings.value?.defaultAgent ?? "");
+  const defaultThinkingLevel = computed<ThinkingLevel>(
+    () => settings.value?.defaultThinkingLevel ?? "medium",
+  );
 
   const resolvedThemeMode = computed<"light" | "dark">(() => {
     const mode = theme.value;
@@ -89,6 +97,18 @@ export const useSettingsStore = defineStore("settings", () => {
     await save({ notifications: enabled });
   }
 
+  async function setDefaultModel(model: string): Promise<void> {
+    await save({ defaultModel: model });
+  }
+
+  async function setDefaultAgent(agent: string): Promise<void> {
+    await save({ defaultAgent: agent });
+  }
+
+  async function setDefaultThinkingLevel(level: ThinkingLevel): Promise<void> {
+    await save({ defaultThinkingLevel: level });
+  }
+
   function toggleSidebar(): void {
     setSidebarCollapsed(!sidebarCollapsed.value);
   }
@@ -104,6 +124,9 @@ export const useSettingsStore = defineStore("settings", () => {
     language,
     sidebarCollapsed,
     notifications,
+    defaultModel,
+    defaultAgent,
+    defaultThinkingLevel,
     resolvedThemeMode,
     load,
     save,
@@ -112,6 +135,9 @@ export const useSettingsStore = defineStore("settings", () => {
     setLanguage,
     setSidebarCollapsed,
     setNotifications,
+    setDefaultModel,
+    setDefaultAgent,
+    setDefaultThinkingLevel,
     toggleSidebar,
   };
 });

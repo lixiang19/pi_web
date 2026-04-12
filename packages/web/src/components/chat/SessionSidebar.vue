@@ -33,12 +33,9 @@ import {
 } from "@/components/ui/sidebar";
 import { useProjects } from "@/composables/useProjects";
 import { useProjectWorktrees } from "@/composables/useProjectWorktrees";
-import {
-  buildSessionProjects,
-  formatRelativeProjectPath,
-} from "@/lib/session-sidebar";
+import { buildSessionProjects } from "@/lib/session-sidebar";
 import { deleteWorktree } from "@/lib/api";
-import type { ProjectItem, SessionSummary } from "@/lib/types";
+import type { SessionSummary } from "@/lib/types";
 
 const MAX_RECENT_SESSIONS = 10;
 const DEFAULT_VISIBLE_SESSION_COUNT = 3;
@@ -95,50 +92,14 @@ const isSearching = computed(() => normalizedQuery.value.length > 0);
 const normalizePath = (value: string) =>
   value.replace(/\\/g, "/").replace(/\/+$/, "");
 
-const createEmptyProjectView = (project: ProjectItem) => ({
-  id: `stored:${project.id}`,
-  label: project.name,
-  projectRoot: normalizePath(project.path),
-  pathLabel: formatRelativeProjectPath(project.path, props.workspaceDir),
-  lastUpdatedAt: project.addedAt,
-  sessions: [] as SessionSummary[],
-  groups: [],
-  isGit: false,
-});
-
 const projects = computed(() => {
-  const sessionProjects = buildSessionProjects({
+  return buildSessionProjects({
     sessions: props.sessions,
+    storedProjects: storedProjects.value,
     availableWorktreesByProject: worktreeState.worktreesByProject.value,
     query: normalizedQuery.value,
     ...(props.workspaceDir ? { workspaceDir: props.workspaceDir } : {}),
   });
-
-  const mergedProjects = new Map(
-    sessionProjects.map((project) => [normalizePath(project.projectRoot), project]),
-  );
-
-  for (const project of storedProjects.value) {
-    const normalizedProjectPath = normalizePath(project.path);
-    if (mergedProjects.has(normalizedProjectPath)) {
-      continue;
-    }
-
-    const query = normalizedQuery.value;
-    const matchesQuery =
-      !query ||
-      `${project.name} ${normalizedProjectPath}`.toLowerCase().includes(query);
-
-    if (!matchesQuery) {
-      continue;
-    }
-
-    mergedProjects.set(normalizedProjectPath, createEmptyProjectView(project));
-  }
-
-  return [...mergedProjects.values()].sort(
-    (left, right) => right.lastUpdatedAt - left.lastUpdatedAt,
-  );
 });
 
 const recentSessions = computed(() => {
@@ -426,7 +387,7 @@ onMounted(() => {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <div v-if="projects.length === 0" class="py-12 text-center">
-              <p class="text-[12px] text-sidebar-foreground/30">无会话记录</p>
+              <p class="text-[12px] text-sidebar-foreground/30">无已添加项目</p>
             </div>
 
             <SidebarMenu v-else class="space-y-1">
@@ -449,7 +410,7 @@ onMounted(() => {
                       </button>
                     </SidebarMenuButton>
                     <div class="flex shrink-0 items-center gap-0.5">
-                      <Tooltip v-if="findStoredProjectId(project.projectRoot)">
+                      <Tooltip v-if="findStoredProjectId(project.projectRoot) && project.isGit">
                         <TooltipTrigger as-child>
                           <Button
                             type="button"
@@ -516,7 +477,7 @@ onMounted(() => {
                               </TooltipTrigger>
                               <TooltipContent side="bottom"><p>新建会话</p></TooltipContent>
                             </Tooltip>
-                            <Tooltip v-if="findStoredProjectId(project.projectRoot)">
+                            <Tooltip v-if="findStoredProjectId(project.projectRoot) && project.isGit">
                               <TooltipTrigger as-child>
                                 <button
                                   type="button"

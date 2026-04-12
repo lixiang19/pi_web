@@ -1,6 +1,7 @@
 import type {
   AgentSummary,
   AskQuestionAnswer,
+  PermissionDecisionAction,
   DirectoryBrowseResponse,
   FileTreeResponse,
   ProjectItem,
@@ -22,6 +23,7 @@ import type {
   GitStatusResponse,
   GitBranchesResponse,
   GitRemoteInfo,
+  GitRepositoryStatusResponse,
 } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -171,6 +173,20 @@ export function respondToAsk(
   });
 }
 
+export function respondToPermissionRequest(
+  sessionId: string,
+  requestId: string,
+  payload: { action: PermissionDecisionAction },
+) {
+  return request<{ ok: true }>(
+    `/api/sessions/${sessionId}/permissions/${requestId}/respond`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export function getFileTree(path?: string, root?: string) {
   const params = new URLSearchParams();
 
@@ -267,6 +283,11 @@ export function deleteWorktree(
 // Git API
 // ============================================================================
 
+export function getGitRepositoryStatus(cwd: string) {
+  return request<GitRepositoryStatusResponse>(
+    `/api/git/is-repo?cwd=${encodeURIComponent(cwd)}`,
+  );
+}
 export function getGitStatus(cwd: string) {
   return request<GitStatusResponse>(
     `/api/git/status?cwd=${encodeURIComponent(cwd)}`,

@@ -6,7 +6,6 @@ import {
   ref,
   watch,
 } from "vue";
-
 import {
   abortSession,
   archiveSession,
@@ -20,13 +19,15 @@ import {
   getSystemInfo,
   renameSession,
   respondToAsk,
+  respondToPermissionRequest,
   sendMessage,
   updateSession,
-} from "@/lib/api";
+  } from "@/lib/api";
 import type {
   AgentSummary,
   AskInteractiveRequest,
   AskQuestionAnswer,
+  PermissionInteractiveRequest,
   ChatComposerState,
   ChatMessage,
   ProvidersResponse,
@@ -37,8 +38,9 @@ import type {
   StreamEvent,
   SystemInfo,
   ThinkingLevel,
-} from "@/lib/types";
+  } from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
+import { useSettingsStore } from "@/stores/settings";
 
 type SessionDraftContext = {
   cwd: string;
@@ -196,7 +198,7 @@ export function usePiChat() {
     isSending: false,
     canAbort: false,
     selectedModel: "",
-    selectedThinkingLevel: "",
+    selectedThinkingLevel: "medium" as ThinkingLevel,
     selectedAgent: "",
     hasDraft: false,
     isFocused: false,
@@ -253,6 +255,34 @@ export function usePiChat() {
       selectedAgentSummary.value?.thinking ||
       "medium",
   );
+
+  /**
+   * Resolve composer defaults from settings store + available models/agents.
+   * Called after boot (providers & agents are loaded).
+   */
+  const resolveComposerDefaults = () => {
+    const settingsStore = useSettingsStore();
+    const persistedModel = settingsStore.defaultModel;
+    const persistedAgent = settingsStore.defaultAgent;
+    const persistedThinking = settingsStore.defaultThinkingLevel;
+
+    // Model: prefer persisted, validate against available models, fallback to system default
+    if (persistedModel && models.value.some((m) => m.value === persistedModel)) {
+      composer.selectedModel = persistedModel;
+    } else {
+      composer.selectedModel = defaultModel.value;
+    }
+
+    // Agent: prefer persisted, validate against available agents, fallback to direct mode
+    if (persistedAgent && agents.value.some((a) => a.name === persistedAgent)) {
+      composer.selectedAgent = persistedAgent;
+    } else {
+      composer.selectedAgent = persistedAgent || "";
+    }
+
+    // Thinking level: always use persisted or medium
+    composer.selectedThinkingLevel = persistedThinking || "medium";
+  };
   const mentionedAgent = computed(() =>
     parseAgentMention(composer.draftText, agents.value),
   );
@@ -277,6 +307,13 @@ export function usePiChat() {
 
     return getCachedSessionSnapshot(activeSessionId.value)?.interactiveRequests ?? [];
   });
+  const permissionRequests = computed<PermissionInteractiveRequest[]>(() => {
+    if (!activeSessionId.value) {
+      return [];
+    }
+
+    return getCachedSessionSnapshot(activeSessionId.value)?.permissionRequests ?? [];
+  });
   const hasMoreAbove = computed(() => activeHistoryMeta.value.hasMoreAbove);
   const isLoadingOlder = computed(() =>
     Boolean(
@@ -299,6 +336,7 @@ export function usePiChat() {
       messages: [],
       historyMeta: createHistoryMeta(0, 0),
       interactiveRequests: [],
+      permissionRequests: [],
     } satisfies SessionSnapshot;
   };
 
@@ -499,8 +537,10 @@ export function usePiChat() {
       return;
     }
 
-    const { messages, ...summary } = snapshot;
+    const { messages, interactiveRequests, permissionRequests, ...summary } = snapshot;
     void messages;
+    void interactiveRequests;
+    void permissionRequests;
     upsertSessionSnapshot(snapshot);
     upsertSessionSummary(summary);
   };
@@ -532,9 +572,22 @@ export function usePiChat() {
       return;
     }
 
-    composer.selectedAgent = snapshot.agent || "";
-    composer.selectedModel = snapshot.model || "";
-    composer.selectedThinkingLevel = snapshot.thinkingLevel || "";
+    const settingsStore = useSettingsStore();
+
+    // Agent: use snapshot value, fallback to persisted preference or direct mode
+    composer.selectedAgent = snapshot.agent || settingsStore.defaultAgent || "";
+
+    // Model: use snapshot value, fallback to persisted preference or system default
+    composer.selectedModel =
+      snapshot.model ||
+      settingsStore.defaultModel ||
+      defaultModel.value;
+
+    // Thinking level: use snapshot value, fallback to persisted preference or medium
+    composer.selectedThinkingLevel =
+      (snapshot.thinkingLevel as ThinkingLevel) ||
+      settingsStore.defaultThinkingLevel ||
+      "medium";
   };
 
   const resetActiveSession = () => {
@@ -631,7 +684,7 @@ export function usePiChat() {
         options?.cwd ||
         parentSession?.cwd ||
         activeSession.value?.cwd ||
-        info.value?.workspaceDir ||
+        activeDraftContext.value?.cwd ||
         "",
       parentSessionId: options?.parentSessionId || "",
     };
@@ -648,20 +701,20 @@ export function usePiChat() {
     eventSource = null;
 
     if (parentSession) {
-      composer.selectedAgent = parentSession.agent || "";
-      composer.selectedModel = parentSession.model || "";
-      composer.selectedThinkingLevel = parentSession.thinkingLevel || "";
+      const settingsStore = useSettingsStore();
+      composer.selectedAgent = parentSession.agent || settingsStore.defaultAgent || "";
+      composer.selectedModel =
+        parentSession.model || settingsStore.defaultModel || defaultModel.value;
+      composer.selectedThinkingLevel =
+        (parentSession.thinkingLevel as ThinkingLevel) || settingsStore.defaultThinkingLevel || "medium";
     }
 
     applyDraftForSession(null);
-
-    if (activeDraftContext.value?.cwd || info.value?.workspaceDir) {
-      const nextCwd = activeDraftContext.value?.cwd || info.value?.workspaceDir;
-      await Promise.all([
-        refreshAgents(nextCwd),
-        refreshResources(nextCwd ? { cwd: nextCwd } : undefined),
-      ]);
-    }
+    const nextCwd = activeDraftContext.value?.cwd || "";
+    await Promise.all([
+      refreshAgents(nextCwd || undefined),
+      refreshResources(nextCwd ? { cwd: nextCwd } : undefined),
+    ]);
   };
 
   const setDraftProjectPath = async (cwd: string) => {
@@ -682,9 +735,9 @@ export function usePiChat() {
   };
 
   const refreshAgents = async (cwd?: string) => {
-    agents.value = await getAgents(
-      cwd ?? activeSession.value?.cwd ?? info.value?.workspaceDir,
-    );
+    const resolvedCwd =
+      cwd ?? activeSession.value?.cwd ?? activeDraftContext.value?.cwd ?? undefined;
+    agents.value = await getAgents(resolvedCwd);
     return agents.value;
   };
 
@@ -695,12 +748,14 @@ export function usePiChat() {
     resourceError.value = "";
 
     try {
+      const resolvedCwd =
+        options?.cwd ??
+        activeSession.value?.cwd ??
+        activeDraftContext.value?.cwd ??
+        undefined;
       resources.value = await getResources(
         omitUndefined({
-          cwd:
-            options?.cwd ??
-            activeSession.value?.cwd ??
-            info.value?.workspaceDir,
+          cwd: resolvedCwd,
           sessionId: options?.sessionId ?? activeSessionId.value,
         }),
       );
@@ -729,9 +784,7 @@ export function usePiChat() {
     // 当前会话被删除后，不自动回退到其他会话，保持未选中状态
     if (!activeSummary) {
       resetActiveSession();
-      if (info.value?.workspaceDir) {
-        await refreshResources({ cwd: info.value.workspaceDir });
-      }
+      await refreshResources();
       return nextSessions;
     }
 
@@ -916,13 +969,17 @@ export function usePiChat() {
     providers.value = providerPayload;
     sessions.value = sessionList;
 
-    await refreshAgents(systemInfo.workspaceDir);
-
+    await refreshAgents();
+    // Load settings store to resolve composer defaults
+    const settingsStore = useSettingsStore();
+    if (!settingsStore.isLoaded) {
+      await settingsStore.load();
+    }
     // 初始化时不自动选中任何会话，保持未选中状态
     resetActiveSession();
-    if (info.value?.workspaceDir) {
-      await refreshResources({ cwd: info.value.workspaceDir });
-    }
+    // After providers & agents are loaded, resolve composer defaults from persisted preferences
+    resolveComposerDefaults();
+    await refreshResources();
   };
 
   const loadEarlier = async () => {
@@ -980,7 +1037,9 @@ export function usePiChat() {
     const snapshot = await createSession(
       omitUndefined({
         cwd:
-          options?.cwd ?? activeSession.value?.cwd ?? info.value?.workspaceDir,
+          options?.cwd ??
+          activeSession.value?.cwd ??
+          activeDraftContext.value?.cwd,
         title: options?.title,
         model: options?.model ?? (composer.selectedModel || undefined),
         thinkingLevel:
@@ -1027,6 +1086,10 @@ export function usePiChat() {
       return;
     }
 
+    if (!activeSessionId.value && !activeDraftContext.value?.cwd) {
+      error.value = "请先选择项目";
+      return;
+    }
     const resolvedModel = effectiveModel.value;
     if (!resolvedModel) {
       error.value = "当前没有可用模型，无法发送";
@@ -1180,6 +1243,9 @@ export function usePiChat() {
     const nextAgent = agentName.trim();
     const previousAgent = composer.selectedAgent;
     composer.selectedAgent = nextAgent;
+    // Persist as global default (fire-and-forget)
+    const settingsStore = useSettingsStore();
+    void settingsStore.setDefaultAgent(nextAgent);
 
     if (!activeSessionId.value) {
       return;
@@ -1197,11 +1263,13 @@ export function usePiChat() {
           : String(caughtError);
     }
   };
-
   const setSelectedModel = async (model: string) => {
     const nextModel = model.trim();
     const previousModel = composer.selectedModel;
     composer.selectedModel = nextModel;
+    // Persist as global default (fire-and-forget)
+    const settingsStore = useSettingsStore();
+    void settingsStore.setDefaultModel(nextModel);
 
     if (!activeSessionId.value) {
       return;
@@ -1219,12 +1287,14 @@ export function usePiChat() {
           : String(caughtError);
     }
   };
-
   const setSelectedThinkingLevel = async (
-    thinkingLevel: ThinkingLevel | "",
+    thinkingLevel: ThinkingLevel,
   ) => {
     const previousThinkingLevel = composer.selectedThinkingLevel;
     composer.selectedThinkingLevel = thinkingLevel;
+    // Persist as global default (fire-and-forget)
+    const settingsStore = useSettingsStore();
+    void settingsStore.setDefaultThinkingLevel(thinkingLevel);
 
     if (!activeSessionId.value) {
       return;
@@ -1336,6 +1406,46 @@ export function usePiChat() {
     }
   };
 
+
+  const respondToPendingPermission = async (
+    sessionId: string,
+    requestId: string,
+    action: "once" | "always" | "reject",
+  ) => {
+    patchSessionSnapshot(sessionId, (snapshot) => ({
+      ...snapshot,
+      status: "streaming",
+      permissionRequests: snapshot.permissionRequests.filter(
+        (request) => request.id !== requestId,
+      ),
+      updatedAt: Date.now(),
+    }));
+    patchSessionSummary(sessionId, {
+      status: "streaming",
+      updatedAt: Date.now(),
+    });
+    status.value = "streaming";
+    isSending.value = true;
+    composer.isSending = true;
+    composer.canAbort = true;
+
+    try {
+      await respondToPermissionRequest(sessionId, requestId, { action });
+    } catch (caughtError) {
+      error.value =
+        caughtError instanceof Error
+          ? caughtError.message
+          : String(caughtError);
+      const snapshot = await getSession(sessionId, {
+        limit: getCachedSessionSnapshot(sessionId)?.historyMeta.limit,
+      });
+      syncSessions(snapshot);
+      if (activeSessionId.value === sessionId) {
+        messages.value = snapshot.messages;
+      }
+    }
+  };
+
   const setComposerFocused = (focused: boolean) => {
     composer.isFocused = focused;
   };
@@ -1381,6 +1491,7 @@ export function usePiChat() {
     error,
     info,
     interactiveRequests,
+    permissionRequests,
     isSending,
     activeDraftContext,
     activeHistoryMeta,
@@ -1401,6 +1512,7 @@ export function usePiChat() {
     resourceError,
     resources,
     respondToPendingAsk,
+    respondToPendingPermission,
     sessions,
     setComposerFocused,
     setSelectedAgent,

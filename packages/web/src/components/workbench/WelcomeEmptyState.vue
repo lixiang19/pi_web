@@ -1,79 +1,34 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { FolderSearch, Mountain } from "lucide-vue-next";
+import { onMounted, onUnmounted, ref } from "vue";
 
-import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useProjects } from "@/composables/useProjects";
+const tips = [
+  "选择一个项目，开启你的探索之旅",
+  "在这里，每一次对话都是新的可能",
+  "让想法自由流淌，我们帮你整理成章",
+  "从代码到文档，从构思到实现",
+  "你的智能工作伙伴，随时待命",
+  "用自然语言描述需求，让 AI 为你实现",
+  "思考、编码、调试 — 全方位协作",
+  "每一次交互，都在拓展可能性的边界",
+];
 
-const props = defineProps<{
-  currentProjectPath: string;
-}>();
-
-const emit = defineEmits<{
-  selectPath: [path: string];
-}>();
-
-const SELECT_OTHER_VALUE = "__select-other-folder__";
-
-const normalizePath = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "");
-
-const isProjectDialogOpen = ref(false);
-const projectState = useProjects();
-const {
-  add: addProject,
-  error: projectError,
-  isLoading: isProjectLoading,
-  load: loadProjects,
-  projects,
-} = projectState;
-
-const currentProjectPathValue = computed(() => normalizePath(props.currentProjectPath || ""));
-
-const selectablePaths = computed(() => {
-  const currentPath = currentProjectPathValue.value;
-  const paths = new Set<string>();
-
-  if (currentPath) {
-    paths.add(currentPath);
-  }
-
-  for (const project of projects.value) {
-    paths.add(normalizePath(project.path));
-  }
-
-  return Array.from(paths);
-});
-
-const handleProjectChange = (value: string) => {
-  if (!value) return;
-
-  if (value === SELECT_OTHER_VALUE) {
-    isProjectDialogOpen.value = true;
-    return;
-  }
-
-  if (value !== currentProjectPathValue.value) {
-    emit("selectPath", value);
-  }
-};
-
-const handleProjectConfirm = async (path: string) => {
-  const project = await addProject(path);
-  if (!project) return;
-
-  isProjectDialogOpen.value = false;
-  emit("selectPath", normalizePath(path));
-};
+const currentIndex = ref(0);
+const showText = ref(true);
+let timer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
-  void loadProjects().catch(() => undefined);
+  timer = setInterval(() => {
+    showText.value = false;
+    // 等淡出动画完成后切换文字并淡入
+    setTimeout(() => {
+      currentIndex.value = (currentIndex.value + 1) % tips.length;
+      showText.value = true;
+    }, 500);
+  }, 4000);
+});
+
+onUnmounted(() => {
+  if (timer) clearInterval(timer);
 });
 </script>
 
@@ -88,66 +43,31 @@ onMounted(() => {
       style="background-image: radial-gradient(#e07a5f 0.5px, transparent 0.5px); background-size: 24px 24px"
     ></div>
 
-    <!-- 内容区 -->
-    <div class="relative w-full max-w-lg animate-in fade-in zoom-in duration-500">
-      <!-- 图标 + 标题 + 引导语 -->
-      <div class="mb-10 flex flex-col items-center gap-4">
-        <div
-          class="flex size-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.03]"
-        >
-          <Mountain class="size-7" style="color: #e07a5f" />
-        </div>
-        <div class="space-y-2 text-center">
-          <h2 class="text-[10px] font-bold uppercase tracking-[0.2em] text-[#e07a5f]/80">
-            Start From Project
-          </h2>
-          <p class="mx-auto max-w-xs text-sm leading-relaxed text-muted-foreground/60">
-            确认当前工作目录，我们会在这里与你并肩，开启一段新的探索旅程。
-          </p>
-        </div>
-      </div>
-
-      <!-- 标准下拉框 -->
-      <Select
-        :model-value="currentProjectPathValue || undefined"
-        @update:model-value="handleProjectChange"
+    <!-- 循环文字 -->
+    <div class="relative h-8 flex items-center justify-center overflow-hidden">
+      <transition
+        enter-active-class="transition-all duration-500 ease-out"
+        enter-from-class="translate-y-3 opacity-0"
+        enter-to-class="translate-y-0 opacity-100"
+        leave-active-class="transition-all duration-500 ease-in"
+        leave-from-class="translate-y-0 opacity-100"
+        leave-to-class="-translate-y-3 opacity-0"
       >
-        <SelectTrigger class="w-full">
-          <SelectValue placeholder="选择工作目录..." />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem
-            v-for="path in selectablePaths"
-            :key="path"
-            :value="path"
-          >
-            {{ path }}
-          </SelectItem>
-          <SelectItem :value="SELECT_OTHER_VALUE">
-            <div class="flex items-center gap-2">
-              <FolderSearch class="size-4" />
-              <span>浏览其他文件夹...</span>
-            </div>
-          </SelectItem>
-        </SelectContent>
-      </Select>
-
-      <!-- 状态提示 -->
-      <div class="mt-3 flex h-4 justify-center">
-        <p v-if="projectError" class="text-xs text-destructive">
-          {{ projectError }}
+        <p
+          v-if="showText"
+          :key="currentIndex"
+          class="whitespace-nowrap text-sm leading-relaxed text-muted-foreground/60"
+        >
+          {{ tips[currentIndex] }}
         </p>
-        <p v-else-if="isProjectLoading" class="text-xs text-muted-foreground/40">
-          加载项目列表...
-        </p>
-      </div>
+      </transition>
     </div>
 
-    <ProjectSelectorDialog
-      v-model:open="isProjectDialogOpen"
-      :pending="isProjectLoading"
-      :error="projectError"
-      @confirm="handleProjectConfirm"
-    />
+    <div class="mt-6 space-y-2 text-center">
+      <p class="text-base font-semibold text-foreground">先选择项目</p>
+      <p class="text-sm text-muted-foreground/70">
+        从下方项目选择器里选已添加项目，再开始新会话。
+      </p>
+    </div>
   </div>
 </template>

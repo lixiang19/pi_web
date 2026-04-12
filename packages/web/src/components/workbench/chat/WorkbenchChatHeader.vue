@@ -14,8 +14,6 @@ import type { AgentSummary, ChatComposerState, ThinkingLevel } from "@/lib/types
 
 defineProps<{
   agents: AgentSummary[];
-  autoModelValue: string;
-  autoThinkingValue: string;
   composer: ChatComposerState;
   currentSessionTitle: string;
   isDraftSession: boolean;
@@ -60,14 +58,13 @@ const emit = defineEmits<{
         <span class="hidden sm:inline">Back</span>
       </Button>
       <Select
-        :model-value="composer.selectedModel || autoModelValue"
+        :model-value="composer.selectedModel"
         @update:model-value="emit('selectModel', $event)"
       >
         <SelectTrigger class="h-7 w-[100px] text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem :value="autoModelValue">Auto</SelectItem>
           <SelectItem
             v-for="model in modelOptions"
             :key="model.value"
@@ -78,14 +75,13 @@ const emit = defineEmits<{
         </SelectContent>
       </Select>
       <Select
-        :model-value="composer.selectedThinkingLevel || autoThinkingValue"
+        :model-value="composer.selectedThinkingLevel"
         @update:model-value="emit('selectThinking', $event)"
       >
         <SelectTrigger class="h-7 w-[100px] text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem :value="autoThinkingValue">Auto</SelectItem>
           <SelectItem
             v-for="thinking in thinkingOptions"
             :key="thinking.value"

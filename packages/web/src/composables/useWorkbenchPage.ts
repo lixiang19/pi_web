@@ -1,7 +1,5 @@
 import { usePiChat } from "@/composables/usePiChat";
 import {
-  AUTO_MODEL_VALUE,
-  AUTO_THINKING_VALUE,
   NO_AGENT_VALUE,
   thinkingOptions,
   useWorkbenchSessionState,
@@ -17,8 +15,6 @@ export function useWorkbenchPage() {
     ...chat,
     ...resourcePicker,
     ...sessionState,
-    AUTO_MODEL_VALUE,
-    AUTO_THINKING_VALUE,
     NO_AGENT_VALUE,
     thinkingOptions,
   };

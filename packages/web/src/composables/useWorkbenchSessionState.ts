@@ -5,8 +5,6 @@ import { useEffectiveDirectory } from "@/composables/useEffectiveDirectory";
 import type { ThinkingLevel } from "@/lib/types";
 
 export const NO_AGENT_VALUE = "__pi-no-agent__";
-export const AUTO_MODEL_VALUE = "__pi-auto-model__";
-export const AUTO_THINKING_VALUE = "__pi-auto-thinking__";
 
 export const thinkingOptions: Array<{ value: ThinkingLevel; label: string }> = [
   { value: "off", label: "关闭思考" },
@@ -120,14 +118,12 @@ export function useWorkbenchSessionState(chat: PiChatState) {
 
   const handleModelSelection = async (value: unknown) => {
     const nextValue = normalizeSelectValue(value);
-    await chat.setSelectedModel(nextValue === AUTO_MODEL_VALUE ? "" : nextValue);
+    await chat.setSelectedModel(nextValue);
   };
 
   const handleThinkingSelection = async (value: unknown) => {
     const nextValue = normalizeSelectValue(value);
-    await chat.setSelectedThinkingLevel(
-      nextValue === AUTO_THINKING_VALUE ? "" : (nextValue as ThinkingLevel),
-    );
+    await chat.setSelectedThinkingLevel(nextValue as ThinkingLevel);
   };
 
   const createSidebarSession = async (payload: {
@@ -136,8 +132,10 @@ export function useWorkbenchSessionState(chat: PiChatState) {
   }) => {
     const draftOptions: { cwd?: string; parentSessionId?: string } = {};
     const resolvedCwd =
-      payload.cwd || chat.activeSession.value?.cwd || chat.info.value?.workspaceDir;
-
+      payload.cwd ||
+      chat.activeSession.value?.cwd ||
+      chat.activeDraftContext.value?.cwd ||
+      "";
     if (resolvedCwd) {
       draftOptions.cwd = resolvedCwd;
     }

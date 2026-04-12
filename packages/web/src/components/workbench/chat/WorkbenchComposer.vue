@@ -2,20 +2,24 @@
 import {
   Bot,
   Brain,
+  FolderSearch,
   Lightbulb,
   SendHorizontal,
   Square,
 } from "lucide-vue-next";
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
+import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
 import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import WorkbenchResourcePicker from "@/components/workbench/chat/WorkbenchResourcePicker.vue";
+import { useProjects } from "@/composables/useProjects";
 import type {
   AgentSummary,
   ChatComposerState,
@@ -27,10 +31,9 @@ import type {
 
 const props = defineProps<{
   agents: AgentSummary[];
-  autoModelValue: string;
-  autoThinkingValue: string;
   commands: CommandCatalogItem[];
   composer: ChatComposerState;
+  currentProjectPath: string;
   hasVisibleResources: boolean;
   isResourcePickerVisible: boolean;
   isSending: boolean;
@@ -50,6 +53,7 @@ const emit = defineEmits<{
   selectAgent: [value: unknown];
   selectModel: [value: unknown];
   selectThinking: [value: unknown];
+  selectProjectPath: [path: string];
   submit: [];
   abort: [];
   toggleResourcePicker: [];
@@ -59,6 +63,62 @@ const emit = defineEmits<{
 const draftText = computed({
   get: () => props.value,
   set: (value: string) => emit("update:value", value),
+});
+
+// --- 项目选择器逻辑 ---
+const SELECT_OTHER_VALUE = "__select-other-folder__";
+const normalizePath = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "");
+
+const isProjectDialogOpen = ref(false);
+const projectState = useProjects();
+const {
+  add: addProject,
+  error: projectError,
+  isLoading: isProjectLoading,
+  load: loadProjects,
+  projects,
+} = projectState;
+
+const currentProjectPathValue = computed(() => normalizePath(props.currentProjectPath || ""));
+
+const selectablePaths = computed(() => {
+  const currentPath = currentProjectPathValue.value;
+  const paths = new Set<string>();
+
+  if (currentPath) {
+    paths.add(currentPath);
+  }
+
+  for (const project of projects.value) {
+    paths.add(normalizePath(project.path));
+  }
+
+  return Array.from(paths);
+});
+
+const handleProjectChange = (value: string) => {
+  if (!value) return;
+
+  if (value === SELECT_OTHER_VALUE) {
+    isProjectDialogOpen.value = true;
+    return;
+  }
+
+  if (value !== currentProjectPathValue.value) {
+    emit("selectProjectPath", value);
+  }
+};
+
+const handleProjectConfirm = async (path: string) => {
+  const project = await addProject(path);
+  if (!project) return;
+
+  isProjectDialogOpen.value = false;
+  emit("selectProjectPath", normalizePath(path));
+};
+
+onMounted(() => {
+  void loadProjects().catch(() => undefined);
 });
 
 const isDraggingOver = ref(false);
@@ -99,7 +159,6 @@ const handleDrop = (event: DragEvent) => {
 // 处理拖拽悬停
 const handleDragOver = (event: DragEvent) => {
   event.preventDefault();
-  event.dataTransfer!.dropEffect = 'copy';
   isDraggingOver.value = true;
 };
 
@@ -125,18 +184,16 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 };
 
-// 获取当前模型显示值
+// 获取当前模型显示值 — 始终显示具体模型名
 const currentModelLabel = computed(() => {
-  const val = props.composer.selectedModel || props.autoModelValue;
-  if (val === props.autoModelValue) return "Auto";
+  const val = props.composer.selectedModel;
   const model = props.modelOptions.find((m) => m.value === val);
   return model?.label || val;
 });
 
-// 获取当前思考级别显示值
+// 获取当前思考级别显示值 — 始终显示具体级别名
 const currentThinkingLabel = computed(() => {
-  const val = props.composer.selectedThinkingLevel || props.autoThinkingValue;
-  if (val === props.autoThinkingValue) return "Auto";
+  const val = props.composer.selectedThinkingLevel;
   const option = props.thinkingOptions.find((t) => t.value === val);
   return option?.label || val;
 });
@@ -151,8 +208,41 @@ const currentAgentLabel = computed(() => {
 </script>
 
 <template>
-  <div class="ridge-panel-header shrink-0 bg-background">
+  <div class="shrink-0 bg-background">
     <div class="mx-auto max-w-3xl px-4 py-3">
+      <!-- 项目选择行 -->
+      <div class="mb-2 flex items-center gap-2">
+        <span class="shrink-0 text-xs text-muted-foreground">当前项目：</span>
+        <Select
+          :model-value="currentProjectPathValue || undefined"
+          @update:model-value="handleProjectChange"
+        >
+          <SelectTrigger
+            size="sm"
+            class="h-7 w-full max-w-xs gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+          >
+            <SelectValue placeholder="选择工作目录..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem
+              v-for="path in selectablePaths"
+              :key="path"
+              :value="path"
+            >
+              {{ path }}
+            </SelectItem>
+            <SelectItem :value="SELECT_OTHER_VALUE">
+              <div class="flex items-center gap-2">
+                <FolderSearch class="size-4" />
+                <span>浏览其他文件夹...</span>
+              </div>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <!-- 状态提示 -->
+        <span v-if="projectError" class="text-xs text-destructive">{{ projectError }}</span>
+        <span v-else-if="isProjectLoading" class="text-xs text-muted-foreground/40">加载中...</span>
+      </div>
       <div class="relative rounded-xl bg-card shadow-[0_1px_4px_rgba(61,50,41,0.06),0_0_0_1px_rgba(45,52,54,0.05)] transition-shadow duration-200">
         <div
           class="relative overflow-hidden rounded-xl transition-all duration-200"
@@ -206,7 +296,7 @@ const currentAgentLabel = computed(() => {
         <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-2.5">
           <div class="flex flex-wrap items-center gap-1">
             <Select
-              :model-value="composer.selectedModel || autoModelValue"
+              :model-value="composer.selectedModel"
               @update:model-value="emit('selectModel', $event)"
             >
               <SelectTrigger
@@ -217,7 +307,6 @@ const currentAgentLabel = computed(() => {
                 <span class="font-medium">{{ currentModelLabel }}</span>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem :value="autoModelValue">自动</SelectItem>
                 <SelectItem
                   v-for="model in modelOptions"
                   :key="model.value"
@@ -229,7 +318,7 @@ const currentAgentLabel = computed(() => {
             </Select>
 
             <Select
-              :model-value="composer.selectedThinkingLevel || autoThinkingValue"
+              :model-value="composer.selectedThinkingLevel"
               @update:model-value="emit('selectThinking', $event)"
             >
               <SelectTrigger
@@ -240,7 +329,6 @@ const currentAgentLabel = computed(() => {
                 <span class="font-medium">{{ currentThinkingLabel }}</span>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem :value="autoThinkingValue">自动</SelectItem>
                 <SelectItem
                   v-for="thinking in thinkingOptions"
                   :key="thinking.value"
@@ -310,6 +398,12 @@ const currentAgentLabel = computed(() => {
           @inject-skill="emit('injectSkill', $event)"
         />
       </transition>
+      <ProjectSelectorDialog
+        v-model:open="isProjectDialogOpen"
+        :pending="isProjectLoading"
+        :error="projectError"
+        @confirm="handleProjectConfirm"
+      />
     </div>
   </div>
 </template>
