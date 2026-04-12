@@ -69,7 +69,7 @@ watch(
 
 <template>
   <Dialog v-model:open="open">
-    <DialogContent class="overflow-hidden">
+    <DialogContent class="overflow-hidden sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>选择项目文件夹</DialogTitle>
         <DialogDescription>
@@ -77,7 +77,7 @@ watch(
         </DialogDescription>
       </DialogHeader>
 
-      <div class="flex h-[420px] flex-col">
+      <div class="flex h-[420px] min-w-0 flex-col">
         <div class="flex flex-wrap items-center gap-1 px-5 py-3 text-xs text-muted-foreground">
           <button
             v-for="(crumb, index) in breadcrumbs"
@@ -93,24 +93,26 @@ watch(
 
         <Separator />
 
-        <div class="flex items-center gap-3 px-5 py-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            class="shrink-0"
-            :disabled="!parentPath || isLoading"
-            @click="goParent()"
-          >
-            <ArrowLeft data-icon="inline-start" />
-            返回上一级
-          </Button>
+        <div class="flex min-w-0 flex-col gap-3 px-5 py-3">
+          <div class="flex items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              class="shrink-0"
+              :disabled="!parentPath || isLoading"
+              @click="goParent()"
+            >
+              <ArrowLeft data-icon="inline-start" />
+              返回上一级
+            </Button>
+          </div>
 
-          <p
-            class="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground"
-            :title="selectedPath"
-          >
-            当前选择：{{ selectedPath || "-" }}
-          </p>
+          <div class="min-w-0 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
+            <div class="font-medium text-foreground/70">当前选择</div>
+            <p class="mt-1 break-all" :title="selectedPath">
+              {{ selectedPath || "-" }}
+            </p>
+          </div>
         </div>
 
         <Separator />

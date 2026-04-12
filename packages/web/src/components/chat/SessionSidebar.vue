@@ -15,6 +15,7 @@ import {
 import SessionSidebarSessionNode from "@/components/chat/SessionSidebarSessionNode.vue";
 import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
 import NewWorktreeDialog from "@/components/chat/NewWorktreeDialog.vue";
+import DeleteWorktreeDialog from "@/components/chat/DeleteWorktreeDialog.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -34,7 +35,6 @@ import {
 import { useProjects } from "@/composables/useProjects";
 import { useProjectWorktrees } from "@/composables/useProjectWorktrees";
 import { buildSessionProjects } from "@/lib/session-sidebar";
-import { deleteWorktree } from "@/lib/api";
 import type { SessionSummary } from "@/lib/types";
 
 const MAX_RECENT_SESSIONS = 10;
@@ -86,6 +86,9 @@ const isProjectDialogOpen = ref(false);
 const isWorktreeDialogOpen = ref(false);
 const worktreeDialogProjectId = ref("");
 const worktreeDialogProjectRoot = ref("");
+const isDeleteWorktreeDialogOpen = ref(false);
+const deleteWorktreeProjectId = ref("");
+const deleteWorktreeRoot = ref("");
 const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase());
 const isSearching = computed(() => normalizedQuery.value.length > 0);
 
@@ -214,24 +217,14 @@ const handleWorktreeCreated = async (worktreePath: string) => {
   emit("worktree-created", worktreePath);
 };
 
-const handleDeleteWorktree = async (projectId: string, worktreeRoot: string) => {
-  const confirmed = window.confirm(
-    `确定要删除此 worktree？\n\n路径：${worktreeRoot}\n\n将同时删除：\n- worktree 目录\n- 关联的本地分支\n- 关联的远程分支\n- 该 worktree 下的所有会话`,
-  );
-  if (!confirmed) return;
+const handleDeleteWorktree = (projectId: string, worktreeRoot: string) => {
+  deleteWorktreeProjectId.value = projectId;
+  deleteWorktreeRoot.value = worktreeRoot;
+  isDeleteWorktreeDialogOpen.value = true;
+};
 
-  try {
-    await deleteWorktree(projectId, {
-      worktreePath: worktreeRoot,
-      deleteLocalBranch: true,
-      deleteRemoteBranch: true,
-    });
-    await worktreeState.refresh(projectId);
-  } catch (error) {
-    window.alert(
-      `删除失败：${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+const handleWorktreeDeleted = async () => {
+  await worktreeState.refresh(deleteWorktreeProjectId.value);
 };
 
 // 获取 project 对应的 stored project id（用于 worktree API）
@@ -571,6 +564,13 @@ onMounted(() => {
       :project-id="worktreeDialogProjectId"
       :project-root="worktreeDialogProjectRoot"
       @created="handleWorktreeCreated"
+    />
+
+    <DeleteWorktreeDialog
+      v-model:open="isDeleteWorktreeDialogOpen"
+      :project-id="deleteWorktreeProjectId"
+      :worktree-root="deleteWorktreeRoot"
+      @deleted="handleWorktreeDeleted"
     />
   </SidebarProvider>
 </template>
