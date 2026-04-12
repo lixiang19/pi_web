@@ -15,7 +15,7 @@ import {
   createAgentSession,
 } from '@mariozechner/pi-coding-agent';
 import { z } from 'zod';
-import type { AgentSession, SessionEvent, ModelInfo } from '@mariozechner/pi-coding-agent';
+import type { AgentSession, ModelInfo } from '@mariozechner/pi-coding-agent';
 
 import { createProjectContextResolver } from './project-context.js';
 import { createGitService } from './git-service.js';
@@ -34,6 +34,10 @@ import {
   compileAgentPermission,
   createPermissionGateExtension,
 } from './agent-permissions.js';
+import {
+  buildResolvedAskResult,
+  createAskExtension,
+} from './ask-extension.js';
 import { createSessionMetadataStore } from './session-metadata.js';
 import {
   getSettings,
@@ -59,6 +63,8 @@ import type {
   HttpError,
   Project,
   AgentPermission,
+  AskInteractiveRequest,
+  AskQuestionAnswer,
 } from './types/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -152,6 +158,21 @@ const archiveSessionSchema = z.object({
   archived: z.boolean(),
 });
 
+const askAnswerSchema = z.object({
+  questionId: z.string().min(1),
+  values: z.array(z.string().min(1)).min(1),
+});
+
+const askActionSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('submit'),
+    answers: z.array(askAnswerSchema).min(1),
+  }),
+  z.object({
+    action: z.literal('dismiss'),
+  }),
+]);
+
 const fileTreeQuerySchema = z.object({
   root: z.string().optional(),
   path: z.string().optional(),
@@ -225,6 +246,116 @@ const closeClients = (record: SessionRecord): void => {
   record.clients.clear();
 };
 
+const getInteractiveRequests = (record: SessionRecord): AskInteractiveRequest[] =>
+  [...record.pendingAskRecords.values()].map((pendingAsk) => ({
+    id: pendingAsk.id,
+    toolCallId: pendingAsk.toolCallId,
+    title: pendingAsk.title,
+    message: pendingAsk.message,
+    questions: pendingAsk.questions,
+    createdAt: pendingAsk.createdAt,
+  }));
+
+const emitSessionSnapshot = async (
+  record: SessionRecord,
+  sessionRegistry?: Awaited<ReturnType<typeof listWorkspaceSessions>> | null,
+): Promise<void> => {
+  const registry = sessionRegistry ?? (await listWorkspaceSessions());
+  emit(record, {
+    type: 'snapshot',
+    session: await toSessionSnapshot(record, registry, {}),
+  });
+};
+
+const normalizeAskAnswers = (
+  record: SessionRecord,
+  askId: string,
+  answers: AskQuestionAnswer[],
+): AskQuestionAnswer[] => {
+  const pendingAsk = record.pendingAskRecords.get(askId);
+  if (!pendingAsk) {
+    const error = new Error(`Ask 不存在: ${askId}`) as HttpError;
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const providedAnswers = new Map<string, string[]>();
+  for (const answer of answers) {
+    const questionId = normalizeString(answer.questionId);
+    const values = [...new Set(answer.values.map((value) => normalizeString(value)).filter(Boolean))];
+    if (!questionId || values.length === 0) {
+      continue;
+    }
+    providedAnswers.set(questionId, values);
+  }
+
+  const normalizedAnswers: AskQuestionAnswer[] = [];
+  for (const question of pendingAsk.questions) {
+    const values = providedAnswers.get(question.id) || [];
+    if (values.length === 0) {
+      const error = new Error(`问题未回答: ${question.question}`) as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!question.multiple && values.length > 1) {
+      const error = new Error(`问题不允许多选: ${question.question}`) as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const optionLabels = new Set((question.options || []).map((option) => option.label));
+    const normalizedValues = values.filter((value) => {
+      if (optionLabels.size === 0) {
+        return true;
+      }
+      if (optionLabels.has(value)) {
+        return true;
+      }
+      return question.allowCustom === true;
+    });
+
+    if (normalizedValues.length === 0) {
+      const error = new Error(`问题答案非法: ${question.question}`) as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    normalizedAnswers.push({
+      questionId: question.id,
+      values: normalizedValues,
+    });
+  }
+
+  return normalizedAnswers;
+};
+
+const settlePendingAsk = async (
+  record: SessionRecord,
+  askId: string,
+  answers: AskQuestionAnswer[],
+  dismissed: boolean,
+): Promise<void> => {
+  const pendingAsk = record.pendingAskRecords.get(askId);
+  if (!pendingAsk) {
+    const error = new Error(`Ask 不存在: ${askId}`) as HttpError;
+    error.statusCode = 404;
+    throw error;
+  }
+
+  record.pendingAskRecords.delete(askId);
+  await emitSessionSnapshot(record);
+  pendingAsk.resolve(buildResolvedAskResult(pendingAsk, answers, dismissed));
+};
+
+const cancelPendingAsks = (record: SessionRecord, reason: string): void => {
+  const pendingAsks = [...record.pendingAskRecords.values()];
+  record.pendingAskRecords.clear();
+  for (const pendingAsk of pendingAsks) {
+    pendingAsk.reject(new Error(reason));
+  }
+};
+
 const listDirectoryEntries = async (
   directoryPath: string,
   rootPath: string,
@@ -267,114 +398,34 @@ const isPathInAllowedRoots = (candidatePath: string, allowedRoots: string[]): bo
     );
   });
 
-interface ContentBlock {
-  type: 'text' | 'thinking' | 'toolCall' | 'toolResult' | 'unknown';
-  text?: string;
-  thinking?: string;
-  id?: string;
-  name?: string;
-  arguments?: Record<string, unknown>;
-  result?: unknown;
-}
+type RawMessageContent = string | Array<Record<string, unknown>>;
 
-const normalizeContent = (content: unknown): ContentBlock[] => {
+const passthroughContent = (content: unknown): RawMessageContent => {
   if (typeof content === 'string') {
-    return [{ type: 'text', text: content }];
+    return content;
   }
 
   if (!Array.isArray(content)) {
     return [];
   }
 
-  return content.map((item): ContentBlock => {
-    if (!item || typeof item !== 'object') {
-      return { type: 'unknown', text: '' };
-    }
-    const typedItem = item as Record<string, unknown>;
-    if (typedItem.type === 'text') {
-      return {
-        type: 'text',
-        text: typeof typedItem.text === 'string' ? typedItem.text : '',
-      };
-    }
-
-    return {
-      type: 'unknown',
-      text: typeof typedItem.text === 'string' ? typedItem.text : '',
-    };
-  });
-};
-
-const extractContentBlocks = (content: unknown): ContentBlock[] => {
-  if (typeof content === 'string') {
-    return [{ type: 'text', text: content }];
-  }
-  if (!Array.isArray(content)) {
-    return [];
-  }
-  return content.map((item) => {
-    if (!item || typeof item !== 'object') {
-      return { type: 'text', text: '' };
-    }
-    const typedItem = item as Record<string, unknown>;
-    switch (typedItem.type) {
-      case 'text':
-        return {
-          type: 'text',
-          text: typeof typedItem.text === 'string' ? typedItem.text : '',
-        };
-      case 'thinking':
-        return {
-          type: 'thinking',
-          thinking: typeof typedItem.thinking === 'string' ? typedItem.thinking : '',
-        };
-      case 'toolCall':
-        return {
-          type: 'toolCall',
-          id: typeof typedItem.id === 'string' ? typedItem.id : '',
-          name: typeof typedItem.name === 'string' ? typedItem.name : 'unknown',
-          arguments:
-            typeof typedItem.arguments === 'object' && typedItem.arguments
-              ? (typedItem.arguments as Record<string, unknown>)
-              : {},
-        };
-      case 'toolResult':
-        return {
-          type: 'toolResult',
-          id: typeof typedItem.id === 'string' ? typedItem.id : '',
-          name: typeof typedItem.name === 'string' ? typedItem.name : 'unknown',
-          result: typedItem.result,
-        };
-      default:
-        return { type: 'text', text: typeof typedItem.text === 'string' ? typedItem.text : '' };
-    }
-  });
+  return content.map((item) =>
+    item && typeof item === 'object' ? (item as Record<string, unknown>) : {},
+  );
 };
 
 interface SerializedMessage {
-  id: string;
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  text: string;
-  contentBlocks: ContentBlock[];
-  createdAt: number;
+  role: 'system' | 'user' | 'assistant' | 'tool' | 'toolResult';
+  content: RawMessageContent;
+  timestamp?: number;
 }
 
-const serializeMessage = (message: { role?: string; content?: unknown; timestamp?: number }, index: number): SerializedMessage => {
-  const role = normalizeString(message?.role) || 'system';
-  const contentBlocks = extractContentBlocks(message?.content);
-  const text = contentBlocks
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-  return {
-    id: `${index}-${message?.timestamp || Date.now()}`,
-    role: role === 'toolResult' ? 'tool' : (role as 'system' | 'user' | 'assistant' | 'tool'),
-    text,
-    contentBlocks,
-    createdAt:
-      typeof message?.timestamp === 'number' ? message.timestamp : Date.now(),
-  };
-};
+const serializeMessage = (message: { role?: string; content?: unknown; timestamp?: number }): SerializedMessage => ({
+  role: (normalizeString(message?.role) || 'system') as SerializedMessage['role'],
+  content: passthroughContent(message?.content),
+  timestamp:
+    typeof message?.timestamp === 'number' ? message.timestamp : undefined,
+});
 
 const getAvailableModels = (): ModelInfo[] => {
   modelRegistry.refresh();
@@ -491,6 +542,12 @@ const createSessionResourceLoader = (record: SessionRecord) =>
     },
     extensionFactories: [
       createPermissionGateExtension(() => record.selectedPermissionPolicy),
+      createAskExtension(record, {
+        onPendingAskChange: async (sessionRecord) => {
+          updateStatus(sessionRecord, 'streaming');
+          await emitSessionSnapshot(sessionRecord);
+        },
+      }),
     ],
   });
 
@@ -657,71 +714,11 @@ const emit = (record: SessionRecord, payload: unknown): void => {
 };
 
 const updateStatus = (record: SessionRecord, nextStatus: SessionRecord['status']): void => {
-  record.status = nextStatus;
+  const resolvedStatus =
+    nextStatus === 'idle' && record.pendingAskRecords.size > 0 ? 'streaming' : nextStatus;
+  record.status = resolvedStatus;
   record.updatedAt = Date.now();
-  emit(record, { type: 'status', status: nextStatus });
-};
-
-const attachSession = (record: SessionRecord): void => {
-  record.unsubscribe = record.session.subscribe((event: SessionEvent) => {
-    record.updatedAt = Date.now();
-
-    if (event.type === 'turn_start' && record.turnBudget.maxTurns) {
-      if (record.turnBudget.usedTurns >= record.turnBudget.maxTurns) {
-        record.turnBudget.exhausted = true;
-        void record.session.abort();
-      }
-    }
-
-    if (
-      event.type === 'agent_start' ||
-      event.type === 'message_start' ||
-      event.type === 'message_update'
-    ) {
-      updateStatus(record, 'streaming');
-    }
-
-    if (
-      event.type === 'message_end' ||
-      event.type === 'agent_end' ||
-      event.type === 'turn_end'
-    ) {
-      updateStatus(record, 'idle');
-    }
-
-    if (event.type === 'turn_end' && record.turnBudget.maxTurns) {
-      record.turnBudget.usedTurns += 1;
-      if (record.turnBudget.usedTurns >= record.turnBudget.maxTurns) {
-        record.turnBudget.exhausted = true;
-      }
-    }
-
-    if (
-      event.type === 'message_end' &&
-      normalizeString(event?.message?.role) === 'assistant'
-    ) {
-      record.updatedAt = Date.now();
-    }
-
-    emit(record, {
-      type: event.type,
-      message: event.message
-        ? {
-            role: event.message.role,
-            content: normalizeContent(event.message.content),
-          }
-        : undefined,
-      assistantMessageEvent: event.assistantMessageEvent
-        ? {
-            type: event.assistantMessageEvent.type,
-            delta:
-              typeof event.assistantMessageEvent.delta === 'string'
-                ? event.assistantMessageEvent.delta
-                : null,
-          }
-        : undefined,
-    });
-  });
+  emit(record, { type: 'status', status: resolvedStatus });
 };
 
 interface CreateActiveSessionRecordParams {
@@ -755,6 +752,7 @@ const createActiveSessionRecord = ({
     unsubscribe: null as (() => void) | null,
     clients: new Set<ServerResponse>(),
     defaultToolNames: [...session.getActiveToolNames()],
+    pendingAskRecords: stateRef?.pendingAskRecords || new Map(),
     selectedAgentName: undefined as string | undefined,
     selectedAgentConfig: null as AgentConfigInternal | null,
     selectedAgentSignature: '',
@@ -769,8 +767,6 @@ const createActiveSessionRecord = ({
       exhausted: false,
     },
   }) as SessionRecord;
-
-  attachSession(record);
   activeSessions.set(record.id, record);
   return record;
 };
@@ -797,6 +793,7 @@ const createSessionRecord = async ({
   const recordState: Partial<SessionRecord> = {
     cwd,
     settingsManager,
+    pendingAskRecords: new Map(),
     selectedAgentConfig: null,
     selectedPermissionPolicy: null,
   };
@@ -836,6 +833,7 @@ const createSessionRecord = async ({
 };
 
 const destroySessionRecord = (record: SessionRecord): void => {
+  cancelPendingAsks(record, 'Session closed');
   record.unsubscribe?.();
   closeClients(record);
   activeSessions.delete(record.id);
@@ -1165,15 +1163,14 @@ const toSessionSnapshot = async (
 
   return {
     ...summary,
-    messages: visibleMessages.map((message, index) =>
-      serializeMessage(message, startIndex + index),
-    ),
+    messages: visibleMessages.map((message) => serializeMessage(message)),
     historyMeta: {
       loadedCount: visibleMessages.length,
       totalCount,
       hasMoreAbove: startIndex > 0,
       limit: effectiveLimit,
     },
+    interactiveRequests: getInteractiveRequests(record),
   };
 };
 
@@ -1266,6 +1263,7 @@ const ensureSessionRecord = async (
   const settingsManager = SettingsManager.create(item.cwd);
   const recordState: Partial<SessionRecord> = {
     cwd: item.cwd,
+    pendingAskRecords: new Map(),
     settingsManager,
     selectedAgentConfig: null,
     selectedPermissionPolicy: null,
@@ -1799,6 +1797,26 @@ app.post('/api/sessions/:sessionId/messages', async (req: Request, res: Response
         });
       });
 
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/sessions/:sessionId/asks/:askId/respond', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = askActionSchema.parse(req.body ?? {});
+    const record = await ensureSessionRecord(String(req.params.sessionId));
+    const askId = String(req.params.askId);
+
+    if (payload.action === 'dismiss') {
+      await settlePendingAsk(record, askId, [], true);
+      res.json({ ok: true });
+      return;
+    }
+
+    const answers = normalizeAskAnswers(record, askId, payload.answers);
+    await settlePendingAsk(record, askId, answers, false);
     res.json({ ok: true });
   } catch (error) {
     next(error);

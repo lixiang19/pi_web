@@ -26,6 +26,9 @@ const {
   loadEarlier,
   loadSession,
   messages,
+  interactiveRequests,
+  respondToPendingAsk,
+  dismissPendingAsk,
   status,
 } = chat;
 const { fileTreeRoot, formatProjectLabel } = useWorkbenchSessionState(chat);
@@ -168,11 +171,14 @@ watch(
           <WorkbenchMessageStream
             :active-session-id="activeSessionId"
             :has-more-above="hasMoreAbove"
+            :interactive-requests="interactiveRequests"
             :is-draft-session="false"
             :is-loading-older="isLoadingOlder"
             :messages="messages"
             :status="status"
             @load-earlier="loadEarlier"
+            @dismiss-ask="dismissPendingAsk(activeSessionId, $event)"
+            @submit-ask="(askId, answers) => respondToPendingAsk(activeSessionId, askId, answers)"
           />
         </div>
       </section>

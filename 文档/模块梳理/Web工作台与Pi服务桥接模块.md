@@ -772,3 +772,29 @@ packages/server/src/index.js
 | packages/web/src/lib/api.ts | 109 | Web 端 REST 请求封装与 agent API 入口 |
 | packages/web/src/lib/types.ts | 99 | 会话、agent、文件树和 mutation 类型定义 |
 | README.md | 36 | 项目结构与启动方式说明 |
+
+## 2026-04-12 ask 阻塞式交互更新
+### 服务桥接变化
+- 服务端新增 `ask` 扩展注入，位置：`packages/server/src/ask-extension.ts` 与 `packages/server/src/index.ts`
+- `SessionRecord` 新增 `pendingAskRecords`，运行时把 ask 明确建模为“挂起中的 tool”
+- `SessionSnapshot` 新增 `interactiveRequests`，用于把 pending ask 投影给前端
+- 新增接口：`POST /api/sessions/:sessionId/asks/:askId/respond`
+- `AgentPermission` 从 `question` 收敛为 `ask`
+
+### 当前链路
+```text
+LLM 调用 ask tool
+  -> server ask extension 创建 pending ask
+  -> SessionRecord.pendingAskRecords 挂起 tool promise
+  -> SSE snapshot 推送 interactiveRequests
+  -> Web 底部 ask 卡片渲染
+  -> 用户提交/取消
+  -> POST /api/sessions/:id/asks/:askId/respond
+  -> server resolve 原 ask tool promise
+  -> runtime 继续执行并产出 toolResult
+```
+
+### 设计边界
+- ask 现在是 Web 工作台第一条真实阻塞式交互链路
+- 仍然没有开放通用 `ctx.ui.custom()` 浏览器适配
+- 当前只支持 ask，不把协议泛化成任意 interactive request 容器

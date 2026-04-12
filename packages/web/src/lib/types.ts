@@ -56,43 +56,70 @@ export interface SessionSummary {
   worktreeLabel: string;
 }
 
+export interface AskOption {
+  label: string;
+  description?: string;
+}
+
+export interface AskQuestion {
+  id: string;
+  header?: string;
+  question: string;
+  description?: string;
+  options?: AskOption[];
+  multiple?: boolean;
+  allowCustom?: boolean;
+}
+
+export interface AskQuestionAnswer {
+  questionId: string;
+  values: string[];
+}
+
+export interface AskInteractiveRequest {
+  id: string;
+  toolCallId: string;
+  title: string;
+  message?: string;
+  questions: AskQuestion[];
+  createdAt: number;
+}
+
 // ============================================================================
-// Content Block Types - 对齐 Pi SDK 原生类型
+// Pi 原始消息协议
 // ============================================================================
+
+export type MessageRole = "system" | "user" | "assistant" | "tool" | "toolResult";
 
 export interface TextContentBlock {
   type: "text";
-  text: string;
-  textSignature?: string;
+  text?: string;
 }
 
 export interface ThinkingContentBlock {
   type: "thinking";
-  thinking: string;
-  thinkingSignature?: string;
+  thinking?: string;
   redacted?: boolean;
 }
 
 export interface ImageContentBlock {
   type: "image";
-  data: string;
-  mimeType: string;
+  data?: string;
+  mimeType?: string;
 }
 
 export interface ToolCallContentBlock {
   type: "toolCall";
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
-  thoughtSignature?: string;
+  id?: string;
+  name?: string;
+  arguments?: Record<string, unknown>;
 }
 
 export interface ToolResultContentBlock {
   type: "toolResult";
-  toolCallId: string;
-  toolName: string;
-  content: (TextContentBlock | ImageContentBlock)[];
-  isError: boolean;
+  id?: string;
+  name?: string;
+  result?: unknown;
 }
 
 export type ContentBlock =
@@ -100,19 +127,25 @@ export type ContentBlock =
   | ThinkingContentBlock
   | ImageContentBlock
   | ToolCallContentBlock
-  | ToolResultContentBlock;
-
-// ============================================================================
-// ChatMessage - 扩展以支持完整富内容
-// ============================================================================
+  | ToolResultContentBlock
+  | {
+      type: string;
+      text?: string;
+      thinking?: string;
+      redacted?: boolean;
+      id?: string;
+      name?: string;
+      arguments?: Record<string, unknown>;
+      result?: unknown;
+      [key: string]: unknown;
+    };
 
 export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "system" | "tool";
-  text: string; // 纯文本摘要（用于快速预览）
-  contentBlocks: ContentBlock[]; // 完整内容块数组
-  createdAt: number;
+  role: MessageRole;
+  content: string | ContentBlock[];
+  timestamp?: number;
   pending?: boolean;
+  localId?: string;
 }
 
 export interface SessionHistoryMeta {
@@ -139,6 +172,7 @@ export interface ChatComposerState {
 export interface SessionSnapshot extends SessionSummary {
   messages: ChatMessage[];
   historyMeta: SessionHistoryMeta;
+  interactiveRequests: AskInteractiveRequest[];
 }
 
 export interface AgentSummary {
@@ -188,66 +222,7 @@ export interface StreamEvent {
   session?: SessionSnapshot;
   status?: SessionSummary["status"];
   error?: string;
-  message?: {
-    role?: string;
-    content?: Array<
-      | {
-          type: "text";
-          text?: string;
-        }
-      | {
-          type: "thinking";
-          thinking?: string;
-          redacted?: boolean;
-        }
-      | {
-          type: "toolCall";
-          id?: string;
-          name?: string;
-          arguments?: Record<string, unknown>;
-        }
-      | {
-          type: "toolResult";
-          toolCallId?: string;
-          toolName?: string;
-          content?: Array<
-            | {
-                type: "text";
-                text?: string;
-              }
-            | {
-                type: "image";
-                data?: string;
-                mimeType?: string;
-              }
-          >;
-          isError?: boolean;
-        }
-      | {
-          type: string;
-          text?: string;
-          thinking?: string;
-          redacted?: boolean;
-          id?: string;
-          name?: string;
-          arguments?: Record<string, unknown>;
-          toolCallId?: string;
-          toolName?: string;
-          content?: Array<
-            | {
-                type: "text";
-                text?: string;
-              }
-            | {
-                type: "image";
-                data?: string;
-                mimeType?: string;
-              }
-          >;
-          isError?: boolean;
-        }
-    >;
-  };
+  message?: ChatMessage;
   assistantMessageEvent?: {
     type?: AssistantMessageEventType;
     contentIndex?: number;

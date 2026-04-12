@@ -1,5 +1,6 @@
 import type {
   AgentSummary,
+  AskQuestionAnswer,
   DirectoryBrowseResponse,
   FileTreeResponse,
   ProjectItem,
@@ -154,6 +155,19 @@ export function sendMessage(sessionId: string, payload: SendMessagePayload) {
 export function abortSession(sessionId: string) {
   return request<{ ok: true }>(`/api/sessions/${sessionId}/abort`, {
     method: "POST",
+  });
+}
+
+export function respondToAsk(
+  sessionId: string,
+  askId: string,
+  payload:
+    | { action: "submit"; answers: AskQuestionAnswer[] }
+    | { action: "dismiss" },
+) {
+  return request<{ ok: true }>(`/api/sessions/${sessionId}/asks/${askId}/respond`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

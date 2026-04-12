@@ -1,5 +1,5 @@
 // ===== Express Extensions =====
-import type { AgentSession, DefaultResourceLoader, SettingsManager } from '@mariozechner/pi-coding-agent';
+import type { AgentSession, DefaultResourceLoader, SettingsManager, AgentToolResult } from '@mariozechner/pi-coding-agent';
 
 /* eslint-disable @typescript-eslint/no-namespace */
 declare global {
@@ -37,7 +37,7 @@ export interface AgentPermission {
   find?: 'allow' | 'deny' | PermissionRules;
   ls?: 'allow' | 'deny' | PermissionRules;
   bash?: 'allow' | 'deny' | PermissionRules;
-  question?: 'allow' | 'deny' | PermissionRules;
+  ask?: 'allow' | 'deny' | PermissionRules;
   task?: 'allow' | 'deny' | PermissionRules;
   edit?: 'allow' | 'deny' | PermissionRules | PermissionRule[];
 }
@@ -57,6 +57,47 @@ export interface CompiledPermissionPolicy {
   activeToolNames: string[];
   editRules: PermissionRule[];
   toolActions: Record<string, string>;
+}
+
+export interface AskOption {
+  label: string;
+  description?: string;
+}
+
+export interface AskQuestion {
+  id: string;
+  header?: string;
+  question: string;
+  description?: string;
+  options?: AskOption[];
+  multiple?: boolean;
+  allowCustom?: boolean;
+}
+
+export interface AskQuestionAnswer {
+  questionId: string;
+  values: string[];
+}
+
+export interface AskInteractiveRequest {
+  id: string;
+  toolCallId: string;
+  title: string;
+  message?: string;
+  questions: AskQuestion[];
+  createdAt: number;
+}
+
+export interface AskToolResultDetails {
+  request: AskInteractiveRequest;
+  answers: AskQuestionAnswer[];
+  dismissed: boolean;
+}
+
+export interface PendingAskRecord extends AskInteractiveRequest {
+  settled: boolean;
+  resolve: (result: AgentToolResult<AskToolResultDetails>) => void;
+  reject: (error: Error) => void;
 }
 
 // ===== Session Types =====
@@ -80,6 +121,7 @@ export interface SessionRecord {
   unsubscribe: (() => void) | null;
   clients: Set<import('http').ServerResponse>;
   defaultToolNames: string[];
+  pendingAskRecords: Map<string, PendingAskRecord>;
   selectedAgentName?: string;
   // AgentConfigInternal from agents.ts
   selectedAgentConfig: {
@@ -224,22 +266,52 @@ export interface SessionSummary {
   worktreeLabel: string;
 }
 
-export interface MessageBlock {
-  type: 'text' | 'thinking' | 'toolCall' | 'toolResult' | 'unknown';
+export type MessageRole = 'system' | 'user' | 'assistant' | 'tool' | 'toolResult';
+
+export interface TextContentBlock {
+  type: 'text';
   text?: string;
+}
+
+export interface ThinkingContentBlock {
+  type: 'thinking';
   thinking?: string;
+  redacted?: boolean;
+}
+
+export interface ImageContentBlock {
+  type: 'image';
+  data?: string;
+  mimeType?: string;
+}
+
+export interface ToolCallContentBlock {
+  type: 'toolCall';
   id?: string;
   name?: string;
   arguments?: Record<string, unknown>;
+}
+
+export interface ToolResultContentBlock {
+  type: 'toolResult';
+  id?: string;
+  name?: string;
   result?: unknown;
 }
 
+export type MessageBlock = {
+  type?: string;
+  [key: string]: unknown;
+};
+
 export interface SerializedMessage {
-  id: string;
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  text: string;
-  contentBlocks: MessageBlock[];
-  createdAt: number;
+  role: MessageRole;
+  content: string | MessageBlock[];
+  timestamp?: number;
+  toolCallId?: string;
+  toolName?: string;
+  details?: unknown;
+  isError?: boolean;
 }
 
 export interface SessionSnapshot extends SessionSummary {
@@ -250,6 +322,7 @@ export interface SessionSnapshot extends SessionSummary {
     hasMoreAbove: boolean;
     limit: number;
   };
+  interactiveRequests: AskInteractiveRequest[];
 }
 
 export interface ProviderInfo {

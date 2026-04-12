@@ -31,6 +31,7 @@ const {
   hasVisibleResources,
   injectCommand,
   injectSkill,
+  interactiveRequests,
   isDraftSession,
   isLoadingOlder,
   isResourcePickerVisible,
@@ -43,6 +44,8 @@ const {
   prefetchSession,
   renameSession,
   resourceError,
+  respondToPendingAsk,
+  dismissPendingAsk,
   returnToParentSession,
   sessionSidebarProps,
   status,
@@ -84,6 +87,7 @@ const handleWorktreeCreated = async (worktreePath: string) => {
           :composer="composer"
           :current-session-title="currentSessionTitle"
           :has-more-above="hasMoreAbove"
+          :interactive-requests="interactiveRequests"
           :has-visible-resources="hasVisibleResources"
           :is-draft-session="isDraftSession"
           :is-loading-older="isLoadingOlder"
@@ -106,6 +110,8 @@ const handleWorktreeCreated = async (worktreePath: string) => {
           @inject-command="injectCommand"
           @inject-skill="injectSkill"
           @load-earlier="loadEarlier"
+          @dismiss-ask="dismissPendingAsk(activeSessionId, $event)"
+          @respond-ask="(askId, answers) => respondToPendingAsk(activeSessionId, askId, answers)"
           @return-to-parent="returnToParentSession"
           @select-project-path="setDraftProjectPath($event)"
           @select-agent="handleAgentSelection"

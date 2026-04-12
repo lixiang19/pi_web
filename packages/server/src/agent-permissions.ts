@@ -8,7 +8,7 @@ const SIMPLE_PERMISSION_KEYS = new Set([
   'find',
   'ls',
   'bash',
-  'question',
+  'ask',
   'task',
 ]);
 const EDIT_PERMISSION_KEY = 'edit';

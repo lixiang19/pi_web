@@ -116,8 +116,33 @@ declare module '@mariozechner/pi-coding-agent' {
     reason?: string;
   }
 
+  export interface AgentToolResult<T = unknown> {
+    content: Array<
+      | { type: 'text'; text: string }
+      | { type: 'image'; data?: string; mimeType?: string }
+    >;
+    details: T;
+  }
+
+  export interface ToolDefinition {
+    name: string;
+    label: string;
+    description: string;
+    promptSnippet?: string;
+    promptGuidelines?: string[];
+    parameters: unknown;
+    execute(
+      toolCallId: string,
+      params: unknown,
+      signal?: AbortSignal,
+      onUpdate?: unknown,
+      ctx?: unknown,
+    ): Promise<AgentToolResult<unknown>>;
+  }
+
   export interface PiExtensionAPI {
     on(event: 'tool_call', handler: (event: ToolCallEvent) => Promise<ToolCallResult | undefined>): void;
+    registerTool(tool: ToolDefinition): void;
   }
 
   // ===== Session & Messaging =====

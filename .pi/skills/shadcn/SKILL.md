@@ -1,5 +1,5 @@
 ---
-name: shadcn-vue
+name: shadcn
 description: 仅用于 shadcn-vue / Vue 项目。负责初始化、添加组件、查看项目信息、主题定制、注册表构建与 MCP 配置。禁止在该技能中使用官方 React 的 shadcn CLI。
 user-invocable: false
 allowed-tools: Bash(npx shadcn-vue@latest *), Bash(pnpm dlx shadcn-vue@latest *), Bash(bunx --bun shadcn-vue@latest *)

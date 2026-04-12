@@ -23,7 +23,10 @@
 - [拖放实现] 原生 HTML5 Drag and Drop API 足够满足简单拖放需求，无需引入第三方库
 - [防抖模式] 使用 dragCounter 计数器解决 dragenter/dragleave 闪烁问题
 - [数据格式] 拖放数据同时存储 text/plain（路径）和 application/json（完整对象），预留扩展空间
-- [组件库适配] 第三方组件库（ai-elements-vue）的数据模型与项目不兼容时，创建适配层比修改项目数据模型更安全
+- [消息协议边界] 对话区不要在 server/web 两端自造 `ChatMessage/contentBlocks` 投影协议；一旦后端改写 message/content、前端再二次累积 block，message 边界就会被破坏，折叠层级必然混乱
 - [事件命名] Vue defineEmits 中带有冒号的事件名必须用引号包裹（"update:modelValue"）
 - [类型校验] 即使 TypeScript 编译通过，也要验证运行时数据字段（如 AgentSummary 实际无 id 字段）
 - [共享列表状态] 同一份项目列表如果会被侧栏、空态、弹窗同时消费，composable 必须提升为模块级共享状态并做请求去重，否则不同区域会出现数据不同步
+
+- [ask 交互] 阻塞式 ask 不能伪装成普通消息，必须建模为“挂起中的 tool + 独立 interactiveRequests”，否则恢复执行、重连快照和消息回放会乱
+- [server 类型补洞] 当 workspace 没有完整第三方类型包时，可在 `packages/server/src/types/` 放最小 shim 保住 server `tsc --noEmit`，但 shim 只补边界，不扩散到业务层

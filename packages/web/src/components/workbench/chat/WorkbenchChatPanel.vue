@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import {
-  AiElementsConversation,
-  AiElementsPromptInput,
-} from "@/components/ai-elements";
-import WorkbenchResourcePicker from "./WorkbenchResourcePicker.vue";
 import WelcomeEmptyState from "@/components/workbench/WelcomeEmptyState.vue";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft } from "lucide-vue-next";
+import WorkbenchComposer from "./WorkbenchComposer.vue";
+import WorkbenchMessageStream from "./WorkbenchMessageStream.vue";
 import type {
   AgentSummary,
+  AskInteractiveRequest,
+  AskQuestionAnswer,
   ChatComposerState,
   ChatMessage,
   CommandCatalogItem,
@@ -28,6 +27,7 @@ defineProps<{
   composer: ChatComposerState;
   currentSessionTitle: string;
   hasMoreAbove: boolean;
+  interactiveRequests: AskInteractiveRequest[];
   hasVisibleResources: boolean;
   isDraftSession: boolean;
   isLoadingOlder: boolean;
@@ -49,9 +49,11 @@ defineProps<{
 const emit = defineEmits<{
   applyPrompt: [item: PromptCatalogItem];
   createSession: [];
+  dismissAsk: [askId: string];
   injectCommand: [value: string];
   injectSkill: [value: string];
   loadEarlier: [];
+  respondAsk: [askId: string, answers: AskQuestionAnswer[]];
   returnToParent: [];
   selectAgent: [value: string];
   selectModel: [value: string];
@@ -70,55 +72,46 @@ function handleDraftUpdate(text: string) {
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-background">
-    <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-2 bg-card/50">
-      <div class="flex items-center gap-2">
-        <Button
-          v-if="parentSessionId"
-          variant="ghost"
-          size="sm"
-          @click="emit('returnToParent')"
-        >
-          <ChevronLeft class="h-4 w-4 mr-1" />
-          返回
-        </Button>
-        <div class="flex flex-col">
-          <span class="font-medium text-sm">{{ currentSessionTitle || '新会话' }}</span>
-          <span v-if="projectLabel" class="text-xs text-muted-foreground">{{ projectLabel }}</span>
+    <div class="ridge-panel-header shrink-0 border-b border-border/60">
+      <div class="flex items-center justify-between px-4 py-2.5">
+        <div class="flex min-w-0 items-center gap-2">
+          <Button
+            v-if="parentSessionId"
+            variant="ghost"
+            size="sm"
+            class="h-8 px-2"
+            @click="emit('returnToParent')"
+          >
+            <ChevronLeft class="mr-1 h-4 w-4" />
+            返回父会话
+          </Button>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-foreground">
+              {{ currentSessionTitle || "新会话" }}
+            </p>
+            <p v-if="projectLabel" class="truncate text-xs text-muted-foreground">
+              {{ projectLabel }}
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 text-xs">
+          <span
+            v-if="status === 'streaming'"
+            class="inline-flex items-center gap-1.5 text-primary"
+          >
+            <span class="relative flex h-2 w-2">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+              <span class="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
+            生成中
+          </span>
+          <span v-else-if="isDraftSession" class="text-muted-foreground">
+            草稿态
+          </span>
         </div>
       </div>
-
-      <div class="flex items-center gap-2">
-        <span
-          v-if="status === 'streaming'"
-          class="flex items-center gap-1 text-xs text-primary"
-        >
-          <span class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-          </span>
-          生成中...
-        </span>
-        <span
-          v-else-if="isDraftSession"
-          class="text-xs text-muted-foreground"
-        >
-          草稿会话
-        </span>
-      </div>
     </div>
-
-    <!-- Resource Picker -->
-    <WorkbenchResourcePicker
-      v-if="isResourcePickerVisible"
-      :commands="commands"
-      :prompts="prompts"
-      :skills="skills"
-      :error="resourceError"
-      @apply-prompt="emit('applyPrompt', $event)"
-      @inject-command="emit('injectCommand', $event)"
-      @inject-skill="emit('injectSkill', $event)"
-    />
 
     <WelcomeEmptyState
       v-if="!activeSessionId"
@@ -127,48 +120,47 @@ function handleDraftUpdate(text: string) {
       @select-path="emit('selectProjectPath', $event)"
     />
 
-    <!-- Conversation -->
-    <AiElementsConversation
+    <WorkbenchMessageStream
       v-else
-      :messages="messages"
-      :session-id="activeSessionId"
+      :active-draft-parent-session-id="activeDraftParentSessionId"
+      :active-session-id="activeSessionId"
       :has-more-above="hasMoreAbove"
+      :interactive-requests="interactiveRequests"
+      :is-draft-session="isDraftSession"
       :is-loading-older="isLoadingOlder"
-      :is-streaming="status === 'streaming'"
+      :messages="messages"
+      :status="status"
       @load-earlier="emit('loadEarlier')"
+      @dismiss-ask="emit('dismissAsk', $event)"
+      @submit-ask="(askId, answers) => emit('respondAsk', askId, answers)"
     />
 
-    <!-- Input -->
-    <AiElementsPromptInput
-      :session-id="activeSessionId"
-      :disabled="!activeSessionId"
-      :is-sending="isSending"
-      :can-abort="composer.canAbort"
-      :draft-text="composer.draftText"
-      :model-options="modelOptions"
-      :thinking-options="thinkingOptions"
+    <WorkbenchComposer
       :agents="agents"
-      :commands="commands"
-      :prompts="prompts"
-      :skills="skills"
       :auto-model-value="autoModelValue"
       :auto-thinking-value="autoThinkingValue"
-      :no-agent-value="noAgentValue"
-      :selected-model="composer.selectedModel"
-      :selected-thinking-level="composer.selectedThinkingLevel"
-      :selected-agent="composer.selectedAgent"
+      :commands="commands"
+      :composer="composer"
       :has-visible-resources="hasVisibleResources"
       :is-resource-picker-visible="isResourcePickerVisible"
-      @submit="emit('submit')"
-      @abort="emit('abort')"
-      @update:draft-text="handleDraftUpdate"
-      @select-model="emit('selectModel', $event)"
-      @select-thinking="emit('selectThinking', $event)"
-      @select-agent="emit('selectAgent', $event)"
-      @toggle-resource-picker="emit('toggleResourcePicker')"
+      :is-sending="isSending"
+      :model-options="modelOptions"
+      :no-agent-value="noAgentValue"
+      :prompts="prompts"
+      :resource-error="resourceError"
+      :skills="skills"
+      :thinking-options="thinkingOptions"
+      :value="composer.draftText"
       @apply-prompt="emit('applyPrompt', $event)"
       @inject-command="emit('injectCommand', $event)"
       @inject-skill="emit('injectSkill', $event)"
+      @select-agent="emit('selectAgent', $event)"
+      @select-model="emit('selectModel', $event)"
+      @select-thinking="emit('selectThinking', $event)"
+      @submit="emit('submit')"
+      @abort="emit('abort')"
+      @toggle-resource-picker="emit('toggleResourcePicker')"
+      @update:value="handleDraftUpdate"
     />
   </div>
 </template>

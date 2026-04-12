@@ -1,12 +1,12 @@
 <script setup lang="ts">
+import { computed, ref } from "vue";
+import { Check, ChevronDown, Wrench } from "lucide-vue-next";
+
 import {
-  Wrench,
-  ChevronDown,
-  ChevronUp,
-  Check,
-  AlertCircle,
-} from "lucide-vue-next";
-import { ref, computed } from "vue";
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import type { ToolCallContentBlock, ToolResultContentBlock } from "@/lib/types";
 
 const props = defineProps<{
@@ -15,68 +15,90 @@ const props = defineProps<{
 }>();
 
 const isExpanded = ref(false);
-const isToolCall = computed(() => props.block.type === "toolCall");
+const toolCallBlock = computed(() =>
+  props.block.type === "toolCall" ? props.block : null,
+);
+const toolResultBlock = computed(() =>
+  props.block.type === "toolResult" ? props.block : null,
+);
 
 const toolName = computed(() => {
-  if (isToolCall.value) {
-    return (props.block as ToolCallContentBlock).name;
+  if (toolCallBlock.value) {
+    return toolCallBlock.value.name || "工具";
   }
-  return (props.block as ToolResultContentBlock).toolName;
+  return toolResultBlock.value?.name || "工具";
 });
 
-const toggleExpand = () => {
-  isExpanded.value = !isExpanded.value;
+const summary = computed(() => {
+  if (toolCallBlock.value) {
+    const keys = Object.keys(toolCallBlock.value.arguments || {});
+    return keys.length ? `${keys.join(", ")}` : "";
+  }
+
+  if (!toolResultBlock.value) {
+    return "";
+  }
+
+  if (typeof toolResultBlock.value.result === "string") {
+    return toolResultBlock.value.result.slice(0, 50);
+  }
+
+  return toolResultBlock.value.result ? "已返回结果" : "";
+});
+
+const displayLabel = computed(() => {
+  const name = toolName.value;
+  const sum = summary.value;
+  return sum ? `${name} · ${sum}` : name;
+});
+
+const stringifyResult = (value: unknown) => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === undefined || value === null) {
+    return "";
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 };
 </script>
 
 <template>
-  <div
-    class="overflow-hidden rounded-lg bg-muted/50 shadow-sm transition-all"
-    :class="[
-      isResult && (block as ToolResultContentBlock).isError ? 'bg-destructive/5 ring-1 ring-destructive/20' : '',
-      isExpanded ? 'ring-1 ring-primary/20' : ''
-    ]"
+  <Collapsible
+    v-model:open="isExpanded"
+    class="text-muted-foreground/70"
   >
-    <button
-      type="button"
-      class="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
-      @click="toggleExpand"
+    <CollapsibleTrigger
+      class="flex w-full items-center gap-1.5 py-0.5 text-left text-xs transition-colors hover:text-foreground/80"
     >
       <component
-        :is="
-          isResult
-            ? (block as ToolResultContentBlock).isError
-              ? AlertCircle
-              : Check
-            : Wrench
-        "
-        class="size-4 shrink-0"
-        :class="isResult && (block as ToolResultContentBlock).isError ? 'text-destructive' : 'text-muted-foreground'"
+        :is="toolResultBlock ? Check : Wrench"
+        class="size-3.5 shrink-0"
       />
-      
-      <div class="flex flex-col min-w-0">
-        <span class="text-xs font-medium text-foreground truncate">
-          {{ toolName }}
-        </span>
-      </div>
-      
-      <div class="ml-auto">
-        <component
-          :is="isExpanded ? ChevronUp : ChevronDown"
-          class="size-4 text-muted-foreground"
-        />
-      </div>
-    </button>
 
-    <div v-show="isExpanded" class="ridge-panel-inset mx-2 mb-2 rounded-md px-3 py-3">
-      <div class="whitespace-pre-wrap font-mono text-xs leading-5 text-foreground/70">
-        <template v-if="isToolCall">
-          {{ JSON.stringify((block as ToolCallContentBlock).arguments, null, 2) }}
-        </template>
-        <template v-else>
-          {{ (block as ToolResultContentBlock).content || 'No output data' }}
-        </template>
+      <span class="truncate">{{ displayLabel }}</span>
+      <ChevronDown
+        class="size-3 shrink-0 transition-transform duration-200"
+        :class="isExpanded ? 'rotate-180' : ''"
+      />
+    </CollapsibleTrigger>
+
+    <CollapsibleContent class="py-1">
+      <div class="ridge-panel-inset rounded-md px-2 py-2 text-xs leading-5 text-foreground/70">
+        <pre
+          v-if="toolCallBlock"
+          class="whitespace-pre-wrap break-words font-mono"
+        >{{ JSON.stringify(toolCallBlock.arguments || {}, null, 2) }}</pre>
+
+        <pre
+          v-else-if="toolResultBlock"
+          class="whitespace-pre-wrap break-words font-mono"
+        >{{ stringifyResult(toolResultBlock.result) || '无输出' }}</pre>
       </div>
-    </div>
-  </div>
+    </CollapsibleContent>
+  </Collapsible>
 </template>

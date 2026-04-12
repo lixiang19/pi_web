@@ -19,14 +19,16 @@ import {
   getSessions,
   getSystemInfo,
   renameSession,
+  respondToAsk,
   sendMessage,
   updateSession,
 } from "@/lib/api";
 import type {
   AgentSummary,
+  AskInteractiveRequest,
+  AskQuestionAnswer,
   ChatComposerState,
   ChatMessage,
-  ContentBlock,
   ProvidersResponse,
   ResourceCatalogResponse,
   SessionHistoryMeta,
@@ -35,7 +37,6 @@ import type {
   StreamEvent,
   SystemInfo,
   ThinkingLevel,
-  ToolCallContentBlock,
 } from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
 
@@ -70,76 +71,21 @@ const createEmptyResources = (): ResourceCatalogResponse => ({
 });
 
 // ============================================================================
-// Content Block 提取工具函数
+// Pi 原始消息辅助函数
 // ============================================================================
 
-/**
- * 从 StreamEvent 消息中提取完整的 ContentBlock 数组
- * 支持 text, thinking, toolCall, toolResult 等所有类型
- */
-const extractContentBlocks = (
-  message?: StreamEvent["message"],
-): ContentBlock[] => {
-  if (!message?.content) {
-    return [];
-  }
-
-  return message.content.map((block): ContentBlock => {
-    switch (block.type) {
-      case "text":
-        return {
-          type: "text",
-          text: block.text ?? "",
-        };
-      case "thinking":
-        return block.redacted === undefined
-          ? {
-              type: "thinking",
-              thinking: block.thinking ?? "",
-            }
-          : {
-              type: "thinking",
-              thinking: block.thinking ?? "",
-              redacted: block.redacted,
-            };
-      case "toolCall":
-        return {
-          type: "toolCall",
-          id: block.id ?? createLocalId(),
-          name: block.name ?? "unknown",
-          arguments: block.arguments ?? {},
-        };
-      case "toolResult":
-        return {
-          type: "toolResult",
-          toolCallId: block.toolCallId ?? "",
-          toolName: block.toolName ?? "unknown",
-          content: (block.content ?? []).map((c) =>
-            c.type === "text"
-              ? { type: "text", text: c.text ?? "" }
-              : {
-                  type: "image",
-                  data: c.data ?? "",
-                  mimeType: c.mimeType ?? "image/png",
-                },
-          ),
-          isError: block.isError ?? false,
-        };
-      default:
-        return { type: "text", text: "" };
-    }
-  });
-};
-
-/**
- * 从 ContentBlock 数组中提取纯文本（用于预览和标题生成）
- */
-const extractTextFromBlocks = (blocks: ContentBlock[]): string => {
-  return blocks
-    .filter((b): b is { type: "text"; text: string } => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-};
+const createRawMessage = (message?: StreamEvent["message"], overrides?: Partial<ChatMessage>): ChatMessage => ({
+  role: (message?.role as ChatMessage["role"]) || overrides?.role || "assistant",
+  content:
+    message?.content === undefined
+      ? (overrides?.content ?? "")
+      : typeof message.content === "string"
+        ? message.content
+        : message.content,
+  timestamp: overrides?.timestamp ?? Date.now(),
+  pending: overrides?.pending,
+  localId: overrides?.localId,
+});
 
 /**
  * 创建空的 ContentBlock 数组
@@ -258,9 +204,7 @@ export function usePiChat() {
   // 流式消息构建状态
   // ============================================================================
   let eventSource: EventSource | null = null;
-  let currentAssistantMessageId = "";
-  let currentAccumulatedBlocks: ContentBlock[] = [];
-  let currentPendingToolCall: ToolCallContentBlock | null = null;
+  let currentStreamMessageLocalId = "";
   let suppressDraftPersistence = false;
   const loadSessionInFlightById = new Map<string, Promise<SessionSnapshot>>();
   const loadSessionRequestSeqById = new Map<string, number>();
@@ -321,6 +265,14 @@ export function usePiChat() {
       createHistoryMeta(messages.value.length, messages.value.length)
     );
   });
+
+  const interactiveRequests = computed<AskInteractiveRequest[]>(() => {
+    if (!activeSessionId.value) {
+      return [];
+    }
+
+    return getCachedSessionSnapshot(activeSessionId.value)?.interactiveRequests ?? [];
+  });
   const hasMoreAbove = computed(() => activeHistoryMeta.value.hasMoreAbove);
   const isLoadingOlder = computed(() =>
     Boolean(
@@ -342,6 +294,7 @@ export function usePiChat() {
       ...summary,
       messages: [],
       historyMeta: createHistoryMeta(0, 0),
+      interactiveRequests: [],
     } satisfies SessionSnapshot;
   };
 
@@ -395,7 +348,7 @@ export function usePiChat() {
         snapshot.historyMeta,
         snapshot.messages.length + 1,
       ),
-      updatedAt: Math.max(snapshot.updatedAt, message.createdAt),
+      updatedAt: Math.max(snapshot.updatedAt, message.timestamp || Date.now()),
     }));
   };
 
@@ -592,9 +545,7 @@ export function usePiChat() {
     composer.pendingPrompt = "";
     eventSource?.close();
     eventSource = null;
-    currentAssistantMessageId = "";
-    currentAccumulatedBlocks = [];
-    currentPendingToolCall = null;
+    currentStreamMessageLocalId = "";
     applyDraftForSession(null);
   };
 
@@ -688,9 +639,7 @@ export function usePiChat() {
     composer.isSending = false;
     composer.canAbort = false;
     composer.pendingPrompt = "";
-    currentAssistantMessageId = "";
-    currentAccumulatedBlocks = [];
-    currentPendingToolCall = null;
+    currentStreamMessageLocalId = "";
     eventSource?.close();
     eventSource = null;
 
@@ -788,13 +737,11 @@ export function usePiChat() {
   };
 
   // ============================================================================
-  // SSE 流式连接 - 完整支持 Thinking 和 Tool 事件
+  // SSE 流式连接 - 直通 Pi 原始消息事件
   // ============================================================================
   const connectStream = (sessionId: string) => {
     eventSource?.close();
-    currentAssistantMessageId = "";
-    currentAccumulatedBlocks = [];
-    currentPendingToolCall = null;
+    currentStreamMessageLocalId = "";
 
     const streamParams = new URLSearchParams();
     const currentLimit =
@@ -810,7 +757,6 @@ export function usePiChat() {
         session?: SessionSnapshot;
       };
 
-      // 全量快照同步
       if (payload.type === "snapshot" && payload.session) {
         syncSessions(payload.session);
         if (activeSessionId.value === sessionId) {
@@ -826,9 +772,10 @@ export function usePiChat() {
         return;
       }
 
-      // 状态变更
       if (payload.type === "status" && payload.status) {
         status.value = payload.status;
+        isSending.value = payload.status === "streaming";
+        composer.isSending = payload.status === "streaming";
         composer.canAbort = payload.status === "streaming";
         patchSessionSummary(sessionId, {
           status: payload.status,
@@ -836,16 +783,13 @@ export function usePiChat() {
         });
       }
 
-      // 错误处理
       if (payload.type === "error" && payload.error) {
         error.value = payload.error;
         status.value = "error";
         isSending.value = false;
         composer.isSending = false;
         composer.canAbort = false;
-        currentAssistantMessageId = "";
-        currentAccumulatedBlocks = [];
-        currentPendingToolCall = null;
+        currentStreamMessageLocalId = "";
         patchSessionSnapshot(sessionId, (snapshot) => ({
           ...snapshot,
           status: "error",
@@ -856,225 +800,58 @@ export function usePiChat() {
           updatedAt: Date.now(),
         });
         restorePendingDraft(sessionId);
+        return;
       }
 
-      // 消息开始
-      if (
-        payload.type === "message_start" &&
-        payload.message?.role === "assistant"
-      ) {
-        currentAssistantMessageId = createLocalId();
-        currentAccumulatedBlocks = extractContentBlocks(payload.message);
-        const text = extractTextFromBlocks(currentAccumulatedBlocks);
-
+      if (payload.type === "message_start" && payload.message) {
+        currentStreamMessageLocalId = createLocalId();
         appendMessageToSession(sessionId, {
-          id: currentAssistantMessageId,
-          role: "assistant",
-          text,
-          contentBlocks: currentAccumulatedBlocks,
-          createdAt: Date.now(),
+          role: payload.message.role,
+          content: payload.message.content,
+          timestamp: payload.message.timestamp ?? Date.now(),
           pending: true,
+          localId: currentStreamMessageLocalId,
         });
+        return;
       }
 
-      // 消息更新 - 处理各种增量事件
-      if (payload.type === "message_update" && payload.assistantMessageEvent) {
-        const assistantEvent = payload.assistantMessageEvent;
-        const {
-          type: eventType,
-          contentIndex = 0,
-        } = assistantEvent;
-        const delta = assistantEvent.delta ?? "";
-
-        // 如果没有当前消息ID，创建新消息
-        if (!currentAssistantMessageId) {
-          currentAssistantMessageId = createLocalId();
-          currentAccumulatedBlocks = [];
-
-          // 根据事件类型初始化对应的内容块
-          if (eventType === "text_delta" || eventType === "text_start") {
-            currentAccumulatedBlocks = [{ type: "text", text: delta }];
-          } else if (
-            eventType === "thinking_delta" ||
-            eventType === "thinking_start"
-          ) {
-            currentAccumulatedBlocks = [{ type: "thinking", thinking: delta }];
-          } else if (eventType === "toolcall_start") {
-            currentPendingToolCall = {
-              type: "toolCall",
-              id: assistantEvent.toolCall?.id ?? createLocalId(),
-              name: assistantEvent.toolCall?.name ?? "unknown",
-              arguments: assistantEvent.toolCall?.arguments ?? {},
-            };
-            currentAccumulatedBlocks = [currentPendingToolCall];
-          }
-
-          const text = extractTextFromBlocks(currentAccumulatedBlocks);
-          appendMessageToSession(sessionId, {
-            id: currentAssistantMessageId,
-            role: "assistant",
-            text,
-            contentBlocks: currentAccumulatedBlocks,
-            createdAt: Date.now(),
-            pending: true,
-          });
-          return;
-        }
-
-        // 更新现有消息的 contentBlocks
-        patchSessionSnapshot(sessionId, (snapshot) => {
-          const updatedMessages = snapshot.messages.map((message) => {
-            if (message.id !== currentAssistantMessageId) return message;
-
-            const newBlocks = [...message.contentBlocks];
-
-            switch (eventType) {
-              case "text_delta":
-                // 更新或创建 text block
-                if (newBlocks[contentIndex]?.type === "text") {
-                  newBlocks[contentIndex] = {
-                    ...newBlocks[contentIndex],
-                    text:
-                      (
-                        newBlocks[contentIndex] as {
-                          type: "text";
-                          text: string;
-                        }
-                      ).text + delta,
-                  };
-                } else if (!newBlocks[contentIndex]) {
-                  newBlocks[contentIndex] = { type: "text", text: delta };
-                }
-                break;
-
-              case "thinking_delta":
-                // 更新或创建 thinking block
-                if (newBlocks[contentIndex]?.type === "thinking") {
-                  newBlocks[contentIndex] = {
-                    ...newBlocks[contentIndex],
-                    thinking:
-                      (
-                        newBlocks[contentIndex] as {
-                          type: "thinking";
-                          thinking: string;
-                        }
-                      ).thinking + delta,
-                  };
-                } else if (!newBlocks[contentIndex]) {
-                  newBlocks[contentIndex] = {
-                    type: "thinking",
-                    thinking: delta,
-                  };
-                }
-                break;
-
-              case "toolcall_delta":
-                // 累积 tool call 参数
-                if (currentPendingToolCall) {
-                  currentPendingToolCall = {
-                    ...currentPendingToolCall,
-                    arguments: {
-                      ...currentPendingToolCall.arguments,
-                      // 解析累积的 JSON 参数
-                      ...(delta ? JSON.parse(delta) : {}),
-                    },
-                  };
-                  // 更新 block 数组中的 toolCall
-                  const toolCallIndex = newBlocks.findIndex(
-                    (b) => b.type === "toolCall",
-                  );
-                  if (toolCallIndex >= 0) {
-                    newBlocks[toolCallIndex] = currentPendingToolCall;
-                  }
-                }
-                break;
-
-              case "toolcall_start":
-                currentPendingToolCall = {
-                  type: "toolCall",
-                  id: assistantEvent.toolCall?.id ?? createLocalId(),
-                  name: assistantEvent.toolCall?.name ?? "unknown",
-                  arguments: assistantEvent.toolCall?.arguments ?? {},
-                };
-                newBlocks.push(currentPendingToolCall);
-                break;
-
-              case "toolcall_end":
-                currentPendingToolCall = null;
-                break;
-            }
-
-            return {
-              ...message,
-              contentBlocks: newBlocks,
-              text: extractTextFromBlocks(newBlocks),
-            };
-          });
-
-          return { ...snapshot, messages: updatedMessages };
+      if (payload.type === "message_end" && payload.message) {
+        const finalMessage = createRawMessage(payload.message, {
+          pending: false,
+          localId: currentStreamMessageLocalId || createLocalId(),
         });
-      }
-
-      // 消息结束
-      if (
-        payload.type === "message_end" &&
-        payload.message?.role === "assistant"
-      ) {
-        const finalBlocks = extractContentBlocks(payload.message);
-        const text = extractTextFromBlocks(finalBlocks);
-        const assistantMessageId = currentAssistantMessageId || createLocalId();
 
         patchSessionSnapshot(sessionId, (snapshot) => {
-          const hasPendingMessage = snapshot.messages.some(
-            (message) => message.id === assistantMessageId,
+          const pendingIndex = snapshot.messages.findIndex(
+            (message) =>
+              message.pending === true &&
+              message.localId === finalMessage.localId,
           );
 
-          if (!hasPendingMessage) {
+          if (pendingIndex < 0) {
             return {
               ...snapshot,
-              messages: [
-                ...snapshot.messages,
-                {
-                  id: assistantMessageId,
-                  role: "assistant",
-                  text,
-                  contentBlocks: finalBlocks,
-                  createdAt: Date.now(),
-                },
-              ],
+              messages: [...snapshot.messages, finalMessage],
               historyMeta: expandVisibleHistoryMeta(
                 snapshot.historyMeta,
                 snapshot.messages.length + 1,
               ),
               status: "idle",
-              updatedAt: Date.now(),
+              updatedAt: finalMessage.timestamp || Date.now(),
             };
           }
 
           return {
             ...snapshot,
-            messages: snapshot.messages.map((message) =>
-              message.id === assistantMessageId
-                ? {
-                    ...message,
-                    text: text || message.text,
-                    contentBlocks:
-                      finalBlocks.length > 0
-                        ? finalBlocks
-                        : message.contentBlocks,
-                    pending: false,
-                  }
-                : message,
+            messages: snapshot.messages.map((message, index) =>
+              index === pendingIndex ? finalMessage : message,
             ),
             status: "idle",
-            updatedAt: Date.now(),
+            updatedAt: finalMessage.timestamp || Date.now(),
           };
         });
 
-        // 重置流式状态
-        currentAssistantMessageId = "";
-        currentAccumulatedBlocks = [];
-        currentPendingToolCall = null;
+        currentStreamMessageLocalId = "";
         isSending.value = false;
         composer.isSending = false;
         composer.canAbort = false;
@@ -1262,7 +1039,7 @@ export function usePiChat() {
 
     error.value = "";
     const effectiveAgentName = effectiveAgent.value || null;
-    let optimisticMessageId = "";
+    let optimisticMessageLocalId = "";
 
     try {
       const sessionId = await ensureSession();
@@ -1271,13 +1048,12 @@ export function usePiChat() {
 
       // 创建乐观用户消息
       const optimisticMessage: ChatMessage = {
-        id: createLocalId(),
         role: "user",
-        text: prompt,
-        contentBlocks: [{ type: "text", text: prompt }],
-        createdAt: Date.now(),
+        content: prompt,
+        timestamp: Date.now(),
+        localId: createLocalId(),
       };
-      optimisticMessageId = optimisticMessage.id;
+      optimisticMessageLocalId = optimisticMessage.localId || "";
 
       composer.pendingPrompt = prompt;
       composer.isSending = true;
@@ -1332,16 +1108,16 @@ export function usePiChat() {
       composer.isSending = false;
       composer.canAbort = false;
 
-      if (activeSessionId.value && optimisticMessageId) {
+      if (activeSessionId.value && optimisticMessageLocalId) {
         patchSessionSnapshot(activeSessionId.value, (snapshot) => ({
           ...snapshot,
           messages: snapshot.messages.filter(
-            (message) => message.id !== optimisticMessageId,
+            (message) => message.localId !== optimisticMessageLocalId,
           ),
           historyMeta: expandVisibleHistoryMeta(
             snapshot.historyMeta,
             snapshot.messages.filter(
-              (message) => message.id !== optimisticMessageId,
+              (message) => message.localId !== optimisticMessageLocalId,
             ).length,
           ),
           status: "error",
@@ -1361,9 +1137,7 @@ export function usePiChat() {
     isSending.value = false;
     composer.isSending = false;
     composer.canAbort = false;
-    currentAssistantMessageId = "";
-    currentAccumulatedBlocks = [];
-    currentPendingToolCall = null;
+    currentStreamMessageLocalId = "";
     status.value = "idle";
     restorePendingDraft(activeSessionId.value);
     patchSessionSummary(activeSessionId.value, {
@@ -1479,6 +1253,85 @@ export function usePiChat() {
     await refreshSessions();
   };
 
+  const respondToPendingAsk = async (
+    sessionId: string,
+    askId: string,
+    answers: AskQuestionAnswer[],
+  ) => {
+    patchSessionSnapshot(sessionId, (snapshot) => ({
+      ...snapshot,
+      status: "streaming",
+      interactiveRequests: snapshot.interactiveRequests.filter(
+        (request) => request.id !== askId,
+      ),
+      updatedAt: Date.now(),
+    }));
+    patchSessionSummary(sessionId, {
+      status: "streaming",
+      updatedAt: Date.now(),
+    });
+    status.value = "streaming";
+    isSending.value = true;
+    composer.isSending = true;
+    composer.canAbort = true;
+
+    try {
+      await respondToAsk(sessionId, askId, {
+        action: "submit",
+        answers,
+      });
+    } catch (caughtError) {
+      error.value =
+        caughtError instanceof Error
+          ? caughtError.message
+          : String(caughtError);
+      const snapshot = await getSession(sessionId, {
+        limit: getCachedSessionSnapshot(sessionId)?.historyMeta.limit,
+      });
+      syncSessions(snapshot);
+      if (activeSessionId.value === sessionId) {
+        messages.value = snapshot.messages;
+      }
+    }
+  };
+
+  const dismissPendingAsk = async (sessionId: string, askId: string) => {
+    patchSessionSnapshot(sessionId, (snapshot) => ({
+      ...snapshot,
+      status: "streaming",
+      interactiveRequests: snapshot.interactiveRequests.filter(
+        (request) => request.id !== askId,
+      ),
+      updatedAt: Date.now(),
+    }));
+    patchSessionSummary(sessionId, {
+      status: "streaming",
+      updatedAt: Date.now(),
+    });
+    status.value = "streaming";
+    isSending.value = true;
+    composer.isSending = true;
+    composer.canAbort = true;
+
+    try {
+      await respondToAsk(sessionId, askId, {
+        action: "dismiss",
+      });
+    } catch (caughtError) {
+      error.value =
+        caughtError instanceof Error
+          ? caughtError.message
+          : String(caughtError);
+      const snapshot = await getSession(sessionId, {
+        limit: getCachedSessionSnapshot(sessionId)?.historyMeta.limit,
+      });
+      syncSessions(snapshot);
+      if (activeSessionId.value === sessionId) {
+        messages.value = snapshot.messages;
+      }
+    }
+  };
+
   const setComposerFocused = (focused: boolean) => {
     composer.isFocused = focused;
   };
@@ -1517,11 +1370,13 @@ export function usePiChat() {
     composer,
     createSession: createAndLoadSession,
     deleteSession: removeSessionTree,
+    dismissPendingAsk,
     effectiveAgent,
     effectiveModel,
     effectiveThinkingLevel,
     error,
     info,
+    interactiveRequests,
     isSending,
     activeDraftContext,
     activeHistoryMeta,
@@ -1541,6 +1396,7 @@ export function usePiChat() {
     renameSession: renameSessionTitle,
     resourceError,
     resources,
+    respondToPendingAsk,
     sessions,
     setComposerFocused,
     setSelectedAgent,

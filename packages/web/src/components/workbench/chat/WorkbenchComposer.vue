@@ -51,6 +51,7 @@ const emit = defineEmits<{
   selectModel: [value: unknown];
   selectThinking: [value: unknown];
   submit: [];
+  abort: [];
   toggleResourcePicker: [];
   "update:value": [string];
 }>();
@@ -103,12 +104,24 @@ const handleDragOver = (event: DragEvent) => {
 };
 
 const handleDragLeave = (event: DragEvent) => {
-  // 确保是真正离开textarea而不是进入子元素
-  const relatedTarget = event.relatedTarget as HTMLElement;
+  const relatedTarget = event.relatedTarget as HTMLElement | null;
   const textarea = event.currentTarget as HTMLElement;
 
-  if (!textarea.contains(relatedTarget)) {
+  if (!relatedTarget || !textarea.contains(relatedTarget)) {
     isDraggingOver.value = false;
+  }
+};
+
+const handleKeydown = (event: KeyboardEvent) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    if (props.composer.canAbort) {
+      emit("abort");
+      return;
+    }
+    if (draftText.value.trim()) {
+      emit("submit");
+    }
   }
 };
 
@@ -138,147 +151,144 @@ const currentAgentLabel = computed(() => {
 </script>
 
 <template>
-  <div class="ridge-panel-header shrink-0">
+  <div class="ridge-panel-header shrink-0 border-t border-border/60 bg-background">
     <div class="mx-auto max-w-3xl px-4 py-3">
-      <!-- 输入框 -->
-      <div class="relative">
+      <div class="relative rounded-xl bg-card shadow-[0_1px_4px_rgba(61,50,41,0.06),0_0_0_1px_rgba(45,52,54,0.05)] transition-shadow duration-200">
         <div
-          class="rounded-lg border transition-all duration-200"
-          :class="isDraggingOver
-            ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
-            : 'border-border bg-muted/30 hover:border-border/80'"
+          class="relative overflow-hidden rounded-xl transition-all duration-200"
+          :class="isDraggingOver ? 'bg-primary/5 ring-2 ring-primary/20' : ''"
         >
           <Textarea
             ref="textareaRef"
             v-model="draftText"
-            placeholder="输入消息... (可拖拽文件到此处)"
-            class="min-h-[80px] resize-none border-0 bg-transparent px-3 py-3 pr-12 text-sm leading-6 focus-visible:ring-0 focus-visible:ring-offset-0"
+            placeholder="输入消息… 支持 Markdown，Shift + Enter 换行，可拖拽文件路径到输入框"
+            class="min-h-[96px] resize-none border-0 bg-transparent px-4 py-3 pr-14 text-sm leading-6 focus-visible:ring-0 focus-visible:ring-offset-0"
             :class="isDraggingOver ? 'placeholder:text-primary/70' : ''"
-            @keydown.enter.prevent="emit('submit')"
+            @keydown="handleKeydown"
             @drop="handleDrop"
             @dragover="handleDragOver"
             @dragleave="handleDragLeave"
           />
+
+          <div
+            v-if="isDraggingOver"
+            class="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
+            <span class="rounded-full border border-primary/20 bg-background/95 px-3 py-1 text-xs font-medium text-primary shadow-sm">
+              释放以插入文件路径
+            </span>
+          </div>
+
+          <div class="absolute bottom-3 right-3">
+            <Button
+              v-if="composer.canAbort"
+              size="icon"
+              variant="secondary"
+              class="size-9 rounded-lg"
+              @click="emit('abort')"
+            >
+              <Square class="size-4 fill-current" />
+            </Button>
+            <Button
+              v-else
+              size="icon"
+              class="size-9 rounded-lg"
+              :disabled="!value.trim()"
+              @click="emit('submit')"
+            >
+              <SendHorizontal class="size-4" />
+            </Button>
+          </div>
         </div>
 
-        <!-- 发送按钮 -->
-        <div class="absolute bottom-2.5 right-2.5">
+        <div class="mx-4 h-px bg-border/60" />
+
+        <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-2.5">
+          <div class="flex flex-wrap items-center gap-1">
+            <Select
+              :model-value="composer.selectedModel || autoModelValue"
+              @update:model-value="emit('selectModel', $event)"
+            >
+              <SelectTrigger
+                size="sm"
+                class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+              >
+                <Brain class="size-3.5 shrink-0" />
+                <span class="font-medium">{{ currentModelLabel }}</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem :value="autoModelValue">自动</SelectItem>
+                <SelectItem
+                  v-for="model in modelOptions"
+                  :key="model.value"
+                  :value="model.value"
+                >
+                  {{ model.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              :model-value="composer.selectedThinkingLevel || autoThinkingValue"
+              @update:model-value="emit('selectThinking', $event)"
+            >
+              <SelectTrigger
+                size="sm"
+                class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+              >
+                <Lightbulb class="size-3.5 shrink-0" />
+                <span class="font-medium">{{ currentThinkingLabel }}</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem :value="autoThinkingValue">自动</SelectItem>
+                <SelectItem
+                  v-for="thinking in thinkingOptions"
+                  :key="thinking.value"
+                  :value="thinking.value"
+                >
+                  {{ thinking.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              :model-value="composer.selectedAgent || noAgentValue"
+              @update:model-value="emit('selectAgent', $event)"
+            >
+              <SelectTrigger
+                size="sm"
+                class="h-8 max-w-[160px] gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+              >
+                <Bot class="size-3.5 shrink-0" />
+                <span class="truncate font-medium">{{ currentAgentLabel }}</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem :value="noAgentValue">直接模式</SelectItem>
+                <SelectItem
+                  v-for="agent in agents"
+                  :key="agent.name"
+                  :value="agent.name"
+                >
+                  {{ agent.displayName || agent.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <Button
-            size="icon"
-            class="size-8 rounded-md shadow-sm transition-all duration-200"
-            :class="isSending || !value.trim()
-              ? 'opacity-50'
-              : 'hover:scale-105'"
-            :disabled="isSending || !value.trim()"
-            @click="emit('submit')"
+            v-if="hasVisibleResources"
+            variant="ghost"
+            size="sm"
+            class="h-8 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground transition-all duration-200 hover:text-foreground"
+            :class="isResourcePickerVisible ? 'bg-accent/50 text-foreground' : ''"
+            @click="emit('toggleResourcePicker')"
           >
-            <Square v-if="isSending" class="size-4 fill-current" />
-            <SendHorizontal v-else class="size-4" />
+            <span class="font-semibold text-primary">/</span>
+            <span class="font-medium">资源</span>
           </Button>
         </div>
-
-        <!-- 拖拽提示 -->
-        <div
-          v-if="isDraggingOver"
-          class="absolute inset-0 flex items-center justify-center pointer-events-none"
-        >
-          <span class="text-xs font-medium text-primary bg-background/90 px-3 py-1 rounded-full shadow-sm border border-primary/20">
-            释放以插入文件路径
-          </span>
-        </div>
       </div>
 
-      <!-- 底部工具栏 -->
-      <div class="mt-3 flex items-center justify-between">
-        <!-- 左侧：选项选择器 -->
-        <div class="flex items-center gap-1">
-          <!-- 模型选择器 -->
-          <Select
-            :model-value="composer.selectedModel || autoModelValue"
-            @update:model-value="emit('selectModel', $event)"
-          >
-            <SelectTrigger
-              size="sm"
-              class="h-7 gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-md transition-all duration-200"
-            >
-              <Brain class="size-3.5 shrink-0" />
-              <span class="font-medium">{{ currentModelLabel }}</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem :value="autoModelValue">Auto</SelectItem>
-              <SelectItem
-                v-for="model in modelOptions"
-                :key="model.value"
-                :value="model.value"
-              >
-                {{ model.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          <!-- 思考级别选择器 -->
-          <Select
-            :model-value="composer.selectedThinkingLevel || autoThinkingValue"
-            @update:model-value="emit('selectThinking', $event)"
-          >
-            <SelectTrigger
-              size="sm"
-              class="h-7 gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-md transition-all duration-200"
-            >
-              <Lightbulb class="size-3.5 shrink-0" />
-              <span class="font-medium">{{ currentThinkingLabel }}</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem :value="autoThinkingValue">Auto</SelectItem>
-              <SelectItem
-                v-for="thinking in thinkingOptions"
-                :key="thinking.value"
-                :value="thinking.value"
-              >
-                {{ thinking.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          <!-- Agent选择器 -->
-          <Select
-            :model-value="composer.selectedAgent || noAgentValue"
-            @update:model-value="emit('selectAgent', $event)"
-          >
-            <SelectTrigger
-              size="sm"
-              class="h-7 max-w-[120px] gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-md transition-all duration-200"
-            >
-              <Bot class="size-3.5 shrink-0" />
-              <span class="truncate font-medium">{{ currentAgentLabel }}</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem :value="noAgentValue">Direct</SelectItem>
-              <SelectItem
-                v-for="agent in agents"
-                :key="agent.name"
-                :value="agent.name"
-              >
-                {{ agent.displayName || agent.name }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <!-- 右侧：资源选择按钮 -->
-        <Button
-          variant="ghost"
-          size="sm"
-          class="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground rounded-md transition-all duration-200"
-          :class="isResourcePickerVisible ? 'bg-accent/50 text-foreground' : ''"
-          @click="emit('toggleResourcePicker')"
-        >
-          <span class="text-primary font-semibold">/</span>
-          <span class="font-medium">Resources</span>
-        </Button>
-      </div>
-
-      <!-- 资源选择器（展开/收起） -->
       <transition
         enter-active-class="transition duration-200 ease-out"
         enter-from-class="-translate-y-2 opacity-0"
@@ -289,6 +299,7 @@ const currentAgentLabel = computed(() => {
       >
         <WorkbenchResourcePicker
           v-if="isResourcePickerVisible"
+          class="mt-2"
           :commands="commands"
           :has-visible-resources="hasVisibleResources"
           :prompts="prompts"

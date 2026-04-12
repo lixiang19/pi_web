@@ -1,16 +1,25 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowDown, Brain } from "lucide-vue-next";
 
 import ChatMessageItem from "@/components/chat/ChatMessageItem.vue";
+import AskCard from "@/components/chat/AskCard.vue";
+import ChatProcessGroup from "@/components/chat/ChatProcessGroup.vue";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { ChatMessage, SessionSummary } from "@/lib/types";
-
+import type {
+  AskQuestionAnswer,
+  AskInteractiveRequest,
+  ChatMessage,
+  ContentBlock,
+  SessionSummary,
+  TextContentBlock,
+} from "@/lib/types";
 const props = defineProps<{
   activeDraftParentSessionId?: string | undefined;
   activeSessionId: string;
   hasMoreAbove: boolean;
+  interactiveRequests: AskInteractiveRequest[];
   isDraftSession: boolean;
   isLoadingOlder: boolean;
   messages: ChatMessage[];
@@ -18,14 +27,98 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  dismissAsk: [askId: string];
   loadEarlier: [];
+  submitAsk: [askId: string, answers: AskQuestionAnswer[]];
 }>();
 
 const messageScrollArea = ref<HTMLElement | { $el?: Element } | null>(null);
 const showJumpToBottom = ref(false);
 const isPinnedToBottom = ref(true);
+const hasExpandedHistory = ref(false);
 
 let boundMessageViewport: HTMLElement | null = null;
+
+const getMessageBlocks = (message: ChatMessage): ContentBlock[] =>
+  typeof message.content === "string"
+    ? [{ type: "text", text: message.content }]
+    : message.content;
+
+const hasTextBody = (message: ChatMessage) =>
+  getMessageBlocks(message).some(
+    (block): block is TextContentBlock =>
+      block.type === "text" && Boolean(block.text?.trim()),
+  );
+
+const messageKey = (message: ChatMessage, index: number) =>
+  `${message.timestamp || "no-ts"}-${message.role}-${message.localId || index}-${index}`;
+
+type MessageRound = {
+  key: string;
+  userMessage: ChatMessage;
+  processMessages: ChatMessage[];
+  finalMessage: ChatMessage | null;
+};
+
+const conversationLayout = computed(() => {
+  const rounds: MessageRound[] = [];
+  const allMessages = props.messages;
+  const defaultStartIndex = allMessages.findLastIndex((message) => message.role === "user");
+  const expandedStartIndex = allMessages.findIndex((message) => message.role === "user");
+  const startIndex = hasExpandedHistory.value
+    ? expandedStartIndex
+    : defaultStartIndex;
+  const alignedMessages = startIndex >= 0 ? allMessages.slice(startIndex) : allMessages;
+  const preludeMessages = alignedMessages.length > 0 && alignedMessages[0]?.role !== "user"
+    ? alignedMessages
+    : [] as ChatMessage[];
+
+  let cursor = preludeMessages.length;
+  while (cursor < alignedMessages.length) {
+    const userMessage = alignedMessages[cursor];
+    if (!userMessage || userMessage.role !== "user") {
+      cursor += 1;
+      continue;
+    }
+
+    let nextUserIndex = cursor + 1;
+    while (nextUserIndex < alignedMessages.length && alignedMessages[nextUserIndex]?.role !== "user") {
+      nextUserIndex += 1;
+    }
+
+    const roundMessages = alignedMessages.slice(cursor + 1, nextUserIndex);
+    let finalMessage: ChatMessage | null = null;
+    let finalMessageIndex = -1;
+
+    for (let index = roundMessages.length - 1; index >= 0; index -= 1) {
+      const message = roundMessages[index];
+      if (message?.role === "assistant" && hasTextBody(message)) {
+        finalMessage = message;
+        finalMessageIndex = index;
+        break;
+      }
+    }
+
+    const processMessages =
+      finalMessageIndex >= 0
+        ? roundMessages.filter((_, index) => index !== finalMessageIndex)
+        : roundMessages;
+
+    rounds.push({
+      key: messageKey(userMessage, cursor),
+      userMessage,
+      processMessages,
+      finalMessage,
+    });
+
+    cursor = nextUserIndex;
+  }
+
+  return {
+    preludeMessages,
+    rounds,
+  };
+});
 
 const resolveMessageViewport = () => {
   const host = messageScrollArea.value;
@@ -93,6 +186,7 @@ const loadEarlierMessages = async () => {
   const previousHeight = viewport?.scrollHeight ?? 0;
   const previousTop = viewport?.scrollTop ?? 0;
 
+  hasExpandedHistory.value = true;
   emit("loadEarlier");
   await nextTick();
 
@@ -107,6 +201,7 @@ const loadEarlierMessages = async () => {
 watch(
   () => props.activeSessionId,
   async () => {
+    hasExpandedHistory.value = false;
     await bindMessageViewport();
     scrollToBottom("auto");
   },
@@ -115,6 +210,7 @@ watch(
 watch(
   () => props.activeDraftParentSessionId,
   async () => {
+    hasExpandedHistory.value = false;
     await bindMessageViewport();
     scrollToBottom("auto");
   },
@@ -137,7 +233,7 @@ watch(
 );
 
 watch(
-  () => props.messages.at(-1)?.text || "",
+  () => JSON.stringify(props.messages.at(-1)?.content ?? ""),
   async () => {
     await nextTick();
     if (isPinnedToBottom.value || props.status === "streaming") {
@@ -146,6 +242,16 @@ watch(
     }
 
     syncScrollState();
+  },
+);
+
+watch(
+  () => props.interactiveRequests.length,
+  async (nextLength, previousLength) => {
+    await nextTick();
+    if (nextLength > previousLength) {
+      scrollToBottom("auto");
+    }
   },
 );
 
@@ -164,7 +270,7 @@ onBeforeUnmount(() => {
     <ScrollArea ref="messageScrollArea" class="h-full">
       <div class="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-4">
         <div
-          v-if="messages.length === 0"
+          v-if="messages.length === 0 && interactiveRequests.length === 0"
           class="flex flex-col items-center justify-center gap-4 py-20 text-center"
         >
           <div class="rounded-full border border-border p-4 text-muted-foreground">
@@ -172,10 +278,10 @@ onBeforeUnmount(() => {
           </div>
           <div class="space-y-1">
             <h3 class="text-lg font-semibold text-foreground">
-              {{ isDraftSession ? "New Session" : "No Messages" }}
+              {{ isDraftSession ? "开始新的会话" : "暂无消息" }}
             </h3>
             <p class="mx-auto max-w-xs text-sm text-muted-foreground">
-              Type a message to start the conversation, or use "/" for commands.
+              发送一条消息开始对话，或通过资源面板插入 prompt、skill 与 command。
             </p>
           </div>
         </div>
@@ -188,14 +294,42 @@ onBeforeUnmount(() => {
               :disabled="isLoadingOlder"
               @click="loadEarlierMessages"
             >
-              {{ isLoadingOlder ? "Loading..." : "Load earlier messages" }}
+              {{ isLoadingOlder ? "加载中..." : "加载更早消息" }}
             </Button>
           </div>
-          <ChatMessageItem
-            v-for="message in messages"
-            :key="message.id"
-            :message="message"
+
+          <ChatProcessGroup
+            v-if="conversationLayout.preludeMessages.length"
+            :messages="conversationLayout.preludeMessages"
           />
+
+          <template v-for="round in conversationLayout.rounds" :key="round.key">
+            <ChatMessageItem :message="round.userMessage" />
+
+            <ChatProcessGroup
+              v-if="round.processMessages.length"
+              :messages="round.processMessages"
+            />
+
+            <ChatMessageItem
+              v-if="round.finalMessage"
+              :message="round.finalMessage"
+              :is-final-assistant-message="true"
+            />
+          </template>
+
+          <div
+            v-if="interactiveRequests.length"
+            class="space-y-3"
+          >
+            <AskCard
+              v-for="request in interactiveRequests"
+              :key="request.id"
+              :request="request"
+              @dismiss="emit('dismissAsk', request.id)"
+              @submit="emit('submitAsk', request.id, $event)"
+            />
+          </div>
         </template>
       </div>
     </ScrollArea>
