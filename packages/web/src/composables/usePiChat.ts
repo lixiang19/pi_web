@@ -58,8 +58,8 @@ const createLocalId = () =>
 const fallbackSessionTitle = "新会话";
 const draftStorageKey = "pi-web.chat-composer.drafts.v1";
 const newSessionDraftKey = "__pi_new_session__";
-const INITIAL_MESSAGE_WINDOW = 80;
-const MESSAGE_WINDOW_INCREMENT = 80;
+const INITIAL_ROUND_WINDOW = 3;
+const ROUND_WINDOW_INCREMENT = 3;
 
 const createEmptyResources = (): ResourceCatalogResponse => ({
   prompts: [],
@@ -127,31 +127,32 @@ const persistDraftMap = (drafts: Record<string, string>) => {
 const getDraftKey = (sessionId: string | null | undefined) =>
   sessionId || newSessionDraftKey;
 
+const countConversationRounds = (messages: ChatMessage[]) =>
+  messages.filter((message) => message.role === "user").length;
 const createHistoryMeta = (
-  loadedCount: number,
-  totalCount: number,
-  limit = INITIAL_MESSAGE_WINDOW,
+  loadedRounds: number,
+  totalRounds: number,
+  roundWindow = INITIAL_ROUND_WINDOW,
 ): SessionHistoryMeta => ({
-  loadedCount,
-  totalCount,
-  hasMoreAbove: totalCount > loadedCount,
-  limit,
+  loadedRounds,
+  totalRounds,
+  hasMoreAbove: totalRounds > loadedRounds,
+  roundWindow,
 });
-
 const expandVisibleHistoryMeta = (
   historyMeta: SessionHistoryMeta,
-  visibleCount: number,
+  visibleMessages: ChatMessage[],
 ) => {
-  const hiddenCount = Math.max(
-    historyMeta.totalCount - historyMeta.loadedCount,
+  const visibleRounds = countConversationRounds(visibleMessages);
+  const hiddenRounds = Math.max(
+    historyMeta.totalRounds - historyMeta.loadedRounds,
     0,
   );
-  const totalCount = hiddenCount + visibleCount;
-
+  const totalRounds = hiddenRounds + visibleRounds;
   return createHistoryMeta(
-    visibleCount,
-    totalCount,
-    Math.max(historyMeta.limit, visibleCount),
+    visibleRounds,
+    totalRounds,
+    Math.max(historyMeta.roundWindow, visibleRounds || historyMeta.roundWindow),
   );
 };
 
@@ -291,12 +292,18 @@ export function usePiChat() {
   );
   const activeHistoryMeta = computed<SessionHistoryMeta>(() => {
     if (!activeSessionId.value) {
-      return createHistoryMeta(messages.value.length, messages.value.length);
+      return createHistoryMeta(
+        countConversationRounds(messages.value),
+        countConversationRounds(messages.value),
+      );
     }
 
     return (
       getCachedSessionSnapshot(activeSessionId.value)?.historyMeta ??
-      createHistoryMeta(messages.value.length, messages.value.length)
+      createHistoryMeta(
+        countConversationRounds(messages.value),
+        countConversationRounds(messages.value),
+      )
     );
   });
 
@@ -388,7 +395,7 @@ export function usePiChat() {
       messages: [...snapshot.messages, message],
       historyMeta: expandVisibleHistoryMeta(
         snapshot.historyMeta,
-        snapshot.messages.length + 1,
+        [...snapshot.messages, message],
       ),
       updatedAt: Math.max(snapshot.updatedAt, message.timestamp || Date.now()),
     }));
@@ -801,10 +808,10 @@ export function usePiChat() {
     currentStreamMessageLocalId = "";
 
     const streamParams = new URLSearchParams();
-    const currentLimit =
-      getCachedSessionSnapshot(sessionId)?.historyMeta.limit ||
-      INITIAL_MESSAGE_WINDOW;
-    streamParams.set("limit", String(currentLimit));
+    const currentRounds =
+      getCachedSessionSnapshot(sessionId)?.historyMeta.roundWindow ||
+      INITIAL_ROUND_WINDOW;
+    streamParams.set("rounds", String(currentRounds));
     eventSource = new EventSource(
       `/api/sessions/${sessionId}/stream?${streamParams.toString()}`,
     );
@@ -891,7 +898,7 @@ export function usePiChat() {
               messages: [...snapshot.messages, finalMessage],
               historyMeta: expandVisibleHistoryMeta(
                 snapshot.historyMeta,
-                snapshot.messages.length + 1,
+                [...snapshot.messages, finalMessage],
               ),
               status: "idle",
               updatedAt: finalMessage.timestamp || Date.now(),
@@ -993,12 +1000,12 @@ export function usePiChat() {
       return;
     }
 
-    const nextLimit = Math.min(
-      currentSnapshot.historyMeta.totalCount,
-      currentSnapshot.historyMeta.limit + MESSAGE_WINDOW_INCREMENT,
+    const nextRounds = Math.min(
+      currentSnapshot.historyMeta.totalRounds,
+      currentSnapshot.historyMeta.roundWindow + ROUND_WINDOW_INCREMENT,
     );
 
-    if (nextLimit <= currentSnapshot.historyMeta.loadedCount) {
+    if (nextRounds <= currentSnapshot.historyMeta.loadedRounds) {
       return;
     }
 
@@ -1008,7 +1015,7 @@ export function usePiChat() {
     };
 
     try {
-      const snapshot = await getSession(sessionId, { limit: nextLimit });
+      const snapshot = await getSession(sessionId, { rounds: nextRounds });
       syncSessions(snapshot);
       if (activeSessionId.value === sessionId) {
         messages.value = snapshot.messages;
@@ -1185,7 +1192,7 @@ export function usePiChat() {
             snapshot.historyMeta,
             snapshot.messages.filter(
               (message) => message.localId !== optimisticMessageLocalId,
-            ).length,
+            ),
           ),
           status: "error",
         }));
@@ -1360,7 +1367,7 @@ export function usePiChat() {
           ? caughtError.message
           : String(caughtError);
       const snapshot = await getSession(sessionId, {
-        limit: getCachedSessionSnapshot(sessionId)?.historyMeta.limit,
+        rounds: getCachedSessionSnapshot(sessionId)?.historyMeta.roundWindow,
       });
       syncSessions(snapshot);
       if (activeSessionId.value === sessionId) {
@@ -1397,7 +1404,7 @@ export function usePiChat() {
           ? caughtError.message
           : String(caughtError);
       const snapshot = await getSession(sessionId, {
-        limit: getCachedSessionSnapshot(sessionId)?.historyMeta.limit,
+        rounds: getCachedSessionSnapshot(sessionId)?.historyMeta.roundWindow,
       });
       syncSessions(snapshot);
       if (activeSessionId.value === sessionId) {
@@ -1437,7 +1444,7 @@ export function usePiChat() {
           ? caughtError.message
           : String(caughtError);
       const snapshot = await getSession(sessionId, {
-        limit: getCachedSessionSnapshot(sessionId)?.historyMeta.limit,
+        rounds: getCachedSessionSnapshot(sessionId)?.historyMeta.roundWindow,
       });
       syncSessions(snapshot);
       if (activeSessionId.value === sessionId) {

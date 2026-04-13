@@ -19,3 +19,5 @@ export const isPiResourceIsolationEnabled = (): boolean =>
 
 export const createPiAgentScopeSettingsManager = (cwd: string): SettingsManager =>
   SettingsManager.create(cwd, getScopedAgentDir());
+
+export const getPiAgentScopeAgentDir = (): string | undefined => getScopedAgentDir();

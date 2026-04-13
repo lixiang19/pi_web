@@ -48,7 +48,7 @@ const createLocalId = () =>
 const fallbackSessionTitle = "新会话";
 const draftStorageKey = "pi-web.chat-composer.drafts.v1";
 const newSessionDraftKey = "__pi_new_session__";
-const INITIAL_MESSAGE_WINDOW = 80;
+const INITIAL_ROUND_WINDOW = 3;
 
 const createEmptyResources = (): ResourceCatalogResponse => ({
   prompts: [],
@@ -113,31 +113,32 @@ const persistDraftMap = (drafts: Record<string, string>) => {
 const getDraftKey = (sessionId: string | null | undefined) =>
   sessionId || newSessionDraftKey;
 
+const countConversationRounds = (messages: ChatMessage[]) =>
+  messages.filter((message) => message.role === "user").length;
 const createHistoryMeta = (
-  loadedCount: number,
-  totalCount: number,
-  limit = INITIAL_MESSAGE_WINDOW,
+  loadedRounds: number,
+  totalRounds: number,
+  roundWindow = INITIAL_ROUND_WINDOW,
 ): SessionHistoryMeta => ({
-  loadedCount,
-  totalCount,
-  hasMoreAbove: totalCount > loadedCount,
-  limit,
+  loadedRounds,
+  totalRounds,
+  hasMoreAbove: totalRounds > loadedRounds,
+  roundWindow,
 });
-
 const expandVisibleHistoryMeta = (
   historyMeta: SessionHistoryMeta,
-  visibleCount: number,
+  visibleMessages: ChatMessage[],
 ) => {
-  const hiddenCount = Math.max(
-    historyMeta.totalCount - historyMeta.loadedCount,
+  const visibleRounds = countConversationRounds(visibleMessages);
+  const hiddenRounds = Math.max(
+    historyMeta.totalRounds - historyMeta.loadedRounds,
     0,
   );
-  const totalCount = hiddenCount + visibleCount;
-
+  const totalRounds = hiddenRounds + visibleRounds;
   return createHistoryMeta(
-    visibleCount,
-    totalCount,
-    Math.max(historyMeta.limit, visibleCount),
+    visibleRounds,
+    totalRounds,
+    Math.max(historyMeta.roundWindow, visibleRounds || historyMeta.roundWindow),
   );
 };
 
@@ -348,7 +349,7 @@ const appendMessageToSession = (sessionId: string, message: ChatMessage) => {
     messages: [...snapshot.messages, message],
     historyMeta: expandVisibleHistoryMeta(
       snapshot.historyMeta,
-      snapshot.messages.length + 1,
+      [...snapshot.messages, message],
     ),
     updatedAt: Math.max(snapshot.updatedAt, message.timestamp || Date.now()),
   }));

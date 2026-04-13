@@ -37,9 +37,8 @@ import { useProjectWorktrees } from "@/composables/useProjectWorktrees";
 import { buildSessionProjects } from "@/lib/session-sidebar";
 import type { SessionSummary } from "@/lib/types";
 
-const MAX_RECENT_SESSIONS = 10;
 const DEFAULT_VISIBLE_SESSION_COUNT = 3;
-const RECENT_GROUP_KEY = "__recent__";
+const RECENT_SESSION_STORAGE_KEY = "pi.sessions.recent";
 
 const router = useRouter();
 
@@ -69,7 +68,6 @@ const collapsedProjects = useLocalStorage<Record<string, boolean>>(
   "pi.sessions.projectCollapse",
   {},
 );
-const recentSessionIds = useLocalStorage<string[]>("pi.sessions.recent", []);
 
 const projectState = useProjects();
 const {
@@ -105,17 +103,6 @@ const projects = computed(() => {
   });
 });
 
-const recentSessions = computed(() => {
-  const sessionMap = new Map(
-    props.sessions.map((session) => [session.id, session]),
-  );
-
-  return recentSessionIds.value
-    .map((id) => sessionMap.get(id))
-    .filter((session): session is SessionSummary => Boolean(session))
-    .filter((session) => !session.archived)
-    .slice(0, MAX_RECENT_SESSIONS);
-});
 
 const isProjectCollapsed = (projectId: string) =>
   collapsedProjects.value[projectId] === true;
@@ -148,11 +135,6 @@ const toggleGroupExpansion = (groupKey: string) => {
   expandedGroupKeys.value = [...expandedGroupKeys.value, groupKey];
 };
 
-const recordRecentSession = (sessionId: string) => {
-  const current = new Set(recentSessionIds.value);
-  current.delete(sessionId);
-  recentSessionIds.value = [sessionId, ...current].slice(0, MAX_RECENT_SESSIONS);
-};
 
 const openProjectDialog = () => {
   isProjectDialogOpen.value = true;
@@ -172,7 +154,6 @@ const toggleProject = (projectId: string) => {
 };
 
 const handleSelect = (sessionId: string) => {
-  recordRecentSession(sessionId);
   emit("select", sessionId);
 };
 
@@ -236,23 +217,13 @@ const findStoredProjectId = (projectRoot: string): string | null => {
   return stored?.id ?? null;
 };
 
-watch(
-  () => props.activeSessionId,
-  (sessionId) => {
-    if (sessionId) {
-      recordRecentSession(sessionId);
-    }
-  },
-  { immediate: true },
-);
 
 watch(
   () => props.sessions,
-  (sessions) => {
-    recentSessionIds.value = recentSessionIds.value.filter((sessionId) => {
-      const session = sessions.find((item) => item.id === sessionId);
-      return session && !session.archived;
-    });
+  () => {
+    if (editingSessionId.value && !props.sessions.some((item) => item.id === editingSessionId.value)) {
+      cancelRename();
+    }
   },
   { immediate: true, deep: true },
 );
@@ -270,6 +241,9 @@ watch(
 );
 
 onMounted(() => {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(RECENT_SESSION_STORAGE_KEY);
+  }
   void loadProjects().catch(() => undefined);
 });
 </script>
@@ -330,49 +304,12 @@ onMounted(() => {
           <Input
             v-model="searchQuery"
             placeholder="搜索会话..."
-            class="h-8 rounded-md border-none bg-sidebar-accent/50 pl-9 text-[13px] shadow-none transition-colors placeholder:text-sidebar-foreground/30 hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:ring-1"
+            class="h-8 rounded-md border border-transparent bg-sidebar-accent/50 pl-9 text-[13px] shadow-none transition-all placeholder:text-sidebar-foreground/30 hover:bg-sidebar-accent focus-visible:border-sidebar-ring/50 focus-visible:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring/30"
           />
         </div>
       </SidebarHeader>
 
       <SidebarContent class="px-2">
-        <SidebarGroup v-if="recentSessions.length > 0 && !isSearching">
-          <SidebarGroupLabel class="px-2">最近访问</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SessionSidebarSessionNode
-                v-for="session in getVisibleNodes(recentSessions, RECENT_GROUP_KEY)"
-                :key="`recent-${session.id}`"
-                :node="{ session, children: [] }"
-                :depth="0"
-                :active-session-id="activeSessionId"
-                :editing-session-id="editingSessionId"
-                :editing-title="editingTitle"
-                :expanded-parent-ids="[]"
-                @select="handleSelect"
-                @prefetch="emit('prefetch', $event)"
-                @start-rename="startRename"
-                @update-editing-title="updateEditingTitle"
-                @save-rename="saveRename"
-                @cancel-rename="cancelRename"
-                @remove="removeSession"
-              />
-            </SidebarMenu>
-            <div
-              v-if="getHiddenCount(recentSessions.length, RECENT_GROUP_KEY) > 0"
-              class="px-2 pt-1"
-            >
-              <Button
-                variant="ghost"
-                size="sm"
-                class="h-7 px-2 text-[12px] text-sidebar-foreground/60 hover:text-sidebar-foreground"
-                @click="toggleGroupExpansion(RECENT_GROUP_KEY)"
-              >
-                展开更多（还有 {{ getHiddenCount(recentSessions.length, RECENT_GROUP_KEY) }} 条）
-              </Button>
-            </div>
-          </SidebarGroupContent>
-        </SidebarGroup>
 
         <SidebarGroup>
           <SidebarGroupLabel class="px-2">
@@ -390,9 +327,9 @@ onMounted(() => {
                     <SidebarMenuButton
                       as-child
                       :is-active="false"
-                      class="min-w-0 flex-1 hover:bg-sidebar-accent/40"
+                      class="min-w-0 flex-1 pl-1.5 pr-2 hover:bg-sidebar-accent/40"
                     >
-                      <button type="button" class="flex w-full items-center gap-2" @click="toggleProject(project.id)">
+                      <button type="button" class="flex w-full items-center gap-1.5" @click="toggleProject(project.id)">
                         <component
                           :is="isProjectCollapsed(project.id) ? ChevronRight : ChevronDown"
                           class="size-3.5 shrink-0 text-sidebar-foreground/40 transition-transform"
@@ -438,7 +375,7 @@ onMounted(() => {
                     </div>
                   </div>
 
-                  <div v-if="!isProjectCollapsed(project.id)" class="mt-0.5 ml-1">
+                  <div v-if="!isProjectCollapsed(project.id)" class="mt-0.5">
                     <div
                       v-if="project.groups.length === 0"
                       class="mx-2 rounded-md bg-sidebar-accent/20 px-3 py-3"
@@ -450,7 +387,7 @@ onMounted(() => {
                       <!-- worktree / archived group header -->
                       <div
                         v-if="group.kind !== 'project-root'"
-                        class="group/gh flex items-center justify-between px-2 py-1.5"
+                        class="group/gh flex items-center justify-between pl-5 pr-2 py-1.5"
                       >
                         <span class="text-[10px] font-bold tracking-wider text-sidebar-foreground/25 uppercase">
                           {{ group.label }}

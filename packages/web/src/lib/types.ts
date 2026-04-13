@@ -183,10 +183,10 @@ export interface ChatMessage {
 }
 
 export interface SessionHistoryMeta {
-  loadedCount: number;
-  totalCount: number;
+  loadedRounds: number;
+  totalRounds: number;
   hasMoreAbove: boolean;
-  limit: number;
+  roundWindow: number;
 }
 
 export interface ChatComposerState {

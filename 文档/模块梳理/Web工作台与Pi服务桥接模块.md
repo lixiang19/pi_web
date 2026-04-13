@@ -904,8 +904,8 @@ ProjectFilePanel(rootDir)
 ### 当前链路
 ```text
 RIDGE_PI_ISOLATED=1
-  -> server createPiAgentScopeSettingsManager(cwd)
-  -> createAgentSession / DefaultResourceLoader 共用隔离 agentDir
+  -> server createPiAgentScopeSettingsManager(cwd) + getPiAgentScopeAgentDir()
+  -> DefaultResourceLoader 显式吃隔离 agentDir；createAgentSession 吃同作用域 settingsManager
   -> 主会话、恢复会话、临时 catalog、子代理都不再读取全局 ~/.pi/agent 资源
   -> 项目 cwd/.pi 资源仍然保留
   -> AuthStorage / ModelRegistry / SessionManager 继续使用正常全局链路
@@ -913,7 +913,7 @@ RIDGE_PI_ISOLATED=1
 
 ### 设计结论
 - 资源隔离和运行时凭证隔离必须拆开；否则“想禁全局 skill”会误伤登录和模型可用性。
-- 隔离开关必须下沉到 `SettingsManager(agentDir)` 这一条真实 Pi runtime 边界，`DefaultResourceLoader` 和 `createAgentSession` 必须共享同一作用域，不能只隔离资源目录扫描。
+- 隔离开关真实边界不是只换 `SettingsManager(agentDir)`；`DefaultResourceLoader` 还要显式传同一个 `agentDir`，否则会自己回落到 `getAgentDir()`，继续扫全局 `~/.pi/agent`。
 - 子代理 runtime 也必须跟随同一开关；否则主会话隔离，子代理又从全局吃 skill，链路会重新漏回去。
 
 ### 受影响文件

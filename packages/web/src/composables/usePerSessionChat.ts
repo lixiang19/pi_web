@@ -111,11 +111,17 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
 
   const activeHistoryMeta = computed(() => {
     if (!sessionIdRef.value) {
-      return core.createHistoryMeta(messages.value.length, messages.value.length);
+      return core.createHistoryMeta(
+        messages.value.filter((message) => message.role === "user").length,
+        messages.value.filter((message) => message.role === "user").length,
+      );
     }
     return (
       core.getCachedSessionSnapshot(sessionIdRef.value)?.historyMeta ??
-      core.createHistoryMeta(messages.value.length, messages.value.length)
+      core.createHistoryMeta(
+        messages.value.filter((message) => message.role === "user").length,
+        messages.value.filter((message) => message.role === "user").length,
+      )
     );
   });
 
@@ -171,10 +177,10 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     currentStreamMessageLocalId = "";
 
     const streamParams = new URLSearchParams();
-    const currentLimit =
-      core.getCachedSessionSnapshot(sid)?.historyMeta.limit ||
-      80;
-    streamParams.set("limit", String(currentLimit));
+    const currentRounds =
+      core.getCachedSessionSnapshot(sid)?.historyMeta.roundWindow ||
+      3;
+    streamParams.set("rounds", String(currentRounds));
     eventSource = new EventSource(
       `/api/sessions/${sid}/stream?${streamParams.toString()}`,
     );
@@ -265,7 +271,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
               messages: [...snapshot.messages, finalMessage],
               historyMeta: core.expandVisibleHistoryMeta(
                 snapshot.historyMeta,
-                snapshot.messages.length + 1,
+                [...snapshot.messages, finalMessage],
               ),
               status: "idle",
               updatedAt: finalMessage.timestamp || Date.now(),
@@ -543,7 +549,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
             snapshot.historyMeta,
             snapshot.messages.filter(
               (message) => message.localId !== optimisticMessageLocalId,
-            ).length,
+            ),
           ),
           status: "error",
         }));
@@ -586,12 +592,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
       return;
     }
 
-    const nextLimit = Math.min(
-      currentSnapshot.historyMeta.totalCount,
-      currentSnapshot.historyMeta.limit + 80,
+    const nextRounds = Math.min(
+      currentSnapshot.historyMeta.totalRounds,
+      currentSnapshot.historyMeta.roundWindow + 3,
     );
 
-    if (nextLimit <= currentSnapshot.historyMeta.loadedCount) {
+    if (nextRounds <= currentSnapshot.historyMeta.loadedRounds) {
       return;
     }
 
@@ -602,7 +608,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
 
     try {
       // getSession already imported
-      const snapshot = await getSession(sid, { limit: nextLimit });
+      const snapshot = await getSession(sid, { rounds: nextRounds });
       core.syncSessions(snapshot);
       messages.value = snapshot.messages;
     } finally {
@@ -651,7 +657,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
           : String(caughtError);
       // getSession already imported
       const snapshot = await getSession(sid, {
-        limit: core.getCachedSessionSnapshot(sid)?.historyMeta.limit,
+        rounds: core.getCachedSessionSnapshot(sid)?.historyMeta.roundWindow,
       });
       core.syncSessions(snapshot);
       messages.value = snapshot.messages;
@@ -687,7 +693,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
           : String(caughtError);
       // getSession already imported
       const snapshot = await getSession(sid, {
-        limit: core.getCachedSessionSnapshot(sid)?.historyMeta.limit,
+        rounds: core.getCachedSessionSnapshot(sid)?.historyMeta.roundWindow,
       });
       core.syncSessions(snapshot);
       messages.value = snapshot.messages;
@@ -725,7 +731,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
           : String(caughtError);
       // getSession already imported
       const snapshot = await getSession(sid, {
-        limit: core.getCachedSessionSnapshot(sid)?.historyMeta.limit,
+        rounds: core.getCachedSessionSnapshot(sid)?.historyMeta.roundWindow,
       });
       core.syncSessions(snapshot);
       messages.value = snapshot.messages;

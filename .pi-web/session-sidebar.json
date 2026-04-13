@@ -88,6 +88,24 @@
       "updatedAt": 1776014162105,
       "thinkingLevel": "medium",
       "model": "fireworks/accounts/fireworks/routers/kimi-k2p5-turbo"
+    },
+    "7ae91ea6-ae61-4aed-a0dc-fa0e81cdd79e": {
+      "title": "新会话",
+      "cwd": "/Users/lixiang/Documents/myCode/AuroraPlatformWeb",
+      "sessionFile": "/Users/lixiang/.pi/agent/sessions/--Users-lixiang-Documents-myCode-AuroraPlatformWeb--/2026-04-13T11-30-28-517Z_7ae91ea6-ae61-4aed-a0dc-fa0e81cdd79e.jsonl",
+      "createdAt": 1776079828632,
+      "updatedAt": 1776079841436,
+      "model": "timicc/gpt-5.4-mini",
+      "thinkingLevel": "medium"
+    },
+    "efbcbff9-78f8-45a8-bf5e-771952047570": {
+      "title": "新会话",
+      "cwd": "/Users/lixiang/Documents/myCode/AuroraPlatformWeb",
+      "sessionFile": "/Users/lixiang/.pi/agent/sessions/--Users-lixiang-Documents-myCode-AuroraPlatformWeb--/2026-04-13T18-01-56-476Z_efbcbff9-78f8-45a8-bf5e-771952047570.jsonl",
+      "createdAt": 1776103316479,
+      "updatedAt": 1776103338834,
+      "thinkingLevel": "medium",
+      "model": "timicc/gpt-5.4-mini"
     }
   }
 }

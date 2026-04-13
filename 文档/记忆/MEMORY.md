@@ -9,7 +9,7 @@
 - [Agent注册表] agent 系统不能只依赖磁盘发现，必须先有内置默认 agent，再让 project/user 配置覆盖；否则 schema 一收紧，功能会出现“系统支持但列表为空”的假故障
 - [输入安全] 所有服务端写入必须白名单校验，防止原型污染（__proto__ 注入）
 - [目录边界] 工作区文件树与 Home 目录项目选择必须拆成两个接口，不能共用一套 root 校验（安全语义不同）
-- [Pi资源隔离] 临时禁全局 prompts/skills/extensions/themes/AGENTS 时，`createAgentSession` 和 `DefaultResourceLoader` 必须共用同一个隔离 `SettingsManager(agentDir)`；只保留 auth/models/sessions 走全局，避免一半隔离一半漏回 `~/.pi/agent`
+- [Pi资源隔离] 临时禁全局 prompts/skills/extensions/themes/AGENTS 时，不能只换 `SettingsManager(agentDir)`；`DefaultResourceLoader` 也必须显式传同一个隔离 `agentDir`，否则会回落 `getAgentDir()` 继续扫 `~/.pi/agent`。auth/models/sessions 可继续走全局。
 - [项目真源] 已添加项目必须是真源；会话列表、文件树、worktree 归属都从项目列表收敛，禁止再从 session 或 server 启动目录反推项目边界
 
 ## 规范与教训
@@ -42,3 +42,6 @@
 - [会话流桥接] 恢复会话能显示但发送后消息不刷新，优先检查 server 是否真正绑定了 `AgentSession.subscribe()`；如果 SSE 只发 `status` 不发 runtime message 事件，前端恢复链路会正常，发送链路一定失效
 - [乐观消息去重] Pi SDK 会给 user message 也发 `message_start/message_end`，Web 端已有乐观用户消息时，server SSE 桥接必须过滤这两类 user 事件，否则每次发送都会重复一条 user 消息
 - [Git能力探测] Git 面板显隐不能靠 `getGitStatus()` 报错倒推；要单独提供轻量 `isGitRepository` 探测链路，把“能力判断”和“状态读取”拆开
+- [消息可见性] 多轮会话的历史折叠必须是显式 UI 状态，不能把“最后一轮切片显示”藏在渲染默认值里；否则用户继续输入会误以为旧消息被删，但底层 session/jsonl 其实完整
+- [历史分页] 会话历史分页单位必须是 user 轮次，不是消息条数；工具消息/thinking/toolResult 会放大消息数，若按条数截窗，UI 与用户心智必然错位
+- [导航去重] 会话侧栏不要再维护“最近访问”这类二次导航；标签页已承担最近工作集语义，侧栏应只保留稳定信息架构（项目/搜索），否则状态重复、localStorage 重复、认知也重复

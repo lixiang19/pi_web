@@ -17,6 +17,10 @@ import type {
   SessionSummary,
   TextContentBlock,
 } from "@/lib/types";
+
+const COLLAPSED_ROUND_WINDOW = 3;
+const EXPAND_ROUND_STEP = 3;
+
 const props = defineProps<{
   activeDraftParentSessionId?: string | undefined;
   activeSessionId: string;
@@ -39,7 +43,7 @@ const emit = defineEmits<{
 const messageScrollArea = ref<HTMLElement | { $el?: Element } | null>(null);
 const showJumpToBottom = ref(false);
 const isPinnedToBottom = ref(true);
-const hasExpandedHistory = ref(false);
+const visibleRoundCount = ref(COLLAPSED_ROUND_WINDOW);
 
 let boundMessageViewport: HTMLElement | null = null;
 
@@ -64,18 +68,84 @@ type MessageRound = {
   finalMessage: ChatMessage | null;
 };
 
+const getUserMessageIndexes = (messages: ChatMessage[]) =>
+  messages.reduce<number[]>((indexes, message, index) => {
+    if (message.role === "user") {
+      indexes.push(index);
+    }
+    return indexes;
+  }, []);
+
+const loadedRoundCount = computed(() => getUserMessageIndexes(props.messages).length);
+const collapsedRoundCount = computed(() =>
+  Math.min(COLLAPSED_ROUND_WINDOW, loadedRoundCount.value || COLLAPSED_ROUND_WINDOW),
+);
+const hiddenLoadedRoundCount = computed(() =>
+  Math.max(loadedRoundCount.value - visibleRoundCount.value, 0),
+);
+const canExpandEarlierRounds = computed(() => hiddenLoadedRoundCount.value > 0);
+const canCollapseHistory = computed(
+  () => visibleRoundCount.value > collapsedRoundCount.value,
+);
+
+const findStartIndexForRecentRounds = (messages: ChatMessage[], roundCount: number) => {
+  const userMessageIndexes = getUserMessageIndexes(messages);
+  if (userMessageIndexes.length === 0) {
+    return 0;
+  }
+
+  const startRoundIndex = Math.max(0, userMessageIndexes.length - roundCount);
+  return startRoundIndex === 0 ? 0 : userMessageIndexes[startRoundIndex]!;
+};
+
+const preserveScrollWhile = async (updater: () => void | Promise<void>) => {
+  const viewport = resolveMessageViewport();
+  const previousHeight = viewport?.scrollHeight ?? 0;
+  const previousTop = viewport?.scrollTop ?? 0;
+
+  await updater();
+  await nextTick();
+
+  if (viewport) {
+    const heightDelta = viewport.scrollHeight - previousHeight;
+    viewport.scrollTop = previousTop + heightDelta;
+  }
+
+  syncScrollState();
+};
+
+const expandEarlierRounds = async () => {
+  if (!canExpandEarlierRounds.value) {
+    return;
+  }
+
+  await preserveScrollWhile(() => {
+    visibleRoundCount.value = Math.min(
+      loadedRoundCount.value,
+      visibleRoundCount.value + EXPAND_ROUND_STEP,
+    );
+  });
+};
+
+const collapseHistory = async () => {
+  if (!canCollapseHistory.value) {
+    return;
+  }
+
+  visibleRoundCount.value = collapsedRoundCount.value;
+  await nextTick();
+  syncScrollState();
+};
+
 const conversationLayout = computed(() => {
   const rounds: MessageRound[] = [];
   const allMessages = props.messages;
-  const defaultStartIndex = allMessages.findLastIndex((message) => message.role === "user");
-  const expandedStartIndex = allMessages.findIndex((message) => message.role === "user");
-  const startIndex = hasExpandedHistory.value
-    ? expandedStartIndex
-    : defaultStartIndex;
+  const startIndex = findStartIndexForRecentRounds(allMessages, visibleRoundCount.value);
   const alignedMessages = startIndex >= 0 ? allMessages.slice(startIndex) : allMessages;
-  const preludeMessages = alignedMessages.length > 0 && alignedMessages[0]?.role !== "user"
-    ? alignedMessages
-    : [] as ChatMessage[];
+  const preludeMessages =
+    alignedMessages.length > 0 && alignedMessages[0]?.role !== "user"
+      ? alignedMessages
+      : ([] as ChatMessage[]);
 
   let cursor = preludeMessages.length;
   while (cursor < alignedMessages.length) {
@@ -86,7 +156,10 @@ const conversationLayout = computed(() => {
     }
 
     let nextUserIndex = cursor + 1;
-    while (nextUserIndex < alignedMessages.length && alignedMessages[nextUserIndex]?.role !== "user") {
+    while (
+      nextUserIndex < alignedMessages.length &&
+      alignedMessages[nextUserIndex]?.role !== "user"
+    ) {
       nextUserIndex += 1;
     }
 
@@ -186,26 +259,15 @@ const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
 };
 
 const loadEarlierMessages = async () => {
-  const viewport = resolveMessageViewport();
-  const previousHeight = viewport?.scrollHeight ?? 0;
-  const previousTop = viewport?.scrollTop ?? 0;
-
-  hasExpandedHistory.value = true;
-  emit("loadEarlier");
-  await nextTick();
-
-  if (viewport) {
-    const heightDelta = viewport.scrollHeight - previousHeight;
-    viewport.scrollTop = previousTop + heightDelta;
-  }
-
-  syncScrollState();
+  await preserveScrollWhile(async () => {
+    emit("loadEarlier");
+  });
 };
 
 watch(
   () => props.activeSessionId,
   async () => {
-    hasExpandedHistory.value = false;
+    visibleRoundCount.value = COLLAPSED_ROUND_WINDOW;
     await bindMessageViewport();
     scrollToBottom("auto");
   },
@@ -214,7 +276,7 @@ watch(
 watch(
   () => props.activeDraftParentSessionId,
   async () => {
-    hasExpandedHistory.value = false;
+    visibleRoundCount.value = COLLAPSED_ROUND_WINDOW;
     await bindMessageViewport();
     scrollToBottom("auto");
   },
@@ -290,15 +352,37 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <template v-else>
-          <div v-if="hasMoreAbove" class="flex justify-center pb-4">
+          <div
+            v-if="canExpandEarlierRounds || canCollapseHistory || hasMoreAbove"
+            class="flex flex-wrap items-center justify-center gap-2 pb-4"
+          >
             <Button
+              v-if="canExpandEarlierRounds"
+              variant="ghost"
+              size="sm"
+              class="h-7 text-xs"
+              @click="expandEarlierRounds"
+            >
+              {{ `展开更早 ${Math.min(EXPAND_ROUND_STEP, hiddenLoadedRoundCount)} 轮` }}
+            </Button>
+            <Button
+              v-if="canCollapseHistory"
+              variant="ghost"
+              size="sm"
+              class="h-7 text-xs"
+              @click="collapseHistory"
+            >
+              折叠旧轮次
+            </Button>
+            <Button
+              v-if="hasMoreAbove"
               variant="ghost"
               size="sm"
               class="h-7 text-xs"
               :disabled="isLoadingOlder"
               @click="loadEarlierMessages"
             >
-              {{ isLoadingOlder ? "加载中..." : "加载更早消息" }}
+              {{ isLoadingOlder ? "加载中..." : "加载更早历史" }}
             </Button>
           </div>
 

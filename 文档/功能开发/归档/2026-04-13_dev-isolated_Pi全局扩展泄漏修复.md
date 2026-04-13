@@ -11,14 +11,14 @@
 
 ## 2. 根因
 
-- 服务端此前只把隔离目录传给了 `DefaultResourceLoader`。
-- 主会话、恢复会话、临时 catalog 会话、子代理会话在调用 `createAgentSession()` 时，仍然使用 `SettingsManager.create(cwd)`。
-- Pi runtime 扩展执行不只取决于资源扫描器，也取决于会话运行时持有的 `settingsManager`。两者作用域不一致时，隔离模式就会重新回落到全局 `~/.pi/agent`。
+- 服务端此前只把隔离目录传给了 `SettingsManager.create(cwd, agentDir)`。
+- `DefaultResourceLoader` 在多条链路里没有显式传 `agentDir`，会自己回落到 Pi 默认 `getAgentDir()`，继续扫描真实全局 `~/.pi/agent`。
+- 因此 settings 已隔离，资源发现却没隔离；全局扩展仍会漏进 runtime。
 
 ## 3. 修复
 
-- 在 `packages/server/src/pi-resource-scope.ts` 收敛出唯一入口 `createPiAgentScopeSettingsManager(cwd)`。
-- 让 `DefaultResourceLoader` 和 `createAgentSession()` 全部共用这一入口。
+- 在 `packages/server/src/pi-resource-scope.ts` 收敛出两类唯一入口：`createPiAgentScopeSettingsManager(cwd)` 与 `getPiAgentScopeAgentDir()`。
+- 让 `DefaultResourceLoader` 显式吃隔离 `agentDir`，同时让 session runtime 继续吃同作用域 `settingsManager`。
 - 覆盖四条链路：
   - 主会话创建
   - 会话恢复

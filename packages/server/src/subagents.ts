@@ -15,6 +15,7 @@ import {
 import { compileAgentPermission, createPermissionGateExtension } from './agent-permissions.js';
 import {
   createPiAgentScopeSettingsManager,
+  getPiAgentScopeAgentDir,
   isPiResourceIsolationEnabled,
 } from './pi-resource-scope.js';
 import { discoverAgents, normalizeThinkingLevel, type AgentConfigInternal } from './agents.js';
@@ -297,6 +298,7 @@ const runChildSession = async (
 
   const resourceLoader = new DefaultResourceLoader({
     cwd: parentRecord.cwd,
+    agentDir: getPiAgentScopeAgentDir(),
     settingsManager,
     appendSystemPromptOverride: (base: string[]) => [...base, childSystemPrompt],
     extensionFactories: [createPermissionGateExtension(() => permissionPolicy)],

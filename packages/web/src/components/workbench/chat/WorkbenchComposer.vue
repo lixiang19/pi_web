@@ -36,6 +36,7 @@ const props = defineProps<{
   currentProjectPath: string;
   hasVisibleResources: boolean;
   isResourcePickerVisible: boolean;
+  isDraftSession: boolean;
   isSending: boolean;
   modelOptions: Array<{ label: string; value: string }>;
   noAgentValue: string;
@@ -211,7 +212,7 @@ const currentAgentLabel = computed(() => {
   <div class="shrink-0 bg-background">
     <div class="mx-auto max-w-3xl px-4 py-3">
       <!-- 项目选择行 -->
-      <div class="mb-2 flex items-center gap-2">
+      <div v-if="isDraftSession" class="mb-2 flex items-center gap-2">
         <span class="shrink-0 text-xs text-muted-foreground">当前项目：</span>
         <Select
           :model-value="currentProjectPathValue || undefined"
@@ -239,7 +240,6 @@ const currentAgentLabel = computed(() => {
             </SelectItem>
           </SelectContent>
         </Select>
-        <!-- 状态提示 -->
         <span v-if="projectError" class="text-xs text-destructive">{{ projectError }}</span>
         <span v-else-if="isProjectLoading" class="text-xs text-muted-foreground/40">加载中...</span>
       </div>

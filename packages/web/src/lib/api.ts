@@ -83,13 +83,11 @@ export function getResources(options?: { cwd?: string; sessionId?: string }) {
   );
 }
 
-export function getSession(sessionId: string, options?: { limit?: number }) {
+export function getSession(sessionId: string, options?: { rounds?: number }) {
   const params = new URLSearchParams();
-
-  if (options?.limit) {
-    params.set("limit", String(options.limit));
+  if (options?.rounds) {
+    params.set("rounds", String(options.rounds));
   }
-
   return request<SessionSnapshot>(
     `/api/sessions/${sessionId}${params.size > 0 ? `?${params.toString()}` : ""}`,
   );

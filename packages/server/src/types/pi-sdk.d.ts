@@ -95,6 +95,7 @@ declare module '@mariozechner/pi-coding-agent' {
 
   export interface ResourceLoaderOptions {
     cwd: string;
+    agentDir?: string;
     settingsManager: SettingsManager;
     appendSystemPromptOverride?: (base: string[]) => string[];
     extensionFactories?: Array<(pi: PiExtensionAPI) => void>;
@@ -230,6 +231,7 @@ declare module '@mariozechner/pi-coding-agent' {
 
   export interface CreateAgentSessionOptions {
     cwd: string;
+    agentDir?: string;
     authStorage: AuthStorage;
     modelRegistry: ModelRegistry;
     sessionManager: SessionManager;

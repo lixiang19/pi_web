@@ -335,10 +335,10 @@ export interface SerializedMessage {
 export interface SessionSnapshot extends SessionSummary {
   messages: SerializedMessage[];
   historyMeta: {
-    loadedCount: number;
-    totalCount: number;
+    loadedRounds: number;
+    totalRounds: number;
     hasMoreAbove: boolean;
-    limit: number;
+    roundWindow: number;
   };
   interactiveRequests: AskInteractiveRequest[];
   permissionRequests: PermissionInteractiveRequest[];

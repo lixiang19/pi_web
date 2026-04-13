@@ -23,10 +23,10 @@ const truncateTitle = (title: string, maxLen = 16) => {
     <button
       v-for="tab in openTabs"
       :key="tab.id"
-      class="group relative flex h-8 max-w-[180px] min-w-[80px] shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 border-transparent px-3 text-left transition-all"
+      class="tab-item group relative flex h-8 max-w-[180px] min-w-[80px] shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 border-transparent px-3 text-left transition-all"
       :class="
         tab.id === activeTabId
-          ? 'border-border/60 bg-background text-foreground shadow-sm'
+          ? 'is-active border-border/60 bg-background text-foreground shadow-sm'
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
       "
       @click="switchTab(tab.id)"
@@ -34,11 +34,9 @@ const truncateTitle = (title: string, maxLen = 16) => {
       <!-- Streaming 指示器 -->
       <span
         v-if="tab.status === 'streaming'"
-        class="relative flex h-2 w-2 shrink-0"
+        class="streaming-indicator relative flex h-2 w-2 shrink-0"
       >
-        <span
-          class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"
-        />
+        <span class="absolute inline-flex h-full w-full rounded-full bg-primary opacity-60" />
         <span class="relative inline-flex h-2 w-2 rounded-full bg-primary" />
       </span>
 
@@ -49,7 +47,7 @@ const truncateTitle = (title: string, maxLen = 16) => {
 
       <!-- 关闭按钮 -->
       <span
-        class="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+        class="tab-close ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full opacity-0 transition-all group-hover:opacity-100 hover:bg-muted-foreground/15 hover:text-foreground"
         :class="tab.id === activeTabId ? 'opacity-60' : ''"
         @click="handleClose($event, tab.id)"
       >
@@ -67,5 +65,33 @@ const truncateTitle = (title: string, maxLen = 16) => {
 .scrollbar-none {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* 当前标签底部高亮条 */
+.tab-item.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--primary);
+  border-radius: 1px;
+}
+
+/* 流式消息指示器动画 */
+.streaming-indicator span:first-child {
+  animation: streaming-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes streaming-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.2;
+    transform: scale(1.8);
+  }
 }
 </style>

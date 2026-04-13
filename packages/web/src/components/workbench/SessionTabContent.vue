@@ -123,7 +123,7 @@ const formatProjectLabel = (cwd: string) => {
     </main>
 
     <!-- 右侧文件/Git 面板 -->
-    <aside class="w-80 flex shrink-0 flex-col bg-background">
+    <aside class="w-80 flex shrink-0 flex-col bg-secondary">
       <ProjectFilePanel
         :project-label="chat.fileTreeRoot.value ? formatProjectLabel(chat.fileTreeRoot.value) : '未选择项目'"
         :root-dir="chat.fileTreeRoot.value"

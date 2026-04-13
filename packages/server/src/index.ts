@@ -21,7 +21,10 @@ import type {
   SessionEvent,
 } from '@mariozechner/pi-coding-agent';
 
-import { createPiAgentScopeSettingsManager } from './pi-resource-scope.js';
+import {
+  createPiAgentScopeSettingsManager,
+  getPiAgentScopeAgentDir,
+} from './pi-resource-scope.js';
 import { createProjectContextResolver } from './project-context.js';
 import { createGitService } from './git-service.js';
 import { createWorktreeService } from './worktree-service.js';
@@ -138,7 +141,7 @@ const resourceCatalogQuerySchema = z.object({
 });
 
 const sessionSnapshotQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(400).optional(),
+  rounds: z.coerce.number().int().positive().optional(),
 });
 
 const agentUpsertSchema = z
@@ -218,8 +221,7 @@ const ignoredDirectoryNames = new Set([
   '.pi-web',
 ]);
 
-const DEFAULT_SESSION_MESSAGE_LIMIT = 80;
-const MAX_SESSION_MESSAGE_LIMIT = 400;
+const DEFAULT_SESSION_ROUND_WINDOW = 3;
 
 // ===== Utility Functions =====
 const normalizeString = (value: unknown): string => {
@@ -677,6 +679,7 @@ const createAgentConfigResponse = (agent: AgentConfigInternal) => ({
 const createSessionResourceLoader = (record: SessionRecord) =>
   new DefaultResourceLoader({
     cwd: record.cwd,
+    agentDir: getPiAgentScopeAgentDir(),
     settingsManager: createPiAgentScopeSettingsManager(record.cwd),
     appendSystemPromptOverride: (base: string[]) => {
       const sections = [...base];
@@ -1369,9 +1372,19 @@ const toSessionSummary = (item: SessionRegistryItem): SessionSummary => {
 };
 
 interface ToSessionSnapshotOptions {
-  limit?: number;
+  rounds?: number;
 }
 
+const getUserMessageIndexes = (messages: SessionEvent["message"][]): number[] => {
+  const indexes: number[] = [];
+
+  for (const [index, message] of messages.entries()) {
+    if (message && message.role === 'user') {
+      indexes.push(index);
+    }
+  }
+    return indexes;
+};
 const toSessionSnapshot = async (
   record: SessionRecord,
   sessionRegistry: SessionRegistry | null,
@@ -1410,29 +1423,36 @@ const toSessionSnapshot = async (
         worktreeRoot: toPosixPath(fallbackProjectContext!.worktreeRoot),
         worktreeLabel: fallbackProjectContext!.worktreeLabel,
       };
-
   const allMessages = record.session.messages;
-  const totalCount = allMessages.length;
-  const requestedLimit = Number.isInteger(options.limit)
-    ? Math.max(1, Math.min(options.limit!, MAX_SESSION_MESSAGE_LIMIT))
-    : DEFAULT_SESSION_MESSAGE_LIMIT;
-  const effectiveLimit =
-    totalCount > 0 ? Math.min(totalCount, requestedLimit) : requestedLimit;
-  const startIndex = Math.max(0, totalCount - effectiveLimit);
-  const visibleMessages = allMessages.slice(startIndex);
+  const userMessageIndexes = getUserMessageIndexes(allMessages);
+  const totalRounds = userMessageIndexes.length;
+  const requestedRounds = Number.isInteger(options.rounds)
+    ? Math.max(1, options.rounds!)
+    : DEFAULT_SESSION_ROUND_WINDOW;
 
+  let visibleMessages = allMessages;
+  let loadedRounds = totalRounds;
+  let hasMoreAbove = false;
+
+  if (totalRounds > 0) {
+    const startRoundIndex = Math.max(0, totalRounds - requestedRounds);
+    const startMessageIndex = startRoundIndex === 0 ? 0 : userMessageIndexes[startRoundIndex]!;
+    visibleMessages = allMessages.slice(startMessageIndex);
+    loadedRounds = totalRounds - startRoundIndex;
+    hasMoreAbove = startRoundIndex > 0;
+  }
   return {
     ...summary,
     messages: visibleMessages.map((message) => serializeMessage(message)),
     historyMeta: {
-      loadedCount: visibleMessages.length,
-      totalCount,
-      hasMoreAbove: startIndex > 0,
-      limit: effectiveLimit,
+      loadedRounds,
+      totalRounds,
+      hasMoreAbove,
+      roundWindow: Math.max(requestedRounds, loadedRounds || requestedRounds),
     },
     interactiveRequests: getInteractiveRequests(record),
     permissionRequests: getPermissionRequests(record),
-};
+  };
 };
 
 const buildResourceCatalog = (
@@ -1474,8 +1494,10 @@ const buildResourceCatalog = (
 
 const createTransientCatalogSession = async (cwd: string) => {
   const settingsManager = createPiAgentScopeSettingsManager(cwd);
+  const agentDir = getPiAgentScopeAgentDir();
   const resourceLoader = new DefaultResourceLoader({
     cwd,
+    agentDir,
     settingsManager,
   });
   await resourceLoader.reload();

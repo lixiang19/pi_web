@@ -71,15 +71,20 @@ const ItemComponent = computed(() =>
 
 <template>
   <component :is="ItemComponent" class="group/session-node relative overflow-hidden">
+    <!-- 激活状态左侧高亮条 -->
     <div
       v-if="isActive"
       class="absolute top-1.5 bottom-1.5 left-0 z-10 w-[2.5px] rounded-r-full bg-primary"
     />
-
+    <!-- 悬停时左侧边框效果 -->
+    <div
+      class="absolute top-1 bottom-1 left-0 z-[5] w-[2px] rounded-r-full bg-sidebar-foreground/20 opacity-0 transition-opacity group-hover/session-node:opacity-100"
+      :class="{ '!opacity-0': isActive }"
+    />
     <component
       :is="ButtonComponent"
       :is-active="isActive"
-      class="relative w-full"
+      :class="['relative w-full', depth === 1 ? 'ml-4' : '']"
       @mouseenter="emit('prefetch', node.session.id)"
       @click="emit('select', node.session.id)"
     >
@@ -158,7 +163,7 @@ const ItemComponent = computed(() =>
       </div>
     </template>
 
-    <SidebarMenuSub v-if="hasChildren && isExpanded" class="ml-0 border-l-0">
+    <SidebarMenuSub v-if="hasChildren && isExpanded" class="mx-0 ml-3 border-l border-sidebar-border px-2 py-0.5">
       <SessionSidebarSessionNode
         v-for="child in node.children"
         :key="child.session.id"

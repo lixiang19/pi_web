@@ -34,13 +34,12 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="flex h-full flex-col items-center justify-center p-6"
-    style="background: #faf9f6"
+    class="flex h-full flex-col items-center justify-center p-6 bg-background"
   >
     <!-- 背景微量装饰 -->
     <div
       class="pointer-events-none absolute inset-0 opacity-[0.03]"
-      style="background-image: radial-gradient(#e07a5f 0.5px, transparent 0.5px); background-size: 24px 24px"
+      style="background-image: radial-gradient(var(--primary) 0.5px, transparent 0.5px); background-size: 24px 24px"
     ></div>
 
     <!-- 循环文字 -->

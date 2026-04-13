@@ -18,8 +18,8 @@ import { useProjects } from "@/composables/useProjects";
 import { buildSessionProjects } from "@/lib/session-sidebar";
 import type { SessionSummary } from "@/lib/types";
 
-const MAX_RECENT_SESSIONS = 10;
 const router = useRouter();
+const RECENT_SESSION_STORAGE_KEY = "pi.sessions.recent";
 
 const props = defineProps<{
   sessions: SessionSummary[];
@@ -42,11 +42,10 @@ const searchQuery = ref("");
 
 const collapsedSections = useLocalStorage<Record<string, boolean>>(
   "pi.sidebar.collapsed",
-  { recent: false, projects: false }
+  { projects: false }
 );
 
 const pinnedSessionIds = useLocalStorage<string[]>("pi.sessions.pinned", []);
-const recentSessionIds = useLocalStorage<string[]>("pi.sessions.recent", []);
 
 // Projects
 const projectState = useProjects();
@@ -72,16 +71,6 @@ const projects = computed(() =>
   })
 );
 
-const recentSessions = computed(() => {
-  const sessionMap = new Map(
-    props.sessions.map((session) => [session.id, session])
-  );
-  return recentSessionIds.value
-    .map((id) => sessionMap.get(id))
-    .filter((session): session is SessionSummary => Boolean(session))
-    .filter((session) => !session.archived)
-    .slice(0, MAX_RECENT_SESSIONS);
-});
 
 const isSectionCollapsed = (sectionId: string) =>
   collapsedSections.value[sectionId] === true;
@@ -94,9 +83,6 @@ const toggleSection = (sectionId: string) => {
 };
 
 const handleSelect = (sessionId: string) => {
-  const current = new Set(recentSessionIds.value);
-  current.delete(sessionId);
-  recentSessionIds.value = [sessionId, ...current].slice(0, MAX_RECENT_SESSIONS);
   emit("select", sessionId);
 };
 
@@ -136,15 +122,14 @@ watch(
     pinnedSessionIds.value = pinnedSessionIds.value.filter((id) =>
       sessionIds.has(id)
     );
-    recentSessionIds.value = recentSessionIds.value.filter((id) => {
-      const s = sessions.find((s) => s.id === id);
-      return s && !s.archived;
-    });
   },
   { immediate: true, deep: true }
 );
 
 onMounted(() => {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(RECENT_SESSION_STORAGE_KEY);
+  }
   void loadProjects().catch(() => undefined);
 });
 </script>
@@ -192,77 +177,6 @@ onMounted(() => {
 
     <!-- Content -->
     <div class="flex-1 min-h-0 overflow-y-auto py-2">
-      <!-- Recent Section -->
-      <div v-if="recentSessions.length > 0 && !searchQuery" class="mb-1">
-        <button
-          class="w-full flex items-center justify-between px-4 py-2 text-[13px] font-semibold text-[#666] dark:text-[#a0a0a0] hover:bg-[#eaeaea] dark:hover:bg-[#252525] transition-colors"
-          @click="toggleSection('recent')"
-        >
-          <span>最近访问</span>
-          <ChevronDown
-            class="size-4 transition-transform"
-            :class="{ '-rotate-90': isSectionCollapsed('recent') }"
-          />
-        </button>
-
-        <div v-if="!isSectionCollapsed('recent')" class="space-y-0.5 px-2">
-          <div
-            v-for="session in recentSessions"
-            :key="session.id"
-            class="group relative flex items-center rounded-md overflow-hidden"
-            :class="[
-              activeSessionId === session.id
-                ? 'bg-[#e0e0e0] dark:bg-[#2d2d2d]'
-                : 'hover:bg-[#eaeaea] dark:hover:bg-[#252525]'
-            ]"
-          >
-            <!-- Active Indicator -->
-            <div
-              v-if="activeSessionId === session.id"
-              class="absolute left-0 top-0 bottom-0 w-1 bg-[#4c6ef5]"
-            />
-
-            <button
-              class="flex-1 flex items-center gap-2 px-3 py-1.5 text-left min-w-0"
-              @click="handleSelect(session.id)"
-            >
-              <span class="truncate text-[13px]" :class="[
-                activeSessionId === session.id ? 'text-[#111] dark:text-white font-medium' : 'text-[#555] dark:text-[#b0b0b0]'
-              ]">
-                {{ session.title || '无标题' }}
-              </span>
-              <Pin v-if="isPinned(session.id)" class="size-3 shrink-0 text-[#4c6ef5]" />
-            </button>
-
-            <!-- Context Menu Trigger -->
-            <button
-              class="opacity-0 group-hover:opacity-100 p-1 mr-1 rounded text-[#999] dark:text-[#666] hover:text-[#333] dark:hover:text-[#e0e0e0] hover:bg-[#d0d0d0] dark:hover:bg-[#3a3a3a] transition-all"
-              @click.stop="contextMenuSession = contextMenuSession === session.id ? null : session.id"
-            >
-              <MoreHorizontal class="size-4" />
-            </button>
-
-            <!-- Simple Context Menu -->
-            <div
-              v-if="contextMenuSession === session.id"
-              class="absolute right-2 top-full z-10 mt-1 w-32 rounded-md bg-white dark:bg-[#2a2a2a] border border-[#ddd] dark:border-[#3a3a3a] shadow-lg py-1"
-            >
-              <button
-                class="w-full px-3 py-1.5 text-left text-[12px] text-[#333] dark:text-[#e0e0e0] hover:bg-[#f0f0f0] dark:hover:bg-[#3a3a3a] transition-colors"
-                @click="togglePin(session.id); contextMenuSession = null"
-              >
-                {{ isPinned(session.id) ? '取消固定' : '固定' }}
-              </button>
-              <button
-                class="w-full px-3 py-1.5 text-left text-[12px] text-red-500 dark:text-red-400 hover:bg-[#f0f0f0] dark:hover:bg-[#3a3a3a] transition-colors"
-                @click="removeSession(session.id); contextMenuSession = null"
-              >
-                删除
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- Projects Section -->
       <div class="mb-1">
