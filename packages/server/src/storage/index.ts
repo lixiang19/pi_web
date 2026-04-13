@@ -44,11 +44,12 @@ const safeMerge = (target: RidgeSettings, source: Partial<RidgeSettings>): Ridge
 const normalizeProjectPath = (projectPath: string): string =>
   path.resolve(typeof projectPath === 'string' ? projectPath.trim() : '');
 
-const createProjectRecord = (projectPath: string): Project => ({
+const createProjectRecord = (projectPath: string, isGit: boolean): Project => ({
   id: crypto.createHash('md5').update(projectPath).digest('hex').slice(0, 8),
   name: path.basename(projectPath),
   path: projectPath,
   addedAt: Date.now(),
+  isGit,
 });
 
 // ============================================================================
@@ -151,19 +152,17 @@ export const getProjects = async (): Promise<ProjectsState> => {
   return { version: ridge.version, projects: ridge.projects };
 };
 
-export const addProject = async (projectPath: string): Promise<Project> => {
+export const addProject = async (projectPath: string, isGit: boolean): Promise<Project> => {
   const normalizedPath = normalizeProjectPath(projectPath);
-
   const current = await loadRidgeSettings();
   const existing = current.projects.find(
     (item) => normalizeProjectPath(item.path) === normalizedPath,
   );
-
   if (existing) {
     return existing;
   }
 
-  const nextProject = createProjectRecord(normalizedPath);
+  const nextProject = createProjectRecord(normalizedPath, isGit);
   const updated: RidgeSettings = {
     ...current,
     projects: [...current.projects, nextProject],

@@ -15,9 +15,13 @@ import {
   createAgentSession,
 } from '@mariozechner/pi-coding-agent';
 import { z } from 'zod';
-import type { AgentSession, ModelInfo } from '@mariozechner/pi-coding-agent';
+import type {
+  AgentSession,
+  ModelInfo,
+  SessionEvent,
+} from '@mariozechner/pi-coding-agent';
 
-import { createResourceDiscoverySettingsManager } from './pi-resource-scope.js';
+import { createPiAgentScopeSettingsManager } from './pi-resource-scope.js';
 import { createProjectContextResolver } from './project-context.js';
 import { createGitService } from './git-service.js';
 import { createWorktreeService } from './worktree-service.js';
@@ -673,7 +677,7 @@ const createAgentConfigResponse = (agent: AgentConfigInternal) => ({
 const createSessionResourceLoader = (record: SessionRecord) =>
   new DefaultResourceLoader({
     cwd: record.cwd,
-    settingsManager: createResourceDiscoverySettingsManager(record.cwd),
+    settingsManager: createPiAgentScopeSettingsManager(record.cwd),
     appendSystemPromptOverride: (base: string[]) => {
       const sections = [...base];
       const systemPrompt = normalizeString(
@@ -884,6 +888,36 @@ const updateStatus = (record: SessionRecord, nextStatus: SessionRecord['status']
   emit(record, { type: 'status', status: resolvedStatus });
 };
 
+const shouldForwardSessionEvent = (event: SessionEvent): boolean => {
+  if (
+    (event.type === 'message_start' || event.type === 'message_end') &&
+    event.message?.role === 'user'
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+const bindSessionRuntime = (record: SessionRecord): (() => void) =>
+  record.session.subscribe((event) => {
+    if (shouldForwardSessionEvent(event)) {
+      emit(record, event);
+    }
+
+    if (event.type === 'message_end') {
+      record.updatedAt = event.message?.timestamp ?? Date.now();
+    }
+
+    if (event.type !== 'turn_end') {
+      return;
+    }
+
+    updateStatus(record, 'idle');
+    void persistSessionRecordMetadata(record);
+    void emitSessionSnapshot(record);
+  });
+
 interface CreateActiveSessionRecordParams {
   stateRef?: Partial<SessionRecord>;
   session: AgentSession;
@@ -933,6 +967,7 @@ const createActiveSessionRecord = ({
     },
   }) as SessionRecord;
   activeSessions.set(record.id, record);
+  record.unsubscribe = bindSessionRuntime(record);
   return record;
 };
 
@@ -954,7 +989,7 @@ const createSessionRecord = async ({
     sessionManager.newSession({ parentSession: parentSessionPath });
   }
 
-  const settingsManager = SettingsManager.create(cwd);
+  const settingsManager = createPiAgentScopeSettingsManager(cwd);
   const recordState: Partial<SessionRecord> = {
     cwd,
     settingsManager,
@@ -1438,10 +1473,10 @@ const buildResourceCatalog = (
 };
 
 const createTransientCatalogSession = async (cwd: string) => {
-  const settingsManager = SettingsManager.create(cwd);
+  const settingsManager = createPiAgentScopeSettingsManager(cwd);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
-    settingsManager: createResourceDiscoverySettingsManager(cwd),
+    settingsManager,
   });
   await resourceLoader.reload();
 
@@ -1486,7 +1521,7 @@ const ensureSessionRecord = async (
 
   const item = await getSessionInfoOrThrow(sessionId, sessionRegistry);
   const sessionManager = SessionManager.open(item.info.path);
-  const settingsManager = SettingsManager.create(item.cwd);
+  const settingsManager = createPiAgentScopeSettingsManager(item.cwd);
   const recordState: Partial<SessionRecord> = {
     cwd: item.cwd,
     pendingAskRecords: new Map(),
@@ -1760,7 +1795,8 @@ app.post('/api/projects', async (req: Request, res: Response, next: NextFunction
       throw error;
     }
 
-    const project = await addProject(projectPath);
+    const isGit = await gitService.isGitRepository(projectPath);
+    const project = await addProject(projectPath, isGit);
     res.json(serializeProject(project));
   } catch (error) {
     next(error);

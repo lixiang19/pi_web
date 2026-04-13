@@ -1,12 +1,19 @@
 import { computed, ref, type Ref } from "vue";
 
-import { usePiChat } from "@/composables/usePiChat";
-import type { PromptCatalogItem } from "@/lib/types";
+import type { ChatComposerState, PromptCatalogItem, ResourceCatalogResponse } from "@/lib/types";
 
-type PiChatState = ReturnType<typeof usePiChat>;
+type WorkbenchResourcePickerState = {
+  composer: ChatComposerState;
+  activeSessionId: Readonly<Ref<string>>;
+  resources: Readonly<Ref<ResourceCatalogResponse>>;
+  refreshResources: (options?: {
+    cwd?: string;
+    sessionId?: string;
+  }) => Promise<ResourceCatalogResponse>;
+};
 
 export function useWorkbenchResourcePicker(
-  chat: PiChatState,
+  chat: WorkbenchResourcePickerState,
   fileTreeRoot: Readonly<Ref<string>>,
 ) {
   const resourcePickerPinned = ref(false);

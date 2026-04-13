@@ -11,10 +11,11 @@ const normalizeEnvFlag = (value: string | undefined): boolean =>
 const getIsolatedAgentDir = (): string =>
   path.join(os.tmpdir(), 'ridge-pi-resource-isolation', 'agent');
 
+const getScopedAgentDir = (): string | undefined =>
+  isPiResourceIsolationEnabled() ? getIsolatedAgentDir() : undefined;
+
 export const isPiResourceIsolationEnabled = (): boolean =>
   normalizeEnvFlag(process.env.RIDGE_PI_ISOLATED);
 
-export const createResourceDiscoverySettingsManager = (cwd: string): SettingsManager =>
-  isPiResourceIsolationEnabled()
-    ? SettingsManager.create(cwd, getIsolatedAgentDir())
-    : SettingsManager.create(cwd);
+export const createPiAgentScopeSettingsManager = (cwd: string): SettingsManager =>
+  SettingsManager.create(cwd, getScopedAgentDir());

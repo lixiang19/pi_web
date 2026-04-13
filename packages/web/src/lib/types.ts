@@ -301,6 +301,7 @@ export interface ProjectItem {
   name: string;
   path: string;
   addedAt: number;
+  isGit: boolean;
 }
 
 export interface ProjectsResponse {

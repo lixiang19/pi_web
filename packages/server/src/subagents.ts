@@ -7,7 +7,6 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   SessionManager,
-  SettingsManager,
   type AgentSession,
   type ModelInfo,
   type PiExtensionAPI,
@@ -15,7 +14,7 @@ import {
 
 import { compileAgentPermission, createPermissionGateExtension } from './agent-permissions.js';
 import {
-  createResourceDiscoverySettingsManager,
+  createPiAgentScopeSettingsManager,
   isPiResourceIsolationEnabled,
 } from './pi-resource-scope.js';
 import { discoverAgents, normalizeThinkingLevel, type AgentConfigInternal } from './agents.js';
@@ -287,8 +286,7 @@ const runChildSession = async (
     maxTurns?: number | null;
   },
 ): Promise<void> => {
-  const settingsManager = SettingsManager.create(parentRecord.cwd);
-  const resourceSettingsManager = createResourceDiscoverySettingsManager(parentRecord.cwd);
+  const settingsManager = createPiAgentScopeSettingsManager(parentRecord.cwd);
   let permissionPolicy: ReturnType<typeof compileAgentPermission> | null = null;
 
   const childSystemPrompt = await buildSubagentSystemPrompt(
@@ -299,7 +297,7 @@ const runChildSession = async (
 
   const resourceLoader = new DefaultResourceLoader({
     cwd: parentRecord.cwd,
-    settingsManager: resourceSettingsManager,
+    settingsManager,
     appendSystemPromptOverride: (base: string[]) => [...base, childSystemPrompt],
     extensionFactories: [createPermissionGateExtension(() => permissionPolicy)],
   });

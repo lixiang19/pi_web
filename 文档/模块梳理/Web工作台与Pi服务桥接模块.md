@@ -93,6 +93,9 @@
 - Vue 层只消费投影后的摘要和树结构，不直接拼接底层 session 文件信息。
 - 前端编排层负责把服务端的 session 摘要转成项目、group、父子会话树，并把会话派生状态、资源面板控制、主题偏好持久化拆成独立 composable。
 - 服务层同时承担三件事：列出和打开 SDK 持久化 session、维护归档元数据、约束文件树访问范围。
+- 正常发送链路的 SSE 主流程必须绑定 `AgentSession.subscribe()`，由 Pi runtime 真实推送 `message_start/message_update/message_end/turn_end`；仅靠 `POST /api/sessions/:id/messages` 改 `status` 不能让前端消息流更新。
+- 服务端桥接 `message_start/message_end` 时必须过滤 `role === 'user'` 的事件，因为前端发送期已经做了乐观用户消息写入；不做过滤会导致每次发送重复一条用户消息。
+- `turn_end` 不是可省略事件：桥接层需要在这里把 active record 收口为最新快照，并把会话状态回写为 `idle`（如有 ask/permission 挂起则由服务端再次解析为 `streaming`）。
 
 ### Key Abstractions
 
@@ -901,16 +904,16 @@ ProjectFilePanel(rootDir)
 ### 当前链路
 ```text
 RIDGE_PI_ISOLATED=1
-  -> server createResourceDiscoverySettingsManager(cwd)
-  -> DefaultResourceLoader 使用隔离 agentDir
-  -> 全局 ~/.pi/agent 资源不再参与发现
+  -> server createPiAgentScopeSettingsManager(cwd)
+  -> createAgentSession / DefaultResourceLoader 共用隔离 agentDir
+  -> 主会话、恢复会话、临时 catalog、子代理都不再读取全局 ~/.pi/agent 资源
   -> 项目 cwd/.pi 资源仍然保留
-  -> createAgentSession 继续使用正常 SettingsManager/AuthStorage/ModelRegistry
+  -> AuthStorage / ModelRegistry / SessionManager 继续使用正常全局链路
 ```
 
 ### 设计结论
 - 资源隔离和运行时凭证隔离必须拆开；否则“想禁全局 skill”会误伤登录和模型可用性。
-- 隔离开关必须下沉到 `DefaultResourceLoader` 的 settings/agentDir 边界，不能靠前端隐藏资源列表伪装。
+- 隔离开关必须下沉到 `SettingsManager(agentDir)` 这一条真实 Pi runtime 边界，`DefaultResourceLoader` 和 `createAgentSession` 必须共享同一作用域，不能只隔离资源目录扫描。
 - 子代理 runtime 也必须跟随同一开关；否则主会话隔离，子代理又从全局吃 skill，链路会重新漏回去。
 
 ### 受影响文件

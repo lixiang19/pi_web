@@ -1,140 +1,115 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import SessionSidebar from "@/components/chat/SessionSidebar.vue";
-import ProjectFilePanel from "@/components/workbench/ProjectFilePanel.vue";
-import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
-import { useWorkbenchPage } from "@/composables/useWorkbenchPage";
+import SessionTabArea from "@/components/workbench/SessionTabArea.vue";
+import { usePiChatCore } from "@/composables/usePiChatCore";
+import { useSessionTabs } from "@/composables/useSessionTabs";
 
-const {
-  NO_AGENT_VALUE,
-  abort,
-  activeDraftContext,
-  activeSessionId,
-  agents,
-  applyPrompt,
-  archiveSession,
-  composer,
-  createSidebarSession,
-  setDraftProjectPath,
-  currentSessionTitle,
-  deleteSession,
-  fileTreeRoot,
-  filteredCommands,
-  filteredPrompts,
-  filteredSkills,
-  formatProjectLabel,
-  handleAgentSelection,
-  handleModelSelection,
-  handleThinkingSelection,
-  hasMoreAbove,
-  hasVisibleResources,
-  injectCommand,
-  injectSkill,
-  interactiveRequests,
-  permissionRequests,
-  isDraftSession,
-  isLoadingOlder,
-  isResourcePickerVisible,
-  isSending,
-  loadEarlier,
-  messages,
-  models,
-  openSession,
-  parentSessionId,
-  prefetchSession,
-  renameSession,
-  resourceError,
-  respondToPendingAsk,
-  respondToPendingPermission,
-  dismissPendingAsk,
-  returnToParentSession,
-  sessionSidebarProps,
-  status,
-  submit,
-  thinkingOptions,
-  toggleResourcePicker,
-} = useWorkbenchPage();
+const core = usePiChatCore();
+const tabs = useSessionTabs();
+
+// ============================================================================
+// Sidebar 交互
+// ============================================================================
+
+const sessionSidebarProps = computed(() => {
+  const nextProps: {
+    sessions: typeof core.sessions.value;
+    activeSessionId: string;
+    isSending: boolean;
+    workspaceDir?: string;
+  } = {
+    sessions: core.sessions.value,
+    activeSessionId: tabs.activeTab.value?.sessionId ?? "",
+    isSending: tabs.activeTab.value?.status === "streaming" ?? false,
+  };
+
+  if (core.info.value?.workspaceDir) {
+    nextProps.workspaceDir = core.info.value.workspaceDir;
+  }
+
+  return nextProps;
+});
+
+// 点击左侧会话 → 打开/聚焦标签
+const handleSessionSelect = (sessionId: string) => {
+  const session = core.sessions.value.find((s) => s.id === sessionId);
+  if (!session) return;
+
+  tabs.openSessionTab({
+    sessionId: session.id,
+    title: session.title || "新会话",
+    cwd: session.cwd,
+    status: session.status,
+  });
+};
+
+// 新建会话 → 打开草稿标签，发送首条消息时再创建 session
+const handleSessionCreate = (payload: {
+  cwd?: string;
+  parentSessionId?: string;
+}) => {
+  const resolvedCwd =
+    payload.cwd ||
+    tabs.activeTab.value?.cwd ||
+    core.info.value?.workspaceDir ||
+    "";
+
+  tabs.openDraftTab({
+    cwd: resolvedCwd,
+    parentSessionId: payload.parentSessionId,
+  });
+};
+
+// 预取
+const handlePrefetch = (sessionId: string) => {
+  void core.prefetchSession(sessionId);
+};
+
+// 重命名
+const handleRename = (sessionId: string, title: string) => {
+  void core.renameSessionTitle(sessionId, title);
+  tabs.updateTabsBySessionId(sessionId, { title });
+};
+
+// 归档
+const handleArchive = (sessionId: string, archived: boolean) => {
+  void core.setSessionArchived(sessionId, archived);
+};
+
+// 删除
+const handleRemove = (sessionId: string) => {
+  void (async () => {
+    const response = await core.removeSessionTree(sessionId);
+    tabs.closeTabsBySessionIds(response.sessionIds);
+  })();
+};
+
 const handleWorktreeCreated = async (worktreePath: string) => {
-  // 创建 worktree 后立即创建会话并切换
-  await createSidebarSession({ cwd: worktreePath });
+  handleSessionCreate({ cwd: worktreePath });
 };
 </script>
 
 <template>
   <div class="h-full">
     <div class="flex h-full">
+      <!-- 左侧栏: 会话列表 -->
       <aside class="w-72 flex shrink-0 flex-col bg-sidebar">
         <SessionSidebar
           v-bind="sessionSidebarProps"
           class="flex-1"
-          @archive="archiveSession"
-          @create="createSidebarSession"
-          @prefetch="prefetchSession"
-          @remove="deleteSession"
-          @rename="renameSession"
-          @select="openSession"
+          @archive="handleArchive"
+          @create="handleSessionCreate"
+          @prefetch="handlePrefetch"
+          @remove="handleRemove"
+          @rename="handleRename"
+          @select="handleSessionSelect"
           @worktree-created="handleWorktreeCreated"
         />
       </aside>
 
-      <main class="min-w-0 flex-1 flex flex-col bg-background">
-        <WorkbenchChatPanel
-          :active-draft-parent-session-id="activeDraftContext?.parentSessionId"
-          :active-session-id="activeSessionId"
-          :agents="agents"
-          :commands="filteredCommands"
-          :composer="composer"
-          :current-session-title="currentSessionTitle"
-          :has-more-above="hasMoreAbove"
-          :interactive-requests="interactiveRequests"
-
-          :permission-requests="permissionRequests"
-          :has-visible-resources="hasVisibleResources"
-          :is-draft-session="isDraftSession"
-          :is-loading-older="isLoadingOlder"
-          :is-resource-picker-visible="isResourcePickerVisible"
-          :is-sending="isSending"
-          :messages="messages"
-          :model-options="models"
-          :no-agent-value="NO_AGENT_VALUE"
-          :parent-session-id="parentSessionId"
-          :project-label="fileTreeRoot ? formatProjectLabel(fileTreeRoot) : '未选择项目'"
-          :current-project-path="fileTreeRoot"
-          :prompts="filteredPrompts"
-          :resource-error="resourceError"
-          :skills="filteredSkills"
-          :status="status"
-          :thinking-options="thinkingOptions"
-          class="flex-1"
-          @apply-prompt="applyPrompt"
-          @create-session="createSidebarSession({})"
-          @inject-command="injectCommand"
-          @inject-skill="injectSkill"
-          @load-earlier="loadEarlier"
-          @dismiss-ask="dismissPendingAsk(activeSessionId, $event)"
-          @respond-ask="(askId, answers) => respondToPendingAsk(activeSessionId, askId, answers)"
-
-          @respond-permission="(requestId, action) => respondToPendingPermission(activeSessionId, requestId, action)"
-          @return-to-parent="returnToParentSession"
-          @select-project-path="setDraftProjectPath($event)"
-          @select-agent="handleAgentSelection"
-          @select-model="handleModelSelection"
-          @select-thinking="handleThinkingSelection"
-          @submit="submit"
-          @abort="abort"
-          @toggle-resource-picker="toggleResourcePicker"
-          @update:draft-text="composer.draftText = $event"
-        />
-      </main>
-
-      <aside
-        class="w-80 flex shrink-0 flex-col bg-background"
-      >
-        <ProjectFilePanel
-          :project-label="fileTreeRoot ? formatProjectLabel(fileTreeRoot) : '未选择项目'"
-          :root-dir="fileTreeRoot"
-          class="flex-1"
-        />
-      </aside>
+      <!-- 中间+右侧: 标签区域 -->
+      <SessionTabArea />
     </div>
   </div>
 </template>

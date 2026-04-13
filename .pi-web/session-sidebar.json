@@ -76,6 +76,18 @@
     "2d0071ad-c1ba-47bf-b427-af6a4e998c56": {},
     "91d9d667-ae2b-40c3-994f-7731aa8ef796": {},
     "716711db-21c9-439b-b887-a63945e477b4": {},
-    "53c059dc-244a-408a-b87c-4e02f3c2c5b9": {}
+    "53c059dc-244a-408a-b87c-4e02f3c2c5b9": {},
+    "e0ace890-28d4-4a4a-9983-7139db40998d": {},
+    "9f9be255-89c5-450b-b731-07c8fc552b84": {},
+    "9782413e-479e-4bf1-82b1-b8a5c4cac63e": {},
+    "769498d8-9c10-4a2e-9042-8f5f0c375461": {
+      "title": "新会话",
+      "cwd": "/Users/lixiang/Documents/myCode/AuroraPlatformWeb",
+      "sessionFile": "/Users/lixiang/.pi/agent/sessions/--Users-lixiang-Documents-myCode-AuroraPlatformWeb--/2026-04-12T17-16-02-013Z_769498d8-9c10-4a2e-9042-8f5f0c375461.jsonl",
+      "createdAt": 1776014162105,
+      "updatedAt": 1776014162105,
+      "thinkingLevel": "medium",
+      "model": "fireworks/accounts/fireworks/routers/kimi-k2p5-turbo"
+    }
   }
 }

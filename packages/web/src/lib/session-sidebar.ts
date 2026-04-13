@@ -228,7 +228,7 @@ export const buildSessionProjects = (options: {
           : project.addedAt;
 
       const isGit =
-        projectWorktrees.length > 0 || projectSessions.some((session) => session.isGit);
+        project.isGit ?? (projectWorktrees.length > 0 || projectSessions.some((session) => session.isGit));
 
       return {
         id: project.id,
