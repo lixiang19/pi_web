@@ -21,7 +21,7 @@ const sessionSidebarProps = computed(() => {
   } = {
     sessions: core.sessions.value,
     activeSessionId: tabs.activeTab.value?.sessionId ?? "",
-    isSending: tabs.activeTab.value?.status === "streaming" ?? false,
+    isSending: tabs.activeTab.value?.status === "streaming",
   };
 
   if (core.info.value?.workspaceDir) {

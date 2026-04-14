@@ -8,6 +8,7 @@ import {
   Square,
 } from "lucide-vue-next";
 import { computed, nextTick, onMounted, ref } from "vue";
+import type { AcceptableValue } from "reka-ui";
 import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,9 +52,9 @@ const emit = defineEmits<{
   applyPrompt: [PromptCatalogItem];
   injectCommand: [string];
   injectSkill: [string];
-  selectAgent: [value: unknown];
-  selectModel: [value: unknown];
-  selectThinking: [value: unknown];
+  selectAgent: [value: string];
+  selectModel: [value: string];
+  selectThinking: [value: ThinkingLevel];
   selectProjectPath: [path: string];
   submit: [];
   abort: [];
@@ -97,16 +98,27 @@ const selectablePaths = computed(() => {
   return Array.from(paths);
 });
 
-const handleProjectChange = (value: string) => {
-  if (!value) return;
+const stringifySelectValue = (value: AcceptableValue): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  return "";
+};
 
-  if (value === SELECT_OTHER_VALUE) {
+const handleProjectChange = (value: AcceptableValue) => {
+  const nextValue = stringifySelectValue(value);
+  if (!nextValue) return;
+
+  if (nextValue === SELECT_OTHER_VALUE) {
     isProjectDialogOpen.value = true;
     return;
   }
 
-  if (value !== currentProjectPathValue.value) {
-    emit("selectProjectPath", value);
+  if (nextValue !== currentProjectPathValue.value) {
+    emit("selectProjectPath", nextValue);
   }
 };
 
@@ -117,13 +129,32 @@ const handleProjectConfirm = async (path: string) => {
   isProjectDialogOpen.value = false;
   emit("selectProjectPath", normalizePath(path));
 };
+const handleModelChange = (value: AcceptableValue) => {
+  const nextValue = stringifySelectValue(value);
+  if (nextValue) {
+    emit("selectModel", nextValue);
+  }
+};
+
+const handleThinkingChange = (value: AcceptableValue) => {
+  const nextValue = stringifySelectValue(value);
+  if (nextValue) {
+    emit("selectThinking", nextValue as ThinkingLevel);
+  }
+};
+
+const handleAgentChange = (value: AcceptableValue) => {
+  const nextValue = stringifySelectValue(value);
+  if (nextValue) {
+    emit("selectAgent", nextValue);
+  }
+};
 
 onMounted(() => {
   void loadProjects().catch(() => undefined);
 });
 
 const isDraggingOver = ref(false);
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
 // 在光标位置插入文本
 const insertAtCursor = (textarea: HTMLTextAreaElement, text: string) => {
@@ -249,7 +280,6 @@ const currentAgentLabel = computed(() => {
           :class="isDraggingOver ? 'bg-primary/5 ring-2 ring-primary/20' : ''"
         >
           <Textarea
-            ref="textareaRef"
             v-model="draftText"
             placeholder="输入消息… 支持 Markdown，Shift + Enter 换行，可拖拽文件路径到输入框"
             class="min-h-[96px] resize-none border-0 bg-transparent px-4 py-3 pr-14 text-sm leading-6 focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -297,7 +327,7 @@ const currentAgentLabel = computed(() => {
           <div class="flex flex-wrap items-center gap-1">
             <Select
               :model-value="composer.selectedModel"
-              @update:model-value="emit('selectModel', $event)"
+              @update:model-value="handleModelChange"
             >
               <SelectTrigger
                 size="sm"
@@ -319,7 +349,7 @@ const currentAgentLabel = computed(() => {
 
             <Select
               :model-value="composer.selectedThinkingLevel"
-              @update:model-value="emit('selectThinking', $event)"
+              @update:model-value="handleThinkingChange"
             >
               <SelectTrigger
                 size="sm"
@@ -341,7 +371,7 @@ const currentAgentLabel = computed(() => {
 
             <Select
               :model-value="composer.selectedAgent || noAgentValue"
-              @update:model-value="emit('selectAgent', $event)"
+              @update:model-value="handleAgentChange"
             >
               <SelectTrigger
                 size="sm"

@@ -143,7 +143,10 @@ export function useSessionTabs() {
     // 如果关闭的是活动标签，切换到相邻标签
     if (wasActive && nextTabs.length > 0) {
       const nextIndex = Math.min(index, nextTabs.length - 1);
-      activeTabId.value = nextTabs[nextIndex].id;
+      const nextTab = nextTabs[nextIndex];
+      if (nextTab) {
+        activeTabId.value = nextTab.id;
+      }
     } else if (wasActive) {
       activeTabId.value = "";
     }

@@ -81,7 +81,7 @@ const getToolBlockResult = (block: ContentBlock) =>
   block.type === "toolResult" ? block.result : undefined;
 
 const getToolPath = (block: ToolCallContentBlock) => {
-  const value = block.arguments?.path;
+  const value = block.arguments?.["path"];
   return typeof value === "string" && value.trim() ? value.trim() : "目标文件";
 };
 
@@ -97,14 +97,13 @@ const getAskToolCallArguments = (
     return null;
   }
 
-  const questions = (args as Record<string, unknown>).questions;
+  const questions = (args as Record<string, unknown>)["questions"];
   if (!Array.isArray(questions)) {
     return null;
   }
-
   return {
-    title: normalizeString((args as Record<string, unknown>).title) || undefined,
-    message: normalizeString((args as Record<string, unknown>).message) || undefined,
+    title: normalizeString((args as Record<string, unknown>)["title"]) || undefined,
+    message: normalizeString((args as Record<string, unknown>)["message"]) || undefined,
     questions: questions as AskQuestion[],
   };
 };
@@ -128,7 +127,7 @@ const getToolCallSummary = (name: string, block: ToolCallContentBlock) => {
 
   switch (name) {
     case "bash": {
-      const command = block.arguments?.command;
+      const command = block.arguments?.["command"];
       return typeof command === "string" && command.trim()
         ? `运行了命令：${command.trim().slice(0, 60)}`
         : "运行了命令";
@@ -182,9 +181,9 @@ const getAskToolResultDetails = (
     return null;
   }
 
-  const request = (details as Record<string, unknown>).request;
-  const answers = (details as Record<string, unknown>).answers;
-  const dismissed = (details as Record<string, unknown>).dismissed;
+  const request = (details as Record<string, unknown>)["request"];
+  const answers = (details as Record<string, unknown>)["answers"];
+  const dismissed = (details as Record<string, unknown>)["dismissed"];
   if (!request || typeof request !== "object" || !Array.isArray(answers) || typeof dismissed !== "boolean") {
     return null;
   }
@@ -263,7 +262,7 @@ const summarizeBlock = (block: ContentBlock): { tag: string; summary: string } =
     case "toolCall":
       return {
         tag: "工具",
-        summary: getToolCallSummary(block.name || "工具", block),
+        summary: getToolCallSummary(block.name || "工具", block as ToolCallContentBlock),
       };
     case "toolResult":
       return {

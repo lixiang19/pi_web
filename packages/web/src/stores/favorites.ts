@@ -8,6 +8,7 @@ import {
   type Favorites,
 } from "@/lib/api/storage";
 
+export type { FavoriteItem } from "@/lib/api/storage";
 export const useFavoritesStore = defineStore("favorites", () => {
   const favorites = ref<Favorites | null>(null);
   const isLoading = ref(false);

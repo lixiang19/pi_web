@@ -77,11 +77,10 @@ const formatProjectLabel = (cwd: string) => {
     <main class="min-w-0 flex-1 flex flex-col bg-background">
       <WorkbenchChatPanel
         :active-draft-parent-session-id="chat.activeDraftContext.value?.parentSessionId"
-        :active-session-id="chat.sessionId"
+        :active-session-id="chat.sessionId.value"
         :agents="chat.core.agents.value"
         :commands="resourcePicker.filteredCommands.value"
         :composer="chat.composer"
-        :current-session-title="chat.currentSessionTitle.value"
         :has-more-above="chat.hasMoreAbove.value"
         :interactive-requests="chat.interactiveRequests.value"
         :permission-requests="chat.permissionRequests.value"
@@ -93,8 +92,6 @@ const formatProjectLabel = (cwd: string) => {
         :messages="chat.messages.value"
         :model-options="chat.core.models.value"
         :no-agent-value="NO_AGENT_VALUE"
-        :parent-session-id="parentSessionId"
-        :project-label="chat.fileTreeRoot.value ? formatProjectLabel(chat.fileTreeRoot.value) : '未选择项目'"
         :current-project-path="chat.fileTreeRoot.value"
         :prompts="resourcePicker.filteredPrompts.value"
         :resource-error="chat.core.resourceError.value"

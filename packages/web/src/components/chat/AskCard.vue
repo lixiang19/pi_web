@@ -125,6 +125,7 @@ const missingQuestionIds = computed(() =>
 );
 
 const canSubmit = computed(() => missingQuestionIds.value.length === 0);
+const firstQuestion = computed<AskQuestion | null>(() => props.request.questions[0] ?? null);
 
 const summaryRows = computed(() =>
   props.request.questions.map((question) => {
@@ -278,30 +279,30 @@ const handleSubmit = () => {
         </TabsContent>
       </Tabs>
 
-      <div v-else class="space-y-4">
+      <div v-else-if="firstQuestion" class="space-y-4">
         <div class="space-y-2">
-          <p v-if="request.questions[0]?.header" class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            {{ request.questions[0]?.header }}
+          <p v-if="firstQuestion.header" class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            {{ firstQuestion.header }}
           </p>
           <h4 class="text-sm font-semibold text-foreground">
-            {{ request.questions[0]?.question }}
+            {{ firstQuestion.question }}
           </h4>
-          <p v-if="request.questions[0]?.description" class="text-sm text-muted-foreground">
-            {{ request.questions[0]?.description }}
+          <p v-if="firstQuestion.description" class="text-sm text-muted-foreground">
+            {{ firstQuestion.description }}
           </p>
         </div>
 
-        <template v-if="request.questions[0]?.options?.length">
-          <template v-if="request.questions[0]?.multiple">
+        <template v-if="firstQuestion.options?.length">
+          <template v-if="firstQuestion.multiple">
             <div
-              v-for="option in request.questions[0]?.options"
+              v-for="option in firstQuestion.options"
               :key="option.label"
               class="ridge-panel-inset rounded-[8px] px-3 py-3"
             >
               <div class="flex items-start gap-3">
                 <Checkbox
-                  :model-value="getSelectedValues(request.questions[0].id).includes(option.label)"
-                  @update:model-value="toggleMultiOption(request.questions[0].id, option.label, Boolean($event))"
+                  :model-value="getSelectedValues(firstQuestion.id).includes(option.label)"
+                  @update:model-value="toggleMultiOption(firstQuestion.id, option.label, Boolean($event))"
                 />
                 <div class="space-y-1">
                   <Label class="text-sm font-medium text-foreground">
@@ -314,15 +315,14 @@ const handleSubmit = () => {
               </div>
             </div>
           </template>
-
           <template v-else>
             <Button
-              v-for="option in request.questions[0]?.options"
+              v-for="option in firstQuestion.options"
               :key="option.label"
               type="button"
-              :variant="getSelectedValues(request.questions[0].id)[0] === option.label ? 'default' : 'outline'"
+              :variant="getSelectedValues(firstQuestion.id)[0] === option.label ? 'default' : 'outline'"
               class="h-auto w-full justify-start px-3 py-3 text-left"
-              @click="setSingleOption(request.questions[0].id, option.label)"
+              @click="setSingleOption(firstQuestion.id, option.label)"
             >
               <span class="flex flex-col items-start gap-1">
                 <span>{{ option.label }}</span>
@@ -334,23 +334,23 @@ const handleSubmit = () => {
           </template>
         </template>
 
-        <div v-if="request.questions[0]?.allowCustom || !request.questions[0]?.options?.length" class="space-y-2">
-          <Separator v-if="request.questions[0]?.options?.length" />
+        <div v-if="firstQuestion.allowCustom || !firstQuestion.options?.length" class="space-y-2">
+          <Separator v-if="firstQuestion.options?.length" />
           <Label class="text-sm font-medium text-foreground">
-            {{ request.questions[0]?.options?.length ? "自定义答案" : "你的答案" }}
+            {{ firstQuestion.options?.length ? "自定义答案" : "你的答案" }}
           </Label>
           <Textarea
-            v-if="!request.questions[0]?.options?.length"
-            :model-value="getCustomValue(request.questions[0].id)"
+            v-if="!firstQuestion.options?.length"
+            :model-value="getCustomValue(firstQuestion.id)"
             class="min-h-24"
             placeholder="输入回答"
-            @update:model-value="setCustomValue(request.questions[0].id, String($event))"
+            @update:model-value="setCustomValue(firstQuestion.id, String($event))"
           />
           <Input
             v-else
-            :model-value="getCustomValue(request.questions[0].id)"
+            :model-value="getCustomValue(firstQuestion.id)"
             placeholder="输入自定义答案"
-            @update:model-value="setCustomValue(request.questions[0].id, String($event))"
+            @update:model-value="setCustomValue(firstQuestion.id, String($event))"
           />
         </div>
       </div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { MoonStar, Palette, SunMedium, ChevronRight, Home, Layers, Sparkles } from "lucide-vue-next";
 import { ref, computed } from "vue";
+import type { AcceptableValue } from "reka-ui";
 import { useRouter } from "vue-router";
 
 import { themeOptions, type ThemeName } from "@/assets/registry";
@@ -58,7 +59,7 @@ const {
   themeName,
 } = useThemePreferences();
 
-const modeOptions: Array<{ label: string; value: ThemeMode; icon: typeof SunMedium }> = [
+const modeOptions: Array<{ label: string; value: Exclude<ThemeMode, "system">; icon: typeof SunMedium }> = [
   { label: "浅色", value: "light", icon: SunMedium },
   { label: "深色", value: "dark", icon: MoonStar },
 ];
@@ -67,12 +68,14 @@ const activeMenuItem = computed(() =>
   menuItems.find((item) => item.id === activeMenuId.value)
 );
 
-const handleThemeChange = (value: string | null) => {
-  if (value) setTheme(value as ThemeName);
+const handleThemeChange = (value: AcceptableValue) => {
+  if (typeof value === "string") {
+    setTheme(value as ThemeName);
+  }
 };
 
-const handleModeChange = (value: string | null) => {
-  if (value) setMode(value as ThemeMode);
+const handleModeChange = (value: Exclude<ThemeMode, "system">) => {
+  setMode(value);
 };
 
 const goBack = () => {

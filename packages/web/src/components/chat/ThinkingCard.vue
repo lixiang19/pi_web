@@ -20,7 +20,7 @@ const summary = computed(() => {
     return "隐藏";
   }
 
-  const normalized = props.block.thinking.replace(/\s+/g, " ").trim();
+  const normalized = (props.block.thinking ?? "").replace(/\s+/g, " ").trim();
   return normalized.slice(0, 50) || "思考";
 });
 </script>

@@ -53,7 +53,7 @@ const emit = defineEmits<{
   returnToParent: [];
   selectAgent: [value: string];
   selectModel: [value: string];
-  selectThinking: [value: string];
+  selectThinking: [value: ThinkingLevel];
   submit: [];
   selectProjectPath: [path: string];
   abort: [];
@@ -63,6 +63,17 @@ const emit = defineEmits<{
 
 function handleDraftUpdate(text: string) {
   emit("update:draftText", text);
+}
+function handleSelectAgent(value: string) {
+  emit("selectAgent", value);
+}
+
+function handleSelectModel(value: string) {
+  emit("selectModel", value);
+}
+
+function handleSelectThinking(value: ThinkingLevel) {
+  emit("selectThinking", value);
 }
 </script>
 
@@ -112,9 +123,9 @@ function handleDraftUpdate(text: string) {
       @apply-prompt="emit('applyPrompt', $event)"
       @inject-command="emit('injectCommand', $event)"
       @inject-skill="emit('injectSkill', $event)"
-      @select-agent="emit('selectAgent', $event)"
-      @select-model="emit('selectModel', $event)"
-      @select-thinking="emit('selectThinking', $event)"
+      @select-agent="handleSelectAgent"
+      @select-model="handleSelectModel"
+      @select-thinking="handleSelectThinking"
       @select-project-path="emit('selectProjectPath', $event)"
       @submit="emit('submit')"
       @abort="emit('abort')"

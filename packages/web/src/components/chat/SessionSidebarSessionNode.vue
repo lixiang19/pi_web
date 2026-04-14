@@ -104,7 +104,7 @@ const ItemComponent = computed(() =>
         <Input
           :model-value="editingTitle"
           class="h-6 w-full border-none bg-background px-1 text-[13px] shadow-none focus-visible:ring-1"
-          @update:model-value="emit('updateEditingTitle', $event)"
+          @update:model-value="emit('updateEditingTitle', String($event))"
           @keydown.enter.prevent="emit('saveRename', node.session.id)"
           @keydown.esc.prevent="emit('cancelRename')"
           v-focus
