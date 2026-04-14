@@ -14,7 +14,8 @@ import {
   getAgents,
   getProviders,
   getResources,
-  getSession,
+  getSessionContexts,
+  getSessionMessages,
   getSessions,
   getSystemInfo,
   renameSession,
@@ -32,24 +33,30 @@ import type {
   ChatMessage,
   ProvidersResponse,
   ResourceCatalogResponse,
+  SessionContextSummary,
+  SessionMessagesPayload,
   SessionHistoryMeta,
   SessionSnapshot,
   SessionSummary,
   StreamEvent,
+  StreamMessageEvent,
   SystemInfo,
   ThinkingLevel,
   } from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
+import {
+  applyStreamSnapshotEvent,
+  hydrateSessionSnapshot,
+  patchSessionSnapshot as patchSharedSessionSnapshot,
+  patchSessionSummary as patchSharedSessionSummary,
+  syncSessionSnapshot,
+  type CachedSessionEntry,
+} from "@/composables/session-snapshot";
 
 type SessionDraftContext = {
   cwd: string;
   parentSessionId: string;
-};
-
-type CachedSessionEntry = {
-  snapshot: SessionSnapshot;
-  hydratedAt: number;
 };
 
 const createLocalId = () =>
@@ -76,7 +83,7 @@ const createEmptyResources = (): ResourceCatalogResponse => ({
 // Pi 原始消息辅助函数
 // ============================================================================
 
-const createRawMessage = (message?: StreamEvent["message"], overrides?: Partial<ChatMessage>): ChatMessage => ({
+const createRawMessage = (message?: StreamMessageEvent["message"], overrides?: Partial<ChatMessage>): ChatMessage => ({
   role: (message?.role as ChatMessage["role"]) || overrides?.role || "assistant",
   content:
     message?.content === undefined
@@ -181,6 +188,7 @@ export function usePiChat() {
   const info = ref<SystemInfo | null>(null);
   const providers = ref<ProvidersResponse | null>(null);
   const sessions = ref<SessionSummary[]>([]);
+  const sessionContexts = ref<Record<string, SessionContextSummary>>({});
   const activeSessionId = ref("");
   const messages = ref<ChatMessage[]>([]);
   const activeDraftContext = ref<SessionDraftContext | null>(null);
@@ -332,51 +340,21 @@ export function usePiChat() {
   const getCachedSessionSnapshot = (sessionId: string) =>
     sessionCache.value[sessionId]?.snapshot;
 
-  const buildSnapshotFromSummary = (sessionId: string) => {
-    const summary = sessions.value.find((session) => session.id === sessionId);
-    if (!summary) {
-      return null;
-    }
-
-    return {
-      ...summary,
-      messages: [],
-      historyMeta: createHistoryMeta(0, 0),
-      interactiveRequests: [],
-      permissionRequests: [],
-    } satisfies SessionSnapshot;
-  };
-
-  const upsertSessionSnapshot = (snapshot: SessionSnapshot) => {
-    sessionCache.value = {
-      ...sessionCache.value,
-      [snapshot.id]: {
-        snapshot: {
-          ...snapshot,
-          messages: [...snapshot.messages],
-        },
-        hydratedAt: Date.now(),
-      },
-    };
-  };
-
   const patchSessionSnapshot = (
     sessionId: string,
     updater: (snapshot: SessionSnapshot) => SessionSnapshot,
   ) => {
-    const baseSnapshot =
-      getCachedSessionSnapshot(sessionId) ??
-      buildSnapshotFromSummary(sessionId);
-    if (!baseSnapshot) {
+    const nextSnapshot = patchSharedSessionSnapshot({
+      sessions,
+      sessionContexts,
+      sessionCache,
+      sessionId,
+      createHistoryMeta,
+      updater,
+    });
+    if (!nextSnapshot) {
       return null;
     }
-
-    const nextSnapshot = updater({
-      ...baseSnapshot,
-      messages: [...baseSnapshot.messages],
-    });
-
-    upsertSessionSnapshot(nextSnapshot);
 
     if (activeSessionId.value === sessionId) {
       messages.value = nextSnapshot.messages;
@@ -398,6 +376,19 @@ export function usePiChat() {
         [...snapshot.messages, message],
       ),
       updatedAt: Math.max(snapshot.updatedAt, message.timestamp || Date.now()),
+    }));
+  };
+
+  const applyMessagesPayload = (
+    sessionId: string,
+    payload: SessionMessagesPayload,
+  ) => {
+    patchSessionSnapshot(sessionId, (snapshot) => ({
+      ...snapshot,
+      messages: payload.messages,
+      historyMeta: payload.historyMeta,
+      interactiveRequests: payload.interactiveRequests,
+      permissionRequests: payload.permissionRequests,
     }));
   };
 
@@ -532,44 +523,29 @@ export function usePiChat() {
     },
   );
 
-  const upsertSessionSummary = (summary: SessionSummary) => {
-    const next = sessions.value.filter((session) => session.id !== summary.id);
-    sessions.value = [summary, ...next].sort(
-      (left, right) => right.updatedAt - left.updatedAt,
-    );
-  };
-
   const syncSessions = (snapshot?: SessionSnapshot) => {
-    if (!snapshot) {
-      return;
-    }
-
-    const { messages, interactiveRequests, permissionRequests, ...summary } = snapshot;
-    void messages;
-    void interactiveRequests;
-    void permissionRequests;
-    upsertSessionSnapshot(snapshot);
-    upsertSessionSummary(summary);
+    syncSessionSnapshot(
+      {
+        sessions,
+        sessionContexts,
+        sessionCache,
+      },
+      snapshot,
+    );
   };
 
   const patchSessionSummary = (
     sessionId: string,
     patch: Partial<SessionSummary>,
   ) => {
-    const current = sessions.value.find((session) => session.id === sessionId);
-    if (!current) {
-      return;
-    }
-
-    upsertSessionSummary({
-      ...current,
-      ...patch,
+    patchSharedSessionSummary({
+      sessions,
+      sessionContexts,
+      sessionCache,
+      sessionId,
+      createHistoryMeta,
+      patch,
     });
-
-    patchSessionSnapshot(sessionId, (snapshot) => ({
-      ...snapshot,
-      ...patch,
-    }));
   };
 
   const syncComposerSelection = (
@@ -637,37 +613,17 @@ export function usePiChat() {
   };
 
   async function hydrateSession(sessionId: string) {
-    const cached = getCachedSessionSnapshot(sessionId);
-    if (cached) {
-      return cached;
-    }
-
-    const inFlight = loadSessionInFlightById.get(sessionId);
-    if (inFlight) {
-      return inFlight;
-    }
-
-    const requestSeq = (loadSessionRequestSeqById.get(sessionId) ?? 0) + 1;
-    loadSessionRequestSeqById.set(sessionId, requestSeq);
-
-    const loadPromise = getSession(sessionId)
-      .then((snapshot) => {
-        const latestSeq = loadSessionRequestSeqById.get(sessionId);
-        if (latestSeq !== requestSeq) {
-          return getCachedSessionSnapshot(sessionId) ?? snapshot;
-        }
-
-        syncSessions(snapshot);
-        return snapshot;
-      })
-      .finally(() => {
-        if (loadSessionInFlightById.get(sessionId) === loadPromise) {
-          loadSessionInFlightById.delete(sessionId);
-        }
-      });
-
-    loadSessionInFlightById.set(sessionId, loadPromise);
-    return loadPromise;
+    return hydrateSessionSnapshot({
+      sessionId,
+      sessions,
+      sessionContexts,
+      sessionCache,
+      createHistoryMeta,
+      loadSessionInFlightById,
+      loadSessionRequestSeqById,
+      refreshSessions,
+      refreshSessionContexts,
+    });
   }
 
   const openSessionDraft = async (options?: {
@@ -800,6 +756,12 @@ export function usePiChat() {
     return nextSessions;
   };
 
+  const refreshSessionContexts = async () => {
+    const nextContexts = await getSessionContexts();
+    sessionContexts.value = nextContexts;
+    return nextContexts;
+  };
+
   // ============================================================================
   // SSE 流式连接 - 直通 Pi 原始消息事件
   // ============================================================================
@@ -817,21 +779,21 @@ export function usePiChat() {
     );
 
     eventSource.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as StreamEvent & {
-        session?: SessionSnapshot;
-      };
+      const payload = JSON.parse(event.data) as StreamEvent;
 
-      if (payload.type === "snapshot" && payload.session) {
-        syncSessions(payload.session);
+      const patched = applyStreamSnapshotEvent(
+        { sessions, sessionContexts, sessionCache },
+        sessionId,
+        payload,
+        createHistoryMeta,
+      );
+      if (patched) {
         if (activeSessionId.value === sessionId) {
-          syncComposerSelection(payload.session);
-          messages.value =
-            getCachedSessionSnapshot(sessionId)?.messages ??
-            payload.session.messages;
-          status.value = payload.session.status;
-          isSending.value = payload.session.status === "streaming";
-          composer.isSending = payload.session.status === "streaming";
-          composer.canAbort = payload.session.status === "streaming";
+          messages.value = patched.messages;
+          status.value = patched.status;
+          isSending.value = patched.status === "streaming";
+          composer.isSending = patched.status === "streaming";
+          composer.canAbort = patched.status === "streaming";
         }
         return;
       }
@@ -966,15 +928,17 @@ export function usePiChat() {
 
   const boot = async () => {
     error.value = "";
-    const [systemInfo, providerPayload, sessionList] = await Promise.all([
+    const [systemInfo, providerPayload, sessionList, contextMap] = await Promise.all([
       getSystemInfo(),
       getProviders(),
       getSessions(),
+      getSessionContexts(),
     ]);
 
     info.value = systemInfo;
     providers.value = providerPayload;
     sessions.value = sessionList;
+    sessionContexts.value = contextMap;
 
     await refreshAgents();
     // Load settings store to resolve composer defaults
@@ -1015,11 +979,8 @@ export function usePiChat() {
     };
 
     try {
-      const snapshot = await getSession(sessionId, { rounds: nextRounds });
-      syncSessions(snapshot);
-      if (activeSessionId.value === sessionId) {
-        messages.value = snapshot.messages;
-      }
+      const payload = await getSessionMessages(sessionId, { rounds: nextRounds });
+      applyMessagesPayload(sessionId, payload);
     } finally {
       sessionLoadingOlderById.value = {
         ...sessionLoadingOlderById.value,
@@ -1366,13 +1327,10 @@ export function usePiChat() {
         caughtError instanceof Error
           ? caughtError.message
           : String(caughtError);
-      const snapshot = await getSession(sessionId, {
+      const payload = await getSessionMessages(sessionId, {
         rounds: getCachedSessionSnapshot(sessionId)?.historyMeta.roundWindow,
       });
-      syncSessions(snapshot);
-      if (activeSessionId.value === sessionId) {
-        messages.value = snapshot.messages;
-      }
+      applyMessagesPayload(sessionId, payload);
     }
   };
 
@@ -1403,13 +1361,10 @@ export function usePiChat() {
         caughtError instanceof Error
           ? caughtError.message
           : String(caughtError);
-      const snapshot = await getSession(sessionId, {
+      const payload = await getSessionMessages(sessionId, {
         rounds: getCachedSessionSnapshot(sessionId)?.historyMeta.roundWindow,
       });
-      syncSessions(snapshot);
-      if (activeSessionId.value === sessionId) {
-        messages.value = snapshot.messages;
-      }
+      applyMessagesPayload(sessionId, payload);
     }
   };
 
@@ -1443,13 +1398,10 @@ export function usePiChat() {
         caughtError instanceof Error
           ? caughtError.message
           : String(caughtError);
-      const snapshot = await getSession(sessionId, {
+      const payload = await getSessionMessages(sessionId, {
         rounds: getCachedSessionSnapshot(sessionId)?.historyMeta.roundWindow,
       });
-      syncSessions(snapshot);
-      if (activeSessionId.value === sessionId) {
-        messages.value = snapshot.messages;
-      }
+      applyMessagesPayload(sessionId, payload);
     }
   };
 

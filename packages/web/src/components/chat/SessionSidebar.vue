@@ -44,6 +44,7 @@ const router = useRouter();
 
 const props = defineProps<{
   sessions: SessionSummary[];
+  sessionContexts?: Record<string, import("@/lib/types").SessionContextSummary>;
   activeSessionId: string;
   workspaceDir?: string;
   isSending: boolean;
@@ -96,6 +97,7 @@ const normalizePath = (value: string) =>
 const projects = computed(() => {
   return buildSessionProjects({
     sessions: props.sessions,
+    sessionContexts: props.sessionContexts,
     storedProjects: storedProjects.value,
     availableWorktreesByProject: worktreeState.worktreesByProject.value,
     query: normalizedQuery.value,

@@ -58,8 +58,23 @@ import {
   addProject,
   removeProject,
 } from './storage/index.js';
+import { initializeRidgeDb } from './db/index.js';
+import { toPosixPath } from './utils/paths.js';
+import { normalizeString } from './utils/strings.js';
+import {
+  getIndexedSessionLookup,
+  getIndexedSessionContext,
+  getIndexedSessionTree,
+  invalidateManagedProjectScopes,
+  listIndexedSessionContexts,
+  listIndexedSessions,
+  refreshSessionCatalog,
+  upsertIndexedSessionRecord,
+} from './session-indexer.js';
 import type {
+  SessionMessagesPayload,
   SessionRecord,
+  SessionRuntimePayload,
   SessionSummary,
   SessionSnapshot,
   FileTreeEntry,
@@ -80,6 +95,10 @@ import type {
   PermissionInteractiveRequest,
   PermissionRule,
 } from './types/index.js';
+import type {
+  IndexedSessionContextSummary,
+  IndexedSessionLookup,
+} from './session-indexer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
@@ -95,10 +114,16 @@ app.use(express.json({ limit: '2mb' }));
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
 const activeSessions = new Map<string, SessionRecord>();
+const openingSessionRecords = new Map<string, Promise<SessionRecord>>();
 const projectContextResolver = createProjectContextResolver(defaultWorkspaceDir);
-const sessionMetadataStore = createSessionMetadataStore(defaultWorkspaceDir);
+const sessionMetadataStore = createSessionMetadataStore();
 const gitService = createGitService();
 const worktreeService = createWorktreeService(gitService);
+const refreshSessionCatalogIndex = async () =>
+  refreshSessionCatalog({
+    projectContextResolver,
+    activeSessions,
+  });
 
 // ===== Zod Schemas =====
 const createSessionSchema = z.object({
@@ -224,12 +249,6 @@ const ignoredDirectoryNames = new Set([
 const DEFAULT_SESSION_ROUND_WINDOW = 3;
 
 // ===== Utility Functions =====
-const normalizeString = (value: unknown): string => {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  return value.trim();
-};
 
 const normalizeFsPath = (value: unknown): string =>
   path.resolve(normalizeString(value) || defaultWorkspaceDir);
@@ -257,11 +276,6 @@ const ensureWithinRoot = (candidatePath: string, rootPath: string): string => {
 
   return candidatePath;
 };
-
-const toPosixPath = (value: string): string => value.split(path.sep).join('/');
-
-const getFallbackTitle = (firstMessage: unknown): string =>
-  normalizeString(firstMessage).slice(0, 48) || '新会话';
 
 const closeClients = (record: SessionRecord): void => {
   for (const client of record.clients) {
@@ -330,12 +344,16 @@ const requestPendingPermission = async (
 
 const emitSessionSnapshot = async (
   record: SessionRecord,
-  sessionRegistry?: Awaited<ReturnType<typeof listProjectSessions>> | null,
 ): Promise<void> => {
-  const registry = sessionRegistry ?? (await listProjectSessions());
+  const messagesPayload = toSessionMessagesPayload(record, {});
   emit(record, {
     type: 'snapshot',
-    session: await toSessionSnapshot(record, registry, {}),
+    sessionId: record.id,
+    status: record.status,
+    messages: messagesPayload.messages,
+    historyMeta: messagesPayload.historyMeta,
+    interactiveRequests: messagesPayload.interactiveRequests,
+    permissionRequests: messagesPayload.permissionRequests,
   });
 };
 
@@ -538,7 +556,7 @@ const serializeMessage = (message: {
   toolName?: unknown;
   details?: unknown;
   isError?: unknown;
-}): SerializedMessage => ({
+} | undefined): SerializedMessage => ({
   role: (normalizeString(message?.role) || 'system') as SerializedMessage['role'],
   content: passthroughContent(message?.content),
   timestamp:
@@ -841,11 +859,6 @@ const applySessionAgentSelection = async (
   record.resolvedThinkingLevel =
     normalizeThinkingLevel(record.session.thinkingLevel) || thinking;
 
-  await sessionMetadataStore.setSelection(record.id, {
-    agent: record.selectedAgentName,
-    model: record.explicitModelSpec,
-    thinkingLevel: record.explicitThinkingLevel,
-  });
 };
 
 const restoreSessionSelection = async (record: SessionRecord): Promise<void> => {
@@ -917,7 +930,6 @@ const bindSessionRuntime = (record: SessionRecord): (() => void) =>
     }
 
     updateStatus(record, 'idle');
-    void persistSessionRecordMetadata(record);
     void emitSessionSnapshot(record);
   });
 
@@ -1043,6 +1055,7 @@ const destroySessionRecord = (record: SessionRecord): void => {
   record.unsubscribe?.();
   closeClients(record);
   activeSessions.delete(record.id);
+  openingSessionRecords.delete(record.id);
 };
 
 const persistSessionFileIfNeeded = async (record: SessionRecord): Promise<void> => {
@@ -1087,33 +1100,6 @@ interface ManagedProjectScope {
   project: Project;
   allowedRoots: string[];
   projectContext: ProjectContextInfo;
-}
-interface SessionRegistryItem {
-  info: {
-    id: string;
-    name: string;
-    cwd: string;
-    path: string;
-    created: Date;
-    modified: Date;
-    firstMessage?: unknown;
-    parentSessionPath?: string;
-  };
-  cwd: string;
-  project: Project;
-  projectContext: ProjectContextInfo;
-  metadata: {
-    archived: boolean;
-    agent?: string;
-    model?: string;
-    thinkingLevel?: ThinkingLevel;
-  };
-  parentSessionId?: string;
-}
-interface SessionRegistry {
-  infosById: Map<string, SessionRegistryItem>;
-  childrenById: Map<string, string[]>;
-  items: SessionRegistryItem[];
 }
 
 const buildManagedProjectScopes = async (): Promise<ManagedProjectScope[]> => {
@@ -1164,276 +1150,35 @@ const ensureManagedProjectScope = async (
   throw error;
 };
 
-const listProjectSessions = async (): Promise<SessionRegistry> => {
-  const [projectScopes, allSessions, metadataState] = await Promise.all([
-    buildManagedProjectScopes(),
-    SessionManager.listAll(),
-    sessionMetadataStore.load(),
-  ]);
-
-  const enriched: SessionRegistryItem[] = [];
-
-  const appendSession = async (entry: {
-    id: string;
-    name: string;
-    cwd?: string;
-    path: string;
-    created: Date;
-    modified: Date;
-    firstMessage?: unknown;
-    parentSessionPath?: string;
-    metadata: {
-      archived: boolean;
-      agent?: string;
-      model?: string;
-      thinkingLevel?: ThinkingLevel;
-    };
-  }) => {
-    const cwd = normalizeOptionalFsPath(entry.cwd);
-    if (!cwd) {
-      return;
-    }
-
-    const projectScope = resolveManagedProjectScope(cwd, projectScopes);
-    if (!projectScope) {
-      return;
-    }
-
-    const projectContext = await projectContextResolver.resolveContext(cwd);
-    enriched.push({
-      info: {
-        id: entry.id,
-        name: entry.name,
-        cwd,
-        path: entry.path,
-        created: entry.created,
-        modified: entry.modified,
-        firstMessage: entry.firstMessage,
-        parentSessionPath: entry.parentSessionPath,
-      },
-      cwd,
-      project: projectScope.project,
-      projectContext,
-      metadata: entry.metadata,
-    });
-  };
-  for (const info of allSessions) {
-    await appendSession({
-      id: info.id,
-      name: info.name,
-      cwd: info.cwd,
-      path: info.path,
-      created: info.created,
-      modified: info.modified,
-      firstMessage: info.firstMessage,
-      parentSessionPath: info.parentSessionPath,
-      metadata: {
-        archived: metadataState.sessions[info.id]?.archived === true,
-        agent: normalizeString(metadataState.sessions[info.id]?.agent) || undefined,
-        model: normalizeString(metadataState.sessions[info.id]?.model) || undefined,
-        thinkingLevel: normalizeThinkingLevel(
-          metadataState.sessions[info.id]?.thinkingLevel,
-        ),
-      },
-    });
-  }
-
-  const knownSessionIds = new Set(enriched.map((item) => item.info.id));
-  for (const [sessionId, metadata] of Object.entries(metadataState.sessions)) {
-    if (
-      knownSessionIds.has(sessionId) ||
-      !normalizeString(metadata.sessionFile)
-    ) {
-      continue;
-    }
-
-    const sessionFile = path.resolve(metadata.sessionFile);
-
-    try {
-      await fs.stat(sessionFile);
-    } catch {
-      continue;
-    }
-    const createdAt = Number.isFinite(metadata.createdAt)
-      ? metadata.createdAt
-      : Date.now();
-    const updatedAt = Number.isFinite(metadata.updatedAt)
-      ? metadata.updatedAt
-      : createdAt;
-    await appendSession({
-      id: sessionId,
-      name: metadata.title || '',
-      cwd: metadata.cwd,
-      path: sessionFile,
-      created: new Date(createdAt),
-      modified: new Date(updatedAt),
-      parentSessionPath: metadata.parentSessionPath,
-      metadata: {
-        archived: metadata.archived === true,
-        agent: normalizeString(metadata.agent) || undefined,
-        model: normalizeString(metadata.model) || undefined,
-        thinkingLevel: normalizeThinkingLevel(metadata.thinkingLevel),
-      },
-    });
-    knownSessionIds.add(sessionId);
-  }
-  for (const record of activeSessions.values()) {
-    if (knownSessionIds.has(record.id)) {
-      continue;
-    }
-
-    await appendSession({
-      id: record.id,
-      name: record.session.sessionName || '',
-      cwd: record.cwd,
-      path: record.sessionFile,
-      created: new Date(record.createdAt),
-      modified: new Date(record.updatedAt),
-      firstMessage: record.session.messages[0]?.content,
-      parentSessionPath: record.parentSessionPath,
-      metadata: {
-        archived: metadataState.sessions[record.id]?.archived === true,
-        agent:
-          record.selectedAgentName ||
-          normalizeString(metadataState.sessions[record.id]?.agent) ||
-          undefined,
-        model:
-          record.explicitModelSpec ||
-          normalizeString(metadataState.sessions[record.id]?.model) ||
-          undefined,
-        thinkingLevel:
-          record.explicitThinkingLevel ||
-          normalizeThinkingLevel(
-            metadataState.sessions[record.id]?.thinkingLevel,
-          ),
-      },
-    });
-    knownSessionIds.add(record.id);
-  }
-  const infosById = new Map(enriched.map((item) => [item.info.id, item]));
-  const idByPath = new Map(
-    enriched.map((item) => [path.resolve(item.info.path), item.info.id]),
-  );
-  const childrenById = new Map<string, string[]>();
-  for (const item of enriched) {
-    const parentId = item.info.parentSessionPath
-      ? idByPath.get(path.resolve(item.info.parentSessionPath))
-      : undefined;
-    item.parentSessionId = parentId;
-    if (parentId) {
-      const current = childrenById.get(parentId) ?? [];
-      current.push(item.info.id);
-      childrenById.set(parentId, current);
-    }
-  }
-
-  return {
-    infosById,
-    childrenById,
-    items: enriched,
-  };
-};
-
-const toSessionSummary = (item: SessionRegistryItem): SessionSummary => {
-  const activeRecord = activeSessions.get(item.info.id);
-  const title =
-    normalizeString(activeRecord?.session.sessionName) ||
-    normalizeString(item.info.name) ||
-    getFallbackTitle(item.info.firstMessage);
-
-  return {
-    id: item.info.id,
-    title,
-    cwd: item.cwd,
-    status: activeRecord?.status || 'idle',
-    createdAt: item.info.created.getTime(),
-    updatedAt: Math.max(
-      item.info.modified.getTime(),
-      activeRecord?.updatedAt || 0,
-    ),
-    archived: item.metadata.archived,
-    agent: activeRecord?.selectedAgentName || item.metadata.agent,
-    model: activeRecord?.explicitModelSpec || item.metadata.model,
-    thinkingLevel:
-      activeRecord?.explicitThinkingLevel || item.metadata.thinkingLevel,
-    resolvedModel: activeRecord?.resolvedModelSpec || item.metadata.model,
-    resolvedThinkingLevel:
-      activeRecord?.resolvedThinkingLevel || item.metadata.thinkingLevel,
-    sessionFile: toPosixPath(path.resolve(item.info.path)),
-    parentSessionId: item.parentSessionId,
-    projectId: item.project.id,
-    projectRoot: toPosixPath(path.resolve(item.project.path)),
-    projectLabel: item.project.name,
-    isGit: item.projectContext.isGit,
-    branch: item.projectContext.branch,
-    worktreeRoot: toPosixPath(item.projectContext.worktreeRoot),
-    worktreeLabel: item.projectContext.worktreeLabel,
-  };
-};
-
 interface ToSessionSnapshotOptions {
   rounds?: number;
 }
 
 const getUserMessageIndexes = (messages: SessionEvent["message"][]): number[] => {
   const indexes: number[] = [];
-
   for (const [index, message] of messages.entries()) {
-    if (message && message.role === 'user') {
+    if (message && message.role === "user") {
       indexes.push(index);
     }
   }
-    return indexes;
+  return indexes;
 };
-const toSessionSnapshot = async (
-  record: SessionRecord,
-  sessionRegistry: SessionRegistry | null,
+
+const buildSessionMessagesPayload = (
+  sessionId: string,
+  allMessages: SessionEvent["message"][],
   options: ToSessionSnapshotOptions = {},
-): Promise<SessionSnapshot> => {
-  const registry = sessionRegistry ?? (await listProjectSessions());
-  const item = registry.infosById.get(record.id);
-  const fallbackProjectScope = item
-    ? null
-    : await ensureManagedProjectScope(record.cwd);
-  const fallbackProjectContext = item
-    ? null
-    : await projectContextResolver.resolveContext(record.cwd);
-  const summary = item
-    ? toSessionSummary(item)
-    : {
-        id: record.id,
-        title: normalizeString(record.session.sessionName) || '新会话',
-        cwd: record.cwd,
-        status: record.status,
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt,
-        archived: false,
-        agent: record.selectedAgentName,
-        model: record.explicitModelSpec,
-        thinkingLevel: record.explicitThinkingLevel,
-        resolvedModel: record.resolvedModelSpec,
-        resolvedThinkingLevel: record.resolvedThinkingLevel,
-        sessionFile: toPosixPath(record.sessionFile || ''),
-        parentSessionId: undefined as string | undefined,
-        projectId: fallbackProjectScope!.project.id,
-        projectRoot: toPosixPath(path.resolve(fallbackProjectScope!.project.path)),
-        projectLabel: fallbackProjectScope!.project.name,
-        isGit: fallbackProjectContext!.isGit,
-        branch: fallbackProjectContext!.branch,
-        worktreeRoot: toPosixPath(fallbackProjectContext!.worktreeRoot),
-        worktreeLabel: fallbackProjectContext!.worktreeLabel,
-      };
-  const allMessages = record.session.messages;
+  interactiveRequests: AskInteractiveRequest[] = [],
+  permissionRequests: PermissionInteractiveRequest[] = [],
+): SessionMessagesPayload => {
   const userMessageIndexes = getUserMessageIndexes(allMessages);
   const totalRounds = userMessageIndexes.length;
   const requestedRounds = Number.isInteger(options.rounds)
     ? Math.max(1, options.rounds!)
     : DEFAULT_SESSION_ROUND_WINDOW;
-
   let visibleMessages = allMessages;
   let loadedRounds = totalRounds;
   let hasMoreAbove = false;
-
   if (totalRounds > 0) {
     const startRoundIndex = Math.max(0, totalRounds - requestedRounds);
     const startMessageIndex = startRoundIndex === 0 ? 0 : userMessageIndexes[startRoundIndex]!;
@@ -1442,7 +1187,7 @@ const toSessionSnapshot = async (
     hasMoreAbove = startRoundIndex > 0;
   }
   return {
-    ...summary,
+    sessionId,
     messages: visibleMessages.map((message) => serializeMessage(message)),
     historyMeta: {
       loadedRounds,
@@ -1450,8 +1195,302 @@ const toSessionSnapshot = async (
       hasMoreAbove,
       roundWindow: Math.max(requestedRounds, loadedRounds || requestedRounds),
     },
-    interactiveRequests: getInteractiveRequests(record),
-    permissionRequests: getPermissionRequests(record),
+    interactiveRequests,
+    permissionRequests,
+  };
+};
+
+const getRequestedRoundCount = (options: ToSessionSnapshotOptions = {}) =>
+  Number.isInteger(options.rounds)
+    ? Math.max(1, options.rounds!)
+    : DEFAULT_SESSION_ROUND_WINDOW;
+
+const parseStoredSessionMessageLine = (
+  line: string,
+): SessionEvent["message"] | null => {
+  const trimmedLine = line.trim();
+  if (!trimmedLine) {
+    return null;
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(trimmedLine) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  if (parsed.type !== 'message') {
+    return null;
+  }
+
+  const message = parsed.message;
+  return message && typeof message === 'object'
+    ? (message as SessionEvent["message"])
+    : null;
+};
+
+const buildSessionSummaryFromIndex = (
+  record: SessionRecord,
+  lookup: IndexedSessionLookup,
+  context: IndexedSessionContextSummary | null,
+): SessionSummary => ({
+  id: record.id,
+  title: normalizeString(record.session.sessionName) || lookup.title || '新会话',
+  cwd: record.cwd,
+  status: record.status,
+  createdAt: lookup.createdAt,
+  updatedAt: Math.max(lookup.updatedAt, record.updatedAt),
+  archived: lookup.archived,
+  agent: record.selectedAgentName,
+  model: record.explicitModelSpec,
+  thinkingLevel: record.explicitThinkingLevel,
+  resolvedModel: record.resolvedModelSpec,
+  resolvedThinkingLevel: record.resolvedThinkingLevel,
+  sessionFile: toPosixPath(record.sessionFile || ''),
+  parentSessionId: lookup.parentSessionId,
+  contextId: lookup.contextId,
+  projectId: context?.projectId || '',
+  projectRoot: context?.projectRoot || '',
+  projectLabel: context?.projectLabel || '',
+  isGit: context?.isGit || false,
+  branch: context?.branch,
+  worktreeRoot: context?.worktreeRoot || '',
+  worktreeLabel: context?.worktreeLabel || '',
+});
+
+const resolveSessionSummary = async (
+  record: SessionRecord,
+): Promise<SessionSummary> => {
+  const lookup = await getIndexedSessionLookup(record.id);
+  if (lookup) {
+    const context = lookup.contextId
+      ? await getIndexedSessionContext(lookup.contextId)
+      : null;
+    return buildSessionSummaryFromIndex(record, lookup, context);
+  }
+
+  const fallbackProjectScope = await ensureManagedProjectScope(record.cwd);
+  const fallbackProjectContext = await projectContextResolver.resolveContext(record.cwd);
+  return {
+    id: record.id,
+    title: normalizeString(record.session.sessionName) || '新会话',
+    cwd: record.cwd,
+    status: record.status,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    archived: false,
+    agent: record.selectedAgentName,
+    model: record.explicitModelSpec,
+    thinkingLevel: record.explicitThinkingLevel,
+    resolvedModel: record.resolvedModelSpec,
+    resolvedThinkingLevel: record.resolvedThinkingLevel,
+    sessionFile: toPosixPath(record.sessionFile || ''),
+    parentSessionId: undefined,
+    contextId: undefined,
+    projectId: fallbackProjectScope.project.id,
+    projectRoot: toPosixPath(path.resolve(fallbackProjectScope.project.path)),
+    projectLabel: fallbackProjectScope.project.name,
+    isGit: fallbackProjectContext.isGit,
+    branch: fallbackProjectContext.branch,
+    worktreeRoot: toPosixPath(fallbackProjectContext.worktreeRoot),
+    worktreeLabel: fallbackProjectContext.worktreeLabel,
+  };
+};
+const toSessionMessagesPayload = (
+  record: SessionRecord,
+  options: ToSessionSnapshotOptions = {},
+): SessionMessagesPayload => {
+  return buildSessionMessagesPayload(
+    record.id,
+    record.session.messages,
+    options,
+    getInteractiveRequests(record),
+    getPermissionRequests(record),
+  );
+};
+
+const readAllStoredSessionMessages = async (
+  sessionFile: string,
+): Promise<SessionEvent["message"][]> => {
+  const content = await fs.readFile(sessionFile, 'utf8');
+  const messages: SessionEvent["message"][] = [];
+  for (const line of content.split(/\r?\n/)) {
+    const message = parseStoredSessionMessageLine(line);
+    if (message) {
+      messages.push(message);
+    }
+  }
+  return messages;
+};
+
+const readStoredSessionMessagesTail = async (
+  sessionFile: string,
+  requestedRounds: number,
+): Promise<SessionEvent["message"][]> => {
+  const handle = await fs.open(sessionFile, 'r');
+  const collectedMessages: SessionEvent["message"][] = [];
+  let position = 0;
+  let remainder = Buffer.alloc(0);
+  let foundUserRounds = 0;
+
+  try {
+    const stats = await handle.stat();
+    position = stats.size;
+
+    while (position > 0 && foundUserRounds < requestedRounds) {
+      const chunkSize = Math.min(64 * 1024, position);
+      position -= chunkSize;
+
+      const buffer = Buffer.allocUnsafe(chunkSize);
+      const { bytesRead } = await handle.read(buffer, 0, chunkSize, position);
+      const combined = remainder.length
+        ? Buffer.concat([buffer.subarray(0, bytesRead), remainder])
+        : buffer.subarray(0, bytesRead);
+      let lineEnd = combined.length;
+
+      for (let index = combined.length - 1; index >= 0; index -= 1) {
+        if (combined[index] !== 0x0a) {
+          continue;
+        }
+
+        const message = parseStoredSessionMessageLine(
+          combined.subarray(index + 1, lineEnd).toString('utf8').replace(/\r$/, ''),
+        );
+        lineEnd = index;
+        if (!message) {
+          continue;
+        }
+
+        collectedMessages.push(message);
+        if (message.role === 'user') {
+          foundUserRounds += 1;
+          if (foundUserRounds >= requestedRounds) {
+            return collectedMessages.reverse();
+          }
+        }
+      }
+
+      if (position > 0) {
+        remainder = combined.subarray(0, lineEnd);
+        continue;
+      }
+
+      const message = parseStoredSessionMessageLine(
+        combined.subarray(0, lineEnd).toString('utf8').replace(/\r$/, ''),
+      );
+      if (message) {
+        collectedMessages.push(message);
+      }
+    }
+
+    return collectedMessages.reverse();
+  } finally {
+    await handle.close();
+  }
+};
+
+const buildStoredSessionMessagesPayload = (
+  sessionId: string,
+  messages: SessionEvent["message"][],
+  totalRounds: number,
+  requestedRounds: number,
+): SessionMessagesPayload => {
+  const loadedRounds = totalRounds > 0 ? Math.min(totalRounds, requestedRounds) : 0;
+
+  return {
+    sessionId,
+    messages: messages.map((message) => serializeMessage(message)),
+    historyMeta: {
+      loadedRounds,
+      totalRounds,
+      hasMoreAbove: totalRounds > requestedRounds,
+      roundWindow: Math.max(requestedRounds, loadedRounds || requestedRounds),
+    },
+    interactiveRequests: [],
+    permissionRequests: [],
+  };
+};
+
+const getIndexedSessionLookupOrThrow = async (
+  sessionId: string,
+): Promise<IndexedSessionLookup> => {
+  const lookup = await getIndexedSessionLookup(sessionId);
+  if (lookup) {
+    return lookup;
+  }
+
+  const error = new Error('Session not found') as HttpError;
+  error.statusCode = 404;
+  throw error;
+};
+
+const getStoredSessionMessagesPayload = async (
+  sessionId: string,
+  options: ToSessionSnapshotOptions = {},
+): Promise<SessionMessagesPayload> => {
+  const lookup = await getIndexedSessionLookupOrThrow(sessionId);
+  const requestedRounds = getRequestedRoundCount(options);
+  const messages =
+    lookup.userRoundCount > 0 && lookup.userRoundCount > requestedRounds
+      ? await readStoredSessionMessagesTail(lookup.sessionFile, requestedRounds)
+      : await readAllStoredSessionMessages(lookup.sessionFile);
+
+  return buildStoredSessionMessagesPayload(
+    sessionId,
+    messages,
+    lookup.userRoundCount,
+    requestedRounds,
+  );
+};
+
+const toSessionRuntimePayload = (
+  record: SessionRecord,
+): SessionRuntimePayload => ({
+  sessionId: record.id,
+  agent: record.selectedAgentName,
+  model: record.explicitModelSpec || formatModelSpec(record.session.model),
+  thinkingLevel:
+    record.explicitThinkingLevel ||
+    normalizeThinkingLevel(record.session.thinkingLevel),
+  resolvedModel: record.resolvedModelSpec || formatModelSpec(record.session.model),
+  resolvedThinkingLevel:
+    record.resolvedThinkingLevel ||
+    normalizeThinkingLevel(record.session.thinkingLevel),
+});
+
+const getStoredSessionRuntimePayload = async (
+  sessionId: string,
+): Promise<SessionRuntimePayload> => {
+  const lookup = await getIndexedSessionLookupOrThrow(sessionId);
+  const thinkingLevel =
+    normalizeThinkingLevel(lookup.explicitThinkingLevel) ||
+    normalizeThinkingLevel(lookup.lastThinkingLevel);
+  const model = lookup.explicitModel || lookup.lastModel;
+
+  return {
+    sessionId,
+    agent: lookup.agent,
+    model,
+    thinkingLevel,
+    resolvedModel: lookup.lastModel || model,
+    resolvedThinkingLevel:
+      normalizeThinkingLevel(lookup.lastThinkingLevel) || thinkingLevel,
+  };
+};
+const toSessionSnapshot = async (
+  record: SessionRecord,
+  options: ToSessionSnapshotOptions = {},
+): Promise<SessionSnapshot> => {
+  const summary = await resolveSessionSummary(record);
+  const messagesPayload = toSessionMessagesPayload(record, options);
+
+  return {
+    ...summary,
+    messages: messagesPayload.messages,
+    historyMeta: messagesPayload.historyMeta,
+    interactiveRequests: messagesPayload.interactiveRequests,
+    permissionRequests: messagesPayload.permissionRequests,
   };
 };
 
@@ -1517,83 +1556,61 @@ const createTransientCatalogSession = async (cwd: string) => {
   };
 };
 
-const getSessionInfoOrThrow = async (
-  sessionId: string,
-  sessionRegistry?: SessionRegistry | null,
-): Promise<SessionRegistryItem> => {
-  const registry = sessionRegistry ?? (await listProjectSessions());
-  const item = registry.infosById.get(sessionId);
-  if (!item) {
-    const error = new Error('Session not found') as HttpError;
-    error.statusCode = 404;
-    throw error;
-  }
-
-  return item;
-};
-
 const ensureSessionRecord = async (
   sessionId: string,
-  sessionRegistry?: SessionRegistry | null,
 ): Promise<SessionRecord> => {
   const existing = activeSessions.get(sessionId);
   if (existing) {
     return existing;
   }
 
-  const item = await getSessionInfoOrThrow(sessionId, sessionRegistry);
-  const sessionManager = SessionManager.open(item.info.path);
-  const settingsManager = createPiAgentScopeSettingsManager(item.cwd);
-  const recordState: Partial<SessionRecord> = {
-    cwd: item.cwd,
-    pendingAskRecords: new Map(),
-    pendingPermissionRecords: new Map(),
-    runtimePermissionRules: {},
-    settingsManager,
-    selectedAgentConfig: null,
-    selectedPermissionPolicy: null,
-  };
-  const resourceLoader = createSessionResourceLoader(recordState as SessionRecord);
-  await resourceLoader.reload();
-  const { session } = await createAgentSession({
-    cwd: item.cwd,
-    authStorage,
-    modelRegistry,
-    sessionManager,
-    settingsManager,
-    resourceLoader,
-  });
-
-  const record = createActiveSessionRecord({
-    stateRef: recordState,
-    session,
-    settingsManager,
-    resourceLoader,
-    createdAt: item.info.created.getTime(),
-    updatedAt: item.info.modified.getTime(),
-  });
-  await restoreSessionSelection(record);
-  return record;
-};
-
-const collectDescendantIds = (sessionId: string, childrenById: Map<string, string[]>): string[] => {
-  const collected = new Set([sessionId]);
-  const queue = [sessionId];
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const children = childrenById.get(current) ?? [];
-    for (const childId of children) {
-      if (collected.has(childId)) {
-        continue;
-      }
-
-      collected.add(childId);
-      queue.push(childId);
-    }
+  const opening = openingSessionRecords.get(sessionId);
+  if (opening) {
+    return opening;
   }
 
-  return [...collected];
+  const pendingRecord = (async (): Promise<SessionRecord> => {
+    const lookup = await getIndexedSessionLookupOrThrow(sessionId);
+    const sessionManager = SessionManager.open(lookup.sessionFile);
+    const settingsManager = createPiAgentScopeSettingsManager(lookup.cwd);
+    const recordState: Partial<SessionRecord> = {
+      cwd: lookup.cwd,
+      pendingAskRecords: new Map(),
+      pendingPermissionRecords: new Map(),
+      runtimePermissionRules: {},
+      settingsManager,
+      selectedAgentConfig: null,
+      selectedPermissionPolicy: null,
+    };
+    const resourceLoader = createSessionResourceLoader(recordState as SessionRecord);
+    await resourceLoader.reload();
+    const { session } = await createAgentSession({
+      cwd: lookup.cwd,
+      authStorage,
+      modelRegistry,
+      sessionManager,
+      settingsManager,
+      resourceLoader,
+    });
+
+    const record = createActiveSessionRecord({
+      stateRef: recordState,
+      session,
+      settingsManager,
+      resourceLoader,
+      createdAt: lookup.createdAt,
+      updatedAt: lookup.updatedAt,
+    });
+    await restoreSessionSelection(record);
+    return record;
+  })().finally(() => {
+    if (openingSessionRecords.get(sessionId) === pendingRecord) {
+      openingSessionRecords.delete(sessionId);
+    }
+  });
+
+  openingSessionRecords.set(sessionId, pendingRecord);
+  return pendingRecord;
 };
 
 // ===== Routes =====
@@ -1802,6 +1819,14 @@ app.get('/api/projects', async (_req: Request, res: Response, next: NextFunction
   }
 });
 
+app.get('/api/session-contexts', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json(await listIndexedSessionContexts());
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/projects', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = createProjectSchema.parse(req.body ?? {});
@@ -1819,6 +1844,9 @@ app.post('/api/projects', async (req: Request, res: Response, next: NextFunction
 
     const isGit = await gitService.isGitRepository(projectPath);
     const project = await addProject(projectPath, isGit);
+    projectContextResolver.invalidateContext();
+    invalidateManagedProjectScopes();
+    await refreshSessionCatalogIndex();
     res.json(serializeProject(project));
   } catch (error) {
     next(error);
@@ -1829,6 +1857,9 @@ app.delete('/api/projects/:id', async (req: Request, res: Response, next: NextFu
   try {
     const projectId = String(req.params.id);
     await removeProject(projectId);
+    projectContextResolver.invalidateContext();
+    invalidateManagedProjectScopes();
+    await refreshSessionCatalogIndex();
     res.json({ ok: true });
   } catch (error) {
     next(error);
@@ -1837,44 +1868,85 @@ app.delete('/api/projects/:id', async (req: Request, res: Response, next: NextFu
 
 app.get('/api/sessions', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const sessionRegistry = await listProjectSessions();
-    const summaries = sessionRegistry.items
-      .map((item) => toSessionSummary(item))
-      .sort((left, right) => {
-        if (left.archived !== right.archived) {
-          return left.archived ? 1 : -1;
-        }
-        return right.updatedAt - left.updatedAt;
-      });
+    const sessions = await listIndexedSessions(activeSessions);
 
+    const summaries = sessions.map((session) => ({
+        id: session.id,
+        title: session.title,
+        cwd: String(session.cwd || ""),
+        status: session.status,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        archived: session.archived,
+        sessionFile: session.sessionFile,
+        parentSessionId: session.parentSessionId,
+        contextId: session.contextId,
+      }));
     res.json(summaries);
   } catch (error) {
     next(error);
   }
 });
 
-app.get('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
+app.get('/api/sessions/:sessionId/messages', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
-    const sessionRegistry = await listProjectSessions();
-    const record = await ensureSessionRecord(
-      String(req.params.sessionId),
-      sessionRegistry,
-    );
-    res.json(await toSessionSnapshot(record, sessionRegistry, query));
+    const sessionId = String(req.params.sessionId);
+    const record = activeSessions.get(sessionId);
+    if (record) {
+      res.json(toSessionMessagesPayload(record, query));
+      return;
+    }
+
+    res.json(await getStoredSessionMessagesPayload(sessionId, query));
   } catch (error) {
     next(error);
   }
 });
 
+app.get('/api/sessions/:sessionId/runtime', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const sessionId = String(req.params.sessionId);
+    const record = activeSessions.get(sessionId);
+    if (record) {
+      res.json(toSessionRuntimePayload(record));
+      return;
+    }
+
+    res.json(await getStoredSessionRuntimePayload(sessionId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/sessions/:sessionId/hydrate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
+    const sessionId = String(req.params.sessionId);
+    const record = activeSessions.get(sessionId);
+    if (record) {
+      res.json({
+        ...toSessionMessagesPayload(record, query),
+        ...toSessionRuntimePayload(record),
+      });
+      return;
+    }
+
+    const [messagesPayload, runtimePayload] = await Promise.all([
+      getStoredSessionMessagesPayload(sessionId, query),
+      getStoredSessionRuntimePayload(sessionId),
+    ]);
+    res.json({ ...messagesPayload, ...runtimePayload });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
 app.get('/api/sessions/:sessionId/stream', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
-    const sessionRegistry = await listProjectSessions();
-    const record = await ensureSessionRecord(
-      String(req.params.sessionId),
-      sessionRegistry,
-    );
+    const record = await ensureSessionRecord(String(req.params.sessionId));
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -1882,9 +1954,15 @@ app.get('/api/sessions/:sessionId/stream', async (req: Request, res: Response, n
     res.flushHeaders();
 
     record.clients.add(res);
+    const messagesPayload = toSessionMessagesPayload(record, query);
     emit(record, {
       type: 'snapshot',
-      session: await toSessionSnapshot(record, sessionRegistry, query),
+      sessionId: record.id,
+      status: record.status,
+      messages: messagesPayload.messages,
+      historyMeta: messagesPayload.historyMeta,
+      interactiveRequests: messagesPayload.interactiveRequests,
+      permissionRequests: messagesPayload.permissionRequests,
     });
 
     req.on('close', () => {
@@ -1899,7 +1977,7 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
   try {
     const payload = createSessionSchema.parse(req.body ?? {});
     const parentSession = payload.parentSessionId
-      ? await getSessionInfoOrThrow(payload.parentSessionId)
+      ? await getIndexedSessionLookupOrThrow(payload.parentSessionId)
       : null;
     const sessionCwd = normalizeOptionalFsPath(payload.cwd) || parentSession?.cwd || '';
     if (!sessionCwd) {
@@ -1913,7 +1991,7 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
       cwd: sessionCwd,
       title: payload.title,
       model: payload.model,
-      parentSessionPath: parentSession?.info.path,
+      parentSessionPath: parentSession?.sessionFile,
     });
     await applySessionAgentSelection(record, {
       agentName: payload.agent || undefined,
@@ -1921,8 +1999,10 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
       thinkingLevel: payload.thinkingLevel,
     });
     await persistSessionRecordMetadata(record);
-    const sessionRegistry = await listProjectSessions();
-    res.status(201).json(await toSessionSnapshot(record, sessionRegistry, {}));
+    await upsertIndexedSessionRecord(record, {
+      projectContextResolver,
+    });
+    res.status(201).json(await toSessionSnapshot(record, {}));
   } catch (error) {
     next(error);
   }
@@ -1931,11 +2011,7 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
 app.patch('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = updateSessionSchema.parse(req.body ?? {});
-    const sessionRegistry = await listProjectSessions();
-    const record = await ensureSessionRecord(
-      String(req.params.sessionId),
-      sessionRegistry,
-    );
+    const record = await ensureSessionRecord(String(req.params.sessionId));
 
     if (payload.title !== undefined) {
       record.session.setSessionName(payload.title.trim());
@@ -1958,8 +2034,11 @@ app.patch('/api/sessions/:sessionId', async (req: Request, res: Response, next: 
 
     record.updatedAt = Date.now();
     await persistSessionRecordMetadata(record);
+    await upsertIndexedSessionRecord(record, {
+      projectContextResolver,
+    });
 
-    res.json(await toSessionSnapshot(record, await listProjectSessions(), {}));
+    res.json(await toSessionSnapshot(record, {}));
   } catch (error) {
     next(error);
   }
@@ -1968,11 +2047,15 @@ app.patch('/api/sessions/:sessionId', async (req: Request, res: Response, next: 
 app.post('/api/sessions/:sessionId/archive', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = archiveSessionSchema.parse(req.body ?? {});
-    const sessionRegistry = await listProjectSessions();
-    const sessionIds = collectDescendantIds(
-      String(req.params.sessionId),
-      sessionRegistry.childrenById,
+    const sessionIds = (await getIndexedSessionTree(String(req.params.sessionId))).map(
+      (item) => item.id,
     );
+
+    if (sessionIds.length === 0) {
+      const error = new Error('Session not found') as HttpError;
+      error.statusCode = 404;
+      throw error;
+    }
 
     await sessionMetadataStore.setArchived(sessionIds, payload.archived);
 
@@ -1984,24 +2067,24 @@ app.post('/api/sessions/:sessionId/archive', async (req: Request, res: Response,
 
 app.delete('/api/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const sessionRegistry = await listProjectSessions();
-    const sessionIds = collectDescendantIds(
-      String(req.params.sessionId),
-      sessionRegistry.childrenById,
-    );
+    const sessionTree = await getIndexedSessionTree(String(req.params.sessionId));
+    if (sessionTree.length === 0) {
+      const error = new Error('Session not found') as HttpError;
+      error.statusCode = 404;
+      throw error;
+    }
 
-    for (const sessionId of sessionIds) {
-      const item = sessionRegistry.infosById.get(sessionId);
-      if (!item) {
-        continue;
-      }
+    const sessionIds = sessionTree.map((item) => item.id);
+
+    for (const item of sessionTree) {
+      const sessionId = item.id;
 
       const activeRecord = activeSessions.get(sessionId);
       if (activeRecord) {
         destroySessionRecord(activeRecord);
       }
 
-      await fs.rm(item.info.path, { force: true });
+      await fs.rm(item.sessionFile, { force: true });
     }
 
     await sessionMetadataStore.removeSessions(sessionIds);
@@ -2015,11 +2098,7 @@ app.delete('/api/sessions/:sessionId', async (req: Request, res: Response, next:
 app.post('/api/sessions/:sessionId/messages', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = messageSchema.parse(req.body ?? {});
-    const sessionRegistry = await listProjectSessions();
-    const record = await ensureSessionRecord(
-      String(req.params.sessionId),
-      sessionRegistry,
-    );
+    const record = await ensureSessionRecord(String(req.params.sessionId));
 
     if (record.turnBudget.exhausted) {
       const error = new Error(
@@ -2035,7 +2114,6 @@ app.post('/api/sessions/:sessionId/messages', async (req: Request, res: Response
       model: payload.model || undefined,
       thinkingLevel: payload.thinkingLevel,
     });
-    await persistSessionRecordMetadata(record);
 
     updateStatus(record, 'streaming');
 
@@ -2219,8 +2297,8 @@ app.post('/api/projects/:id/worktrees', async (req: Request, res: Response, next
     const projectRoot = await resolveProjectRoot(String(req.params.id));
     const payload = worktreeCreateSchema.parse(req.body ?? {});
     const metadata = await worktreeService.create(projectRoot, payload);
-    // 清除 project context 缓存以便后续解析能看到新 worktree
-    projectContextResolver.resolveContext(projectRoot);
+    projectContextResolver.invalidateContext();
+    invalidateManagedProjectScopes();
     res.status(201).json(metadata);
   } catch (error) {
     next(error);
@@ -2232,6 +2310,8 @@ app.delete('/api/projects/:id/worktrees', async (req: Request, res: Response, ne
     const projectRoot = await resolveProjectRoot(String(req.params.id));
     const payload = worktreeDeleteSchema.parse(req.body ?? {});
     const result = await worktreeService.remove(projectRoot, payload);
+    projectContextResolver.invalidateContext();
+    invalidateManagedProjectScopes();
     res.json({ ok: true, ...result });
   } catch (error) {
     next(error);
@@ -2424,6 +2504,14 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // ===== Start Server =====
-app.listen(port, () => {
-  console.warn(`Pi server listening on http://127.0.0.1:${port}`);
-});
+void initializeRidgeDb(defaultWorkspaceDir)
+  .then(async () => {
+    await refreshSessionCatalogIndex();
+    app.listen(port, () => {
+      console.warn(`Pi server listening on http://127.0.0.1:${port}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize ridge.db', error);
+    process.exit(1);
+  });

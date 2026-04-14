@@ -45,3 +45,15 @@
 - [消息可见性] 多轮会话的历史折叠必须是显式 UI 状态，不能把“最后一轮切片显示”藏在渲染默认值里；否则用户继续输入会误以为旧消息被删，但底层 session/jsonl 其实完整
 - [历史分页] 会话历史分页单位必须是 user 轮次，不是消息条数；工具消息/thinking/toolResult 会放大消息数，若按条数截窗，UI 与用户心智必然错位
 - [导航去重] 会话侧栏不要再维护“最近访问”这类二次导航；标签页已承担最近工作集语义，侧栏应只保留稳定信息架构（项目/搜索），否则状态重复、localStorage 重复、认知也重复
+- [TS 检测边界] Web 端如果明确不改 shadcn/reka 生成包装层，就不要继续用 `exactOptionalPropertyTypes` 把第三方可选 props 透传问题算成项目故障；应在 `tsconfig.app.json` 收紧真实适用的门禁，同时把业务层事件载荷、Ref 透传、索引签名访问等类型错误逐个修正，保证 `check` 与 `build` 同标准
+- [索引主键一致性] session 上下文里的 `projectId` 必须直接复用 `projects.id`；一旦混入路径型标识，左栏项目归组会立刻失真
+- [会话选择持久化] `agent/model/thinkingLevel` 必须共用同一条持久化链；只保存 agent 会让刷新恢复与运行时实际选择脱节
+- [消息接口边界] 读取历史消息不能隐式打开完整 runtime；活跃会话读内存，非活跃会话直读 session 文件，并给会话打开流程做并发去重
+- [项目归属匹配] 嵌套项目或父子 worktree 场景下，session 归属必须按最长根路径匹配，不能按项目添加顺序取首个命中
+- [拆分后禁止回退聚合] 既然 `messages` 已独立，历史扩窗、ask 失败回填、permission 失败回填这类动作就只能调消息接口；一旦回退到 `getSession` 之类的聚合调用，接口拆分收益会被自己抵消
+- [上下文字典同步] 新会话如果会产生新的 `contextId`，`sessions` 和 `session-contexts` 必须同步刷新，否则左栏会出现摘要已更新、上下文字典滞后的错位
+- [写路径禁止全量重建] create/update/archive/delete 这类单会话写操作只能做局部索引更新；全量 session catalog refresh 只允许出现在启动建索引和 project scope 变化场景
+- [前端单一快照装配] usePiChat 与 usePiChatCore 不允许再各自维护 snapshot/hydrate/patch 逻辑；会话快照协议的装配必须集中在共享模块中统一演进
+- [索引字段最小化] 会话目录索引只保留有明确消费方的字段；没有 UI 或接口消费的 `last_message_preview`、`message_count` 这类字段应直接删除，不能先入库再等以后再说
+- [SSE 零写库] 发送消息前和 `turn_end` 都不能顺手写 SQLite；SSE 链路只负责内存态和 session 文件，目录索引由启动重建和显式用户动作维护
+- [运行时态不入目录索引] 列表 `status` 这类运行时字段只允许由内存 active session 覆盖，不应作为数据库持久化列存在

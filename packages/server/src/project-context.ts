@@ -79,10 +79,20 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
 export interface ProjectContextResolver {
   resolveContext(cwd: string): Promise<ProjectContext>;
   isPathInsideRoot(candidatePath: string, rootPath: string): boolean;
+  invalidateContext(cwd?: string): void;
 }
 
 export function createProjectContextResolver(workspaceDir: string): ProjectContextResolver {
   const contextCache = new Map<string, Promise<ProjectContext>>();
+
+  const invalidateContext = (cwd?: string) => {
+    if (!cwd) {
+      contextCache.clear();
+      return;
+    }
+
+    contextCache.delete(normalizePath(cwd));
+  };
 
   const resolveContext = async (cwd: string): Promise<ProjectContext> => {
     const normalizedCwd = normalizePath(cwd || workspaceDir);
@@ -172,5 +182,6 @@ export function createProjectContextResolver(workspaceDir: string): ProjectConte
   return {
     resolveContext,
     isPathInsideRoot,
+    invalidateContext,
   };
 }

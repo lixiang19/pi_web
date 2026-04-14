@@ -1,13 +1,6 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import type { SessionMetadata, SessionMetadataState, SessionSelection } from './types/index.js';
-
-const METADATA_VERSION = 2;
-
-const createDefaultState = (): SessionMetadataState => ({
-  version: METADATA_VERSION,
-  sessions: {},
-});
+import { getRidgeDb } from './db/index.js';
+import { normalizeString } from './utils/strings.js';
 
 export interface SessionMetadataStore {
   load(): Promise<SessionMetadataState>;
@@ -19,153 +12,249 @@ export interface SessionMetadataStore {
   setAgent(sessionId: string, agent: string | undefined): Promise<void>;
 }
 
-export function createSessionMetadataStore(workspaceDir: string): SessionMetadataStore {
-  const metadataDir = path.join(workspaceDir, '.pi-web');
-  const metadataFile = path.join(metadataDir, 'session-sidebar.json');
+const METADATA_VERSION = 3;
 
-  let cachedState: SessionMetadataState | null = null;
-  let writeQueue: Promise<void> = Promise.resolve();
+const mapRowToMetadata = (row: {
+  session_id: string;
+  title: string;
+  cwd: string;
+  session_file: string;
+  parent_session_path: string | null;
+  created_at: number;
+  updated_at: number;
+  archived: number;
+  agent_name: string | null;
+  explicit_model: string | null;
+  explicit_thinking_level: string | null;
+}): SessionMetadata & { archived?: boolean } => ({
+  id: row.session_id,
+  title: row.title,
+  cwd: row.cwd,
+  sessionFile: row.session_file,
+  parentSessionPath: row.parent_session_path || undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  agent: row.agent_name || undefined,
+  model: row.explicit_model || undefined,
+  thinkingLevel: row.explicit_thinking_level || undefined,
+  archived: Boolean(row.archived),
+});
 
+export function createSessionMetadataStore(): SessionMetadataStore {
   const load = async (): Promise<SessionMetadataState> => {
-    if (cachedState) {
-      return cachedState;
-    }
+    const db = await getRidgeDb();
+    const rows = db
+      .prepare(
+        `SELECT
+           s.session_id,
+           s.title,
+           s.cwd,
+           s.session_file,
+           s.parent_session_path,
+           s.created_at,
+           s.updated_at,
+           s.archived,
+           ss.agent_name,
+           ss.explicit_model,
+           ss.explicit_thinking_level
+         FROM sessions s
+         LEFT JOIN session_selections ss ON ss.session_id = s.session_id`,
+      )
+      .all() as Array<{
+      session_id: string;
+      title: string;
+      cwd: string;
+      session_file: string;
+      parent_session_path: string | null;
+      created_at: number;
+      updated_at: number;
+      archived: number;
+      agent_name: string | null;
+      explicit_model: string | null;
+      explicit_thinking_level: string | null;
+    }>;
 
-    try {
-      const content = await fs.readFile(metadataFile, 'utf8');
-      const parsed = JSON.parse(content) as Partial<SessionMetadataState>;
-      cachedState = {
-        ...createDefaultState(),
-        ...parsed,
-        sessions:
-          typeof parsed?.sessions === 'object' && parsed.sessions
-            ? parsed.sessions
-            : {},
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-
-      cachedState = createDefaultState();
-    }
-
-    return cachedState;
+    return {
+      version: METADATA_VERSION,
+      sessions: Object.fromEntries(
+        rows.map((row) => [row.session_id, mapRowToMetadata(row)]),
+      ),
+    };
   };
 
-  const persist = async (state: SessionMetadataState): Promise<void> => {
-    cachedState = state;
+  const getSessionMetadata = async (
+    sessionId: string,
+  ): Promise<Partial<SessionMetadata>> => {
+    const db = await getRidgeDb();
+    const row = db
+      .prepare(
+        `SELECT
+           s.session_id,
+           s.title,
+           s.cwd,
+           s.session_file,
+           s.parent_session_path,
+           s.created_at,
+           s.updated_at,
+           s.archived,
+           ss.agent_name,
+           ss.explicit_model,
+           ss.explicit_thinking_level
+         FROM sessions s
+         LEFT JOIN session_selections ss ON ss.session_id = s.session_id
+         WHERE s.session_id = ?`,
+      )
+      .get(sessionId) as
+      | {
+          session_id: string;
+          title: string;
+          cwd: string;
+          session_file: string;
+          parent_session_path: string | null;
+          created_at: number;
+          updated_at: number;
+          archived: number;
+          agent_name: string | null;
+          explicit_model: string | null;
+          explicit_thinking_level: string | null;
+        }
+      | undefined;
 
-    writeQueue = writeQueue.then(async () => {
-      await fs.mkdir(metadataDir, { recursive: true });
-      await fs.writeFile(
-        metadataFile,
-        `${JSON.stringify(state, null, 2)}\n`,
-        'utf8',
-      );
-    });
-
-    await writeQueue;
-  };
-
-  const getSessionMetadata = async (sessionId: string): Promise<Partial<SessionMetadata>> => {
-    const state = await load();
-    return state.sessions[sessionId] ?? {};
+    return row ? mapRowToMetadata(row) : {};
   };
 
   const upsertSession = async (sessionInput: SessionMetadata): Promise<void> => {
-    const state = await load();
-    const nextState: SessionMetadataState = {
-      ...state,
-      sessions: { ...state.sessions },
-    };
+    const db = await getRidgeDb();
+    db.prepare(
+      `INSERT INTO sessions(
+        session_id,
+        title,
+        cwd,
+        session_file,
+        parent_session_path,
+        created_at,
+        updated_at
+      ) VALUES(?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        title = excluded.title,
+        cwd = excluded.cwd,
+        session_file = excluded.session_file,
+        parent_session_path = excluded.parent_session_path,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at`,
+    ).run(
+      sessionInput.id,
+      sessionInput.title,
+      sessionInput.cwd,
+      sessionInput.sessionFile,
+      sessionInput.parentSessionPath || null,
+      sessionInput.createdAt,
+      sessionInput.updatedAt,
+    );
 
-    const current = nextState.sessions[sessionInput.id] ?? {};
-    nextState.sessions[sessionInput.id] = {
-      ...current,
-      title: sessionInput.title,
-      cwd: sessionInput.cwd,
-      sessionFile: sessionInput.sessionFile,
-      parentSessionPath: sessionInput.parentSessionPath,
-      createdAt: sessionInput.createdAt,
-      updatedAt: sessionInput.updatedAt,
-      ...(sessionInput.agent !== undefined
-        ? { agent: sessionInput.agent || undefined }
-        : {}),
-      ...(sessionInput.model !== undefined
-        ? { model: normalizeString(sessionInput.model) || undefined }
-        : {}),
-      ...(sessionInput.thinkingLevel !== undefined
-        ? {
-            thinkingLevel:
-              normalizeString(sessionInput.thinkingLevel) || undefined,
-          }
-        : {}),
-    };
-
-    await persist(nextState);
+    if (
+      sessionInput.agent !== undefined ||
+      sessionInput.model !== undefined ||
+      sessionInput.thinkingLevel !== undefined
+    ) {
+      await setSelection(sessionInput.id, {
+        agent: sessionInput.agent,
+        model: sessionInput.model,
+        thinkingLevel: sessionInput.thinkingLevel as SessionSelection['thinkingLevel'],
+      });
+    }
   };
 
-  const setArchived = async (sessionIds: string[], archived: boolean): Promise<void> => {
-    const state = await load();
-    const nextState: SessionMetadataState = {
-      ...state,
-      sessions: { ...state.sessions },
-    };
+  const ensureSessionRow = async (sessionId: string) => {
+    const db = await getRidgeDb();
+    db.prepare(
+      `INSERT INTO sessions(session_id, title, cwd, session_file, created_at, updated_at)
+       VALUES(?, '', '', '', 0, 0)
+       ON CONFLICT(session_id) DO NOTHING`,
+    ).run(sessionId);
+  };
 
-    for (const sessionId of sessionIds) {
-      const current = nextState.sessions[sessionId] ?? {};
-      nextState.sessions[sessionId] = {
-        ...current,
-        archived,
-      };
+  const setArchived = async (
+    sessionIds: string[],
+    archived: boolean,
+  ): Promise<void> => {
+    if (sessionIds.length === 0) {
+      return;
     }
 
-    await persist(nextState);
+    const db = await getRidgeDb();
+    const statement = db.prepare(
+      'UPDATE sessions SET archived = ?, updated_at = ? WHERE session_id = ?',
+    );
+    const now = Date.now();
+    db.transaction((ids: string[]) => {
+      for (const sessionId of ids) {
+        statement.run(archived ? 1 : 0, now, sessionId);
+      }
+    })(sessionIds);
   };
 
   const removeSessions = async (sessionIds: string[]): Promise<void> => {
-    const state = await load();
-    const nextState: SessionMetadataState = {
-      ...state,
-      sessions: { ...state.sessions },
-    };
-
-    for (const sessionId of sessionIds) {
-      delete nextState.sessions[sessionId];
+    if (sessionIds.length === 0) {
+      return;
     }
 
-    await persist(nextState);
+    const db = await getRidgeDb();
+    const deleteSelection = db.prepare('DELETE FROM session_selections WHERE session_id = ?');
+    const deleteSession = db.prepare('DELETE FROM sessions WHERE session_id = ?');
+    db.transaction((ids: string[]) => {
+      for (const sessionId of ids) {
+        deleteSelection.run(sessionId);
+        deleteSession.run(sessionId);
+      }
+    })(sessionIds);
   };
 
-  const setSelection = async (sessionId: string, selection: SessionSelection): Promise<void> => {
-    const state = await load();
-    const nextState: SessionMetadataState = {
-      ...state,
-      sessions: { ...state.sessions },
-    };
-
-    const current = nextState.sessions[sessionId] ?? {};
-    nextState.sessions[sessionId] = {
-      ...current,
-      ...(selection.agent !== undefined
-        ? { agent: normalizeString(selection.agent) || undefined }
-        : {}),
-      ...(selection.model !== undefined
-        ? { model: normalizeString(selection.model) || undefined }
-        : {}),
-      ...(selection.thinkingLevel !== undefined
-        ? {
-            thinkingLevel:
-              normalizeString(selection.thinkingLevel) || undefined,
-          }
-        : {}),
-    };
-
-    await persist(nextState);
+  const setSelection = async (
+    sessionId: string,
+    selection: SessionSelection,
+  ): Promise<void> => {
+    await ensureSessionRow(sessionId);
+    const db = await getRidgeDb();
+    const current = db
+      .prepare(
+        `SELECT agent_name
+              , explicit_model
+              , explicit_thinking_level
+         FROM session_selections
+         WHERE session_id = ?`,
+      )
+      .get(sessionId) as
+      | {
+          agent_name: string | null;
+          explicit_model: string | null;
+          explicit_thinking_level: string | null;
+        }
+      | undefined;
+    db.prepare(
+      `INSERT INTO session_selections(session_id, agent_name, explicit_model, explicit_thinking_level, updated_at)
+       VALUES(?, ?, ?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         agent_name = excluded.agent_name,
+         explicit_model = excluded.explicit_model,
+         explicit_thinking_level = excluded.explicit_thinking_level,
+         updated_at = excluded.updated_at`,
+    ).run(
+      sessionId,
+      selection.agent !== undefined
+        ? normalizeString(selection.agent) || null
+        : (current?.agent_name ?? null),
+      selection.model !== undefined
+        ? normalizeString(selection.model) || null
+        : (current?.explicit_model ?? null),
+      selection.thinkingLevel !== undefined
+        ? normalizeString(selection.thinkingLevel) || null
+        : (current?.explicit_thinking_level ?? null),
+      Date.now(),
+    );
   };
 
-  const setAgent = async (sessionId: string, agent: string | undefined): Promise<void> =>
+  const setAgent = async (sessionId: string, agent: string | undefined) =>
     setSelection(sessionId, { agent });
 
   return {
@@ -177,11 +266,4 @@ export function createSessionMetadataStore(workspaceDir: string): SessionMetadat
     setSelection,
     setAgent,
   };
-}
-
-function normalizeString(value: unknown): string {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  return value.trim();
 }

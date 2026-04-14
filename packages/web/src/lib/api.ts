@@ -9,7 +9,11 @@ import type {
   ProvidersResponse,
   ResourceCatalogResponse,
   SendMessagePayload,
+  SessionContextSummary,
+  SessionMessagesPayload,
   SessionMutationResponse,
+  SessionHydratePayload,
+  SessionRuntimePayload,
   SessionSnapshot,
   SessionSummary,
   ThinkingLevel,
@@ -55,6 +59,10 @@ export function getSessions() {
   return request<SessionSummary[]>("/api/sessions");
 }
 
+export function getSessionContexts() {
+  return request<Record<string, SessionContextSummary>>("/api/session-contexts");
+}
+
 export function getAgents(cwd?: string) {
   const params = new URLSearchParams();
 
@@ -83,13 +91,30 @@ export function getResources(options?: { cwd?: string; sessionId?: string }) {
   );
 }
 
-export function getSession(sessionId: string, options?: { rounds?: number }) {
+export function getSessionMessages(
+  sessionId: string,
+  options?: { rounds?: number },
+) {
   const params = new URLSearchParams();
   if (options?.rounds) {
     params.set("rounds", String(options.rounds));
   }
-  return request<SessionSnapshot>(
-    `/api/sessions/${sessionId}${params.size > 0 ? `?${params.toString()}` : ""}`,
+  return request<SessionMessagesPayload>(
+    `/api/sessions/${sessionId}/messages${params.size > 0 ? `?${params.toString()}` : ""}`,
+  );
+}
+
+export function getSessionRuntime(sessionId: string) {
+  return request<SessionRuntimePayload>(`/api/sessions/${sessionId}/runtime`);
+}
+
+export function getSessionHydrate(sessionId: string, options?: { rounds?: number }) {
+  const params = new URLSearchParams();
+  if (options?.rounds) {
+    params.set("rounds", String(options.rounds));
+  }
+  return request<SessionHydratePayload>(
+    `/api/sessions/${sessionId}/hydrate${params.size > 0 ? `?${params.toString()}` : ""}`,
   );
 }
 

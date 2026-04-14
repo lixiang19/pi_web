@@ -256,6 +256,16 @@ export interface RidgeSettings {
  * Legacy types kept for API backward compatibility
  */
 export type Settings = Omit<RidgeSettings, 'version' | 'projects' | 'favorites'>;
+export const SETTINGS_KEYS = [
+  'theme',
+  'themeName',
+  'language',
+  'sidebarCollapsed',
+  'notifications',
+  'defaultModel',
+  'defaultAgent',
+  'defaultThinkingLevel',
+] as const satisfies ReadonlyArray<keyof Settings>;
 export type FavoritesState = { items: FavoriteItem[] };
 export type ProjectsState = { version: number; projects: Project[] };
 
@@ -275,6 +285,7 @@ export interface SessionSummary {
   resolvedThinkingLevel?: ThinkingLevel;
   sessionFile: string;
   parentSessionId?: string;
+  contextId?: string;
   projectId: string;
   projectRoot: string;
   projectLabel: string;
@@ -342,6 +353,23 @@ export interface SessionSnapshot extends SessionSummary {
   };
   interactiveRequests: AskInteractiveRequest[];
   permissionRequests: PermissionInteractiveRequest[];
+}
+
+export interface SessionMessagesPayload {
+  sessionId: string;
+  messages: SerializedMessage[];
+  historyMeta: SessionSnapshot['historyMeta'];
+  interactiveRequests: AskInteractiveRequest[];
+  permissionRequests: PermissionInteractiveRequest[];
+}
+
+export interface SessionRuntimePayload {
+  sessionId: string;
+  agent?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  resolvedModel?: string;
+  resolvedThinkingLevel?: ThinkingLevel;
 }
 
 export interface ProviderInfo {

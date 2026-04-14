@@ -1,4 +1,9 @@
-import type { ProjectItem, SessionSummary, WorktreeApiInfo } from "./types";
+import type {
+  ProjectItem,
+  SessionContextSummary,
+  SessionSummary,
+  WorktreeApiInfo,
+} from "./types";
 
 export type SessionTreeNode = {
   session: SessionSummary;
@@ -50,8 +55,32 @@ const compareSessionsByTime = (left: SessionSummary, right: SessionSummary) =>
 const createTree = (sessions: SessionSummary[]): SessionTreeNode[] =>
   sessions.map((session) => ({ session, children: [] }));
 
+const resolveSessionContext = (
+  session: SessionSummary,
+  sessionContexts?: Record<string, SessionContextSummary>,
+): SessionContextSummary => {
+  const contextId = session.contextId ?? "";
+  const mapped = contextId ? sessionContexts?.[contextId] : undefined;
+  if (mapped) {
+    return mapped;
+  }
+
+  return {
+    contextId,
+    cwd: session.cwd,
+    projectId: "",
+    projectLabel: "",
+    projectRoot: "",
+    worktreeRoot: session.cwd,
+    worktreeLabel: session.cwd,
+    branch: undefined,
+    isGit: false,
+  };
+};
+
 export const buildSessionProjects = (options: {
   sessions: SessionSummary[];
+  sessionContexts?: Record<string, SessionContextSummary>;
   storedProjects?: ProjectItem[];
   availableWorktreesByProject?: Record<string, WorktreeApiInfo[]>;
   pinnedIds?: string[];
@@ -61,12 +90,18 @@ export const buildSessionProjects = (options: {
   const normalizedQuery = (options.query ?? "").trim().toLowerCase();
   const storedProjects = options.storedProjects ?? [];
   const availableWorktrees = options.availableWorktreesByProject ?? {};
-  const sessionsByProjectId = new Map<string, SessionSummary[]>();
 
+  const contextBySid = new Map(
+    options.sessions.map((s) => [s.id, resolveSessionContext(s, options.sessionContexts)]),
+  );
+  const getCtx = (session: SessionSummary) => contextBySid.get(session.id)!;
+
+  const sessionsByProjectId = new Map<string, SessionSummary[]>();
   for (const session of options.sessions) {
-    const current = sessionsByProjectId.get(session.projectId) ?? [];
+    const projectId = getCtx(session).projectId;
+    const current = sessionsByProjectId.get(projectId) ?? [];
     current.push(session);
-    sessionsByProjectId.set(session.projectId, current);
+    sessionsByProjectId.set(projectId, current);
   }
 
   return storedProjects
@@ -83,7 +118,7 @@ export const buildSessionProjects = (options: {
       const groups: SessionGroupView[] = [];
 
       const rootSessions = activeSessions.filter(
-        (session) => normalizePath(session.worktreeRoot) === projectRoot,
+        (session) => normalizePath(getCtx(session).worktreeRoot) === projectRoot,
       );
       if (rootSessions.length > 0) {
         const sortedSessions = [...rootSessions].sort(compareSessionsByTime);
@@ -95,7 +130,7 @@ export const buildSessionProjects = (options: {
           if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
             return true;
           }
-          const haystack = `${session.title} ${session.cwd}`.toLowerCase();
+          const haystack = `${session.title} ${getCtx(session).cwd}`.toLowerCase();
           return haystack.includes(normalizedQuery);
         });
 
@@ -126,7 +161,7 @@ export const buildSessionProjects = (options: {
       }
 
       for (const session of activeSessions) {
-        const normalizedWt = normalizePath(session.worktreeRoot);
+        const normalizedWt = normalizePath(getCtx(session).worktreeRoot);
         if (normalizedWt === projectRoot) continue;
 
         const existing = worktreeMap.get(normalizedWt);
@@ -140,11 +175,12 @@ export const buildSessionProjects = (options: {
       const worktreeGroups = [...worktreeMap.entries()]
         .map<SessionGroupView | null>(([worktreeRoot, { info, sessions }]) => {
           const sortedSessions = [...sessions].sort(compareSessionsByTime);
+          const firstCtx = sessions[0] ? getCtx(sessions[0]) : null;
           const label =
             info?.label ||
-            sessions[0]?.worktreeLabel ||
+            firstCtx?.worktreeLabel ||
             relativeLabel(worktreeRoot, options.workspaceDir);
-          const branch = info?.branch || sessions[0]?.branch;
+          const branch = info?.branch || firstCtx?.branch;
           const groupMatchesQuery =
             !normalizedQuery ||
             `${label} ${branch || ""} ${worktreeRoot}`
@@ -155,7 +191,7 @@ export const buildSessionProjects = (options: {
             if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
               return true;
             }
-            const haystack = `${session.title} ${session.cwd}`.toLowerCase();
+            const haystack = `${session.title} ${getCtx(session).cwd}`.toLowerCase();
             return haystack.includes(normalizedQuery);
           });
 
@@ -188,7 +224,8 @@ export const buildSessionProjects = (options: {
           const leftActive = left.sessions.length > 0;
           const rightActive = right.sessions.length > 0;
           if (leftActive !== rightActive) return leftActive ? -1 : 1;
-          if (leftActive && rightActive) return right.lastUpdatedAt - left.lastUpdatedAt;
+          if (leftActive && rightActive)
+            return right.lastUpdatedAt - left.lastUpdatedAt;
           return left.label.localeCompare(right.label);
         });
 
@@ -203,7 +240,7 @@ export const buildSessionProjects = (options: {
           if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
             return true;
           }
-          const haystack = `${session.title} ${session.cwd}`.toLowerCase();
+          const haystack = `${session.title} ${getCtx(session).cwd}`.toLowerCase();
           return haystack.includes(normalizedQuery);
         });
 
@@ -228,7 +265,9 @@ export const buildSessionProjects = (options: {
           : project.addedAt;
 
       const isGit =
-        project.isGit ?? (projectWorktrees.length > 0 || projectSessions.some((session) => session.isGit));
+        project.isGit ??
+        (projectWorktrees.length > 0 ||
+          projectSessions.some((session) => getCtx(session).isGit));
 
       return {
         id: project.id,
@@ -247,7 +286,9 @@ export const buildSessionProjects = (options: {
         return true;
       }
       return (
-        `${project.label} ${project.projectRoot}`.toLowerCase().includes(normalizedQuery) ||
+        `${project.label} ${project.projectRoot}`
+          .toLowerCase()
+          .includes(normalizedQuery) ||
         project.groups.length > 0
       );
     })

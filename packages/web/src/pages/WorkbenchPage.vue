@@ -15,11 +15,13 @@ const tabs = useSessionTabs();
 const sessionSidebarProps = computed(() => {
   const nextProps: {
     sessions: typeof core.sessions.value;
+    sessionContexts: typeof core.sessionContexts.value;
     activeSessionId: string;
     isSending: boolean;
     workspaceDir?: string;
   } = {
     sessions: core.sessions.value,
+    sessionContexts: core.sessionContexts.value,
     activeSessionId: tabs.activeTab.value?.sessionId ?? "",
     isSending: tabs.activeTab.value?.status === "streaming",
   };

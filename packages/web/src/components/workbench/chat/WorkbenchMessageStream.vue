@@ -76,7 +76,8 @@ const getUserMessageIndexes = (messages: ChatMessage[]) =>
     return indexes;
   }, []);
 
-const loadedRoundCount = computed(() => getUserMessageIndexes(props.messages).length);
+const userMessageIndexes = computed(() => getUserMessageIndexes(props.messages));
+const loadedRoundCount = computed(() => userMessageIndexes.value.length);
 const collapsedRoundCount = computed(() =>
   Math.min(COLLAPSED_ROUND_WINDOW, loadedRoundCount.value || COLLAPSED_ROUND_WINDOW),
 );
@@ -88,15 +89,15 @@ const canCollapseHistory = computed(
   () => visibleRoundCount.value > collapsedRoundCount.value,
 );
 
-const findStartIndexForRecentRounds = (messages: ChatMessage[], roundCount: number) => {
-  const userMessageIndexes = getUserMessageIndexes(messages);
-  if (userMessageIndexes.length === 0) {
+const recentRoundStartIndex = computed(() => {
+  const indexes = userMessageIndexes.value;
+  if (indexes.length === 0) {
     return 0;
   }
 
-  const startRoundIndex = Math.max(0, userMessageIndexes.length - roundCount);
-  return startRoundIndex === 0 ? 0 : userMessageIndexes[startRoundIndex]!;
-};
+  const startRoundIndex = Math.max(0, indexes.length - visibleRoundCount.value);
+  return startRoundIndex === 0 ? 0 : indexes[startRoundIndex]!;
+});
 
 const preserveScrollWhile = async (updater: () => void | Promise<void>) => {
   const viewport = resolveMessageViewport();
@@ -140,7 +141,7 @@ const collapseHistory = async () => {
 const conversationLayout = computed(() => {
   const rounds: MessageRound[] = [];
   const allMessages = props.messages;
-  const startIndex = findStartIndexForRecentRounds(allMessages, visibleRoundCount.value);
+  const startIndex = recentRoundStartIndex.value;
   const alignedMessages = startIndex >= 0 ? allMessages.slice(startIndex) : allMessages;
   const preludeMessages =
     alignedMessages.length > 0 && alignedMessages[0]?.role !== "user"
@@ -195,6 +196,29 @@ const conversationLayout = computed(() => {
     preludeMessages,
     rounds,
   };
+});
+
+const lastMessageContentKey = computed(() => {
+  const lastMessage = props.messages.at(-1);
+  if (!lastMessage) {
+    return "";
+  }
+
+  if (typeof lastMessage.content === "string") {
+    return `${lastMessage.localId || ""}:${lastMessage.timestamp || 0}:${lastMessage.content.length}`;
+  }
+
+  const blockLengths = lastMessage.content.map((block) => {
+    if (block.type === "text") {
+      return block.text?.length || 0;
+    }
+    if (block.type === "thinking") {
+      return block.thinking?.length || 0;
+    }
+    return 0;
+  });
+
+  return `${lastMessage.localId || ""}:${lastMessage.timestamp || 0}:${lastMessage.content.length}:${blockLengths.join(",")}`;
 });
 
 const resolveMessageViewport = () => {
@@ -299,14 +323,13 @@ watch(
 );
 
 watch(
-  () => JSON.stringify(props.messages.at(-1)?.content ?? ""),
+  lastMessageContentKey,
   async () => {
     await nextTick();
     if (isPinnedToBottom.value || props.status === "streaming") {
       scrollToBottom(props.status === "streaming" ? "auto" : "smooth");
       return;
     }
-
     syncScrollState();
   },
 );

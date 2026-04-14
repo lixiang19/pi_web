@@ -48,13 +48,26 @@ export interface SessionSummary {
   resolvedThinkingLevel?: ThinkingLevel;
   sessionFile: string;
   parentSessionId?: string;
-  projectId: string;
-  projectRoot: string;
-  projectLabel: string;
-  isGit: boolean;
+  contextId?: string;
+  projectId?: string;
+  projectRoot?: string;
+  projectLabel?: string;
+  isGit?: boolean;
   branch?: string;
+  worktreeRoot?: string;
+  worktreeLabel?: string;
+}
+
+export interface SessionContextSummary {
+  contextId: string;
+  cwd: string;
+  projectId: string;
+  projectLabel: string;
+  projectRoot: string;
   worktreeRoot: string;
   worktreeLabel: string;
+  branch?: string;
+  isGit: boolean;
 }
 
 export interface AskOption {
@@ -204,10 +217,47 @@ export interface ChatComposerState {
 }
 
 export interface SessionSnapshot extends SessionSummary {
+  agent?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  resolvedModel?: string;
+  resolvedThinkingLevel?: ThinkingLevel;
+  projectId?: string;
+  projectRoot?: string;
+  projectLabel?: string;
+  isGit?: boolean;
+  branch?: string;
+  worktreeRoot?: string;
+  worktreeLabel?: string;
   messages: ChatMessage[];
   historyMeta: SessionHistoryMeta;
   interactiveRequests: AskInteractiveRequest[];
   permissionRequests: PermissionInteractiveRequest[];
+}
+
+export interface SessionMessagesPayload {
+  sessionId: string;
+  messages: ChatMessage[];
+  historyMeta: SessionHistoryMeta;
+  interactiveRequests: AskInteractiveRequest[];
+  permissionRequests: PermissionInteractiveRequest[];
+}
+
+export interface SessionRuntimePayload {
+  sessionId: string;
+  agent?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  resolvedModel?: string;
+  resolvedThinkingLevel?: ThinkingLevel;
+}
+
+export interface SessionHydratePayload extends SessionMessagesPayload {
+  agent?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  resolvedModel?: string;
+  resolvedThinkingLevel?: ThinkingLevel;
 }
 
 export interface AgentSummary {
@@ -257,11 +307,32 @@ export type AssistantMessageEventType =
   | "toolcall_delta"
   | "toolcall_end";
 
-export interface StreamEvent {
-  type: StreamEventType;
-  session?: SessionSnapshot;
+export interface StreamSnapshotEvent {
+  type: "snapshot";
+  sessionId: string;
   status?: SessionSummary["status"];
+  messages: ChatMessage[];
+  historyMeta: SessionHistoryMeta;
+  interactiveRequests: AskInteractiveRequest[];
+  permissionRequests: PermissionInteractiveRequest[];
+}
+
+export interface StreamStatusEvent {
+  type: "status";
+  sessionId?: string;
+  status?: SessionSummary["status"];
+}
+
+export interface StreamErrorEvent {
+  type: "error";
+  sessionId?: string;
   error?: string;
+}
+
+export interface StreamMessageEvent {
+  type: "message_start" | "message_update" | "message_end";
+  sessionId?: string;
+  status?: SessionSummary["status"];
   message?: ChatMessage;
   assistantMessageEvent?: {
     type?: AssistantMessageEventType;
@@ -275,6 +346,12 @@ export interface StreamEvent {
     };
   };
 }
+
+export type StreamEvent =
+  | StreamSnapshotEvent
+  | StreamStatusEvent
+  | StreamErrorEvent
+  | StreamMessageEvent;
 
 export interface FileTreeEntry {
   name: string;

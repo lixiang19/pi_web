@@ -8,7 +8,7 @@ import {
   getAgents,
   getProviders,
   getResources,
-  getSession,
+  getSessionContexts,
   getSessions,
   getSystemInfo,
   renameSession as renameSessionApi,
@@ -22,21 +22,22 @@ import type {
   ResourceCatalogResponse,
   SessionHistoryMeta,
   SessionSnapshot,
+  SessionContextSummary,
   SessionSummary,
+  StreamMessageEvent,
   SystemInfo,
   ThinkingLevel,
 } from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
-
-// ============================================================================
-// 类型定义
-// ============================================================================
-
-type CachedSessionEntry = {
-  snapshot: SessionSnapshot;
-  hydratedAt: number;
-};
+import {
+  buildSnapshotFromSummary as buildSharedSnapshotFromSummary,
+  hydrateSessionSnapshot,
+  patchSessionSnapshot as patchSharedSessionSnapshot,
+  patchSessionSummary as patchSharedSessionSummary,
+  syncSessionSnapshot,
+  type CachedSessionEntry,
+} from "@/composables/session-snapshot";
 
 // ============================================================================
 // 常量 & 工具函数
@@ -62,7 +63,7 @@ const createEmptyResources = (): ResourceCatalogResponse => ({
 });
 
 const createRawMessage = (
-  message?: import("@/lib/types").StreamEvent["message"],
+  message?: StreamMessageEvent["message"],
   overrides?: Partial<ChatMessage>,
 ): ChatMessage => ({
   role:
@@ -166,6 +167,7 @@ const parseAgentMention = (text: string, agents: AgentSummary[]) => {
 const info = ref<SystemInfo | null>(null);
 const providers = ref<ProvidersResponse | null>(null);
 const sessions = ref<SessionSummary[]>([]);
+const sessionContexts = ref<Record<string, SessionContextSummary>>({});
 const agents = ref<AgentSummary[]>([]);
 const resources = ref<ResourceCatalogResponse>(createEmptyResources());
 const resourceError = ref("");
@@ -253,32 +255,26 @@ const syncComposerSelection = (
 const getCachedSessionSnapshot = (sessionId: string) =>
   sessionCache.value[sessionId]?.snapshot;
 
-const buildSnapshotFromSummary = (sessionId: string) => {
-  const summary = sessions.value.find((session) => session.id === sessionId);
-  if (!summary) {
-    return null;
-  }
-
-  return {
-    ...summary,
-    messages: [],
-    historyMeta: createHistoryMeta(0, 0),
-    interactiveRequests: [],
-    permissionRequests: [],
-  } satisfies SessionSnapshot;
-};
+const buildSnapshotFromSummary = (sessionId: string) =>
+  buildSharedSnapshotFromSummary(
+    {
+      sessions,
+      sessionContexts,
+      sessionCache,
+    },
+    sessionId,
+    createHistoryMeta,
+  );
 
 const upsertSessionSnapshot = (snapshot: SessionSnapshot) => {
-  sessionCache.value = {
-    ...sessionCache.value,
-    [snapshot.id]: {
-      snapshot: {
-        ...snapshot,
-        messages: [...snapshot.messages],
-      },
-      hydratedAt: Date.now(),
+  syncSessionSnapshot(
+    {
+      sessions,
+      sessionContexts,
+      sessionCache,
     },
-  };
+    snapshot,
+  );
 };
 
 const upsertSessionSummary = (summary: SessionSummary) => {
@@ -289,58 +285,42 @@ const upsertSessionSummary = (summary: SessionSummary) => {
 };
 
 const syncSessions = (snapshot?: SessionSnapshot) => {
-  if (!snapshot) {
-    return;
-  }
-
-  const { messages, interactiveRequests, permissionRequests, ...summary } =
-    snapshot;
-  void messages;
-  void interactiveRequests;
-  void permissionRequests;
-  upsertSessionSnapshot(snapshot);
-  upsertSessionSummary(summary);
+  syncSessionSnapshot(
+    {
+      sessions,
+      sessionContexts,
+      sessionCache,
+    },
+    snapshot,
+  );
 };
 
 const patchSessionSnapshot = (
   sessionId: string,
   updater: (snapshot: SessionSnapshot) => SessionSnapshot,
 ) => {
-  const baseSnapshot =
-    getCachedSessionSnapshot(sessionId) ??
-    buildSnapshotFromSummary(sessionId);
-  if (!baseSnapshot) {
-    return null;
-  }
-
-  const nextSnapshot = updater({
-    ...baseSnapshot,
-    messages: [...baseSnapshot.messages],
+  return patchSharedSessionSnapshot({
+    sessions,
+    sessionContexts,
+    sessionCache,
+    sessionId,
+    createHistoryMeta,
+    updater,
   });
-
-  upsertSessionSnapshot(nextSnapshot);
-
-  return nextSnapshot;
 };
 
 const patchSessionSummary = (
   sessionId: string,
   patch: Partial<SessionSummary>,
 ) => {
-  const current = sessions.value.find((session) => session.id === sessionId);
-  if (!current) {
-    return;
-  }
-
-  upsertSessionSummary({
-    ...current,
-    ...patch,
+  patchSharedSessionSummary({
+    sessions,
+    sessionContexts,
+    sessionCache,
+    sessionId,
+    createHistoryMeta,
+    patch,
   });
-
-  patchSessionSnapshot(sessionId, (snapshot) => ({
-    ...snapshot,
-    ...patch,
-  }));
 };
 
 const appendMessageToSession = (sessionId: string, message: ChatMessage) => {
@@ -510,38 +490,24 @@ const refreshSessions = async () => {
   return nextSessions;
 };
 
+const refreshSessionContexts = async () => {
+  const nextContexts = await getSessionContexts();
+  sessionContexts.value = nextContexts;
+  return nextContexts;
+};
+
 const hydrateSession = async (sessionId: string) => {
-  const cached = getCachedSessionSnapshot(sessionId);
-  if (cached) {
-    return cached;
-  }
-
-  const inFlight = loadSessionInFlightById.get(sessionId);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const requestSeq = (loadSessionRequestSeqById.get(sessionId) ?? 0) + 1;
-  loadSessionRequestSeqById.set(sessionId, requestSeq);
-
-  const loadPromise = getSession(sessionId)
-    .then((snapshot) => {
-      const latestSeq = loadSessionRequestSeqById.get(sessionId);
-      if (latestSeq !== requestSeq) {
-        return getCachedSessionSnapshot(sessionId) ?? snapshot;
-      }
-
-      syncSessions(snapshot);
-      return snapshot;
-    })
-    .finally(() => {
-      if (loadSessionInFlightById.get(sessionId) === loadPromise) {
-        loadSessionInFlightById.delete(sessionId);
-      }
-    });
-
-  loadSessionInFlightById.set(sessionId, loadPromise);
-  return loadPromise;
+  return hydrateSessionSnapshot({
+    sessionId,
+    sessions,
+    sessionContexts,
+    sessionCache,
+    createHistoryMeta,
+    loadSessionInFlightById,
+    loadSessionRequestSeqById,
+    refreshSessions,
+    refreshSessionContexts,
+  });
 };
 
 const prefetchNeighborSessions = async (sessionId: string) => {
@@ -628,25 +594,24 @@ const removeSessionTree = async (sessionId: string) => {
 let booted = false;
 
 const boot = async () => {
-  const [systemInfo, providerPayload, sessionList] = await Promise.all([
+  const [systemInfo, providerPayload, sessionList, contextMap] = await Promise.all([
     getSystemInfo(),
     getProviders(),
     getSessions(),
+    getSessionContexts(),
   ]);
-
   info.value = systemInfo;
   providers.value = providerPayload;
   sessions.value = sessionList;
+  sessionContexts.value = contextMap;
 
   await refreshAgents();
-
   const settingsStore = useSettingsStore();
   if (!settingsStore.isLoaded) {
     await settingsStore.load();
   }
 
   resolveComposerDefaults(createDefaultComposer());
-
   await refreshResources();
   booted = true;
 };
@@ -696,6 +661,7 @@ export function usePiChatCore() {
     info,
     providers,
     sessions,
+    sessionContexts,
     agents,
     resources,
     resourceError,
@@ -730,6 +696,7 @@ export function usePiChatCore() {
     refreshAgents,
     refreshResources,
     refreshSessions,
+    refreshSessionContexts,
     hydrateSession,
     prefetchNeighborSessions,
     prefetchSession,

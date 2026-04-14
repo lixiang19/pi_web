@@ -19,3 +19,10 @@ export const getRidgeSettingsPath = async (): Promise<string> => {
   const storageDir = await getStorageDir();
   return path.join(storageDir, 'ridge-settings.json');
 };
+
+export const getRidgeDbPath = async (): Promise<string> => {
+  const storageDir = await getStorageDir();
+  return path.join(storageDir, 'ridge.db');
+};
+
+export const toPosixPath = (value: string): string => value.split(path.sep).join('/');

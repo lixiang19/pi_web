@@ -12,6 +12,7 @@ import type {
   ThinkingLevel,
   HttpError,
 } from './types/index.js';
+import { normalizeString } from './utils/strings.js';
 
 export const AGENT_MODES: AgentMode[] = ['primary', 'task', 'all'];
 export const THINKING_LEVELS: ThinkingLevel[] = [
@@ -38,13 +39,6 @@ const SUPPORTED_FRONTMATTER_FIELDS = new Set([
   'enabled',
   'permission',
 ]);
-
-const normalizeString = (value: unknown): string => {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  return value.trim();
-};
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);

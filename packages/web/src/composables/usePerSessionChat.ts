@@ -9,6 +9,7 @@ import {
 import {
   abortSession as abortSessionApi,
   createSession,
+  getSessionMessages,
   respondToAsk,
   respondToPermissionRequest,
   sendMessage,
@@ -19,16 +20,17 @@ import type {
   ChatComposerState,
   ChatMessage,
   PermissionInteractiveRequest,
+  SessionMessagesPayload,
   SessionSnapshot,
   SessionSummary,
   StreamEvent,
   ThinkingLevel,
 } from "@/lib/types";
-import { getSession } from "@/lib/api";
 import { omitUndefined } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
 import { usePiChatCore } from "@/composables/usePiChatCore";
 import { useSessionTabs } from "@/composables/useSessionTabs";
+import { applyStreamSnapshotEvent } from "@/composables/session-snapshot";
 
 type SessionDraftContext = {
   cwd: string;
@@ -83,20 +85,34 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     core.sessions.value.find((s) => s.id === sessionIdRef.value) ?? null,
   );
 
+  const activeSessionSnapshot = computed(() =>
+    sessionIdRef.value
+      ? core.getCachedSessionSnapshot(sessionIdRef.value) ?? null
+      : null,
+  );
+
+  const activeSessionContext = computed(() => {
+    const contextId = activeSession.value?.contextId;
+    return contextId ? core.sessionContexts.value[contextId] ?? null : null;
+  });
+
   const selectedAgentSummary = computed(() =>
     core.agents.value.find((a) => a.name === composer.selectedAgent) ?? null,
   );
 
   const effectiveModel = computed(() => {
     if (composer.selectedModel) return composer.selectedModel;
-    if (activeSession.value?.resolvedModel) return activeSession.value.resolvedModel;
+    if (activeSessionSnapshot.value?.resolvedModel) {
+      return activeSessionSnapshot.value.resolvedModel;
+    }
     if (selectedAgentSummary.value?.model) return selectedAgentSummary.value.model;
     return core.defaultModel.value;
   });
-
   const effectiveThinkingLevel = computed<ThinkingLevel>(() => {
     if (composer.selectedThinkingLevel) return composer.selectedThinkingLevel;
-    if (activeSession.value?.resolvedThinkingLevel) return activeSession.value.resolvedThinkingLevel as ThinkingLevel;
+    if (activeSessionSnapshot.value?.resolvedThinkingLevel) {
+      return activeSessionSnapshot.value.resolvedThinkingLevel as ThinkingLevel;
+    }
     if (selectedAgentSummary.value?.thinking) return selectedAgentSummary.value.thinking;
     return "medium";
   });
@@ -158,12 +174,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
 
   // 有效目录（文件树根目录）
   const fileTreeRoot = computed(() => {
-    const session = activeSession.value;
-    if (session) {
-      if (session.worktreeRoot && session.worktreeRoot !== session.projectRoot) {
-        return session.worktreeRoot;
+    const context = activeSessionContext.value;
+    if (context) {
+      if (context.worktreeRoot && context.worktreeRoot !== context.projectRoot) {
+        return context.worktreeRoot;
       }
-      return session.cwd;
+      return context.cwd;
     }
     return activeDraftContext.value?.cwd || "";
   });
@@ -186,21 +202,20 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     );
 
     eventSource.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as StreamEvent & {
-        session?: SessionSnapshot;
-      };
+      const payload = JSON.parse(event.data) as StreamEvent;
 
-      if (payload.type === "snapshot" && payload.session) {
-        core.syncSessions(payload.session);
-        // 更新本标签的本地状态
-        messages.value =
-          core.getCachedSessionSnapshot(sid)?.messages ??
-          payload.session.messages;
-        status.value = payload.session.status;
-        isSending.value = payload.session.status === "streaming";
-        composer.isSending = payload.session.status === "streaming";
-        composer.canAbort = payload.session.status === "streaming";
-        core.syncComposerSelection(composer, payload.session);
+      const patched = applyStreamSnapshotEvent(
+        { sessions: core.sessions, sessionContexts: core.sessionContexts, sessionCache: core.sessionCache },
+        sid,
+        payload,
+        core.createHistoryMeta,
+      );
+      if (patched) {
+        messages.value = patched.messages;
+        status.value = patched.status;
+        isSending.value = patched.status === "streaming";
+        composer.isSending = patched.status === "streaming";
+        composer.canAbort = patched.status === "streaming";
         return;
       }
 
@@ -319,6 +334,20 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     currentStreamMessageLocalId = "";
   };
 
+  const applyMessagesPayload = (
+    sid: string,
+    payload: SessionMessagesPayload,
+  ) => {
+    core.patchSessionSnapshot(sid, (snapshot) => ({
+      ...snapshot,
+      messages: payload.messages,
+      historyMeta: payload.historyMeta,
+      interactiveRequests: payload.interactiveRequests,
+      permissionRequests: payload.permissionRequests,
+    }));
+    messages.value = payload.messages;
+  };
+
   // ============================================================================
   // 会话加载
   // ============================================================================
@@ -435,7 +464,10 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
       core.refreshAgents(snapshot.cwd),
       core.refreshResources({ cwd: snapshot.cwd, sessionId: snapshot.id }),
     ]);
-    await core.refreshSessions();
+    await Promise.all([
+      core.refreshSessions(),
+      core.refreshSessionContexts(),
+    ]);
     return snapshot;
   };
 
@@ -607,10 +639,8 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     };
 
     try {
-      // getSession already imported
-      const snapshot = await getSession(sid, { rounds: nextRounds });
-      core.syncSessions(snapshot);
-      messages.value = snapshot.messages;
+      const payload = await getSessionMessages(sid, { rounds: nextRounds });
+      applyMessagesPayload(sid, payload);
     } finally {
       core.sessionLoadingOlderById.value = {
         ...core.sessionLoadingOlderById.value,
@@ -655,12 +685,10 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         caughtError instanceof Error
           ? caughtError.message
           : String(caughtError);
-      // getSession already imported
-      const snapshot = await getSession(sid, {
+      const payload = await getSessionMessages(sid, {
         rounds: core.getCachedSessionSnapshot(sid)?.historyMeta.roundWindow,
       });
-      core.syncSessions(snapshot);
-      messages.value = snapshot.messages;
+      applyMessagesPayload(sid, payload);
     }
   };
 
@@ -691,12 +719,10 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         caughtError instanceof Error
           ? caughtError.message
           : String(caughtError);
-      // getSession already imported
-      const snapshot = await getSession(sid, {
+      const payload = await getSessionMessages(sid, {
         rounds: core.getCachedSessionSnapshot(sid)?.historyMeta.roundWindow,
       });
-      core.syncSessions(snapshot);
-      messages.value = snapshot.messages;
+      applyMessagesPayload(sid, payload);
     }
   };
 
@@ -729,12 +755,10 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         caughtError instanceof Error
           ? caughtError.message
           : String(caughtError);
-      // getSession already imported
-      const snapshot = await getSession(sid, {
+      const payload = await getSessionMessages(sid, {
         rounds: core.getCachedSessionSnapshot(sid)?.historyMeta.roundWindow,
       });
-      core.syncSessions(snapshot);
-      messages.value = snapshot.messages;
+      applyMessagesPayload(sid, payload);
     }
   };
 

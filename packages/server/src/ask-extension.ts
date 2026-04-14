@@ -9,6 +9,7 @@ import type {
   PendingAskRecord,
   SessionRecord,
 } from './types/index.js';
+import { normalizeString } from './utils/strings.js';
 
 const AskOptionSchema = Type.Object({
   label: Type.String({ description: '选项显示文案' }),
@@ -33,9 +34,6 @@ const AskToolParamsSchema = Type.Object({
     minItems: 1,
   }),
 });
-
-const normalizeString = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
 
 const normalizeQuestions = (questions: AskQuestion[]): AskQuestion[] => {
   return questions.map((question, index) => {

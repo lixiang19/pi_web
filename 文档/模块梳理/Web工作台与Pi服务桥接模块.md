@@ -958,3 +958,202 @@ RIDGE_PI_ISOLATED=1
 - `packages/web/src/lib/session-sidebar.ts`
 - `packages/web/src/components/chat/SessionSidebar.vue`
 - `packages/web/src/pages/WorkbenchPage.vue`
+
+## 2026-04-14 Web 类型检查边界收敛
+### 变更目的
+- `packages/web/src/components/ui/*` 来自 shadcn/reka 包装层，当前上游实现会把可选 props 以 `undefined` 透传；在 Web 端开启 `exactOptionalPropertyTypes` 时，会把第三方包装层全部打成错误，导致 `npm run check` / `npm run build:web` 无法作为有效项目检测。
+- 本次明确约束：**不改 shadcn 组件源码**，改 Web 编译边界与业务层类型定义，让检测只拦真正属于本项目的问题。
+
+### 当前链路
+```text
+packages/web/tsconfig.app.json
+  -> exactOptionalPropertyTypes = false
+  -> vue-tsc --noEmit / vue-tsc -b
+  -> npm run check / npm run build:web
+  -> 第三方 shadcn 包装层不再阻塞
+  -> 业务层继续受 strict / noUnusedLocals / noPropertyAccessFromIndexSignature 等规则约束
+```
+
+### 设计结论
+- `exactOptionalPropertyTypes` 不再作为 Web 包统一门禁；当前项目里它主要放大第三方 UI 包装层噪音，不适合作为交付检查标准。
+- 工作台自定义代码仍保持严格类型：事件载荷、Ref 透传、索引签名访问、空值分支都必须修正，不能靠关闭整套 strict 逃避。
+- 检测与构建必须共用同一套 TS 边界，禁止出现“check 能过、build 不过”双标准。
+
+### 受影响文件
+- `packages/web/tsconfig.app.json`
+- `packages/web/src/components/chat/AskCard.vue`
+- `packages/web/src/components/chat/ChatProcessGroup.vue`
+- `packages/web/src/components/chat/SessionSidebarSessionNode.vue`
+- `packages/web/src/components/chat/ThinkingCard.vue`
+- `packages/web/src/components/workbench/chat/WorkbenchChatPanel.vue`
+- `packages/web/src/components/workbench/chat/WorkbenchComposer.vue`
+- `packages/web/src/components/workbench/SessionTabContent.vue`
+- `packages/web/src/composables/useSessionTabs.ts`
+- `packages/web/src/pages/SettingsPage.vue`
+- `packages/web/src/pages/WorkbenchPage.vue`
+- `packages/web/src/stores/favorites.ts`
+
+## 2026-04-14 对话索引与会话恢复修正
+### 变更目的
+- 修正对话索引库首版中的三条根因回归：session context 的 `projectId` 错绑为路径标识、会话显式选择只持久化 agent、`messages` 路由为读取消息却仍打开完整 runtime。
+
+### 当前链路
+```text
+projects.id
+  -> session-indexer 写入 session_contexts.project_id
+  -> web session-sidebar 按 project.id 归组 session
+
+session_selections
+  -> 持久化 agent/model/thinkingLevel
+  -> restoreSessionSelection 统一恢复显式选择
+
+GET /api/sessions/:id/messages
+  -> activeSessions 命中时读内存态
+  -> 未命中时直读 session jsonl
+  -> 不再为读消息创建完整 AgentSession
+
+ensureSessionRecord
+  -> openingSessionRecords 去重并发打开
+
+projection_state
+  -> 记录 session_file + mtime + size
+  -> refreshSessionCatalog 仅在文件变化时重读 jsonl
+```
+
+### 设计结论
+- `session_contexts.project_id` 必须绑定 `projects.id`，不能复用 git common dir、cwd、projectRoot 这类路径型标识；左栏项目树主键只能有一套。
+- `session_selections` 是会话级显式选择的单一持久化源，必须完整覆盖 `agent/model/thinkingLevel`，否则刷新恢复会退化成“只记 agent”。
+- `messages` 接口的职责就是读消息窗口；只有活跃会话需要内存态 pending ask/permission，非活跃会话必须直接走 session 文件，不得为读消息打开完整 runtime。
+- `projection_state` 只有参与命中判断才有意义；如果每次 refresh 仍全量读 jsonl，那它就只是死表。
+
+### 受影响文件
+- `packages/server/src/session-indexer.ts`
+- `packages/server/src/session-metadata.ts`
+- `packages/server/src/index.ts`
+- `packages/web/src/lib/session-sidebar.ts`
+
+## 2026-04-14 对话链路回归收口
+### 变更目的
+- 修正会话索引在嵌套项目或父子 worktree 场景下的错误归属，避免 `projectId` 因项目添加顺序不同而漂移。
+- 收窄旧 `usePiChat` 详情页链路里的消息补拉与历史扩窗，避免“只读消息”动作重新走聚合式会话装配。
+- 修正工作台新建会话后的上下文字典刷新缺口，避免左栏拿到新 `contextId` 却没有对应 context 数据。
+
+### 当前链路
+```text
+session-indexer.resolveManagedProject
+  -> 对所有 managed project 的 allowedRoots 做命中判断
+  -> 选择最长匹配根路径
+  -> 写入稳定的 sessions.context_id / session_contexts.project_id
+
+usePiChat.loadEarlier / ask / permission error recovery
+  -> 只请求 GET /api/sessions/:id/messages
+  -> 回填 messages/historyMeta/pending requests
+  -> 不再触发 getSession 的全量聚合请求
+
+usePerSessionChat.createAndLoadSession
+  -> createSession
+  -> refreshSessions + refreshSessionContexts
+  -> 左栏分组与 context 字典同步收敛
+```
+
+### 设计结论
+- 会话归属匹配必须按最长根路径优先，不能依赖项目列表顺序；顺序驱动的归属在嵌套项目下天然不稳定。
+- 既然 `messages` 已独立成接口，历史扩窗和失败后的消息恢复就必须只走消息接口；否则接口拆分只是表面工作，热路径仍会被旧聚合拖回去。
+- 只要新会话可能引入新的 `contextId`，`sessions` 与 `session-contexts` 就必须一起刷新；左栏摘要和上下文字典不能分步漂移。
+
+### 受影响文件
+- `packages/server/src/session-indexer.ts`
+- `packages/web/src/composables/usePiChat.ts`
+- `packages/web/src/composables/usePerSessionChat.ts`
+
+## 2026-04-14 对话链路增量写入与单一快照装配
+### 变更目的
+- 消除会话写路径上的全量目录重建，避免 create/update/archive/delete 再次按全量 session 规模膨胀。
+- 消除 usePiChat 与 usePiChatCore 的双份 snapshot/hydrate 实现，避免 split APIs 契约继续漂移。
+
+### 当前链路
+```text
+POST/PATCH /api/sessions
+  -> persistSessionRecordMetadata
+  -> upsertIndexedSessionRecord
+  -> 仅更新当前 session/context/projection/parent 关系
+
+POST /api/sessions/:id/archive
+  -> sessionMetadataStore.setArchived
+  -> 只更新 sessions.archived
+
+DELETE /api/sessions/:id
+  -> 删除 session 文件 + sessions/projection/selection 行
+  -> 不再全量 refresh
+
+session-snapshot.ts
+  -> buildSnapshotFromSummary
+  -> buildSnapshotFromPayloads
+  -> patchSessionSnapshot / patchSessionSummary
+  -> hydrateSessionSnapshot
+
+usePiChatCore / usePiChat
+  -> 统一调用共享快照模块
+  -> 不再各自维护一套 snapshot/hydrate 逻辑
+```
+
+### 设计结论
+- 全量 session catalog refresh 只允许出现在启动建索引和 project scope 边界变化场景；单会话写路径必须做局部 upsert。
+- projection_state 的意义是支持局部索引和按需重算；如果写路径继续默认全量 refresh，这张表就会再次退化成摆设。
+- SessionSnapshot / SessionMessagesPayload / SessionRuntimePayload 的装配语义必须收敛到单一共享模块，禁止在 usePiChat 和 usePiChatCore 双份维护。
+
+### 受影响文件
+- `packages/server/src/session-indexer.ts`
+- `packages/server/src/index.ts`
+- `packages/web/src/composables/session-snapshot.ts`
+- `packages/web/src/composables/usePiChat.ts`
+- `packages/web/src/composables/usePiChatCore.ts`
+- `packages/web/src/pages/WorkbenchPage.vue`
+
+## 2026-04-15 最小会话索引与 SSE 零写库
+### 变更目的
+- 收缩 ridge.db 中的会话目录索引，只保留左栏列表、project/worktree 分组、父子会话树和运行时恢复必需字段。
+- 删除无消费字段与纯优化中间态，明确数据库职责是“配置 + 最小目录索引”，不是会话副本库。
+- 让 SSE 链路彻底退出数据库写入，避免发送前和 turn_end 把同步 SQLite 写入塞进热路径。
+
+### 当前链路
+```text
+sessions
+  -> 仅保留 session_id/title/cwd/session_file/parent 关系/时间戳/archived/context_id/user_round_count/last_model/last_thinking_level
+  -> 不再保存 status/last_message_preview/message_count/indexed_at
+
+session_contexts
+  -> 保留 project/worktree/cwd/git 上下文
+  -> 继续支撑左栏 project/worktree 分组
+
+session_selections
+  -> 只承载显式用户选择 agent/model/thinkingLevel
+  -> create/patch 等显式用户动作立即持久化
+
+POST /api/sessions/:id/messages
+  -> 只更新内存态与 session 文件
+  -> 不再写 sessions / session_selections
+
+turn_end
+  -> 只发 snapshot/status
+  -> 不再写 DB
+
+startup refreshSessionCatalog
+  -> 扫描 session 文件重建最小目录索引
+  -> 不再依赖 projection_state 增量命中
+```
+
+### 设计结论
+- 没有消费方的字段不能留在索引表里；`last_message_preview`、`message_count`、`status`、`indexed_at` 与 `projection_state` 已删除。
+- 运行时状态不属于目录索引；列表 `status` 只以内存 active session 覆盖，数据库不持久化运行时态。
+- `user_round_count`、`last_model`、`last_thinking_level` 仍保留，因为它们分别服务历史分页和已关闭会话的 runtime 恢复。
+- 发送消息本身不是持久化入口；显式用户动作写库合理，但 SSE 链路必须零写库。
+
+### 受影响文件
+- `packages/server/src/db/migrations.ts`
+- `packages/server/src/db/index.ts`
+- `packages/server/src/session-indexer.ts`
+- `packages/server/src/session-metadata.ts`
+- `packages/server/src/index.ts`
+- `packages/server/src/types/index.ts`
+- `packages/web/src/lib/types.ts`

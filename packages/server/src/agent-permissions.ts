@@ -12,6 +12,8 @@ import type {
   PermissionInteractiveRequest,
   PermissionRule,
 } from './types/index.js';
+import { toPosixPath } from './utils/paths.js';
+import { normalizeString } from './utils/strings.js';
 
 
 type ToolCallEvent = PiToolCallEvent & { toolCallId?: string };
@@ -29,13 +31,6 @@ const SIMPLE_PERMISSION_KEYS = new Set<LogicalPermissionKey>([
 const EDIT_PERMISSION_KEY: LogicalPermissionKey = 'edit';
 const LEGACY_EDIT_TOOL_KEYS = new Set(['write']);
 const MUTATION_TOOL_NAMES = new Set(['edit', 'write']);
-
-const normalizeString = (value: unknown): string => {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  return value.trim();
-};
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -147,8 +142,6 @@ const normalizeRuleEntries = (
     action: ruleAction,
   }));
 };
-
-const toPosixPath = (value: string): string => value.split(path.sep).join('/');
 
 const escapeRegex = (value: string): string =>
   value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
