@@ -8,12 +8,12 @@ import type {
   AskQuestionAnswer,
   PermissionInteractiveRequest,
   ChatComposerState,
-  ChatMessage,
   CommandCatalogItem,
   PromptCatalogItem,
   SessionSummary,
   SkillCatalogItem,
   ThinkingLevel,
+  UiConversationMessage,
 } from "@/lib/types";
 
 defineProps<{
@@ -30,7 +30,7 @@ defineProps<{
   isLoadingOlder: boolean;
   isResourcePickerVisible: boolean;
   isSending: boolean;
-  messages: ChatMessage[];
+  messages: UiConversationMessage[];
   modelOptions: Array<{ label: string; value: string }>;
   noAgentValue: string;
   currentProjectPath: string;

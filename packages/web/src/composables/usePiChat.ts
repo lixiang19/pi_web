@@ -30,20 +30,22 @@ import type {
   AskQuestionAnswer,
   PermissionInteractiveRequest,
   ChatComposerState,
-  ChatMessage,
+  PiMessage,
   ProvidersResponse,
   ResourceCatalogResponse,
   SessionContextSummary,
   SessionMessagesPayload,
   SessionHistoryMeta,
-  SessionSnapshot,
   SessionSummary,
   StreamEvent,
   StreamMessageEvent,
   SystemInfo,
   ThinkingLevel,
-  } from "@/lib/types";
+  UiConversationMessage,
+  UiSessionSnapshot,
+} from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
+import { wrapUiConversationMessage } from "@/lib/conversation";
 import { useSettingsStore } from "@/stores/settings";
 import {
   applyStreamSnapshotEvent,
@@ -83,25 +85,32 @@ const createEmptyResources = (): ResourceCatalogResponse => ({
 // Pi 原始消息辅助函数
 // ============================================================================
 
-const createRawMessage = (message?: StreamMessageEvent["message"], overrides?: Partial<ChatMessage>): ChatMessage => ({
-  role: (message?.role as ChatMessage["role"]) || overrides?.role || "assistant",
-  content:
-    message?.content === undefined
-      ? (overrides?.content ?? "")
-      : typeof message.content === "string"
-        ? message.content
-        : message.content,
-  timestamp: overrides?.timestamp ?? message?.timestamp ?? Date.now(),
-  toolCallId: overrides?.toolCallId ?? message?.toolCallId,
-  toolName: overrides?.toolName ?? message?.toolName,
-  details: overrides?.details ?? message?.details,
-  isError: overrides?.isError ?? message?.isError,
-  pending: overrides?.pending,
-  localId: overrides?.localId,
-});
+const createRawMessage = (
+  message?: StreamMessageEvent["message"],
+  overrides?: Partial<PiMessage>,
+): PiMessage =>
+  message
+    ? {
+        ...message,
+        ...overrides,
+      }
+    : ({
+        role: overrides?.role || "assistant",
+        content: overrides?.content ?? "",
+        timestamp: overrides?.timestamp ?? Date.now(),
+        ...(overrides?.role === "toolResult"
+          ? {
+              toolCallId: overrides.toolCallId || "",
+              toolName: overrides.toolName || "",
+              content: Array.isArray(overrides.content) ? overrides.content : [],
+              isError: overrides.isError ?? false,
+              details: overrides.details,
+            }
+          : {}),
+      } as PiMessage);
 
 /**
- * 创建空的 ContentBlock 数组
+ * 读取草稿缓存
  */
 const loadDraftMap = () => {
   if (typeof window === "undefined") {
@@ -134,8 +143,8 @@ const persistDraftMap = (drafts: Record<string, string>) => {
 const getDraftKey = (sessionId: string | null | undefined) =>
   sessionId || newSessionDraftKey;
 
-const countConversationRounds = (messages: ChatMessage[]) =>
-  messages.filter((message) => message.role === "user").length;
+const countConversationRounds = (messages: UiConversationMessage[]) =>
+  messages.filter((entry) => entry.message.role === "user").length;
 const createHistoryMeta = (
   loadedRounds: number,
   totalRounds: number,
@@ -148,7 +157,7 @@ const createHistoryMeta = (
 });
 const expandVisibleHistoryMeta = (
   historyMeta: SessionHistoryMeta,
-  visibleMessages: ChatMessage[],
+  visibleMessages: UiConversationMessage[],
 ) => {
   const visibleRounds = countConversationRounds(visibleMessages);
   const hiddenRounds = Math.max(
@@ -190,7 +199,7 @@ export function usePiChat() {
   const sessions = ref<SessionSummary[]>([]);
   const sessionContexts = ref<Record<string, SessionContextSummary>>({});
   const activeSessionId = ref("");
-  const messages = ref<ChatMessage[]>([]);
+  const messages = ref<UiConversationMessage[]>([]);
   const activeDraftContext = ref<SessionDraftContext | null>(null);
   const sessionCache = ref<Record<string, CachedSessionEntry>>({});
   const sessionLoadingOlderById = ref<Record<string, boolean>>({});

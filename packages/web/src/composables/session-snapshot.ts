@@ -7,13 +7,14 @@ import type {
   SessionHistoryMeta,
   SessionMessagesPayload,
   SessionRuntimePayload,
-  SessionSnapshot,
   SessionSummary,
   StreamEvent,
+  UiSessionSnapshot,
 } from "@/lib/types";
+import { wrapUiConversationMessage } from "@/lib/conversation";
 
 export type CachedSessionEntry = {
-  snapshot: SessionSnapshot;
+  snapshot: UiSessionSnapshot;
   hydratedAt: number;
 };
 
@@ -30,7 +31,7 @@ interface HydrateSessionSnapshotOptions extends SessionSnapshotStore {
     totalRounds: number,
     roundWindow?: number,
   ) => SessionHistoryMeta;
-  loadSessionInFlightById: Map<string, Promise<SessionSnapshot>>;
+  loadSessionInFlightById: Map<string, Promise<UiSessionSnapshot>>;
   loadSessionRequestSeqById: Map<string, number>;
   refreshSessions: () => Promise<SessionSummary[]>;
   refreshSessionContexts?: () => Promise<Record<string, SessionContextSummary>>;
@@ -39,7 +40,7 @@ interface HydrateSessionSnapshotOptions extends SessionSnapshotStore {
 const buildSummarySnapshot = (
   summary: SessionSummary,
   createHistoryMeta: HydrateSessionSnapshotOptions["createHistoryMeta"],
-): SessionSnapshot => ({
+): UiSessionSnapshot => ({
   ...summary,
   messages: [],
   historyMeta: createHistoryMeta(0, 0),
@@ -51,7 +52,7 @@ export const buildSnapshotFromSummary = (
   store: SessionSnapshotStore,
   sessionId: string,
   createHistoryMeta: HydrateSessionSnapshotOptions["createHistoryMeta"],
-): SessionSnapshot | null => {
+): UiSessionSnapshot | null => {
   const summary = store.sessions.value.find((session) => session.id === sessionId);
   if (!summary) {
     return null;
@@ -65,7 +66,7 @@ export const buildSnapshotFromPayloads = (
   messagesPayload: SessionMessagesPayload,
   runtimePayload: SessionRuntimePayload | undefined,
   sessionContexts: Record<string, SessionContextSummary>,
-): SessionSnapshot => {
+): UiSessionSnapshot => {
   const context = summary.contextId
     ? sessionContexts[summary.contextId]
     : undefined;
@@ -84,7 +85,7 @@ export const buildSnapshotFromPayloads = (
     branch: context?.branch ?? summary.branch,
     worktreeRoot: context?.worktreeRoot ?? summary.worktreeRoot,
     worktreeLabel: context?.worktreeLabel ?? summary.worktreeLabel,
-    messages: messagesPayload.messages,
+    messages: messagesPayload.messages.map(wrapUiConversationMessage),
     historyMeta: messagesPayload.historyMeta,
     interactiveRequests: messagesPayload.interactiveRequests,
     permissionRequests: messagesPayload.permissionRequests,
@@ -93,7 +94,7 @@ export const buildSnapshotFromPayloads = (
 
 export const upsertSessionSnapshot = (
   sessionCache: Ref<Record<string, CachedSessionEntry>>,
-  snapshot: SessionSnapshot,
+  snapshot: UiSessionSnapshot,
 ) => {
   sessionCache.value[snapshot.id] = {
     snapshot: {
@@ -128,7 +129,7 @@ export const upsertSessionSummary = (
 
 export const syncSessionSnapshot = (
   store: SessionSnapshotStore,
-  snapshot?: SessionSnapshot,
+  snapshot?: UiSessionSnapshot,
 ) => {
   if (!snapshot) {
     return;
@@ -141,12 +142,12 @@ export const syncSessionSnapshot = (
 interface PatchSessionSnapshotOptions extends SessionSnapshotStore {
   sessionId: string;
   createHistoryMeta: HydrateSessionSnapshotOptions["createHistoryMeta"];
-  updater: (snapshot: SessionSnapshot) => SessionSnapshot;
+  updater: (snapshot: UiSessionSnapshot) => UiSessionSnapshot;
 }
 
 export const patchSessionSnapshot = (
   options: PatchSessionSnapshotOptions,
-): SessionSnapshot | null => {
+): UiSessionSnapshot | null => {
   const baseSnapshot =
     options.sessionCache.value[options.sessionId]?.snapshot ??
     buildSnapshotFromSummary(
@@ -209,7 +210,7 @@ export const applyMessagesPayload = (
     createHistoryMeta,
     updater: (snapshot) => ({
       ...snapshot,
-      messages: payload.messages,
+      messages: payload.messages.map(wrapUiConversationMessage),
       historyMeta: payload.historyMeta,
       interactiveRequests: payload.interactiveRequests,
       permissionRequests: payload.permissionRequests,
@@ -219,7 +220,7 @@ export const applyMessagesPayload = (
 
 export const hydrateSessionSnapshot = async (
   options: HydrateSessionSnapshotOptions,
-): Promise<SessionSnapshot> => {
+): Promise<UiSessionSnapshot> => {
   const cached = options.sessionCache.value[options.sessionId]?.snapshot;
   if (cached) {
     return cached;
@@ -296,7 +297,7 @@ export const applyStreamSnapshotEvent = (
   sessionId: string,
   payload: StreamEvent,
   createHistoryMeta: HydrateSessionSnapshotOptions["createHistoryMeta"],
-): SessionSnapshot | null => {
+): UiSessionSnapshot | null => {
   if (
     payload.type !== "snapshot" ||
     !Array.isArray(payload.messages) ||
@@ -313,7 +314,7 @@ export const applyStreamSnapshotEvent = (
     updater: (snapshot) => ({
       ...snapshot,
       status: payload.status ?? snapshot.status,
-      messages: payload.messages,
+      messages: payload.messages.map(wrapUiConversationMessage),
       historyMeta: payload.historyMeta,
       interactiveRequests: payload.interactiveRequests,
       permissionRequests: payload.permissionRequests,

@@ -1,5 +1,32 @@
 // ===== Express Extensions =====
 import type { AgentSession, DefaultResourceLoader, SettingsManager, AgentToolResult } from '@mariozechner/pi-coding-agent';
+import type {
+  AgentSummary as ProtocolAgentSummary,
+  AskInteractiveRequest as ProtocolAskInteractiveRequest,
+  AskOption as ProtocolAskOption,
+  AskQuestion as ProtocolAskQuestion,
+  AskQuestionAnswer as ProtocolAskQuestionAnswer,
+  AskToolResultDetails as ProtocolAskToolResultDetails,
+  CreateWorktreeRequest as ProtocolCreateWorktreeRequest,
+  DeleteWorktreeRequest as ProtocolDeleteWorktreeRequest,
+  FileTreeEntry as ProtocolFileTreeEntry,
+  GitBranchesResponse as ProtocolGitBranchesResponse,
+  GitFileStatusItem as ProtocolGitFileStatusItem,
+  PermissionDecisionAction as ProtocolPermissionDecisionAction,
+  PermissionInteractiveRequest as ProtocolPermissionInteractiveRequest,
+  ProjectItem as ProtocolProjectItem,
+  ProviderGroup as ProtocolProviderGroup,
+  ProvidersResponse as ProtocolProvidersResponse,
+  ResourceCatalogResponse as ProtocolResourceCatalogResponse,
+  SessionMessagesPayload as ProtocolSessionMessagesPayload,
+  SessionRuntimePayload as ProtocolSessionRuntimePayload,
+  SessionSnapshot as ProtocolSessionSnapshot,
+  SessionSummary as ProtocolSessionSummary,
+  ThinkingLevel as ProtocolThinkingLevel,
+  ValidateWorktreeRequest as ProtocolValidateWorktreeRequest,
+  ValidateWorktreeResponse as ProtocolValidateWorktreeResponse,
+  WorktreeApiInfo as ProtocolWorktreeApiInfo,
+} from '@pi/protocol';
 
 /* eslint-disable @typescript-eslint/no-namespace */
 declare global {
@@ -15,7 +42,7 @@ declare global {
 export type AgentMode = 'primary' | 'task' | 'all';
 export type AgentScope = 'user' | 'project';
 export type AgentSourceScope = 'default' | AgentScope;
-export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type ThinkingLevel = ProtocolThinkingLevel;
 export interface AgentConfig {
   name: string;
   description: string;
@@ -67,55 +94,20 @@ export interface CompiledPermissionPolicy {
   activeToolNames: string[];
   rulesByPermission: Partial<Record<LogicalPermissionKey, PermissionRule[]>>;
 }
-export interface AskOption {
-  label: string;
-  description?: string;
-}
-export interface AskQuestion {
-  id: string;
-  header?: string;
-  question: string;
-  description?: string;
-  options?: AskOption[];
-  multiple?: boolean;
-  allowCustom?: boolean;
-}
-export interface AskQuestionAnswer {
-  questionId: string;
-  values: string[];
-}
-export interface AskInteractiveRequest {
-  id: string;
-  toolCallId: string;
-  title: string;
-  message?: string;
-  questions: AskQuestion[];
-  createdAt: number;
-}
-export interface AskToolResultDetails {
-  request: AskInteractiveRequest;
-  answers: AskQuestionAnswer[];
-  dismissed: boolean;
-}
+export type AskOption = ProtocolAskOption;
+export type AskQuestion = ProtocolAskQuestion;
+export type AskQuestionAnswer = ProtocolAskQuestionAnswer;
+export type AskInteractiveRequest = ProtocolAskInteractiveRequest;
+export type AskToolResultDetails = ProtocolAskToolResultDetails;
 export interface PendingAskRecord extends AskInteractiveRequest {
   settled: boolean;
   resolve: (result: AgentToolResult<AskToolResultDetails>) => void;
   reject: (error: Error) => void;
 }
 
-export type PermissionDecisionAction = 'once' | 'always' | 'reject';
+export type PermissionDecisionAction = ProtocolPermissionDecisionAction;
 
-export interface PermissionInteractiveRequest {
-  id: string;
-  toolCallId: string;
-  toolName: string;
-  permissionKey: LogicalPermissionKey;
-  title: string;
-  message: string;
-  subject: string;
-  suggestedPattern?: string;
-  createdAt: number;
-}
+export type PermissionInteractiveRequest = ProtocolPermissionInteractiveRequest;
 
 export interface PendingPermissionRecord extends PermissionInteractiveRequest {
   resolve: (action: PermissionDecisionAction) => void;
@@ -202,12 +194,7 @@ export interface ProjectContext {
 
 
 // ===== File Tree Types =====
-export interface FileTreeEntry {
-  name: string;
-  path: string;
-  kind: 'directory' | 'file';
-  relativePath: string;
-}
+export type FileTreeEntry = ProtocolFileTreeEntry;
 
 export interface FileTreeResult {
   root: string;
@@ -225,11 +212,11 @@ export interface FavoriteItem {
   createdAt: number;
 }
 export interface Project {
-  id: string;
-  name: string;
-  path: string;
-  addedAt: number;
-  isGit: boolean;
+  id: ProtocolProjectItem['id'];
+  name: ProtocolProjectItem['name'];
+  path: ProtocolProjectItem['path'];
+  addedAt: ProtocolProjectItem['addedAt'];
+  isGit: ProtocolProjectItem['isGit'];
 }
 
 /**
@@ -270,169 +257,14 @@ export type FavoritesState = { items: FavoriteItem[] };
 export type ProjectsState = { version: number; projects: Project[] };
 
 // ===== API Response Types =====
-export interface SessionSummary {
-  id: string;
-  title: string;
-  cwd: string;
-  status: 'idle' | 'streaming' | 'error';
-  createdAt: number;
-  updatedAt: number;
-  archived: boolean;
-  agent?: string;
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-  resolvedModel?: string;
-  resolvedThinkingLevel?: ThinkingLevel;
-  sessionFile: string;
-  parentSessionId?: string;
-  contextId?: string;
-  projectId: string;
-  projectRoot: string;
-  projectLabel: string;
-  isGit: boolean;
-  branch?: string;
-  worktreeRoot: string;
-  worktreeLabel: string;
-}
-
-export type MessageRole = 'system' | 'user' | 'assistant' | 'tool' | 'toolResult';
-
-export interface TextContentBlock {
-  type: 'text';
-  text?: string;
-}
-
-export interface ThinkingContentBlock {
-  type: 'thinking';
-  thinking?: string;
-  redacted?: boolean;
-}
-
-export interface ImageContentBlock {
-  type: 'image';
-  data?: string;
-  mimeType?: string;
-}
-
-export interface ToolCallContentBlock {
-  type: 'toolCall';
-  id?: string;
-  name?: string;
-  arguments?: Record<string, unknown>;
-}
-
-export interface ToolResultContentBlock {
-  type: 'toolResult';
-  id?: string;
-  name?: string;
-  result?: unknown;
-}
-
-export type MessageBlock = {
-  type?: string;
-  [key: string]: unknown;
-};
-
-export interface SerializedMessage {
-  role: MessageRole;
-  content: string | MessageBlock[];
-  timestamp?: number;
-  toolCallId?: string;
-  toolName?: string;
-  details?: unknown;
-  isError?: boolean;
-}
-
-export interface SessionSnapshot extends SessionSummary {
-  messages: SerializedMessage[];
-  historyMeta: {
-    loadedRounds: number;
-    totalRounds: number;
-    hasMoreAbove: boolean;
-    roundWindow: number;
-  };
-  interactiveRequests: AskInteractiveRequest[];
-  permissionRequests: PermissionInteractiveRequest[];
-}
-
-export interface SessionMessagesPayload {
-  sessionId: string;
-  messages: SerializedMessage[];
-  historyMeta: SessionSnapshot['historyMeta'];
-  interactiveRequests: AskInteractiveRequest[];
-  permissionRequests: PermissionInteractiveRequest[];
-}
-
-export interface SessionRuntimePayload {
-  sessionId: string;
-  agent?: string;
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-  resolvedModel?: string;
-  resolvedThinkingLevel?: ThinkingLevel;
-}
-
-export interface ProviderInfo {
-  id: string;
-  name: string;
-  models: Record<string, {
-    id: string;
-    name: string;
-    reasoning: boolean;
-  }>;
-}
-
-export interface ProvidersResponse {
-  providers: ProviderInfo[];
-  default: {
-    chat?: string;
-  };
-}
-
-export interface AgentSummary {
-  name: string;
-  description: string;
-  displayName?: string;
-  mode: AgentMode;
-  model?: string;
-  thinking?: ThinkingLevel;
-  maxTurns?: number;
-  skills?: string[];
-  inheritContext?: boolean;
-  runInBackground?: boolean;
-  enabled: boolean;
-  permission?: AgentPermission;
-  sourceScope: AgentSourceScope;
-  source: string;
-}
-
-
-export interface ResourceCatalogResponse {
-  prompts: Array<{
-    name: string;
-    description: string;
-    content: string;
-    sourceInfo?: import('@mariozechner/pi-coding-agent').SourceInfo;
-  }>;
-  skills: Array<{
-    name: string;
-    description: string;
-    invocation: string;
-    disableModelInvocation?: boolean;
-    sourceInfo?: import('@mariozechner/pi-coding-agent').SourceInfo;
-  }>;
-  commands: Array<{
-    name: string;
-    description: string;
-    source: string;
-    sourceInfo?: import('@mariozechner/pi-coding-agent').SourceInfo;
-  }>;
-  diagnostics: {
-    prompts: string[];
-    skills: string[];
-    commands: string[];
-  };
-}
+export type SessionSummary = ProtocolSessionSummary;
+export type SessionSnapshot = ProtocolSessionSnapshot;
+export type SessionMessagesPayload = ProtocolSessionMessagesPayload;
+export type SessionRuntimePayload = ProtocolSessionRuntimePayload;
+export type ProviderInfo = ProtocolProviderGroup;
+export type ProvidersResponse = ProtocolProvidersResponse;
+export type AgentSummary = ProtocolAgentSummary;
+export type ResourceCatalogResponse = ProtocolResourceCatalogResponse;
 
 export interface FilesystemBrowseResult {
   homeDir: string;
@@ -442,61 +274,16 @@ export interface FilesystemBrowseResult {
 }
 
 // ===== Worktree API Types =====
-export interface WorktreeApiInfo {
-  path: string;
-  branch?: string;
-  label: string;
-  projectRoot: string;
-}
-
-export interface CreateWorktreeRequest {
-  mode: 'new' | 'existing';
-  branchName?: string;
-  existingBranch?: string;
-  worktreeName?: string;
-  startRef?: string;
-}
-
-export interface ValidateWorktreeRequest {
-  mode: 'new' | 'existing';
-  branchName?: string;
-  existingBranch?: string;
-  worktreeName?: string;
-}
-
-export interface ValidateWorktreeResponse {
-  ok: boolean;
-  branchError?: string;
-  worktreeError?: string;
-  resolvedPath?: string;
-}
-
-export interface DeleteWorktreeRequest {
-  worktreePath: string;
-  deleteLocalBranch?: boolean;
-  deleteRemoteBranch?: boolean;
-}
+export type WorktreeApiInfo = ProtocolWorktreeApiInfo;
+export type CreateWorktreeRequest = ProtocolCreateWorktreeRequest;
+export type ValidateWorktreeRequest = ProtocolValidateWorktreeRequest;
+export type ValidateWorktreeResponse = ProtocolValidateWorktreeResponse;
+export type DeleteWorktreeRequest = ProtocolDeleteWorktreeRequest;
 
 // ===== Git API Types =====
-export interface GitFileStatusItem {
-  path: string;
-  index: string;
-  working_dir: string;
-}
-
-export interface GitStatusApiResponse {
-  current: string | null;
-  tracking: string | null;
-  files: GitFileStatusItem[];
-  ahead: number;
-  behind: number;
-}
-
-export interface GitBranchesApiResponse {
-  current: string | null;
-  all: string[];
-  branches: Record<string, { current: boolean; tracking?: string }>;
-}
+export type GitFileStatusItem = ProtocolGitFileStatusItem;
+export type GitStatusApiResponse = import('@pi/protocol').GitStatusResponse;
+export type GitBranchesApiResponse = ProtocolGitBranchesResponse;
 
 export interface GitRemoteApiInfo {
   name: string;

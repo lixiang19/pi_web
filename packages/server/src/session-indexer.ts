@@ -376,7 +376,7 @@ const refreshCatalogEntries = async (
   const db = await getRidgeDb();
   db.transaction(() => {
     db.prepare(
-      'DELETE FROM session_contexts WHERE context_id NOT IN (SELECT DISTINCT context_id FROM sessions WHERE context_id IS NOT NULL AND context_id != "")',
+      "DELETE FROM session_contexts WHERE context_id NOT IN (SELECT DISTINCT context_id FROM sessions WHERE context_id IS NOT NULL AND context_id != '')",
     ).run();
     if (rows.length > 0) {
       const placeholders = rows.map(() => '?').join(', ');

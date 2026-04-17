@@ -18,15 +18,17 @@ import type {
   AskInteractiveRequest,
   AskQuestionAnswer,
   ChatComposerState,
-  ChatMessage,
+  PiMessage,
   PermissionInteractiveRequest,
   SessionMessagesPayload,
-  SessionSnapshot,
   SessionSummary,
   StreamEvent,
   ThinkingLevel,
+  UiConversationMessage,
+  UiSessionSnapshot,
 } from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
+import { wrapUiConversationMessage } from "@/lib/conversation";
 import { useSettingsStore } from "@/stores/settings";
 import { usePiChatCore } from "@/composables/usePiChatCore";
 import { useSessionTabs } from "@/composables/useSessionTabs";
@@ -52,7 +54,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   // 每会话独立状态
   // ============================================================================
 
-  const messages = ref<ChatMessage[]>([]);
+  const messages = ref<UiConversationMessage[]>([]);
   const status = ref<SessionSummary["status"]>("idle");
   const isSending = ref(false);
   const error = ref("");
@@ -252,13 +254,13 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
 
       if (payload.type === "message_start" && payload.message) {
         currentStreamMessageLocalId = core.createLocalId();
-        core.appendMessageToSession(sid, {
-          role: payload.message.role,
-          content: payload.message.content,
+        core.appendMessageToSession(sid, wrapUiConversationMessage({
+          ...payload.message,
           timestamp: payload.message.timestamp ?? Date.now(),
+        }, {
           pending: true,
           localId: currentStreamMessageLocalId,
-        });
+        }));
         // 更新本地 messages 视图
         const snapshot = core.getCachedSessionSnapshot(sid);
         if (snapshot) {
@@ -269,37 +271,40 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
 
       if (payload.type === "message_end" && payload.message) {
         const finalMessage = core.createRawMessage(payload.message, {
+          timestamp: payload.message.timestamp ?? Date.now(),
+        });
+        const finalEntry = wrapUiConversationMessage(finalMessage, {
           pending: false,
           localId: currentStreamMessageLocalId || core.createLocalId(),
         });
 
         core.patchSessionSnapshot(sid, (snapshot) => {
           const pendingIndex = snapshot.messages.findIndex(
-            (message) =>
-              message.pending === true &&
-              message.localId === finalMessage.localId,
+            (entry) =>
+              entry.pending === true &&
+              entry.localId === finalEntry.localId,
           );
 
           if (pendingIndex < 0) {
             return {
               ...snapshot,
-              messages: [...snapshot.messages, finalMessage],
+              messages: [...snapshot.messages, finalEntry],
               historyMeta: core.expandVisibleHistoryMeta(
                 snapshot.historyMeta,
-                [...snapshot.messages, finalMessage],
+                [...snapshot.messages, finalEntry],
               ),
               status: "idle",
-              updatedAt: finalMessage.timestamp || Date.now(),
+              updatedAt: finalEntry.message.timestamp || Date.now(),
             };
           }
 
           return {
             ...snapshot,
-            messages: snapshot.messages.map((message, index) =>
-              index === pendingIndex ? finalMessage : message,
+            messages: snapshot.messages.map((entry, index) =>
+              index === pendingIndex ? finalEntry : entry,
             ),
             status: "idle",
-            updatedAt: finalMessage.timestamp || Date.now(),
+            updatedAt: finalEntry.message.timestamp || Date.now(),
           };
         });
 
@@ -340,12 +345,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   ) => {
     core.patchSessionSnapshot(sid, (snapshot) => ({
       ...snapshot,
-      messages: payload.messages,
+      messages: payload.messages.map(wrapUiConversationMessage),
       historyMeta: payload.historyMeta,
       interactiveRequests: payload.interactiveRequests,
       permissionRequests: payload.permissionRequests,
     }));
-    messages.value = payload.messages;
+    messages.value = payload.messages.map(wrapUiConversationMessage);
   };
 
   // ============================================================================
@@ -353,7 +358,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   // ============================================================================
 
   const applySnapshotToSession = (
-    snapshot: SessionSnapshot,
+    snapshot: UiSessionSnapshot,
     options?: { connectStream?: boolean },
   ) => {
     activeDraftContext.value = null;
@@ -506,12 +511,13 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         (core.getCachedSessionSnapshot(sid)?.messages.length ?? 0) > 0;
 
       // 创建乐观用户消息
-      const optimisticMessage: ChatMessage = {
+      const optimisticMessage = wrapUiConversationMessage({
         role: "user",
         content: prompt,
         timestamp: Date.now(),
+      }, {
         localId: core.createLocalId(),
-      };
+      });
       optimisticMessageLocalId = optimisticMessage.localId || "";
 
       composer.pendingPrompt = prompt;
@@ -575,12 +581,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         core.patchSessionSnapshot(sessionIdRef.value, (snapshot) => ({
           ...snapshot,
           messages: snapshot.messages.filter(
-            (message) => message.localId !== optimisticMessageLocalId,
+            (entry) => entry.localId !== optimisticMessageLocalId,
           ),
           historyMeta: core.expandVisibleHistoryMeta(
             snapshot.historyMeta,
             snapshot.messages.filter(
-              (message) => message.localId !== optimisticMessageLocalId,
+              (entry) => entry.localId !== optimisticMessageLocalId,
             ),
           ),
           status: "error",

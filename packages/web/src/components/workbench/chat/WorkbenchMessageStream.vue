@@ -5,18 +5,17 @@ import { ArrowDown, Brain } from "lucide-vue-next";
 import ChatMessageItem from "@/components/chat/ChatMessageItem.vue";
 import AskCard from "@/components/chat/AskCard.vue";
 import PermissionRequestCard from "@/components/chat/PermissionRequestCard.vue";
-import ChatProcessGroup from "@/components/chat/ChatProcessGroup.vue";
+import ProcessMessagesFold from "@/components/chat/ProcessMessagesFold.vue";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type {
   AskQuestionAnswer,
   AskInteractiveRequest,
   PermissionInteractiveRequest,
-  ChatMessage,
-  ContentBlock,
   SessionSummary,
-  TextContentBlock,
+  UiConversationMessage,
 } from "@/lib/types";
+import { hasAssistantText, isAssistantMessage } from "@/lib/conversation";
 
 const COLLAPSED_ROUND_WINDOW = 3;
 const EXPAND_ROUND_STEP = 3;
@@ -29,7 +28,7 @@ const props = defineProps<{
   permissionRequests: PermissionInteractiveRequest[];
   isDraftSession: boolean;
   isLoadingOlder: boolean;
-  messages: ChatMessage[];
+  messages: UiConversationMessage[];
   status: SessionSummary["status"];
 }>();
 
@@ -47,30 +46,19 @@ const visibleRoundCount = ref(COLLAPSED_ROUND_WINDOW);
 
 let boundMessageViewport: HTMLElement | null = null;
 
-const getMessageBlocks = (message: ChatMessage): ContentBlock[] =>
-  typeof message.content === "string"
-    ? [{ type: "text", text: message.content }]
-    : message.content;
-
-const hasTextBody = (message: ChatMessage) =>
-  getMessageBlocks(message).some(
-    (block): block is TextContentBlock =>
-      block.type === "text" && Boolean(block.text?.trim()),
-  );
-
-const messageKey = (message: ChatMessage, index: number) =>
-  `${message.timestamp || "no-ts"}-${message.role}-${message.localId || index}-${index}`;
+const messageKey = (message: UiConversationMessage, index: number) =>
+  `${message.message.timestamp || "no-ts"}-${message.message.role}-${message.localId || index}-${index}`;
 
 type MessageRound = {
   key: string;
-  userMessage: ChatMessage;
-  processMessages: ChatMessage[];
-  finalMessage: ChatMessage | null;
+  userMessage: UiConversationMessage;
+  processMessages: UiConversationMessage[];
+  finalMessage: UiConversationMessage | null;
 };
 
-const getUserMessageIndexes = (messages: ChatMessage[]) =>
+const getUserMessageIndexes = (messages: UiConversationMessage[]) =>
   messages.reduce<number[]>((indexes, message, index) => {
-    if (message.role === "user") {
+    if (message.message.role === "user") {
       indexes.push(index);
     }
     return indexes;
@@ -144,14 +132,14 @@ const conversationLayout = computed(() => {
   const startIndex = recentRoundStartIndex.value;
   const alignedMessages = startIndex >= 0 ? allMessages.slice(startIndex) : allMessages;
   const preludeMessages =
-    alignedMessages.length > 0 && alignedMessages[0]?.role !== "user"
+    alignedMessages.length > 0 && alignedMessages[0]?.message.role !== "user"
       ? alignedMessages
-      : ([] as ChatMessage[]);
+      : ([] as UiConversationMessage[]);
 
   let cursor = preludeMessages.length;
   while (cursor < alignedMessages.length) {
     const userMessage = alignedMessages[cursor];
-    if (!userMessage || userMessage.role !== "user") {
+    if (!userMessage || userMessage.message.role !== "user") {
       cursor += 1;
       continue;
     }
@@ -159,18 +147,18 @@ const conversationLayout = computed(() => {
     let nextUserIndex = cursor + 1;
     while (
       nextUserIndex < alignedMessages.length &&
-      alignedMessages[nextUserIndex]?.role !== "user"
+      alignedMessages[nextUserIndex]?.message.role !== "user"
     ) {
       nextUserIndex += 1;
     }
 
     const roundMessages = alignedMessages.slice(cursor + 1, nextUserIndex);
-    let finalMessage: ChatMessage | null = null;
+    let finalMessage: UiConversationMessage | null = null;
     let finalMessageIndex = -1;
 
     for (let index = roundMessages.length - 1; index >= 0; index -= 1) {
       const message = roundMessages[index];
-      if (message?.role === "assistant" && hasTextBody(message)) {
+      if (message && isAssistantMessage(message.message) && hasAssistantText(message.message)) {
         finalMessage = message;
         finalMessageIndex = index;
         break;
@@ -204,21 +192,24 @@ const lastMessageContentKey = computed(() => {
     return "";
   }
 
-  if (typeof lastMessage.content === "string") {
-    return `${lastMessage.localId || ""}:${lastMessage.timestamp || 0}:${lastMessage.content.length}`;
+  if (lastMessage.message.role === "user" && typeof lastMessage.message.content === "string") {
+    return `${lastMessage.localId || ""}:${lastMessage.message.timestamp || 0}:${lastMessage.message.content.length}`;
   }
 
-  const blockLengths = lastMessage.content.map((block) => {
-    if (block.type === "text") {
-      return block.text?.length || 0;
-    }
-    if (block.type === "thinking") {
-      return block.thinking?.length || 0;
-    }
-    return 0;
-  });
+  const contentLength =
+    "content" in lastMessage.message && Array.isArray(lastMessage.message.content)
+      ? lastMessage.message.content.map((content) => {
+          if (content.type === "text") {
+            return content.text.length;
+          }
+          if (content.type === "thinking") {
+            return content.thinking.length;
+          }
+          return 0;
+        })
+      : [];
 
-  return `${lastMessage.localId || ""}:${lastMessage.timestamp || 0}:${lastMessage.content.length}:${blockLengths.join(",")}`;
+  return `${lastMessage.localId || ""}:${lastMessage.message.timestamp || 0}:${contentLength.length}:${contentLength.join(",")}`;
 });
 
 const resolveMessageViewport = () => {
@@ -409,7 +400,7 @@ onBeforeUnmount(() => {
             </Button>
           </div>
 
-          <ChatProcessGroup
+          <ProcessMessagesFold
             v-if="conversationLayout.preludeMessages.length"
             :messages="conversationLayout.preludeMessages"
           />
@@ -417,7 +408,7 @@ onBeforeUnmount(() => {
           <template v-for="round in conversationLayout.rounds" :key="round.key">
             <ChatMessageItem :message="round.userMessage" />
 
-            <ChatProcessGroup
+            <ProcessMessagesFold
               v-if="round.processMessages.length"
               :messages="round.processMessages"
             />

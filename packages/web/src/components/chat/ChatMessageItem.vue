@@ -3,33 +3,59 @@ import { computed, ref } from "vue";
 import { Copy, Check } from "lucide-vue-next";
 import { Markdown } from "vue-stream-markdown";
 import "vue-stream-markdown/index.css";
-import type { ChatMessage, ContentBlock, TextContentBlock } from "@/lib/types";
+
+import { Button } from "@/components/ui/button";
+import type {
+  PiAssistantMessage,
+  PiTextContent,
+  UiConversationMessage,
+} from "@/lib/types";
+import {
+  getAssistantTextContents,
+  hasAssistantText,
+  isAssistantMessage,
+} from "@/lib/conversation";
+
 const props = defineProps<{
-  message: ChatMessage;
+  message: UiConversationMessage;
   isFinalAssistantMessage?: boolean;
 }>();
-const getMessageBlocks = (message: ChatMessage): ContentBlock[] =>
-  typeof message.content === "string"
-    ? [{ type: "text", text: message.content }]
-    : message.content;
-const textBlocks = computed(() =>
-  getMessageBlocks(props.message).filter(
-    (block): block is TextContentBlock =>
-      block.type === "text" && Boolean(block.text?.trim()),
-  ),
-);
+
+const textContents = computed<PiTextContent[]>(() => {
+  const currentMessage = props.message.message;
+
+  if (currentMessage.role === "user") {
+    if (typeof currentMessage.content === "string") {
+      return [{ type: "text", text: currentMessage.content }];
+    }
+    return currentMessage.content.filter(
+      (content): content is PiTextContent => content.type === "text",
+    );
+  }
+
+  if (!isAssistantMessage(currentMessage)) {
+    return [];
+  }
+
+  return getAssistantTextContents(currentMessage);
+});
+
 const plainText = computed(() =>
-  textBlocks.value.map((block) => block.text || "").join("\n\n"),
-);
-const isUserMessage = computed(() => props.message.role === "user");
-const isFinalAssistantText = computed(
-  () => props.message.role === "assistant" && props.isFinalAssistantMessage,
-);
-const finalTextBlocks = computed(() =>
-  isFinalAssistantText.value ? textBlocks.value : [],
+  textContents.value.map((content) => content.text).join("\n\n"),
 );
 
-// 复制状态
+const isUserMessage = computed(() => props.message.message.role === "user");
+const isFinalAssistantText = computed(
+  () =>
+    props.message.message.role === "assistant" &&
+    props.isFinalAssistantMessage &&
+    hasAssistantText(props.message.message),
+);
+
+const finalTextContents = computed(() =>
+  isFinalAssistantText.value ? textContents.value : [],
+);
+
 const isCopied = ref(false);
 const handleCopy = async () => {
   if (!plainText.value.trim()) {
@@ -49,32 +75,30 @@ const handleCopy = async () => {
     :class="isUserMessage ? 'justify-end' : 'justify-start'"
   >
     <div class="flex max-w-[85%] min-w-0 flex-col md:max-w-[75%]">
-      <!-- 用户消息气泡 -->
       <div
         v-if="isUserMessage"
         class="user-bubble rounded-2xl rounded-br-md px-4 py-3 text-foreground shadow-sm"
       >
         <Markdown
-          v-for="(block, index) in textBlocks"
+          v-for="(content, index) in textContents"
           :key="index"
-          :content="block.text || ''"
+          :content="content.text"
           class="max-w-none break-words text-[15px] leading-6 [&:not(:last-child)]:mb-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-2 [&_code]:break-words"
         />
       </div>
 
       <div v-else class="space-y-2">
-        <div v-if="finalTextBlocks.length" class="space-y-3 text-foreground">
+        <div v-if="finalTextContents.length" class="space-y-3 text-foreground">
           <Markdown
-            v-for="(block, index) in finalTextBlocks"
+            v-for="(content, index) in finalTextContents"
             :key="`final-text-${index}`"
-            :content="block.text || ''"
+            :content="content.text"
             class="max-w-none break-words text-[15px] leading-7 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_code]:break-words"
           />
         </div>
 
-        <!-- 加载动画 -->
         <div
-          v-if="message.pending && getMessageBlocks(message).length === 0"
+          v-if="message.pending && isAssistantMessage(message.message) && message.message.content.length === 0"
           class="flex items-center gap-2 py-1 text-xs text-muted-foreground"
         >
           <div class="loading-dots flex gap-1">
@@ -86,7 +110,6 @@ const handleCopy = async () => {
         </div>
       </div>
 
-      <!-- 复制按钮 -->
       <div
         v-if="isFinalAssistantText && plainText.trim()"
         class="mt-1 flex"
@@ -100,14 +123,14 @@ const handleCopy = async () => {
         >
           <Check v-if="isCopied" class="size-3" />
           <Copy v-else class="size-3" />
-          {{ isCopied ? '已复制' : '复制' }}
+          {{ isCopied ? "已复制" : "复制" }}
         </Button>
       </div>
     </div>
   </div>
 </template>
+
 <style scoped>
-/* 用户消息气泡渐变 */
 .user-bubble {
   background: linear-gradient(
     135deg,
@@ -116,7 +139,6 @@ const handleCopy = async () => {
   );
 }
 
-/* 加载动画 */
 .loading-dots span {
   animation: pulse 1.4s ease-in-out infinite;
 }

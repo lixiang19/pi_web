@@ -3,7 +3,8 @@
     "baseUrl": ".",
     "ignoreDeprecations": "6.0",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@pi/protocol": ["../protocol/src/index.ts"]
     }
   },
   "files": [],

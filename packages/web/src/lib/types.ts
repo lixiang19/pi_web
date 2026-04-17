@@ -1,206 +1,65 @@
-export interface ProviderModel {
-  id: string;
-  name: string;
-  reasoning: boolean;
-}
+export type {
+  AgentSummary,
+  AskInteractiveRequest,
+  AskOption,
+  AskQuestion,
+  AskQuestionAnswer,
+  AskToolCallArguments,
+  AskToolResultDetails,
+  AssistantMessageEvent,
+  CommandCatalogItem,
+  CreateWorktreeRequest,
+  DeleteWorktreeRequest,
+  DirectoryBrowseResponse,
+  FileTreeEntry,
+  FileTreeResponse,
+  GitBranchesResponse,
+  GitFileStatusItem,
+  GitRemoteInfo,
+  GitRepositoryStatusResponse,
+  GitStatusResponse,
+  PiAssistantMessage,
+  PiImageContent,
+  PiMessage,
+  PiTextContent,
+  PiThinkingContent,
+  PiToolCall,
+  PiToolResultMessage,
+  PermissionDecisionAction,
+  PermissionInteractiveRequest,
+  ProjectItem,
+  ProjectsResponse,
+  PromptCatalogItem,
+  ProviderGroup,
+  ProviderModel,
+  ProvidersResponse,
+  ResourceCatalogResponse,
+  ResourceSourceInfo,
+  SendMessagePayload,
+  SessionContextSummary,
+  SessionHydratePayload,
+  SessionHistoryMeta,
+  SessionMessagesPayload,
+  SessionMutationResponse,
+  SessionRuntimePayload,
+  SessionSnapshot,
+  SessionSummary,
+  SkillCatalogItem,
+  StreamErrorEvent,
+  StreamEvent,
+  StreamEventType,
+  StreamMessageEvent,
+  StreamSnapshotEvent,
+  StreamStatusEvent,
+  SystemInfo,
+  ThinkingLevel,
+  ValidateWorktreeRequest,
+  ValidateWorktreeResponse,
+  WorktreeApiInfo,
+  WorktreesResponse,
+} from "@pi/protocol";
 
-export interface ProviderGroup {
-  id: string;
-  name: string;
-  models: Record<string, ProviderModel>;
-}
-
-export interface ProvidersResponse {
-  providers: ProviderGroup[];
-  default: {
-    chat?: string;
-  };
-}
-
-export type ThinkingLevel =
-  | "off"
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh";
-
-export interface ResourceSourceInfo {
-  path: string;
-  source: string;
-  scope: "user" | "project" | "temporary";
-  origin: "package" | "top-level";
-  baseDir?: string;
-}
-
-export interface SessionSummary {
-  id: string;
-  title: string;
-  cwd: string;
-  status: "idle" | "streaming" | "error";
-  createdAt: number;
-  updatedAt: number;
-  archived: boolean;
-  agent?: string;
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-  resolvedModel?: string;
-  resolvedThinkingLevel?: ThinkingLevel;
-  sessionFile: string;
-  parentSessionId?: string;
-  contextId?: string;
-  projectId?: string;
-  projectRoot?: string;
-  projectLabel?: string;
-  isGit?: boolean;
-  branch?: string;
-  worktreeRoot?: string;
-  worktreeLabel?: string;
-}
-
-export interface SessionContextSummary {
-  contextId: string;
-  cwd: string;
-  projectId: string;
-  projectLabel: string;
-  projectRoot: string;
-  worktreeRoot: string;
-  worktreeLabel: string;
-  branch?: string;
-  isGit: boolean;
-}
-
-export interface AskOption {
-  label: string;
-  description?: string;
-}
-export interface AskQuestion {
-  id: string;
-  header?: string;
-  question: string;
-  description?: string;
-  options?: AskOption[];
-  multiple?: boolean;
-  allowCustom?: boolean;
-}
-export interface AskQuestionAnswer {
-  questionId: string;
-  values: string[];
-}
-export interface AskInteractiveRequest {
-  id: string;
-  toolCallId: string;
-  title: string;
-  message?: string;
-  questions: AskQuestion[];
-  createdAt: number;
-}
-export interface AskToolCallArguments {
-  title?: string;
-  message?: string;
-  questions: AskQuestion[];
-}
-export interface AskToolResultDetails {
-  request: AskInteractiveRequest;
-  answers: AskQuestionAnswer[];
-  dismissed: boolean;
-}
-
-export type PermissionDecisionAction = "once" | "always" | "reject";
-
-export interface PermissionInteractiveRequest {
-  id: string;
-  toolCallId: string;
-  toolName: string;
-  permissionKey:
-    | "read"
-    | "grep"
-    | "find"
-    | "ls"
-    | "bash"
-    | "ask"
-    | "task"
-    | "edit";
-  title: string;
-  message: string;
-  subject: string;
-  suggestedPattern?: string;
-  createdAt: number;
-}
-
-// ============================================================================
-// Pi 原始消息协议
-// ============================================================================
-
-export type MessageRole = "system" | "user" | "assistant" | "tool" | "toolResult";
-
-export interface TextContentBlock {
-  type: "text";
-  text?: string;
-}
-
-export interface ThinkingContentBlock {
-  type: "thinking";
-  thinking?: string;
-  redacted?: boolean;
-}
-
-export interface ImageContentBlock {
-  type: "image";
-  data?: string;
-  mimeType?: string;
-}
-
-export interface ToolCallContentBlock {
-  type: "toolCall";
-  id?: string;
-  name?: string;
-  arguments?: Record<string, unknown>;
-}
-
-export interface ToolResultContentBlock {
-  type: "toolResult";
-  id?: string;
-  name?: string;
-  result?: unknown;
-}
-
-export type ContentBlock =
-  | TextContentBlock
-  | ThinkingContentBlock
-  | ImageContentBlock
-  | ToolCallContentBlock
-  | ToolResultContentBlock
-  | {
-      type: string;
-      text?: string;
-      thinking?: string;
-      redacted?: boolean;
-      id?: string;
-      name?: string;
-      arguments?: Record<string, unknown>;
-      result?: unknown;
-      [key: string]: unknown;
-    };
-
-export interface ChatMessage {
-  role: MessageRole;
-  content: string | ContentBlock[];
-  timestamp?: number;
-  toolCallId?: string;
-  toolName?: string;
-  details?: unknown;
-  isError?: boolean;
-  pending?: boolean;
-  localId?: string;
-}
-
-export interface SessionHistoryMeta {
-  loadedRounds: number;
-  totalRounds: number;
-  hasMoreAbove: boolean;
-  roundWindow: number;
-}
+import type { PiMessage, ThinkingLevel } from "@pi/protocol";
 
 export interface ChatComposerState {
   sessionId: string | null;
@@ -216,293 +75,16 @@ export interface ChatComposerState {
   pendingPrompt: string;
 }
 
-export interface SessionSnapshot extends SessionSummary {
-  agent?: string;
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-  resolvedModel?: string;
-  resolvedThinkingLevel?: ThinkingLevel;
-  projectId?: string;
-  projectRoot?: string;
-  projectLabel?: string;
-  isGit?: boolean;
-  branch?: string;
-  worktreeRoot?: string;
-  worktreeLabel?: string;
-  messages: ChatMessage[];
-  historyMeta: SessionHistoryMeta;
-  interactiveRequests: AskInteractiveRequest[];
-  permissionRequests: PermissionInteractiveRequest[];
+export interface UiConversationMessage {
+  message: PiMessage;
+  pending?: boolean;
+  localId?: string;
 }
 
-export interface SessionMessagesPayload {
-  sessionId: string;
-  messages: ChatMessage[];
-  historyMeta: SessionHistoryMeta;
-  interactiveRequests: AskInteractiveRequest[];
-  permissionRequests: PermissionInteractiveRequest[];
-}
-
-export interface SessionRuntimePayload {
-  sessionId: string;
-  agent?: string;
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-  resolvedModel?: string;
-  resolvedThinkingLevel?: ThinkingLevel;
-}
-
-export interface SessionHydratePayload extends SessionMessagesPayload {
-  agent?: string;
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-  resolvedModel?: string;
-  resolvedThinkingLevel?: ThinkingLevel;
-}
-
-export interface AgentSummary {
-  name: string;
-  description: string;
-  displayName?: string;
-  mode: "primary" | "task" | "all";
-  model?: string;
-  thinking?: ThinkingLevel;
-  maxTurns?: number;
-  skills?: string[];
-  inheritContext?: boolean;
-  runInBackground?: boolean;
-  enabled: boolean;
-  permission?: Record<string, unknown>;
-  sourceScope: "default" | "user" | "project";
-  source: string;
-}
-
-export interface SystemInfo {
-  appName: string;
-  workspaceDir: string;
-  apiBase: string;
-  sdkVersion: string;
-}
-
-// ============================================================================
-// Stream Event Types - 对齐 Pi SDK 流式事件
-// ============================================================================
-
-export type StreamEventType =
-  | "snapshot"
-  | "status"
-  | "error"
-  | "message_start"
-  | "message_update"
-  | "message_end";
-
-export type AssistantMessageEventType =
-  | "text_start"
-  | "text_delta"
-  | "text_end"
-  | "thinking_start"
-  | "thinking_delta"
-  | "thinking_end"
-  | "toolcall_start"
-  | "toolcall_delta"
-  | "toolcall_end";
-
-export interface StreamSnapshotEvent {
-  type: "snapshot";
-  sessionId: string;
-  status?: SessionSummary["status"];
-  messages: ChatMessage[];
-  historyMeta: SessionHistoryMeta;
-  interactiveRequests: AskInteractiveRequest[];
-  permissionRequests: PermissionInteractiveRequest[];
-}
-
-export interface StreamStatusEvent {
-  type: "status";
-  sessionId?: string;
-  status?: SessionSummary["status"];
-}
-
-export interface StreamErrorEvent {
-  type: "error";
-  sessionId?: string;
-  error?: string;
-}
-
-export interface StreamMessageEvent {
-  type: "message_start" | "message_update" | "message_end";
-  sessionId?: string;
-  status?: SessionSummary["status"];
-  message?: ChatMessage;
-  assistantMessageEvent?: {
-    type?: AssistantMessageEventType;
-    contentIndex?: number;
-    delta?: string | null;
-    content?: string;
-    toolCall?: {
-      id?: string;
-      name?: string;
-      arguments?: Record<string, unknown>;
-    };
-  };
-}
-
-export type StreamEvent =
-  | StreamSnapshotEvent
-  | StreamStatusEvent
-  | StreamErrorEvent
-  | StreamMessageEvent;
-
-export interface FileTreeEntry {
-  name: string;
-  path: string;
-  kind: "file" | "directory";
-  relativePath: string;
-}
-
-export interface FileTreeResponse {
-  root: string;
-  directory: string;
-  entries: FileTreeEntry[];
-}
-
-export interface DirectoryBrowseResponse {
-  homeDir: string;
-  path: string;
-  parent: string | null;
-  entries: FileTreeEntry[];
-}
-
-export interface ProjectItem {
-  id: string;
-  name: string;
-  path: string;
-  addedAt: number;
-  isGit: boolean;
-}
-
-export interface ProjectsResponse {
-  projects: ProjectItem[];
-}
-
-export interface SessionMutationResponse {
-  ok: true;
-  sessionIds: string[];
-}
-
-export interface PromptCatalogItem {
-  name: string;
-  description: string;
-  content: string;
-  sourceInfo?: ResourceSourceInfo;
-}
-
-export interface SkillCatalogItem {
-  name: string;
-  description: string;
-  invocation: string;
-  disableModelInvocation: boolean;
-  sourceInfo?: ResourceSourceInfo;
-}
-
-export interface CommandCatalogItem {
-  name: string;
-  description?: string;
-  source: "extension";
-  sourceInfo?: ResourceSourceInfo;
-}
-
-export interface ResourceCatalogResponse {
-  prompts: PromptCatalogItem[];
-  skills: SkillCatalogItem[];
-  commands: CommandCatalogItem[];
-  diagnostics: {
-    prompts: string[];
-    skills: string[];
-    commands: string[];
-  };
-}
-
-export interface SendMessagePayload {
-  prompt: string;
-  model?: string;
-  agent?: string | null;
-  thinkingLevel?: ThinkingLevel;
-}
-
-// ============================================================================
-// Worktree API Types
-// ============================================================================
-
-export interface WorktreeApiInfo {
-  path: string;
-  branch?: string;
-  label: string;
-  projectRoot: string;
-}
-
-export interface WorktreesResponse {
-  worktrees: WorktreeApiInfo[];
-}
-
-export interface ValidateWorktreeRequest {
-  mode: "new" | "existing";
-  branchName?: string;
-  existingBranch?: string;
-  worktreeName?: string;
-}
-
-export interface ValidateWorktreeResponse {
-  ok: boolean;
-  branchError?: string;
-  worktreeError?: string;
-  resolvedPath?: string;
-}
-
-export interface CreateWorktreeRequest {
-  mode: "new" | "existing";
-  branchName?: string;
-  existingBranch?: string;
-  worktreeName?: string;
-  startRef?: string;
-}
-
-export interface DeleteWorktreeRequest {
-  worktreePath: string;
-  deleteLocalBranch?: boolean;
-  deleteRemoteBranch?: boolean;
-}
-
-// ============================================================================
-// Git API Types
-// ============================================================================
-
-export interface GitFileStatusItem {
-  path: string;
-  index: string;
-  working_dir: string;
-}
-
-export interface GitStatusResponse {
-  current: string | null;
-  tracking: string | null;
-  files: GitFileStatusItem[];
-  ahead: number;
-  behind: number;
-}
-
-export interface GitBranchesResponse {
-  current: string | null;
-  all: string[];
-  branches: Record<string, { current: boolean; tracking?: string }>;
-}
-
-export interface GitRemoteInfo {
-  name: string;
-  fetchUrl: string;
-  pushUrl: string;
-}
-
-export interface GitRepositoryStatusResponse {
-  isGitRepo: boolean;
+export interface UiSessionSnapshot
+  extends Omit<
+    import("@pi/protocol").SessionSnapshot,
+    "messages"
+  > {
+  messages: UiConversationMessage[];
 }

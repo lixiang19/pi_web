@@ -17,16 +17,17 @@ import {
 import type {
   AgentSummary,
   ChatComposerState,
-  ChatMessage,
+  PiMessage,
   ProvidersResponse,
   ResourceCatalogResponse,
   SessionHistoryMeta,
-  SessionSnapshot,
   SessionContextSummary,
   SessionSummary,
   StreamMessageEvent,
   SystemInfo,
   ThinkingLevel,
+  UiConversationMessage,
+  UiSessionSnapshot,
 } from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
@@ -64,24 +65,27 @@ const createEmptyResources = (): ResourceCatalogResponse => ({
 
 const createRawMessage = (
   message?: StreamMessageEvent["message"],
-  overrides?: Partial<ChatMessage>,
-): ChatMessage => ({
-  role:
-    (message?.role as ChatMessage["role"]) || overrides?.role || "assistant",
-  content:
-    message?.content === undefined
-      ? (overrides?.content ?? "")
-      : typeof message.content === "string"
-        ? message.content
-        : message.content,
-  timestamp: overrides?.timestamp ?? message?.timestamp ?? Date.now(),
-  toolCallId: overrides?.toolCallId ?? message?.toolCallId,
-  toolName: overrides?.toolName ?? message?.toolName,
-  details: overrides?.details ?? message?.details,
-  isError: overrides?.isError ?? message?.isError,
-  pending: overrides?.pending,
-  localId: overrides?.localId,
-});
+  overrides?: Partial<PiMessage>,
+): PiMessage =>
+  message
+    ? {
+        ...message,
+        ...overrides,
+      }
+    : ({
+        role: overrides?.role || "assistant",
+        content: overrides?.content ?? "",
+        timestamp: overrides?.timestamp ?? Date.now(),
+        ...(overrides?.role === "toolResult"
+          ? {
+              toolCallId: overrides.toolCallId || "",
+              toolName: overrides.toolName || "",
+              content: Array.isArray(overrides.content) ? overrides.content : [],
+              isError: overrides.isError ?? false,
+              details: overrides.details,
+            }
+          : {}),
+      } as PiMessage);
 
 const loadDraftMap = () => {
   if (typeof window === "undefined") {
@@ -114,8 +118,8 @@ const persistDraftMap = (drafts: Record<string, string>) => {
 const getDraftKey = (sessionId: string | null | undefined) =>
   sessionId || newSessionDraftKey;
 
-const countConversationRounds = (messages: ChatMessage[]) =>
-  messages.filter((message) => message.role === "user").length;
+const countConversationRounds = (messages: UiConversationMessage[]) =>
+  messages.filter((entry) => entry.message.role === "user").length;
 const createHistoryMeta = (
   loadedRounds: number,
   totalRounds: number,
@@ -128,7 +132,7 @@ const createHistoryMeta = (
 });
 const expandVisibleHistoryMeta = (
   historyMeta: SessionHistoryMeta,
-  visibleMessages: ChatMessage[],
+  visibleMessages: UiConversationMessage[],
 ) => {
   const visibleRounds = countConversationRounds(visibleMessages);
   const hiddenRounds = Math.max(
@@ -176,7 +180,7 @@ const sessionLoadingOlderById = ref<Record<string, boolean>>({});
 const draftMap = ref<Record<string, string>>(loadDraftMap());
 
 let suppressDraftPersistence = false;
-const loadSessionInFlightById = new Map<string, Promise<SessionSnapshot>>();
+const loadSessionInFlightById = new Map<string, Promise<UiSessionSnapshot>>();
 const loadSessionRequestSeqById = new Map<string, number>();
 
 const models = computed(() => {
@@ -228,7 +232,7 @@ const resolveComposerDefaults = (
 
 const syncComposerSelection = (
   composer: ChatComposerState,
-  snapshot?: SessionSnapshot | SessionSummary | null,
+  snapshot?: UiSessionSnapshot | SessionSummary | null,
 ) => {
   if (!snapshot) {
     return;
@@ -266,7 +270,7 @@ const buildSnapshotFromSummary = (sessionId: string) =>
     createHistoryMeta,
   );
 
-const upsertSessionSnapshot = (snapshot: SessionSnapshot) => {
+const upsertSessionSnapshot = (snapshot: UiSessionSnapshot) => {
   syncSessionSnapshot(
     {
       sessions,
@@ -284,7 +288,7 @@ const upsertSessionSummary = (summary: SessionSummary) => {
   );
 };
 
-const syncSessions = (snapshot?: SessionSnapshot) => {
+const syncSessions = (snapshot?: UiSessionSnapshot) => {
   syncSessionSnapshot(
     {
       sessions,
@@ -297,7 +301,7 @@ const syncSessions = (snapshot?: SessionSnapshot) => {
 
 const patchSessionSnapshot = (
   sessionId: string,
-  updater: (snapshot: SessionSnapshot) => SessionSnapshot,
+  updater: (snapshot: UiSessionSnapshot) => UiSessionSnapshot,
 ) => {
   return patchSharedSessionSnapshot({
     sessions,
@@ -323,7 +327,10 @@ const patchSessionSummary = (
   });
 };
 
-const appendMessageToSession = (sessionId: string, message: ChatMessage) => {
+const appendMessageToSession = (
+  sessionId: string,
+  message: UiConversationMessage,
+) => {
   patchSessionSnapshot(sessionId, (snapshot) => ({
     ...snapshot,
     messages: [...snapshot.messages, message],
@@ -331,7 +338,10 @@ const appendMessageToSession = (sessionId: string, message: ChatMessage) => {
       snapshot.historyMeta,
       [...snapshot.messages, message],
     ),
-    updatedAt: Math.max(snapshot.updatedAt, message.timestamp || Date.now()),
+    updatedAt: Math.max(
+      snapshot.updatedAt,
+      message.message.timestamp || Date.now(),
+    ),
   }));
 };
 

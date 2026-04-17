@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mariozechner/pi-coding-agent": "^0.65.2",
+    "@pi/protocol": "workspace:*",
     "better-sqlite3": "^12.9.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",

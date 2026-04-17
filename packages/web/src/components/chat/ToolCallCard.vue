@@ -1,56 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { Check, ChevronDown, Wrench } from "lucide-vue-next";
+import { ref } from "vue";
+import { ChevronDown, Wrench } from "lucide-vue-next";
 
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import type { ToolCallContentBlock, ToolResultContentBlock } from "@/lib/types";
+import type { PiToolCall } from "@/lib/types";
+import { getAskToolCallArguments } from "@/lib/conversation";
 
 const props = defineProps<{
-  block: ToolCallContentBlock | ToolResultContentBlock;
-  isResult?: boolean;
+  toolCall: PiToolCall;
 }>();
 
 const isExpanded = ref(false);
-const toolCallBlock = computed(() =>
-  props.block.type === "toolCall" ? props.block : null,
-);
-const toolResultBlock = computed(() =>
-  props.block.type === "toolResult" ? props.block : null,
-);
-
-const toolName = computed(() => {
-  if (toolCallBlock.value) {
-    return toolCallBlock.value.name || "工具";
-  }
-  return toolResultBlock.value?.name || "工具";
-});
-
-const summary = computed(() => {
-  if (toolCallBlock.value) {
-    const keys = Object.keys(toolCallBlock.value.arguments || {});
-    return keys.length ? `${keys.join(", ")}` : "";
-  }
-
-  if (!toolResultBlock.value) {
-    return "";
-  }
-
-  if (typeof toolResultBlock.value.result === "string") {
-    return toolResultBlock.value.result.slice(0, 50);
-  }
-
-  return toolResultBlock.value.result ? "已返回结果" : "";
-});
-
-const displayLabel = computed(() => {
-  const name = toolName.value;
-  const sum = summary.value;
-  return sum ? `${name} · ${sum}` : name;
-});
 
 const stringifyResult = (value: unknown) => {
   if (typeof value === "string") {
@@ -68,19 +32,12 @@ const stringifyResult = (value: unknown) => {
 </script>
 
 <template>
-  <Collapsible
-    v-model:open="isExpanded"
-    class="text-muted-foreground/70"
-  >
+  <Collapsible v-model:open="isExpanded" class="text-muted-foreground/70">
     <CollapsibleTrigger
       class="flex w-full items-center gap-1.5 py-0.5 text-left text-xs transition-colors hover:text-foreground/80"
     >
-      <component
-        :is="toolResultBlock ? Check : Wrench"
-        class="size-3.5 shrink-0"
-      />
-
-      <span class="truncate">{{ displayLabel }}</span>
+      <Wrench class="size-3.5 shrink-0" />
+      <span class="truncate">工具调用 · {{ toolCall.name || "工具" }}</span>
       <ChevronDown
         class="size-3 shrink-0 transition-transform duration-200"
         :class="isExpanded ? 'rotate-180' : ''"
@@ -89,15 +46,51 @@ const stringifyResult = (value: unknown) => {
 
     <CollapsibleContent class="py-1">
       <div class="ridge-panel-inset rounded-md px-2 py-2 text-xs leading-5 text-foreground/70">
-        <pre
-          v-if="toolCallBlock"
-          class="whitespace-pre-wrap break-words font-mono"
-        >{{ JSON.stringify(toolCallBlock.arguments || {}, null, 2) }}</pre>
+        <template v-if="getAskToolCallArguments(toolCall)">
+          <div class="space-y-3">
+            <div class="space-y-1">
+              <p class="text-sm font-medium text-foreground">
+                {{ getAskToolCallArguments(toolCall)?.title || "需要回答的问题" }}
+              </p>
+              <p
+                v-if="getAskToolCallArguments(toolCall)?.message"
+                class="text-xs text-muted-foreground"
+              >
+                {{ getAskToolCallArguments(toolCall)?.message }}
+              </p>
+            </div>
+
+            <div
+              v-for="question in getAskToolCallArguments(toolCall)?.questions || []"
+              :key="question.id"
+              class="rounded-md border border-border/60 bg-background/70 px-3 py-2"
+            >
+              <p class="text-sm font-medium text-foreground">
+                {{ question.question }}
+              </p>
+              <p
+                v-if="question.description"
+                class="mt-1 text-xs text-muted-foreground"
+              >
+                {{ question.description }}
+              </p>
+              <ul
+                v-if="question.options?.length"
+                class="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground"
+              >
+                <li v-for="option in question.options" :key="option.label">
+                  <span class="text-foreground">{{ option.label }}</span>
+                  <span v-if="option.description"> · {{ option.description }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </template>
 
         <pre
-          v-else-if="toolResultBlock"
+          v-else
           class="whitespace-pre-wrap break-words font-mono"
-        >{{ stringifyResult(toolResultBlock.result) || '无输出' }}</pre>
+        >{{ stringifyResult(toolCall.arguments) || "{}" }}</pre>
       </div>
     </CollapsibleContent>
   </Collapsible>

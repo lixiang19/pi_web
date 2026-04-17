@@ -57,3 +57,4 @@
 - [索引字段最小化] 会话目录索引只保留有明确消费方的字段；没有 UI 或接口消费的 `last_message_preview`、`message_count` 这类字段应直接删除，不能先入库再等以后再说
 - [SSE 零写库] 发送消息前和 `turn_end` 都不能顺手写 SQLite；SSE 链路只负责内存态和 session 文件，目录索引由启动重建和显式用户动作维护
 - [运行时态不入目录索引] 列表 `status` 这类运行时字段只允许由内存 active session 覆盖，不应作为数据库持久化列存在
+- [SQLite 字面量] 写 SQLite 语句时，字符串字面量必须用单引号；`""` 在 SQLite 中会按标识符解析，像 `context_id != ""` 这种写法会在启动建索引时直接触发 `no such column: ""`
