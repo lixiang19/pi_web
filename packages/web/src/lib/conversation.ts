@@ -5,11 +5,13 @@ import type {
   PiAssistantMessage,
   PiImageContent,
   PiMessage,
+  SessionSnapshot,
   PiTextContent,
   PiThinkingContent,
   PiToolCall,
   PiToolResultMessage,
   UiConversationMessage,
+  UiSessionSnapshot,
 } from "@/lib/types";
 
 export const wrapUiConversationMessage = (
@@ -19,6 +21,18 @@ export const wrapUiConversationMessage = (
   message,
   pending: options?.pending,
   localId: options?.localId,
+});
+
+export const wrapUiConversationMessages = (
+  messages: PiMessage[],
+): UiConversationMessage[] =>
+  messages.map((message) => wrapUiConversationMessage(message));
+
+export const wrapUiSessionSnapshot = (
+  snapshot: SessionSnapshot,
+): UiSessionSnapshot => ({
+  ...snapshot,
+  messages: wrapUiConversationMessages(snapshot.messages),
 });
 
 export const cloneUiConversationMessage = (
@@ -83,13 +97,14 @@ export const getAskToolCallArguments = (
     return null;
   }
 
-  const questions = (args as Record<string, unknown>).questions;
+  const argsRecord = args as Record<string, unknown>;
+  const questions = argsRecord["questions"];
   if (!Array.isArray(questions)) {
     return null;
   }
 
-  const title = (args as Record<string, unknown>).title;
-  const message = (args as Record<string, unknown>).message;
+  const title = argsRecord["title"];
+  const message = argsRecord["message"];
   return {
     title: typeof title === "string" && title.trim() ? title.trim() : undefined,
     message:
@@ -110,9 +125,10 @@ export const getAskToolResultDetails = (
     return null;
   }
 
-  const request = (details as Record<string, unknown>).request;
-  const answers = (details as Record<string, unknown>).answers;
-  const dismissed = (details as Record<string, unknown>).dismissed;
+  const detailsRecord = details as Record<string, unknown>;
+  const request = detailsRecord["request"];
+  const answers = detailsRecord["answers"];
+  const dismissed = detailsRecord["dismissed"];
 
   if (
     !request ||

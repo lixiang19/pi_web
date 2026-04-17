@@ -5,21 +5,21 @@
   时机：在完成每个阶段或遇到错误后更新。比 task_plan.md 更详细。
 -->
 
-## 会话：[日期]
+## 会话：2026-04-18
 <!-- 
   内容：本次工作的日期。
   目的：帮助跟踪工作发生的时间，便于在时间间隔后恢复。
   示例：2026-01-15
 -->
 
-### 第 1 阶段：[标题]
+### 第 1 阶段：问题确认与范围收敛
 <!-- 
   内容：此阶段采取操作的详细日志。
   目的：提供已完成工作的背景，便于恢复或调试。
   时机：在阶段进行中更新，或至少在完成阶段时更新。
 -->
-- **状态：** in_progress
-- **开始时间：** [时间戳]
+- **状态：** complete
+- **开始时间：** 2026-04-18 17:00
 <!-- 
   状态：与 task_plan.md 相同 (pending, in_progress, complete)
   时间戳：你开始此阶段的时间 (例如 "2026-01-15 10:00")
@@ -32,7 +32,10 @@
       - 实现了添加功能
       - 修复了 FileNotFoundError
   -->
-  -
+  - 检查暂存区，确认本轮改动主要集中在 `@pi/protocol`、消息流组件重构、会话快照收敛
+  - 阅读模块梳理文档，确认此次改动同时影响中间对话区与 Web/Pi 服务桥接边界
+  - 运行 `npm run lint` 与 `npm run typecheck`，确认当前暂存并未闭环
+  - 识别出问题根因是 `usePiChat` 与 `usePiChatCore/usePerSessionChat` 两套消息状态仍混用新旧类型
 - 创建/修改的文件：
   <!-- 
     内容：你创建或更改了哪些文件。
@@ -42,18 +45,48 @@
       - todos.json (由应用创建)
       - task_plan.md (更新)
   -->
-  -
+  - packages/web/src/composables/usePiChat.ts
+  - packages/web/src/composables/usePiChatCore.ts
+  - packages/web/src/composables/usePerSessionChat.ts
+  - packages/web/src/composables/session-snapshot.ts
+  - packages/web/src/components/chat/ChatMessageItem.vue
+  - packages/web/src/components/chat/ProcessMessageItem.vue
+  - packages/web/src/components/chat/ToolCallCard.vue
+  - packages/web/src/components/chat/ToolResultCard.vue
+  - long_task/pi消息直传渲染收敛/task_plan.md
+  - long_task/pi消息直传渲染收敛/findings.md
+  - long_task/pi消息直传渲染收敛/progress.md
 
-### 第 2 阶段：[标题]
+### 第 2 阶段：类型收口与组件收敛
 <!-- 
   内容：与第 1 阶段结构相同，用于下一阶段。
   目的：为每个阶段保留单独的日志条目，以便清晰跟踪进度。
 -->
-- **状态：** pending
+- **状态：** complete
 - 已采取的操作：
-  -
+  - 新增会话快照包装思路，准备把 raw `SessionSnapshot` 统一转成 `UiSessionSnapshot`
+  - 开始把 `session-snapshot.ts`、`usePiChat.ts`、`usePerSessionChat.ts` 中的消息包装逻辑改成共享辅助函数
+  - 开始修复消息组件中的模板类型问题
 - 创建/修改的文件：
-  -
+  - packages/web/src/lib/conversation.ts
+  - packages/web/src/composables/session-snapshot.ts
+  - packages/web/src/composables/usePiChat.ts
+  - packages/web/src/composables/usePiChatCore.ts
+  - packages/web/src/composables/usePerSessionChat.ts
+  - packages/web/src/components/chat/ProcessMessageItem.vue
+  - packages/web/src/components/chat/ToolCallCard.vue
+  - packages/web/src/components/chat/ToolResultCard.vue
+
+### 第 3 阶段：校验与文档同步
+- **状态：** complete
+- 已采取的操作：
+  - 再次运行 `npm run lint` 与 `npm run typecheck`
+  - 确认修复后 Web 端校验全部通过
+  - 更新中间对话区模块、Web 工作台桥接模块和 MEMORY 记忆文档，记录新的消息边界
+- 创建/修改的文件：
+  - 文档/模块梳理/中间对话区模块.md
+  - 文档/模块梳理/Web工作台与Pi服务桥接模块.md
+  - 文档/记忆/MEMORY.md
 
 ## 测试结果
 <!-- 
@@ -66,7 +99,10 @@
 -->
 | 测试 | 输入 | 预期 | 实际 | 状态 |
 |------|-------|----------|--------|--------|
-|      |       |          |        |        |
+| 暂存区校验 | `npm run lint` | 无报错 | 发现 7 个 eslint 错误，主要是未使用导入和模板写法问题 | 失败 |
+| 类型校验 | `npm run typecheck` | 无报错 | 发现大量 TS 错误，主要是新旧消息类型混用与模板收窄失败 | 失败 |
+| 修复后 lint | `npm run lint` | 无报错 | 通过 | 成功 |
+| 修复后类型校验 | `npm run typecheck` | 无报错 | 通过 | 成功 |
 
 ## 错误日志
 <!-- 
@@ -80,7 +116,8 @@
 <!-- 保留所有错误 - 它们有助于避免重复错误 -->
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
 |-----------|-------|---------|------------|
-|           |       | 1       |            |
+| 2026-04-18 17:10 | `vue-tsc` 大量报 `ChatMessage/SessionSnapshot` 与 `UiConversationMessage/UiSessionSnapshot` 不兼容 | 1 | 统一把 raw 协议快照转换放进共享包装函数，再把旧入口逐步切到 UI 包装类型 |
+| 2026-04-18 17:12 | 模板内 `v-for` 与 `v-if` 混用导致联合类型访问报错 | 1 | 改成脚本层 computed 派生后再渲染 |
 
 ## 5问重启检查
 <!-- 
@@ -98,11 +135,11 @@
 <!-- 如果你能回答这些，说明上下文是扎实的 -->
 | 问题 | 回答 |
 |----------|--------|
-| 我在哪里？ | 第 X 阶段 |
-| 我要去哪里？ | 剩余阶段 |
-| 目标是什么？ | [目标陈述] |
-| 我学到了什么？ | 参见 findings.md |
-| 我做了什么？ | 参见上方内容 |
+| 我在哪里？ | 第 5 阶段，代码与文档已收口，等待交付 |
+| 我要去哪里？ | 向用户说明本轮修复结果和已通过的校验 |
+| 目标是什么？ | 统一 Pi 原始消息协议与前端 UI 包装边界，让消息直传渲染链条真正闭环 |
+| 我学到了什么？ | `usePiChat` 仍是活跃入口，不能绕过；快照包装必须集中；模板类型守卫要前置到脚本层 |
+| 我做了什么？ | 已完成代码修复、通过 lint/typecheck，并同步更新模块与记忆文档 |
 
 ---
 <!-- 

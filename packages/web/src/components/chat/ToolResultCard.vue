@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/collapsible";
 import type {
   AskQuestion,
+  PiTextContent,
   PiToolResultMessage,
 } from "@/lib/types";
 import { getAskToolResultDetails } from "@/lib/conversation";
@@ -54,9 +55,14 @@ const getAskResultRows = () => {
   }));
 };
 
-const hasTextContent = computed(() =>
-  props.message.content.some((content) => content.type === "text" && Boolean(content.text.trim())),
+const textContents = computed<PiTextContent[]>(() =>
+  props.message.content.filter(
+    (content): content is PiTextContent =>
+      content.type === "text" && Boolean(content.text.trim()),
+  ),
 );
+
+const hasTextContent = computed(() => textContents.value.length > 0);
 </script>
 
 <template>
@@ -119,8 +125,7 @@ const hasTextContent = computed(() =>
 
         <template v-else>
           <Markdown
-            v-for="(content, index) in message.content"
-            v-if="content.type === 'text'"
+            v-for="(content, index) in textContents"
             :key="`tool-result-text-${index}`"
             :content="content.text"
             class="max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"

@@ -30,6 +30,7 @@ import type {
   AskQuestionAnswer,
   PermissionInteractiveRequest,
   ChatComposerState,
+  PiAssistantMessage,
   PiMessage,
   ProvidersResponse,
   ResourceCatalogResponse,
@@ -45,7 +46,11 @@ import type {
   UiSessionSnapshot,
 } from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
-import { wrapUiConversationMessage } from "@/lib/conversation";
+import {
+  wrapUiConversationMessage,
+  wrapUiConversationMessages,
+  wrapUiSessionSnapshot,
+} from "@/lib/conversation";
 import { useSettingsStore } from "@/stores/settings";
 import {
   applyStreamSnapshotEvent,
@@ -88,26 +93,45 @@ const createEmptyResources = (): ResourceCatalogResponse => ({
 const createRawMessage = (
   message?: StreamMessageEvent["message"],
   overrides?: Partial<PiMessage>,
-): PiMessage =>
-  message
-    ? {
-        ...message,
-        ...overrides,
-      }
-    : ({
-        role: overrides?.role || "assistant",
-        content: overrides?.content ?? "",
-        timestamp: overrides?.timestamp ?? Date.now(),
-        ...(overrides?.role === "toolResult"
-          ? {
-              toolCallId: overrides.toolCallId || "",
-              toolName: overrides.toolName || "",
-              content: Array.isArray(overrides.content) ? overrides.content : [],
-              isError: overrides.isError ?? false,
-              details: overrides.details,
-            }
-          : {}),
-      } as PiMessage);
+): PiMessage => {
+  if (message) {
+    return {
+      ...message,
+      ...overrides,
+    } as PiMessage;
+  }
+
+  if (overrides?.role === "toolResult") {
+    return {
+      role: "toolResult",
+      toolCallId: overrides.toolCallId || "",
+      toolName: overrides.toolName || "",
+      content: Array.isArray(overrides.content) ? overrides.content : [],
+      isError: overrides.isError ?? false,
+      details: overrides.details,
+      timestamp: overrides.timestamp ?? Date.now(),
+    };
+  }
+
+  if (overrides?.role === "user") {
+    return {
+      role: "user",
+      content:
+        typeof overrides.content === "string" || Array.isArray(overrides.content)
+          ? overrides.content
+          : "",
+      timestamp: overrides.timestamp ?? Date.now(),
+    };
+  }
+
+  return {
+    role: "assistant",
+    content: Array.isArray(overrides?.content)
+      ? (overrides.content as PiAssistantMessage["content"])
+      : [],
+    timestamp: overrides?.timestamp ?? Date.now(),
+  } as PiMessage;
+};
 
 /**
  * 读取草稿缓存
@@ -230,7 +254,7 @@ export function usePiChat() {
   let eventSource: EventSource | null = null;
   let currentStreamMessageLocalId = "";
   let suppressDraftPersistence = false;
-  const loadSessionInFlightById = new Map<string, Promise<SessionSnapshot>>();
+  const loadSessionInFlightById = new Map<string, Promise<UiSessionSnapshot>>();
   const loadSessionRequestSeqById = new Map<string, number>();
 
   const models = computed(() => {
@@ -351,7 +375,7 @@ export function usePiChat() {
 
   const patchSessionSnapshot = (
     sessionId: string,
-    updater: (snapshot: SessionSnapshot) => SessionSnapshot,
+    updater: (snapshot: UiSessionSnapshot) => UiSessionSnapshot,
   ) => {
     const nextSnapshot = patchSharedSessionSnapshot({
       sessions,
@@ -376,7 +400,10 @@ export function usePiChat() {
     return nextSnapshot;
   };
 
-  const appendMessageToSession = (sessionId: string, message: ChatMessage) => {
+  const appendMessageToSession = (
+    sessionId: string,
+    message: UiConversationMessage,
+  ) => {
     patchSessionSnapshot(sessionId, (snapshot) => ({
       ...snapshot,
       messages: [...snapshot.messages, message],
@@ -384,7 +411,10 @@ export function usePiChat() {
         snapshot.historyMeta,
         [...snapshot.messages, message],
       ),
-      updatedAt: Math.max(snapshot.updatedAt, message.timestamp || Date.now()),
+      updatedAt: Math.max(
+        snapshot.updatedAt,
+        message.message.timestamp || Date.now(),
+      ),
     }));
   };
 
@@ -394,7 +424,7 @@ export function usePiChat() {
   ) => {
     patchSessionSnapshot(sessionId, (snapshot) => ({
       ...snapshot,
-      messages: payload.messages,
+      messages: wrapUiConversationMessages(payload.messages),
       historyMeta: payload.historyMeta,
       interactiveRequests: payload.interactiveRequests,
       permissionRequests: payload.permissionRequests,
@@ -532,7 +562,7 @@ export function usePiChat() {
     },
   );
 
-  const syncSessions = (snapshot?: SessionSnapshot) => {
+  const syncSessions = (snapshot?: UiSessionSnapshot) => {
     syncSessionSnapshot(
       {
         sessions,
@@ -558,7 +588,7 @@ export function usePiChat() {
   };
 
   const syncComposerSelection = (
-    snapshot?: SessionSnapshot | SessionSummary | null,
+    snapshot?: UiSessionSnapshot | SessionSummary | null,
   ) => {
     if (!snapshot) {
       return;
@@ -599,7 +629,7 @@ export function usePiChat() {
   };
 
   const applySnapshotToActiveSession = (
-    snapshot: SessionSnapshot,
+    snapshot: UiSessionSnapshot,
     options?: { connectStream?: boolean },
   ) => {
     activeDraftContext.value = null;
@@ -840,49 +870,52 @@ export function usePiChat() {
 
       if (payload.type === "message_start" && payload.message) {
         currentStreamMessageLocalId = createLocalId();
-        appendMessageToSession(sessionId, {
-          role: payload.message.role,
-          content: payload.message.content,
+        appendMessageToSession(sessionId, wrapUiConversationMessage({
+          ...payload.message,
           timestamp: payload.message.timestamp ?? Date.now(),
+        }, {
           pending: true,
           localId: currentStreamMessageLocalId,
-        });
+        }));
         return;
       }
 
       if (payload.type === "message_end" && payload.message) {
         const finalMessage = createRawMessage(payload.message, {
+          timestamp: payload.message.timestamp ?? Date.now(),
+        });
+        const finalEntry = wrapUiConversationMessage(finalMessage, {
           pending: false,
           localId: currentStreamMessageLocalId || createLocalId(),
         });
 
         patchSessionSnapshot(sessionId, (snapshot) => {
           const pendingIndex = snapshot.messages.findIndex(
-            (message) =>
-              message.pending === true &&
-              message.localId === finalMessage.localId,
+            (entry) =>
+              entry.pending === true &&
+              entry.localId === finalEntry.localId,
           );
 
           if (pendingIndex < 0) {
             return {
               ...snapshot,
-              messages: [...snapshot.messages, finalMessage],
+              messages: [...snapshot.messages, finalEntry],
               historyMeta: expandVisibleHistoryMeta(
                 snapshot.historyMeta,
-                [...snapshot.messages, finalMessage],
+                [...snapshot.messages, finalEntry],
               ),
               status: "idle",
-              updatedAt: finalMessage.timestamp || Date.now(),
+              updatedAt: finalEntry.message.timestamp || Date.now(),
             };
           }
 
           return {
             ...snapshot,
-            messages: snapshot.messages.map((message, index) =>
-              index === pendingIndex ? finalMessage : message,
+            messages: snapshot.messages.map((entry, index) =>
+              index === pendingIndex ? finalEntry : entry,
             ),
             status: "idle",
-            updatedAt: finalMessage.timestamp || Date.now(),
+            updatedAt: finalEntry.message.timestamp || Date.now(),
           };
         });
 
@@ -1011,7 +1044,7 @@ export function usePiChat() {
       updateDraftValue(composer.sessionId, composer.draftText);
     }
 
-    const snapshot = await createSession(
+    const snapshot = wrapUiSessionSnapshot(await createSession(
       omitUndefined({
         cwd:
           options?.cwd ??
@@ -1024,7 +1057,7 @@ export function usePiChat() {
         parentSessionId: options?.parentSessionId,
         agent: options?.agent ?? (composer.selectedAgent || null),
       }),
-    );
+    ));
 
     if (options?.inheritDraftFromNewSession) {
       moveDraftValue(null, snapshot.id);
@@ -1091,12 +1124,13 @@ export function usePiChat() {
         (getCachedSessionSnapshot(sessionId)?.messages.length ?? 0) > 0;
 
       // 创建乐观用户消息
-      const optimisticMessage: ChatMessage = {
+      const optimisticMessage = wrapUiConversationMessage({
         role: "user",
         content: prompt,
         timestamp: Date.now(),
+      }, {
         localId: createLocalId(),
-      };
+      });
       optimisticMessageLocalId = optimisticMessage.localId || "";
 
       composer.pendingPrompt = prompt;
@@ -1156,12 +1190,12 @@ export function usePiChat() {
         patchSessionSnapshot(activeSessionId.value, (snapshot) => ({
           ...snapshot,
           messages: snapshot.messages.filter(
-            (message) => message.localId !== optimisticMessageLocalId,
+            (entry) => entry.localId !== optimisticMessageLocalId,
           ),
           historyMeta: expandVisibleHistoryMeta(
             snapshot.historyMeta,
             snapshot.messages.filter(
-              (message) => message.localId !== optimisticMessageLocalId,
+              (entry) => entry.localId !== optimisticMessageLocalId,
             ),
           ),
           status: "error",
@@ -1191,7 +1225,9 @@ export function usePiChat() {
   };
 
   const renameSessionTitle = async (sessionId: string, title: string) => {
-    const snapshot = await renameSession(sessionId, { title });
+    const snapshot = wrapUiSessionSnapshot(
+      await renameSession(sessionId, { title }),
+    );
     syncSessions(snapshot);
 
     if (sessionId === activeSessionId.value) {
@@ -1210,7 +1246,9 @@ export function usePiChat() {
       return;
     }
 
-    const snapshot = await updateSession(activeSessionId.value, patch);
+    const snapshot = wrapUiSessionSnapshot(
+      await updateSession(activeSessionId.value, patch),
+    );
     syncSessions(snapshot);
     syncComposerSelection(snapshot);
     await refreshResources({ cwd: snapshot.cwd, sessionId: snapshot.id });

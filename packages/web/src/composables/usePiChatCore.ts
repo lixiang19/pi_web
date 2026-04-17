@@ -17,6 +17,7 @@ import {
 import type {
   AgentSummary,
   ChatComposerState,
+  PiAssistantMessage,
   PiMessage,
   ProvidersResponse,
   ResourceCatalogResponse,
@@ -39,6 +40,7 @@ import {
   syncSessionSnapshot,
   type CachedSessionEntry,
 } from "@/composables/session-snapshot";
+import { wrapUiSessionSnapshot } from "@/lib/conversation";
 
 // ============================================================================
 // 常量 & 工具函数
@@ -66,26 +68,45 @@ const createEmptyResources = (): ResourceCatalogResponse => ({
 const createRawMessage = (
   message?: StreamMessageEvent["message"],
   overrides?: Partial<PiMessage>,
-): PiMessage =>
-  message
-    ? {
-        ...message,
-        ...overrides,
-      }
-    : ({
-        role: overrides?.role || "assistant",
-        content: overrides?.content ?? "",
-        timestamp: overrides?.timestamp ?? Date.now(),
-        ...(overrides?.role === "toolResult"
-          ? {
-              toolCallId: overrides.toolCallId || "",
-              toolName: overrides.toolName || "",
-              content: Array.isArray(overrides.content) ? overrides.content : [],
-              isError: overrides.isError ?? false,
-              details: overrides.details,
-            }
-          : {}),
-      } as PiMessage);
+): PiMessage => {
+  if (message) {
+    return {
+      ...message,
+      ...overrides,
+    } as PiMessage;
+  }
+
+  if (overrides?.role === "toolResult") {
+    return {
+      role: "toolResult",
+      toolCallId: overrides.toolCallId || "",
+      toolName: overrides.toolName || "",
+      content: Array.isArray(overrides.content) ? overrides.content : [],
+      isError: overrides.isError ?? false,
+      details: overrides.details,
+      timestamp: overrides.timestamp ?? Date.now(),
+    };
+  }
+
+  if (overrides?.role === "user") {
+    return {
+      role: "user",
+      content:
+        typeof overrides.content === "string" || Array.isArray(overrides.content)
+          ? overrides.content
+          : "",
+      timestamp: overrides.timestamp ?? Date.now(),
+    };
+  }
+
+  return {
+    role: "assistant",
+    content: Array.isArray(overrides?.content)
+      ? (overrides.content as PiAssistantMessage["content"])
+      : [],
+    timestamp: overrides?.timestamp ?? Date.now(),
+  } as PiMessage;
+};
 
 const loadDraftMap = () => {
   if (typeof window === "undefined") {
@@ -560,7 +581,9 @@ const prefetchSession = async (sessionId: string) => {
 };
 
 const renameSessionTitle = async (sessionId: string, title: string) => {
-  const snapshot = await renameSessionApi(sessionId, { title });
+  const snapshot = wrapUiSessionSnapshot(
+    await renameSessionApi(sessionId, { title }),
+  );
   syncSessions(snapshot);
   patchSessionSummary(sessionId, { title: snapshot.title });
   await refreshSessions();
@@ -574,7 +597,7 @@ const applySelectionUpdate = async (
     thinkingLevel?: ThinkingLevel | null;
   },
 ) => {
-  const snapshot = await updateSession(sessionId, patch);
+  const snapshot = wrapUiSessionSnapshot(await updateSession(sessionId, patch));
   syncSessions(snapshot);
   await refreshResources({ cwd: snapshot.cwd, sessionId: snapshot.id });
   return snapshot;

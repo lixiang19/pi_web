@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { Markdown } from "vue-stream-markdown";
 import "vue-stream-markdown/index.css";
 
@@ -18,13 +19,22 @@ import {
 const props = defineProps<{
   message: UiConversationMessage;
 }>();
+
+const assistantContents = computed(() =>
+  isAssistantMessage(props.message.message) ? props.message.message.content : [],
+);
+
+const getImageSrc = (content: unknown) =>
+  isImageContent(content)
+    ? `data:${content.mimeType};base64,${content.data}`
+    : "";
 </script>
 
 <template>
   <div class="space-y-2">
     <template v-if="isAssistantMessage(message.message)">
       <template
-        v-for="(content, index) in message.message.content"
+        v-for="(content, index) in assistantContents"
         :key="`${message.localId || message.message.timestamp || index}-${index}`"
       >
         <Markdown
@@ -45,7 +55,7 @@ const props = defineProps<{
 
         <img
           v-else-if="isImageContent(content)"
-          :src="`data:${content.mimeType};base64,${content.data}`"
+          :src="getImageSrc(content)"
           alt=""
           class="max-w-full rounded-md"
         />

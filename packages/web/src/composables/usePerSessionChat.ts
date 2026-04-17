@@ -18,7 +18,6 @@ import type {
   AskInteractiveRequest,
   AskQuestionAnswer,
   ChatComposerState,
-  PiMessage,
   PermissionInteractiveRequest,
   SessionMessagesPayload,
   SessionSummary,
@@ -28,7 +27,11 @@ import type {
   UiSessionSnapshot,
 } from "@/lib/types";
 import { omitUndefined } from "@/lib/utils";
-import { wrapUiConversationMessage } from "@/lib/conversation";
+import {
+  wrapUiConversationMessage,
+  wrapUiConversationMessages,
+  wrapUiSessionSnapshot,
+} from "@/lib/conversation";
 import { useSettingsStore } from "@/stores/settings";
 import { usePiChatCore } from "@/composables/usePiChatCore";
 import { useSessionTabs } from "@/composables/useSessionTabs";
@@ -130,15 +133,15 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   const activeHistoryMeta = computed(() => {
     if (!sessionIdRef.value) {
       return core.createHistoryMeta(
-        messages.value.filter((message) => message.role === "user").length,
-        messages.value.filter((message) => message.role === "user").length,
+        messages.value.filter((entry) => entry.message.role === "user").length,
+        messages.value.filter((entry) => entry.message.role === "user").length,
       );
     }
     return (
       core.getCachedSessionSnapshot(sessionIdRef.value)?.historyMeta ??
       core.createHistoryMeta(
-        messages.value.filter((message) => message.role === "user").length,
-        messages.value.filter((message) => message.role === "user").length,
+        messages.value.filter((entry) => entry.message.role === "user").length,
+        messages.value.filter((entry) => entry.message.role === "user").length,
       )
     );
   });
@@ -345,12 +348,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   ) => {
     core.patchSessionSnapshot(sid, (snapshot) => ({
       ...snapshot,
-      messages: payload.messages.map(wrapUiConversationMessage),
+      messages: wrapUiConversationMessages(payload.messages),
       historyMeta: payload.historyMeta,
       interactiveRequests: payload.interactiveRequests,
       permissionRequests: payload.permissionRequests,
     }));
-    messages.value = payload.messages.map(wrapUiConversationMessage);
+    messages.value = wrapUiConversationMessages(payload.messages);
   };
 
   // ============================================================================
@@ -435,7 +438,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
       core.updateDraftValue(composer.sessionId, composer.draftText);
     }
 
-    const snapshot = await createSession(
+    const snapshot = wrapUiSessionSnapshot(await createSession(
       omitUndefined({
         cwd:
           options?.cwd ??
@@ -448,7 +451,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         parentSessionId: options?.parentSessionId,
         agent: options?.agent ?? (composer.selectedAgent || null),
       }),
-    );
+    ));
 
     if (options?.inheritDraftFromNewSession) {
       core.moveDraftValue(null, snapshot.id);

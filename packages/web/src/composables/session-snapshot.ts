@@ -11,7 +11,7 @@ import type {
   StreamEvent,
   UiSessionSnapshot,
 } from "@/lib/types";
-import { wrapUiConversationMessage } from "@/lib/conversation";
+import { wrapUiConversationMessages } from "@/lib/conversation";
 
 export type CachedSessionEntry = {
   snapshot: UiSessionSnapshot;
@@ -85,7 +85,7 @@ export const buildSnapshotFromPayloads = (
     branch: context?.branch ?? summary.branch,
     worktreeRoot: context?.worktreeRoot ?? summary.worktreeRoot,
     worktreeLabel: context?.worktreeLabel ?? summary.worktreeLabel,
-    messages: messagesPayload.messages.map(wrapUiConversationMessage),
+    messages: wrapUiConversationMessages(messagesPayload.messages),
     historyMeta: messagesPayload.historyMeta,
     interactiveRequests: messagesPayload.interactiveRequests,
     permissionRequests: messagesPayload.permissionRequests,
@@ -210,7 +210,7 @@ export const applyMessagesPayload = (
     createHistoryMeta,
     updater: (snapshot) => ({
       ...snapshot,
-      messages: payload.messages.map(wrapUiConversationMessage),
+      messages: wrapUiConversationMessages(payload.messages),
       historyMeta: payload.historyMeta,
       interactiveRequests: payload.interactiveRequests,
       permissionRequests: payload.permissionRequests,
@@ -314,7 +314,7 @@ export const applyStreamSnapshotEvent = (
     updater: (snapshot) => ({
       ...snapshot,
       status: payload.status ?? snapshot.status,
-      messages: payload.messages.map(wrapUiConversationMessage),
+      messages: wrapUiConversationMessages(payload.messages),
       historyMeta: payload.historyMeta,
       interactiveRequests: payload.interactiveRequests,
       permissionRequests: payload.permissionRequests,

@@ -243,7 +243,7 @@ When a skill file references a relative path, resolve it against the skill direc
     <location>/Users/lixiang/.pi/agent/skills/workflow/SKILL.md</location>
   </skill>
 </available_skills>
-Current date: 2026-04-14
+Current date: 2026-04-17
 Current working directory: /Users/lixiang/Documents/myCode/pi_web
 
 
@@ -259,9 +259,6 @@ Current working directory: /Users/lixiang/Documents/myCode/pi_web
 - 当你准备真正开始修改代码时，必须先调用 request_execution 工具申请执行。
 - 一旦违反上述规则，立即停止修改，并重新按这些规则执行。
 
-
-## 自动检查续修
-本次是 npm run check 失败后的自动续修。你无需再次满足 ask、request_execution 两大限制，请直接针对检查错误修复。
 
 ## Additional Instruction Files
 

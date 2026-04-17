@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { ChevronDown, Wrench } from "lucide-vue-next";
 
 import {
@@ -15,6 +15,7 @@ const props = defineProps<{
 }>();
 
 const isExpanded = ref(false);
+const askArguments = computed(() => getAskToolCallArguments(props.toolCall));
 
 const stringifyResult = (value: unknown) => {
   if (typeof value === "string") {
@@ -46,22 +47,22 @@ const stringifyResult = (value: unknown) => {
 
     <CollapsibleContent class="py-1">
       <div class="ridge-panel-inset rounded-md px-2 py-2 text-xs leading-5 text-foreground/70">
-        <template v-if="getAskToolCallArguments(toolCall)">
+        <template v-if="askArguments">
           <div class="space-y-3">
             <div class="space-y-1">
               <p class="text-sm font-medium text-foreground">
-                {{ getAskToolCallArguments(toolCall)?.title || "需要回答的问题" }}
+                {{ askArguments.title || "需要回答的问题" }}
               </p>
               <p
-                v-if="getAskToolCallArguments(toolCall)?.message"
+                v-if="askArguments.message"
                 class="text-xs text-muted-foreground"
               >
-                {{ getAskToolCallArguments(toolCall)?.message }}
+                {{ askArguments.message }}
               </p>
             </div>
 
             <div
-              v-for="question in getAskToolCallArguments(toolCall)?.questions || []"
+              v-for="question in askArguments.questions"
               :key="question.id"
               class="rounded-md border border-border/60 bg-background/70 px-3 py-2"
             >

@@ -197,14 +197,19 @@ type SessionDraftContext = {
 
 ```ts
 type CachedSessionEntry = {
-  snapshot: SessionSnapshot
+  snapshot: UiSessionSnapshot
   hydratedAt: number
+}
+
+interface UiSessionSnapshot extends Omit<SessionSnapshot, 'messages'> {
+  messages: UiConversationMessage[]
 }
 ```
 
 - 这是前端按 `sessionId` 维护的消息快照缓存，用于支撑切会话秒切、SSE snapshot 回填、邻近预取和发送期乐观消息更新。
-- 由 `usePiChat` 内部创建并维护，`loadSession()/prefetchSession()/connectStream()` 都会消费它。
-- 依据：`packages/web/src/composables/usePiChat.ts`
+- 服务端仍只返回协议层 `SessionSnapshot`；前端进入状态桶前必须统一包装成 `UiSessionSnapshot`，只在这一层附加 `pending/localId`
+- 包装逻辑集中在 `packages/web/src/lib/conversation.ts` 与 `packages/web/src/composables/session-snapshot.ts`，避免 `usePiChat`、`usePiChatCore` 各自手写
+- 依据：`packages/web/src/composables/usePiChat.ts`，`packages/web/src/composables/usePiChatCore.ts`，`packages/web/src/composables/session-snapshot.ts`
 
 - 抽象名称：Pi 资源目录响应
 

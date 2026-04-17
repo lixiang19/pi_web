@@ -6,7 +6,6 @@ import "vue-stream-markdown/index.css";
 
 import { Button } from "@/components/ui/button";
 import type {
-  PiAssistantMessage,
   PiTextContent,
   UiConversationMessage,
 } from "@/lib/types";
