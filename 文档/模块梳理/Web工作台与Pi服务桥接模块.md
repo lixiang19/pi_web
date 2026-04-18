@@ -1,5 +1,13 @@
 # Web工作台与Pi服务桥接 Module Codemap
 
+## 2026-04-18 当前基线
+
+- Web 工作台的会话编排主链路已经收敛为 `usePiChatCore.ts + usePerSessionChat.ts + useSessionLruPool.ts`。
+- `usePiChat.ts` 与 `useWorkbenchPage.ts` 已删除，不再允许新增引用。
+- 工作台页由 `WorkbenchPage.vue` 直接组合左侧 `SessionSidebar.vue` 与中间 `SessionTabArea.vue`，不再存在旧的聚合式页面 composable。
+- 会话详情页只使用 `usePerSessionChat(sessionId)` 加载单会话消息流，并通过 `useEffectiveDirectory()` 计算目录根。
+- 草稿语义已经重置为“切换即丢失、每次新建都是全新空白草稿”，前端不再保留 localStorage 草稿恢复链路。
+
 ## Responsibility
 
 - 负责提供 Web 端 Pi 工作台，统一组织左侧会话列表、中间消息流、右侧文件树三栏结构。
@@ -993,7 +1001,7 @@ packages/web/tsconfig.app.json
 - `packages/web/src/components/workbench/chat/WorkbenchChatPanel.vue`
 - `packages/web/src/components/workbench/chat/WorkbenchComposer.vue`
 - `packages/web/src/components/workbench/SessionTabContent.vue`
-- `packages/web/src/composables/useSessionTabs.ts`
+- `packages/web/src/composables/useSessionLruPool.ts`
 - `packages/web/src/pages/SettingsPage.vue`
 - `packages/web/src/pages/WorkbenchPage.vue`
 - `packages/web/src/stores/favorites.ts`

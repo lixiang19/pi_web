@@ -50,8 +50,6 @@ const createLocalId = () =>
   `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const fallbackSessionTitle = "新会话";
-const draftStorageKey = "pi-web.chat-composer.drafts.v1";
-const newSessionDraftKey = "__pi_new_session__";
 const INITIAL_ROUND_WINDOW = 3;
 
 const createEmptyResources = (): ResourceCatalogResponse => ({
@@ -107,37 +105,6 @@ const createRawMessage = (
     timestamp: overrides?.timestamp ?? Date.now(),
   } as PiMessage;
 };
-
-const loadDraftMap = () => {
-  if (typeof window === "undefined") {
-    return {} as Record<string, string>;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(draftStorageKey);
-    if (!raw) {
-      return {} as Record<string, string>;
-    }
-
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed
-      ? (parsed as Record<string, string>)
-      : {};
-  } catch {
-    return {} as Record<string, string>;
-  }
-};
-
-const persistDraftMap = (drafts: Record<string, string>) => {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(draftStorageKey, JSON.stringify(drafts));
-};
-
-const getDraftKey = (sessionId: string | null | undefined) =>
-  sessionId || newSessionDraftKey;
 
 const countConversationRounds = (messages: UiConversationMessage[]) =>
   messages.filter((entry) => entry.message.role === "user").length;
@@ -198,9 +165,6 @@ const resources = ref<ResourceCatalogResponse>(createEmptyResources());
 const resourceError = ref("");
 const sessionCache = ref<Record<string, CachedSessionEntry>>({});
 const sessionLoadingOlderById = ref<Record<string, boolean>>({});
-const draftMap = ref<Record<string, string>>(loadDraftMap());
-
-let suppressDraftPersistence = false;
 const loadSessionInFlightById = new Map<string, Promise<UiSessionSnapshot>>();
 const loadSessionRequestSeqById = new Map<string, number>();
 
@@ -367,117 +331,34 @@ const appendMessageToSession = (
 };
 
 // ============================================================================
-// Draft 管理（全局）
+// Draft 管理（实例内）
 // ============================================================================
-
-const updateDraftValue = (sessionId: string | null, value: string) => {
-  const key = getDraftKey(sessionId);
-  if (value.trim()) {
-    draftMap.value = {
-      ...draftMap.value,
-      [key]: value,
-    };
-  } else if (draftMap.value[key] !== undefined) {
-    const nextDrafts = { ...draftMap.value };
-    delete nextDrafts[key];
-    draftMap.value = nextDrafts;
-  }
-
-  persistDraftMap(draftMap.value);
-};
-
-const clearDraftValue = (sessionId: string | null) => {
-  updateDraftValue(sessionId, "");
-};
-
-const moveDraftValue = (
-  fromSessionId: string | null,
-  toSessionId: string,
-) => {
-  const fromKey = getDraftKey(fromSessionId);
-  const value = draftMap.value[fromKey];
-  if (!value?.trim()) {
-    return;
-  }
-
-  const nextDrafts = { ...draftMap.value };
-  delete nextDrafts[fromKey];
-  nextDrafts[getDraftKey(toSessionId)] = value;
-  draftMap.value = nextDrafts;
-  persistDraftMap(draftMap.value);
-};
-
-const removeDraftValues = (sessionIds: string[]) => {
-  const nextDrafts = { ...draftMap.value };
-  let changed = false;
-
-  for (const sessionId of sessionIds) {
-    const key = getDraftKey(sessionId);
-    if (nextDrafts[key] !== undefined) {
-      delete nextDrafts[key];
-      changed = true;
-    }
-  }
-
-  if (!changed) {
-    return;
-  }
-
-  draftMap.value = nextDrafts;
-  persistDraftMap(draftMap.value);
-};
-
-const applyDraftForSession = (
-  composer: ChatComposerState,
-  sessionId: string | null,
-) => {
-  composer.sessionId = sessionId;
-  suppressDraftPersistence = true;
-  composer.draftText = draftMap.value[getDraftKey(sessionId)] ?? "";
-  suppressDraftPersistence = false;
-  composer.hasDraft = composer.draftText.trim().length > 0;
-};
 
 const restorePendingDraft = (
   composer: ChatComposerState,
-  sessionId?: string,
 ) => {
   if (!composer.pendingPrompt.trim()) {
     return;
   }
 
-  const targetSessionId = sessionId ?? (composer.sessionId || null);
-  updateDraftValue(targetSessionId, composer.pendingPrompt);
-  if (composer.sessionId === targetSessionId) {
-    suppressDraftPersistence = true;
-    composer.draftText = composer.pendingPrompt;
-    suppressDraftPersistence = false;
-    composer.hasDraft = true;
-  }
+  composer.draftText = composer.pendingPrompt;
+  composer.hasDraft = true;
   composer.pendingPrompt = "";
 };
 
 const clearPendingDraft = (
   composer: ChatComposerState,
-  sessionId?: string | null,
 ) => {
-  if (sessionId !== undefined) {
-    clearDraftValue(sessionId);
-  }
   composer.pendingPrompt = "";
 };
 
-const startDraftWatch = (composer: ChatComposerState) => {
+const syncComposerDraftState = (composer: ChatComposerState) => {
   watch(
     () => composer.draftText,
     (value) => {
       composer.hasDraft = value.trim().length > 0;
-      if (suppressDraftPersistence) {
-        return;
-      }
-
-      updateDraftValue(composer.sessionId, value);
     },
+    { immediate: true },
   );
 };
 
@@ -615,7 +496,6 @@ const setSessionArchived = async (
 const removeSessionTree = async (sessionId: string) => {
   const { deleteSession: deleteSessionApi } = await import("@/lib/api");
   const response = await deleteSessionApi(sessionId);
-  removeDraftValues(response.sessionIds);
   await refreshSessions();
   return response;
 };
@@ -700,7 +580,6 @@ export function usePiChatCore() {
     resourceError,
     sessionCache,
     sessionLoadingOlderById,
-    draftMap,
     models,
     defaultModel,
     bootError,
@@ -716,14 +595,9 @@ export function usePiChatCore() {
     upsertSessionSummary,
 
     // Draft methods
-    updateDraftValue,
-    clearDraftValue,
-    moveDraftValue,
-    removeDraftValues,
-    applyDraftForSession,
     restorePendingDraft,
     clearPendingDraft,
-    startDraftWatch,
+    syncComposerDraftState,
 
     // API methods
     refreshAgents,

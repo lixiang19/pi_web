@@ -34,7 +34,6 @@ import {
 } from "@/lib/conversation";
 import { useSettingsStore } from "@/stores/settings";
 import { usePiChatCore } from "@/composables/usePiChatCore";
-import { useSessionTabs } from "@/composables/useSessionTabs";
 import { applyStreamSnapshotEvent } from "@/composables/session-snapshot";
 
 type SessionDraftContext = {
@@ -43,15 +42,16 @@ type SessionDraftContext = {
 };
 
 /**
- * 每个标签页独立的聊天状态管理
+ * 每个会话容器独立的聊天状态管理
  *
  * 每个 SessionTabContent 实例创建一个 usePerSessionChat，
- * 拥有独立的 messages、composer、SSE 连接等。
+ * 拥有独立的 messages、composer、SSE 连接等。内部维护 resolvedSessionId，
+ * 以支持草稿首发后在同一实例内切换到正式会话。
  * 全局共享状态（sessions 列表、缓存等）通过 usePiChatCore 访问。
  */
-export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<string>) {
+export function usePerSessionChat(sessionIdRef: Ref<string>) {
   const core = usePiChatCore();
-  const { activeTabId, updateTab } = useSessionTabs();
+  const resolvedSessionId = ref(sessionIdRef.value);
 
   // ============================================================================
   // 每会话独立状态
@@ -81,18 +81,26 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   let eventSource: EventSource | null = null;
   let currentStreamMessageLocalId = "";
 
+  watch(
+    sessionIdRef,
+    (nextSessionId) => {
+      resolvedSessionId.value = nextSessionId;
+    },
+    { immediate: true },
+  );
+
   // ============================================================================
   // 计算属性
   // ============================================================================
 
 
   const activeSession = computed(() =>
-    core.sessions.value.find((s) => s.id === sessionIdRef.value) ?? null,
+    core.sessions.value.find((s) => s.id === resolvedSessionId.value) ?? null,
   );
 
   const activeSessionSnapshot = computed(() =>
-    sessionIdRef.value
-      ? core.getCachedSessionSnapshot(sessionIdRef.value) ?? null
+    resolvedSessionId.value
+      ? core.getCachedSessionSnapshot(resolvedSessionId.value) ?? null
       : null,
   );
 
@@ -131,14 +139,14 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   );
 
   const activeHistoryMeta = computed(() => {
-    if (!sessionIdRef.value) {
+    if (!resolvedSessionId.value) {
       return core.createHistoryMeta(
         messages.value.filter((entry) => entry.message.role === "user").length,
         messages.value.filter((entry) => entry.message.role === "user").length,
       );
     }
     return (
-      core.getCachedSessionSnapshot(sessionIdRef.value)?.historyMeta ??
+      core.getCachedSessionSnapshot(resolvedSessionId.value)?.historyMeta ??
       core.createHistoryMeta(
         messages.value.filter((entry) => entry.message.role === "user").length,
         messages.value.filter((entry) => entry.message.role === "user").length,
@@ -147,21 +155,21 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   });
 
   const interactiveRequests = computed<AskInteractiveRequest[]>(() => {
-    if (!sessionIdRef.value) return [];
-    return core.getCachedSessionSnapshot(sessionIdRef.value)?.interactiveRequests ?? [];
+    if (!resolvedSessionId.value) return [];
+    return core.getCachedSessionSnapshot(resolvedSessionId.value)?.interactiveRequests ?? [];
   });
 
   const permissionRequests = computed<PermissionInteractiveRequest[]>(() => {
-    if (!sessionIdRef.value) return [];
-    return core.getCachedSessionSnapshot(sessionIdRef.value)?.permissionRequests ?? [];
+    if (!resolvedSessionId.value) return [];
+    return core.getCachedSessionSnapshot(resolvedSessionId.value)?.permissionRequests ?? [];
   });
 
   const hasMoreAbove = computed(() => activeHistoryMeta.value.hasMoreAbove);
 
   const isLoadingOlder = computed(() =>
     Boolean(
-      sessionIdRef.value &&
-      core.sessionLoadingOlderById.value[sessionIdRef.value],
+      resolvedSessionId.value &&
+      core.sessionLoadingOlderById.value[resolvedSessionId.value],
     ),
   );
 
@@ -251,7 +259,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
           status: "error",
           updatedAt: Date.now(),
         });
-        core.restorePendingDraft(composer, sid);
+        core.restorePendingDraft(composer);
         return;
       }
 
@@ -322,7 +330,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         composer.isSending = false;
         composer.canAbort = false;
         status.value = "idle";
-        core.clearPendingDraft(composer, sid);
+        core.clearPendingDraft(composer);
         core.patchSessionSummary(sid, {
           status: "idle",
           updatedAt: Date.now(),
@@ -365,13 +373,13 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     options?: { connectStream?: boolean },
   ) => {
     activeDraftContext.value = null;
+    composer.sessionId = snapshot.id;
     status.value = snapshot.status;
     isSending.value = snapshot.status === "streaming";
     composer.isSending = snapshot.status === "streaming";
     composer.canAbort = snapshot.status === "streaming";
     core.syncSessions(snapshot);
     core.syncComposerSelection(composer, snapshot);
-    core.applyDraftForSession(composer, snapshot.id);
     messages.value =
       core.getCachedSessionSnapshot(snapshot.id)?.messages ?? snapshot.messages;
 
@@ -409,8 +417,8 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   // ============================================================================
 
   const ensureSession = async () => {
-    if (sessionIdRef.value) {
-      return sessionIdRef.value;
+    if (resolvedSessionId.value) {
+      return resolvedSessionId.value;
     }
 
     const snapshot = await createAndLoadSession({
@@ -418,7 +426,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         cwd: activeDraftContext.value?.cwd,
         parentSessionId: activeDraftContext.value?.parentSessionId,
       }),
-      inheritDraftFromNewSession: true,
     });
     return snapshot.id;
   };
@@ -430,13 +437,8 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     thinkingLevel?: ThinkingLevel | null;
     parentSessionId?: string;
     agent?: string | null;
-    inheritDraftFromNewSession?: boolean;
   }) => {
-    const wasDraftTab = !sessionIdRef.value;
-
-    if (composer.sessionId !== null) {
-      core.updateDraftValue(composer.sessionId, composer.draftText);
-    }
+    const wasDraftTab = !resolvedSessionId.value;
 
     const snapshot = wrapUiSessionSnapshot(await createSession(
       omitUndefined({
@@ -453,18 +455,8 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
       }),
     ));
 
-    if (options?.inheritDraftFromNewSession) {
-      core.moveDraftValue(null, snapshot.id);
-    }
-
     if (wasDraftTab) {
-      updateTab(tabIdRef.value, {
-        sessionId: snapshot.id,
-        title: snapshot.title || core.fallbackSessionTitle,
-        cwd: snapshot.cwd,
-        status: snapshot.status,
-        parentSessionId: snapshot.parentSessionId || "",
-      });
+      resolvedSessionId.value = snapshot.id;
     }
 
     applySnapshotToSession(snapshot);
@@ -485,7 +477,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
       return;
     }
 
-    if (!sessionIdRef.value && !activeDraftContext.value?.cwd) {
+    if (!resolvedSessionId.value && !activeDraftContext.value?.cwd) {
       error.value = "请先选择项目";
       return;
     }
@@ -556,8 +548,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         }),
       );
 
-      core.clearDraftValue(sid);
-      core.clearDraftValue(null);
+      core.clearPendingDraft(composer);
       core.patchSessionSummary(
         sid,
         omitUndefined({
@@ -580,8 +571,8 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
       composer.isSending = false;
       composer.canAbort = false;
 
-      if (sessionIdRef.value && optimisticMessageLocalId) {
-        core.patchSessionSnapshot(sessionIdRef.value, (snapshot) => ({
+      if (resolvedSessionId.value && optimisticMessageLocalId) {
+        core.patchSessionSnapshot(resolvedSessionId.value, (snapshot) => ({
           ...snapshot,
           messages: snapshot.messages.filter(
             (entry) => entry.localId !== optimisticMessageLocalId,
@@ -596,23 +587,23 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         }));
       }
 
-      core.restorePendingDraft(composer, sessionIdRef.value || undefined);
+      core.restorePendingDraft(composer);
     }
   };
 
   const abort = async () => {
-    if (!sessionIdRef.value || !composer.isSending) {
+    if (!resolvedSessionId.value || !composer.isSending) {
       return;
     }
 
-    await abortSessionApi(sessionIdRef.value);
+    await abortSessionApi(resolvedSessionId.value);
     isSending.value = false;
     composer.isSending = false;
     composer.canAbort = false;
     currentStreamMessageLocalId = "";
     status.value = "idle";
-    core.restorePendingDraft(composer, sessionIdRef.value);
-    core.patchSessionSummary(sessionIdRef.value, {
+    core.restorePendingDraft(composer);
+    core.patchSessionSummary(resolvedSessionId.value, {
       status: "idle",
       updatedAt: Date.now(),
     });
@@ -623,11 +614,11 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   // ============================================================================
 
   const loadEarlier = async () => {
-    if (!sessionIdRef.value || isLoadingOlder.value) {
+    if (!resolvedSessionId.value || isLoadingOlder.value) {
       return;
     }
 
-    const sid = sessionIdRef.value;
+    const sid = resolvedSessionId.value;
     const currentSnapshot = core.getCachedSessionSnapshot(sid);
     if (!currentSnapshot?.historyMeta.hasMoreAbove) {
       return;
@@ -784,12 +775,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     const settingsStore = useSettingsStore();
     void settingsStore.setDefaultAgent(nextAgent);
 
-    if (!sessionIdRef.value) {
+    if (!resolvedSessionId.value) {
       return;
     }
 
     try {
-      const snapshot = await core.applySelectionUpdate(sessionIdRef.value, {
+      const snapshot = await core.applySelectionUpdate(resolvedSessionId.value, {
         agent: nextAgent || null,
       });
       core.syncComposerSelection(composer, snapshot);
@@ -811,12 +802,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     const settingsStore = useSettingsStore();
     void settingsStore.setDefaultModel(nextModel);
 
-    if (!sessionIdRef.value) {
+    if (!resolvedSessionId.value) {
       return;
     }
 
     try {
-      const snapshot = await core.applySelectionUpdate(sessionIdRef.value, {
+      const snapshot = await core.applySelectionUpdate(resolvedSessionId.value, {
         model: nextModel || null,
       });
       core.syncComposerSelection(composer, snapshot);
@@ -837,12 +828,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     const settingsStore = useSettingsStore();
     void settingsStore.setDefaultThinkingLevel(thinkingLevel);
 
-    if (!sessionIdRef.value) {
+    if (!resolvedSessionId.value) {
       return;
     }
 
     try {
-      const snapshot = await core.applySelectionUpdate(sessionIdRef.value, {
+      const snapshot = await core.applySelectionUpdate(resolvedSessionId.value, {
         thinkingLevel: thinkingLevel || null,
       });
       core.syncComposerSelection(composer, snapshot);
@@ -863,10 +854,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     cwd?: string;
     parentSessionId?: string;
   }) => {
-    if (composer.sessionId !== null) {
-      core.updateDraftValue(composer.sessionId, composer.draftText);
-    }
-
     const parentSession = options?.parentSessionId
       ? (core.sessions.value.find(
           (session) => session.id === options.parentSessionId,
@@ -886,6 +873,9 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
     };
 
     messages.value = [];
+    composer.sessionId = null;
+    composer.draftText = "";
+    composer.hasDraft = false;
     status.value = "idle";
     isSending.value = false;
     composer.isSending = false;
@@ -904,7 +894,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
         (parentSession.thinkingLevel as ThinkingLevel) || settingsStore.defaultThinkingLevel || "medium";
     }
 
-    core.applyDraftForSession(composer, null);
     const nextCwd = activeDraftContext.value?.cwd || "";
     await Promise.all([
       core.refreshAgents(nextCwd || undefined),
@@ -914,7 +903,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
 
   const setDraftProjectPath = async (cwd: string) => {
     const normalizedCwd = cwd.trim();
-    if (!normalizedCwd || sessionIdRef.value) {
+    if (!normalizedCwd || resolvedSessionId.value) {
       return;
     }
 
@@ -937,24 +926,8 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
   // 生命周期
   // ============================================================================
 
-  // Draft watch - 自动保存草稿
-  core.startDraftWatch(composer);
+  core.syncComposerDraftState(composer);
 
-  watch(
-    activeTabId,
-    (newActiveId) => {
-      if (newActiveId === tabIdRef.value) {
-        // 本标签变为活动
-        if (sessionIdRef.value && (status.value === "streaming" || core.getCachedSessionSnapshot(sessionIdRef.value)?.status === "streaming")) {
-          connectStream(sessionIdRef.value);
-        }
-      } else if (eventSource) {
-        // 本标签变为非活动，断开 SSE 节省资源
-        disconnectStream();
-      }
-    },
-    { immediate: true },
-  );
   // 组件卸载时，断开 SSE
   onBeforeUnmount(() => {
     disconnectStream();
@@ -962,7 +935,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>, tabIdRef: Ref<strin
 
   return {
     // Per-session state
-    sessionId: sessionIdRef,
+    sessionId: computed(() => resolvedSessionId.value),
     activeSession,
     messages,
     status,

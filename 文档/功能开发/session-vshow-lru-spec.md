@@ -212,7 +212,7 @@ export function useSessionLruPool() {
 ### 6.2 `SessionTabContent.vue`（小幅修改）
 
 - `onMounted` 中：如果 `sessionId` 为空，调用 `chat.openSessionDraft()` 而非 `loadSession`
-- 添加 `watch(sessionIdRef)` — 当 sessionId 从空变为有值时（草稿发送后），通知 LRU 池将会话加入
+- 监听 `chat.sessionId` 而不是只看外部 `sessionId` prop；当草稿首发后内部 `resolvedSessionId` 变成正式会话 ID 时，再通知 LRU 池接管
 - 移除 `useSessionTabs` 相关的 `updateTab` 调用，改为调用 `useSessionLruPool.setStreaming()`
 
 ### 6.3 `WorkbenchPage.vue`（修改）
@@ -513,7 +513,7 @@ watch(activeTabId, (newActiveId) => {
 | 5 个 SSE 连接的服务端资源 | 每个 5-50MB，5 个并发可接受 |
 | 5 个 SessionTabContent 实例的内存 | 每个实例主要是消息列表，现代浏览器可承受 |
 | 全部 streaming 时池超出 5 个 | 临时允许超出，streaming 结束后立即淘汰 |
-| 草稿丢失导致用户不满 | 可后续迭代添加 localStorage 保存，当前版本先简化 |
+| 草稿丢失导致用户不满 | 当前版本明确以“一次性草稿”换取状态简单；若未来调整，必须重新设计而不是恢复旧 localStorage 补丁 |
 | usePerSessionChat 的 SSE 断开逻辑需修改 | 移除 activeTabId watch 中的 disconnectStream，改为仅 onBeforeUnmount 断开 |
 | v-show 导致隐藏组件仍占 DOM | 这正是目标——保留 DOM 以实现零重载切换 |
 | 服务端冷会话加载延迟 | prefetch + ensureSessionRecord 的 disk I/O 不可控，接受 200-800ms 延迟 |

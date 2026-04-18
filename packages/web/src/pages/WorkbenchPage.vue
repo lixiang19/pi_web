@@ -3,10 +3,10 @@ import { computed } from "vue";
 import SessionSidebar from "@/components/chat/SessionSidebar.vue";
 import SessionTabArea from "@/components/workbench/SessionTabArea.vue";
 import { usePiChatCore } from "@/composables/usePiChatCore";
-import { useSessionTabs } from "@/composables/useSessionTabs";
+import { useSessionLruPool } from "@/composables/useSessionLruPool";
 
 const core = usePiChatCore();
-const tabs = useSessionTabs();
+const lru = useSessionLruPool();
 
 // ============================================================================
 // Sidebar 交互
@@ -22,8 +22,12 @@ const sessionSidebarProps = computed(() => {
   } = {
     sessions: core.sessions.value,
     sessionContexts: core.sessionContexts.value,
-    activeSessionId: tabs.activeTab.value?.sessionId ?? "",
-    isSending: tabs.activeTab.value?.status === "streaming",
+    activeSessionId: lru.activeSessionId.value ?? "",
+    isSending:
+      lru.activeSessionId.value !== null &&
+      core.sessions.value.find(
+        (session) => session.id === lru.activeSessionId.value,
+      )?.status === "streaming",
   };
 
   if (core.info.value?.workspaceDir) {
@@ -33,33 +37,33 @@ const sessionSidebarProps = computed(() => {
   return nextProps;
 });
 
-// 点击左侧会话 → 打开/聚焦标签
+// 点击左侧会话 → 加入/激活 LRU 池
 const handleSessionSelect = (sessionId: string) => {
-  const session = core.sessions.value.find((s) => s.id === sessionId);
-  if (!session) return;
-
-  tabs.openSessionTab({
-    sessionId: session.id,
-    title: session.title || "新会话",
-    cwd: session.cwd,
-    status: session.status,
-  });
+  lru.activateSession(sessionId);
 };
 
-// 新建会话 → 打开草稿标签，发送首条消息时再创建 session
+// 新建会话 → 打开草稿视图，发送首条消息时再创建 session
 const handleSessionCreate = (payload: {
   cwd?: string;
   parentSessionId?: string;
 }) => {
+  const activeSessionCwd = lru.activeSessionId.value
+    ? core.getCachedSessionSnapshot?.(lru.activeSessionId.value)?.cwd ||
+      core.sessions.value.find(
+        (session) => session.id === lru.activeSessionId.value,
+      )?.cwd ||
+      ""
+    : "";
+
   const resolvedCwd =
     payload.cwd ||
-    tabs.activeTab.value?.cwd ||
+    activeSessionCwd ||
     core.info.value?.workspaceDir ||
     "";
 
-  tabs.openDraftTab({
+  lru.activateDraft({
     cwd: resolvedCwd,
-    parentSessionId: payload.parentSessionId,
+    parentSessionId: payload.parentSessionId || "",
   });
 };
 
@@ -71,7 +75,6 @@ const handlePrefetch = (sessionId: string) => {
 // 重命名
 const handleRename = (sessionId: string, title: string) => {
   void core.renameSessionTitle(sessionId, title);
-  tabs.updateTabsBySessionId(sessionId, { title });
 };
 
 // 归档
@@ -83,7 +86,7 @@ const handleArchive = (sessionId: string, archived: boolean) => {
 const handleRemove = (sessionId: string) => {
   void (async () => {
     const response = await core.removeSessionTree(sessionId);
-    tabs.closeTabsBySessionIds(response.sessionIds);
+    response.sessionIds.forEach((id) => lru.removeSession(id));
   })();
 };
 

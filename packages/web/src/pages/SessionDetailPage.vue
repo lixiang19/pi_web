@@ -13,14 +13,16 @@ import ProjectFilePanel from "@/components/workbench/ProjectFilePanel.vue";
 import WorkbenchMessageStream from "@/components/workbench/chat/WorkbenchMessageStream.vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { usePiChat } from "@/composables/usePiChat";
-import { useWorkbenchSessionState } from "@/composables/useWorkbenchSessionState";
+import { useEffectiveDirectory } from "@/composables/useEffectiveDirectory";
+import { usePerSessionChat } from "@/composables/usePerSessionChat";
+import { formatProjectLabel } from "@/composables/useWorkbenchSessionState";
 
 const route = useRoute();
-const chat = usePiChat();
+const sessionId = computed(() => String(route.params["sessionId"] || ""));
+const chat = usePerSessionChat(sessionId);
 const {
   activeSession,
-  activeSessionId,
+  activeDraftContext,
   hasMoreAbove,
   isLoadingOlder,
   loadEarlier,
@@ -33,9 +35,10 @@ const {
   dismissPendingAsk,
   status,
 } = chat;
-const { fileTreeRoot, formatProjectLabel } = useWorkbenchSessionState(chat);
-
-const sessionId = computed(() => String(route.params["sessionId"] || ""));
+const { effectiveDirectory: fileTreeRoot } = useEffectiveDirectory({
+  activeSession,
+  activeDraftContext,
+});
 
 watch(
   sessionId,
@@ -171,7 +174,7 @@ watch(
           class="flex h-full flex-col overflow-hidden rounded-[32px] border border-border/40 bg-card shadow-sm"
         >
           <WorkbenchMessageStream
-            :active-session-id="activeSessionId"
+            :active-session-id="chat.sessionId.value"
             :has-more-above="hasMoreAbove"
             :interactive-requests="interactiveRequests"
 
@@ -181,10 +184,10 @@ watch(
             :messages="messages"
             :status="status"
             @load-earlier="loadEarlier"
-            @dismiss-ask="dismissPendingAsk(activeSessionId, $event)"
-            @submit-ask="(askId, answers) => respondToPendingAsk(activeSessionId, askId, answers)"
+            @dismiss-ask="dismissPendingAsk(chat.sessionId.value, $event)"
+            @submit-ask="(askId, answers) => respondToPendingAsk(chat.sessionId.value, askId, answers)"
 
-            @submit-permission="(requestId, action) => respondToPendingPermission(activeSessionId, requestId, action)"
+            @submit-permission="(requestId, action) => respondToPendingPermission(chat.sessionId.value, requestId, action)"
           />
         </div>
       </section>

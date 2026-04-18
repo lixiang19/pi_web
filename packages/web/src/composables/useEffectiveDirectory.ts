@@ -1,8 +1,9 @@
 import { computed } from "vue";
 
-import { usePiChat } from "@/composables/usePiChat";
-
-type PiChatState = ReturnType<typeof usePiChat>;
+type EffectiveDirectoryChatState = {
+  activeSession: { value: { worktreeRoot?: string; projectRoot?: string; cwd: string } | null };
+  activeDraftContext: { value: { cwd: string } | null };
+};
 
 /**
  * 统一的"有效目录"抽象。
@@ -12,7 +13,7 @@ type PiChatState = ReturnType<typeof usePiChat>;
  * 2. 当前激活 session 的 cwd
  * 3. 当前草稿的 cwd
  */
-export function useEffectiveDirectory(chat: PiChatState) {
+export function useEffectiveDirectory(chat: EffectiveDirectoryChatState) {
   const effectiveDirectory = computed(() => {
     const session = chat.activeSession.value;
     if (session) {

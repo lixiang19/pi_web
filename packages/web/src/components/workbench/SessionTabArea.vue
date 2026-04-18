@@ -1,35 +1,52 @@
 <script setup lang="ts">
-import { useSessionTabs } from "@/composables/useSessionTabs";
-import SessionTabBar from "@/components/workbench/SessionTabBar.vue";
+import { useSessionLruPool } from "@/composables/useSessionLruPool";
 import SessionTabContent from "@/components/workbench/SessionTabContent.vue";
 import WelcomeEmptyState from "@/components/workbench/WelcomeEmptyState.vue";
 
-const { openTabs, activeTabId, hasTabs } = useSessionTabs();
+const lru = useSessionLruPool();
 </script>
 
 <template>
-  <div class="flex h-full flex-col min-w-0 flex-1">
-    <!-- 标签栏（有标签时显示） -->
-    <SessionTabBar v-if="hasTabs" />
+  <div class="flex h-full min-w-0 flex-1 flex-col">
+    <div
+      v-if="lru.draftView.value"
+      v-show="lru.isViewingDraft.value || lru.draftView.value.sessionId === lru.activeSessionId.value"
+      class="flex-1 min-h-0 overflow-hidden"
+    >
+      <SessionTabContent
+        :key="lru.draftView.value.key"
+        tab-id="__draft__"
+        :session-id="lru.draftView.value.sessionId || ''"
+        :initial-cwd="lru.draftView.value.cwd"
+        :initial-parent-session-id="lru.draftView.value.parentSessionId"
+      />
+    </div>
 
-    <!-- 标签内容区域：所有标签页始终挂载，用 v-show 切换可见性 -->
-    <div v-if="hasTabs" class="flex-1 min-h-0 overflow-hidden relative">
+    <div
+      v-if="lru.pool.value.length > 0"
+      class="relative flex-1 min-h-0 overflow-hidden"
+    >
       <div
-        v-for="tab in openTabs"
-        :key="tab.id"
-        v-show="tab.id === activeTabId"
+        v-for="entry in lru.pool.value.filter((candidate) => candidate.sessionId !== lru.draftView.value?.sessionId)"
+        :key="entry.sessionId"
+        v-show="
+          lru.activeSessionId.value === entry.sessionId &&
+          !lru.isViewingDraft.value
+        "
         class="absolute inset-0"
       >
         <SessionTabContent
-          :tab-id="tab.id"
-          :session-id="tab.sessionId"
-          :initial-cwd="tab.cwd"
-          :initial-parent-session-id="tab.parentSessionId || ''"
+          :tab-id="entry.sessionId"
+          :session-id="entry.sessionId"
+          initial-cwd=""
+          initial-parent-session-id=""
         />
       </div>
     </div>
 
-    <!-- 无标签时的欢迎页 -->
-    <WelcomeEmptyState v-else class="flex-1" />
+    <WelcomeEmptyState
+      v-if="lru.pool.value.length === 0 && !lru.isViewingDraft.value"
+      class="flex-1"
+    />
   </div>
 </template>

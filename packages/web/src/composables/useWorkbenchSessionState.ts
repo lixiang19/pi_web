@@ -1,6 +1,5 @@
 import { computed } from "vue";
 
-import { usePiChat } from "@/composables/usePiChat";
 import { useEffectiveDirectory } from "@/composables/useEffectiveDirectory";
 import type { ThinkingLevel } from "@/lib/types";
 
@@ -15,7 +14,21 @@ export const thinkingOptions: Array<{ value: ThinkingLevel; label: string }> = [
   { value: "xhigh", label: "XHigh" },
 ];
 
-type PiChatState = ReturnType<typeof usePiChat>;
+type WorkbenchSessionChatState = {
+  status: { value: string };
+  activeSession: { value: { title?: string; parentSessionId?: string; cwd: string; worktreeRoot?: string; projectRoot?: string } | null };
+  activeDraftContext: { value: { cwd: string; parentSessionId: string } | null };
+  sessions: { value: Array<{ id: string; cwd?: string }> };
+  activeSessionId: { value: string };
+  isSending: { value: boolean };
+  info: { value: { workspaceDir?: string } | null };
+  setSelectedAgent: (value: string) => Promise<void> | void;
+  setSelectedModel: (value: string) => Promise<void> | void;
+  setSelectedThinkingLevel: (value: ThinkingLevel) => Promise<void> | void;
+  openSessionDraft: (payload: { cwd?: string; parentSessionId?: string }) => Promise<void> | void;
+  setDraftProjectPath: (cwd: string) => Promise<void> | void;
+  loadSession: (sessionId: string) => Promise<void> | void;
+};
 
 const normalizePath = (value: string) =>
   value.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -26,7 +39,7 @@ export const formatProjectLabel = (cwd: string) => {
   return segments.at(-1) || cwd;
 };
 
-export function useWorkbenchSessionState(chat: PiChatState) {
+export function useWorkbenchSessionState(chat: WorkbenchSessionChatState) {
   const statusLabel = computed(() => {
     if (chat.status.value === "streaming") {
       return "Pi 正在执行";

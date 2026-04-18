@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, toRef, watch } from "vue";
 import { usePerSessionChat } from "@/composables/usePerSessionChat";
-import { useSessionTabs } from "@/composables/useSessionTabs";
+import { useSessionLruPool } from "@/composables/useSessionLruPool";
 import { NO_AGENT_VALUE, thinkingOptions } from "@/composables/useWorkbenchSessionState";
 import { useWorkbenchResourcePicker } from "@/composables/useWorkbenchResourcePicker";
 import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
@@ -15,8 +15,8 @@ const props = defineProps<{
 }>();
 
 const sessionIdRef = toRef(props, "sessionId");
-const tabIdRef = toRef(props, "tabId");
-const chat = usePerSessionChat(sessionIdRef, tabIdRef);
+const chat = usePerSessionChat(sessionIdRef);
+const lru = useSessionLruPool();
 // 构建 PiChatState 兼容接口给 resourcePicker
 const chatState = {
   composer: chat.composer,
@@ -26,8 +26,6 @@ const chatState = {
 };
 const resourcePicker = useWorkbenchResourcePicker(chatState, chat.fileTreeRoot);
 
-const { updateTab } = useSessionTabs();
-
 const parentSessionId = computed(
   () =>
     chat.activeSession.value?.parentSessionId ||
@@ -35,22 +33,34 @@ const parentSessionId = computed(
     "",
 );
 
-// 标签状态同步：当会话标题/状态变化时，更新标签栏
 watch(
-  [() => chat.currentSessionTitle.value, () => chat.status.value],
-  ([title, status]) => {
-    updateTab(props.tabId, {
-      sessionId: props.sessionId,
-      title,
-      status,
-      cwd: chat.fileTreeRoot.value,
-      parentSessionId: parentSessionId.value,
-    });
+  () => chat.sessionId.value,
+  (nextSessionId, previousSessionId) => {
+    if (!nextSessionId || nextSessionId === previousSessionId) {
+      return;
+    }
+
+    if (!props.sessionId && !previousSessionId) {
+      lru.promoteDraftToSession(nextSessionId);
+      return;
+    }
+
+    lru.activateSession(nextSessionId);
+  },
+);
+
+watch(
+  [() => chat.sessionId.value, () => chat.status.value],
+  ([nextSessionId, nextStatus]) => {
+    if (!nextSessionId) {
+      return;
+    }
+
+    lru.setStreaming(nextSessionId, nextStatus === "streaming");
   },
   { immediate: true },
 );
 
-// 初始加载会话
 onMounted(async () => {
   if (props.sessionId) {
     await chat.loadSession(props.sessionId);
