@@ -27,6 +27,10 @@ const props = defineProps<{
   rootDir: string;
 }>();
 
+const emit = defineEmits<{
+  (e: "select-file", path: string): void;
+}>();
+
 const favoritesStore = useFavoritesStore();
 const activeTab = ref("files");
 
@@ -109,6 +113,15 @@ const toggleDirectory = async (entry: FileTreeEntry) => {
   await loadDirectory(entry.path);
 };
 
+const handleEntryClick = async (entry: FileTreeEntry) => {
+  if (entry.kind === "directory") {
+    await toggleDirectory(entry);
+    return;
+  }
+
+  emit("select-file", entry.path);
+};
+
 const expandToPath = async (targetPath: string) => {
   const normalizedTarget = normalizePath(targetPath);
   if (!normalizedTarget || !rootPath.value) return;
@@ -163,6 +176,12 @@ const getFavoritePath = (favorite: {
   return typeof favoritePath === "string" ? favoritePath : favorite.id;
 };
 
+const getFavoriteKind = (favorite: {
+  data?: Record<string, unknown>;
+}): FileTreeEntry["kind"] => {
+  return favorite.data?.["kind"] === "directory" ? "directory" : "file";
+};
+
 const isFavorited = (path: string): boolean => {
   return fileFavorites.value.some((f) => getFavoritePath(f) === path);
 };
@@ -204,6 +223,9 @@ const handleFavoriteClick = async (favorite: { id: string; data?: Record<string,
   const path = getFavoritePath(favorite);
   if (path) {
     await expandToPath(path);
+    if (getFavoriteKind(favorite) === "file") {
+      emit("select-file", path);
+    }
   }
 };
 
@@ -248,7 +270,7 @@ onMounted(() => {
     <div class="ridge-panel-header px-3 py-2.5">
       <div class="flex items-center justify-between gap-2">
         <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Explorer
+          资源管理器
         </span>
         <button
           class="flex items-center justify-center size-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-all duration-200"
@@ -260,14 +282,12 @@ onMounted(() => {
           />
         </button>
       </div>
-      <p class="mt-2 break-all rounded bg-muted/50 px-2 py-1.5 font-mono text-[10px] text-muted-foreground border border-border/50">
-        {{ rootPath || "NO_ROOT" }}
-      </p>
+
     </div>
 
     <!-- Tabs -->
     <Tabs v-model="activeTab" class="flex-1 flex flex-col min-h-0">
-      <TabsList class="mx-3 mt-2 h-8 w-auto grid grid-cols-2 bg-muted/50 p-0.5">
+      <TabsList class="mx-3 mt-2 h-8 w-auto grid grid-cols-2 border border-border/50 bg-transparent p-0.5">
         <TabsTrigger value="files" class="text-xs font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
           文件树
         </TabsTrigger>
@@ -309,8 +329,11 @@ onMounted(() => {
               v-for="node in visibleNodes"
               :key="node.entry.path"
               draggable="true"
-              class="group relative transition-all duration-200 ease-out hover:bg-accent/50 cursor-grab active:cursor-grabbing"
+              class="group relative transition-all duration-200 ease-out hover:bg-accent/50"
               :class="[
+                node.entry.kind === 'file'
+                  ? 'cursor-pointer'
+                  : 'cursor-grab active:cursor-grabbing',
                 isDirectoryExpanded(node.entry.path) && node.entry.kind === 'directory'
                   ? 'bg-accent/30'
                   : '',
@@ -334,7 +357,7 @@ onMounted(() => {
                 type="button"
                 class="flex w-full items-center gap-2 px-3 py-1.5 pr-10 text-left"
                 :style="{ paddingLeft: `${node.depth * 14 + 12}px` }"
-                @click="toggleDirectory(node.entry)"
+                @click="handleEntryClick(node.entry)"
               >
                 <!-- Expand Icon -->
                 <component

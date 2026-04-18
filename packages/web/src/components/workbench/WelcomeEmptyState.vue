@@ -62,11 +62,5 @@ onUnmounted(() => {
       </transition>
     </div>
 
-    <div class="mt-6 space-y-2 text-center">
-      <p class="text-base font-semibold text-foreground">先选择项目</p>
-      <p class="text-sm text-muted-foreground/70">
-        从下方项目选择器里选已添加项目，再开始新会话。
-      </p>
-    </div>
   </div>
 </template>

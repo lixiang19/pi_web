@@ -61,6 +61,7 @@ import {
 import { initializeRidgeDb } from './db/index.js';
 import { toPosixPath } from './utils/paths.js';
 import { normalizeString } from './utils/strings.js';
+import { atomicWriteFile } from './utils/fs.js';
 import {
   createWorkspaceChatProject,
   ensureWorkspaceChatProject,
@@ -84,6 +85,8 @@ import type {
   SessionRuntimePayload,
   SessionSummary,
   SessionSnapshot,
+  FilePreviewPayload,
+  FileSaveResponse,
   FileTreeEntry,
   FilesystemBrowseResult,
   AgentSummary,
@@ -121,7 +124,7 @@ const workspaceChatTemplateDir = getWorkspaceChatTemplateDir(rootDir);
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '6mb' }));
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
@@ -238,6 +241,17 @@ const fileTreeQuerySchema = z.object({
   path: z.string().optional(),
 });
 
+const fileContentQuerySchema = z.object({
+  root: z.string().optional(),
+  path: z.string().optional(),
+});
+
+const fileSaveSchema = z.object({
+  root: z.string().min(1),
+  path: z.string().min(1),
+  content: z.string().max(5 * 1024 * 1024),
+});
+
 const filesystemBrowseQuerySchema = z.object({
   path: z.string().optional(),
 });
@@ -260,6 +274,46 @@ const ignoredDirectoryNames = new Set([
 ]);
 
 const DEFAULT_SESSION_ROUND_WINDOW = 3;
+const MAX_FILE_PREVIEW_BYTES = 5 * 1024 * 1024;
+
+const markdownExtensions = new Set(['.md', '.markdown']);
+const codeExtensions = new Set([
+  '.c',
+  '.cc',
+  '.cpp',
+  '.css',
+  '.go',
+  '.h',
+  '.hpp',
+  '.html',
+  '.java',
+  '.js',
+  '.json',
+  '.jsx',
+  '.mjs',
+  '.py',
+  '.rb',
+  '.rs',
+  '.sh',
+  '.sql',
+  '.toml',
+  '.ts',
+  '.tsx',
+  '.vue',
+  '.xml',
+  '.yaml',
+  '.yml',
+]);
+const imageMimeTypesByExtension = new Map<string, string>([
+  ['.avif', 'image/avif'],
+  ['.bmp', 'image/bmp'],
+  ['.gif', 'image/gif'],
+  ['.jpeg', 'image/jpeg'],
+  ['.jpg', 'image/jpeg'],
+  ['.png', 'image/png'],
+  ['.svg', 'image/svg+xml'],
+  ['.webp', 'image/webp'],
+]);
 
 // ===== Utility Functions =====
 
@@ -272,6 +326,63 @@ const normalizeOptionalFsPath = (value: unknown): string => {
 
 const resolveDiscoveryCwd = (value: unknown): string =>
   normalizeOptionalFsPath(value) || path.resolve(os.homedir());
+
+const resolveManagedRoot = async (value: unknown): Promise<string> => {
+  const rootPath = normalizeOptionalFsPath(value);
+  if (!rootPath) {
+    const error = new Error('File root is required') as HttpError;
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!isPathInsideRoot(rootPath, defaultWorkspaceDir)) {
+    await ensureManagedProjectScope(rootPath);
+  }
+
+  return rootPath;
+};
+
+const resolveManagedFileLocation = async (
+  options: { root?: unknown; path?: unknown; fallbackToRoot?: boolean },
+): Promise<{ rootPath: string; targetPath: string }> => {
+  const rootPath = await resolveManagedRoot(options.root);
+  const requestedPath = normalizeOptionalFsPath(options.path);
+
+  if (!requestedPath && !options.fallbackToRoot) {
+    const error = new Error('File path is required') as HttpError;
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const targetPath = requestedPath || rootPath;
+  ensureWithinRoot(targetPath, rootPath);
+
+  return {
+    rootPath,
+    targetPath,
+  };
+};
+
+const ensureFileForPreview = async (
+  options: { root?: unknown; path?: unknown },
+): Promise<{ rootPath: string; targetPath: string; stats: Awaited<ReturnType<typeof fs.stat>> }> => {
+  const { rootPath, targetPath } = await resolveManagedFileLocation(options);
+  const stats = await fs.stat(targetPath);
+
+  if (!stats.isFile()) {
+    const error = new Error('Requested path is not a file') as HttpError;
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    rootPath,
+    targetPath,
+    stats,
+  };
+};
+
+const toFileSize = (value: number | bigint): number => Number(value);
 
 const ensureWithinRoot = (candidatePath: string, rootPath: string): string => {
   const relative = path.relative(rootPath, candidatePath);
@@ -293,6 +404,129 @@ const ensureWithinRoot = (candidatePath: string, rootPath: string): string => {
 const isPathInsideRoot = (candidatePath: string, rootPath: string): boolean => {
   const relative = path.relative(rootPath, candidatePath);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+};
+
+const decodeUtf8File = (buffer: Buffer): string | null => {
+  if (buffer.includes(0)) {
+    return null;
+  }
+
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    return null;
+  }
+};
+
+const resolvePreviewKind = (
+  extension: string,
+  isTextReadable: boolean,
+): FilePreviewPayload['previewKind'] => {
+  if (imageMimeTypesByExtension.has(extension)) {
+    return 'image';
+  }
+
+  if (!isTextReadable) {
+    return 'unsupported';
+  }
+
+  if (markdownExtensions.has(extension)) {
+    return 'markdown';
+  }
+
+  if (codeExtensions.has(extension)) {
+    return 'code';
+  }
+
+  return 'text';
+};
+
+const resolvePreviewMimeType = (
+  extension: string,
+  previewKind: FilePreviewPayload['previewKind'],
+): string => {
+  if (previewKind === 'image') {
+    return imageMimeTypesByExtension.get(extension) || 'application/octet-stream';
+  }
+
+  if (previewKind === 'markdown') {
+    return 'text/markdown; charset=utf-8';
+  }
+
+  if (extension === '.json') {
+    return 'application/json; charset=utf-8';
+  }
+
+  if (extension === '.html') {
+    return 'text/html; charset=utf-8';
+  }
+
+  if (extension === '.css') {
+    return 'text/css; charset=utf-8';
+  }
+
+  if (extension === '.xml') {
+    return 'application/xml; charset=utf-8';
+  }
+
+  if (previewKind === 'unsupported') {
+    return 'application/octet-stream';
+  }
+
+  return 'text/plain; charset=utf-8';
+};
+
+const buildFilePreviewPayload = async (
+  rootPath: string,
+  targetPath: string,
+  stats: Awaited<ReturnType<typeof fs.stat>>,
+): Promise<FilePreviewPayload> => {
+  const extension = path.extname(targetPath).toLowerCase();
+  const name = path.basename(targetPath);
+  const imageMimeType = imageMimeTypesByExtension.get(extension);
+  const size = toFileSize(stats.size);
+
+  if (imageMimeType) {
+    return {
+      root: toPosixPath(rootPath),
+      path: toPosixPath(targetPath),
+      name,
+      extension,
+      mimeType: imageMimeType,
+      size,
+      previewKind: 'image',
+      readOnly: true,
+    };
+  }
+
+  if (size > MAX_FILE_PREVIEW_BYTES) {
+    return {
+      root: toPosixPath(rootPath),
+      path: toPosixPath(targetPath),
+      name,
+      extension,
+      mimeType: resolvePreviewMimeType(extension, 'unsupported'),
+      size,
+      previewKind: 'unsupported',
+      readOnly: true,
+    };
+  }
+
+  const buffer = await fs.readFile(targetPath);
+  const content = decodeUtf8File(buffer);
+  const previewKind = resolvePreviewKind(extension, content !== null);
+
+  return {
+    root: toPosixPath(rootPath),
+    path: toPosixPath(targetPath),
+    name,
+    extension,
+    mimeType: resolvePreviewMimeType(extension, previewKind),
+    size,
+    previewKind,
+    content: content ?? undefined,
+    readOnly: previewKind !== 'markdown',
+  };
 };
 
 const closeClients = (record: SessionRecord): void => {
@@ -1772,19 +2006,11 @@ app.delete('/api/config/agents/:name', async (req: Request, res: Response, next:
 app.get('/api/files/tree', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = fileTreeQuerySchema.parse(req.query ?? {});
-    const rootPath = normalizeOptionalFsPath(query.root);
-    if (!rootPath) {
-      const error = new Error('File tree root is required') as HttpError;
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const targetPath = normalizeOptionalFsPath(query.path) || rootPath;
-    if (!isPathInsideRoot(rootPath, defaultWorkspaceDir)) {
-      await ensureManagedProjectScope(rootPath);
-    }
-
-    ensureWithinRoot(targetPath, rootPath);
+    const { rootPath, targetPath } = await resolveManagedFileLocation({
+      root: query.root,
+      path: query.path,
+      fallbackToRoot: true,
+    });
 
     const stats = await fs.stat(targetPath);
     if (!stats.isDirectory()) {
@@ -1800,6 +2026,65 @@ app.get('/api/files/tree', async (req: Request, res: Response, next: NextFunctio
       directory: toPosixPath(targetPath),
       entries,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/files/content', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = fileContentQuerySchema.parse(req.query ?? {});
+    const { rootPath, targetPath, stats } = await ensureFileForPreview(query);
+    const payload = await buildFilePreviewPayload(rootPath, targetPath, stats);
+    res.json(payload);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/files/blob', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = fileContentQuerySchema.parse(req.query ?? {});
+    const { targetPath } = await ensureFileForPreview(query);
+    const extension = path.extname(targetPath).toLowerCase();
+    const mimeType = imageMimeTypesByExtension.get(extension);
+
+    if (!mimeType) {
+      const error = new Error('Only image previews are available through this endpoint') as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    res.type(mimeType);
+    res.sendFile(targetPath);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/files/content', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = fileSaveSchema.parse(req.body ?? {});
+    const { rootPath, targetPath, stats } = await ensureFileForPreview(payload);
+    const extension = path.extname(targetPath).toLowerCase();
+
+    if (!markdownExtensions.has(extension)) {
+      const error = new Error('Only Markdown files can be edited') as HttpError;
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await atomicWriteFile(targetPath, payload.content);
+    const nextStats = await fs.stat(targetPath);
+
+    const response: FileSaveResponse = {
+      root: toPosixPath(rootPath),
+      path: toPosixPath(targetPath),
+      size: toFileSize(nextStats.size || stats.size),
+      savedAt: Date.now(),
+    };
+
+    res.json(response);
   } catch (error) {
     next(error);
   }

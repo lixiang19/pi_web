@@ -3,6 +3,9 @@ import type {
   AskQuestionAnswer,
   PermissionDecisionAction,
   DirectoryBrowseResponse,
+  FilePreviewPayload,
+  FileSaveRequest,
+  FileSaveResponse,
   FileTreeResponse,
   ProjectItem,
   ProjectsResponse,
@@ -224,6 +227,24 @@ export function getFileTree(path?: string, root?: string) {
   return request<FileTreeResponse>(
     `/api/files/tree${params.size > 0 ? `?${params.toString()}` : ""}`,
   );
+}
+
+export function getFilePreview(path: string, root: string) {
+  const params = new URLSearchParams({ path, root });
+
+  return request<FilePreviewPayload>(`/api/files/content?${params.toString()}`);
+}
+
+export function saveFileContent(payload: FileSaveRequest) {
+  return request<FileSaveResponse>("/api/files/content", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getFileBlobUrl(path: string, root: string) {
+  const params = new URLSearchParams({ path, root });
+  return `/api/files/blob?${params.toString()}`;
 }
 
 export function browseFilesystem(path?: string) {

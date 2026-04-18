@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, toRef, watch } from "vue";
+import { computed, onMounted, ref, toRef, watch } from "vue";
+import { useEventListener } from "@vueuse/core";
+import { ChevronLeft } from "lucide-vue-next";
 import { usePerSessionChat } from "@/composables/usePerSessionChat";
+import {
+  DEFAULT_OPERATION_PANEL_WIDTH,
+  MAX_OPERATION_PANEL_WIDTH,
+  MIN_OPERATION_PANEL_WIDTH,
+} from "@/composables/useWorkbenchFilePreview";
+import { Button } from "@/components/ui/button";
 import { useSessionLruPool } from "@/composables/useSessionLruPool";
 import { NO_AGENT_VALUE, thinkingOptions } from "@/composables/useWorkbenchSessionState";
 import { useWorkbenchResourcePicker } from "@/composables/useWorkbenchResourcePicker";
+import { Separator } from "@/components/ui/separator";
+import WorkbenchOperationPanel from "@/components/workbench/WorkbenchOperationPanel.vue";
 import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
 import ProjectFilePanel from "@/components/workbench/ProjectFilePanel.vue";
 
@@ -25,6 +35,78 @@ const chatState = {
   refreshResources: chat.core.refreshResources,
 };
 const resourcePicker = useWorkbenchResourcePicker(chatState, chat.fileTreeRoot);
+
+const layoutRef = ref<HTMLElement | null>(null);
+const operationPanelRef = ref<{
+  openFile: (filePath: string) => Promise<void>;
+  flushActiveTab: () => Promise<boolean>;
+} | null>(null);
+const operationPanelWidth = ref(DEFAULT_OPERATION_PANEL_WIDTH);
+const isOperationPanelCollapsed = ref(true);
+const isResizingOperationPanel = ref(false);
+
+const RIGHT_PANEL_WIDTH = 320;
+const MIN_CHAT_PANEL_WIDTH = 320;
+
+const clampOperationPanelWidth = (value: number) => {
+  const layoutWidth = layoutRef.value?.getBoundingClientRect().width ?? Infinity;
+  const layoutMaxWidth = Math.max(
+    MIN_OPERATION_PANEL_WIDTH,
+    Math.min(
+      MAX_OPERATION_PANEL_WIDTH,
+      layoutWidth - RIGHT_PANEL_WIDTH - MIN_CHAT_PANEL_WIDTH,
+    ),
+  );
+
+  return Math.min(layoutMaxWidth, Math.max(MIN_OPERATION_PANEL_WIDTH, value));
+};
+
+const stopOperationResize = () => {
+  if (!isResizingOperationPanel.value) {
+    return;
+  }
+
+  isResizingOperationPanel.value = false;
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
+};
+
+const expandOperationPanel = () => {
+  isOperationPanelCollapsed.value = false;
+};
+
+const collapseOperationPanel = async () => {
+  const canCollapse = await operationPanelRef.value?.flushActiveTab?.();
+  if (canCollapse === false) {
+    return;
+  }
+
+  stopOperationResize();
+  isOperationPanelCollapsed.value = true;
+};
+
+const startOperationResize = (event: PointerEvent) => {
+  if (!layoutRef.value) {
+    return;
+  }
+
+  isResizingOperationPanel.value = true;
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  event.preventDefault();
+};
+
+useEventListener(window, "pointermove", (event: PointerEvent) => {
+  if (!isResizingOperationPanel.value || !layoutRef.value) {
+    return;
+  }
+
+  const layoutRect = layoutRef.value.getBoundingClientRect();
+  const desiredWidth = layoutRect.right - RIGHT_PANEL_WIDTH - event.clientX;
+  operationPanelWidth.value = clampOperationPanelWidth(desiredWidth);
+});
+
+useEventListener(window, "pointerup", stopOperationResize);
 
 const parentSessionId = computed(
   () =>
@@ -61,6 +143,14 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => chat.fileTreeRoot.value,
+  () => {
+    operationPanelWidth.value = clampOperationPanelWidth(operationPanelWidth.value);
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   if (props.sessionId) {
     await chat.loadSession(props.sessionId);
@@ -79,10 +169,15 @@ const formatProjectLabel = (cwd: string) => {
   return segments.at(-1) || cwd;
 };
 
+const handleOpenFile = (filePath: string) => {
+  isOperationPanelCollapsed.value = false;
+  void operationPanelRef.value?.openFile(filePath);
+};
+
 </script>
 
 <template>
-  <div class="flex h-full">
+  <div ref="layoutRef" class="flex h-full min-w-0">
     <!-- 中间对话区 -->
     <main class="min-w-0 flex-1 flex flex-col bg-background">
       <WorkbenchChatPanel
@@ -129,12 +224,50 @@ const formatProjectLabel = (cwd: string) => {
       />
     </main>
 
+    <div
+      v-if="isOperationPanelCollapsed"
+      class="flex w-9 shrink-0 items-center justify-center bg-background/80"
+    >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="size-7"
+        @click="expandOperationPanel"
+      >
+        <ChevronLeft class="size-4" />
+      </Button>
+    </div>
+
+    <div
+      v-else
+      class="group flex w-3 shrink-0 cursor-col-resize items-stretch justify-center bg-background/80 transition-colors hover:bg-accent/40"
+      @pointerdown="startOperationResize"
+    >
+      <Separator orientation="vertical" class="h-full bg-border/40 group-hover:bg-primary/40" />
+    </div>
+
+    <aside
+      v-show="!isOperationPanelCollapsed"
+      class="flex shrink-0 flex-col overflow-hidden bg-card/20"
+      :style="{ width: `${operationPanelWidth}px` }"
+    >
+      <WorkbenchOperationPanel
+        ref="operationPanelRef"
+        :root-dir="chat.fileTreeRoot.value"
+        class="flex-1"
+        @collapse="collapseOperationPanel"
+      />
+    </aside>
+
+    <Separator v-show="!isOperationPanelCollapsed" orientation="vertical" class="h-full shrink-0 bg-border/40" />
+
     <!-- 右侧文件/Git 面板 -->
     <aside class="w-80 flex shrink-0 flex-col bg-secondary">
       <ProjectFilePanel
         :project-label="chat.fileTreeRoot.value ? formatProjectLabel(chat.fileTreeRoot.value) : '未选择项目'"
         :root-dir="chat.fileTreeRoot.value"
         class="flex-1"
+        @open-file="handleOpenFile"
       />
     </aside>
   </div>

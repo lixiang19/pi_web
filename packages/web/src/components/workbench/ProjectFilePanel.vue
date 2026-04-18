@@ -12,6 +12,10 @@ const props = defineProps<{
   rootDir: string;
 }>();
 
+const emit = defineEmits<{
+  (e: "open-file", path: string): void;
+}>();
+
 const activeTab = ref<"git" | "files">("files");
 const { isGitRepo } = useIsGitRepo(toRef(() => props.rootDir));
 
@@ -60,7 +64,7 @@ watch(
     <!-- Tab 导航 -->
     <Tabs v-model="activeTab" class="flex flex-1 flex-col overflow-hidden">
       <TabsList
-        class="mx-3 h-8 w-auto grid bg-muted/50 p-0.5"
+        class="mx-3 h-8 w-auto grid border border-border/50 bg-transparent p-0.5"
         :class="isGitRepo ? 'grid-cols-2' : 'grid-cols-1'"
       >
         <TabsTrigger
@@ -86,7 +90,7 @@ watch(
         </div>
 
         <div v-show="activeTab === 'files'" class="h-full overflow-hidden">
-          <WorkspaceFileTree :root-dir="rootDir" />
+          <WorkspaceFileTree :root-dir="rootDir" @select-file="emit('open-file', $event)" />
         </div>
       </div>
     </Tabs>

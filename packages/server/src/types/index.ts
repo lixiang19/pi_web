@@ -9,6 +9,10 @@ import type {
   AskToolResultDetails as ProtocolAskToolResultDetails,
   CreateWorktreeRequest as ProtocolCreateWorktreeRequest,
   DeleteWorktreeRequest as ProtocolDeleteWorktreeRequest,
+  FilePreviewKind as ProtocolFilePreviewKind,
+  FilePreviewPayload as ProtocolFilePreviewPayload,
+  FileSaveRequest as ProtocolFileSaveRequest,
+  FileSaveResponse as ProtocolFileSaveResponse,
   FileTreeEntry as ProtocolFileTreeEntry,
   GitBranchesResponse as ProtocolGitBranchesResponse,
   GitFileStatusItem as ProtocolGitFileStatusItem,
@@ -196,6 +200,10 @@ export interface ProjectContext {
 
 // ===== File Tree Types =====
 export type FileTreeEntry = ProtocolFileTreeEntry;
+export type FilePreviewKind = ProtocolFilePreviewKind;
+export type FilePreviewPayload = ProtocolFilePreviewPayload;
+export type FileSaveRequest = ProtocolFileSaveRequest;
+export type FileSaveResponse = ProtocolFileSaveResponse;
 
 export interface FileTreeResult {
   root: string;

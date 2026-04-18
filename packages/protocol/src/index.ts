@@ -293,6 +293,38 @@ export interface FileTreeResponse {
   entries: FileTreeEntry[];
 }
 
+export type FilePreviewKind =
+  | "markdown"
+  | "code"
+  | "text"
+  | "image"
+  | "unsupported";
+
+export interface FilePreviewPayload {
+  root: string;
+  path: string;
+  name: string;
+  extension: string;
+  mimeType: string;
+  size: number;
+  previewKind: FilePreviewKind;
+  content?: string;
+  readOnly: boolean;
+}
+
+export interface FileSaveRequest {
+  root: string;
+  path: string;
+  content: string;
+}
+
+export interface FileSaveResponse {
+  root: string;
+  path: string;
+  size: number;
+  savedAt: number;
+}
+
 export interface DirectoryBrowseResponse {
   homeDir: string;
   path: string;

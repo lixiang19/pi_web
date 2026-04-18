@@ -11,10 +11,12 @@
 - 会话实例仍由 `useSessionLruPool.ts` 托管，`PlatformShell.vue` 通过 `KeepAlive` 保活 `/chat` 页面。
 - 会话详情页只使用 `usePerSessionChat(sessionId)` 加载单会话消息流，并通过 `useEffectiveDirectory()` 计算目录根。
 - 草稿语义已经重置为“切换即丢失、每次新建都是全新空白草稿”，前端不再保留 localStorage 草稿恢复链路。
+- `/chat` 工作台内层已经从“消息区 + 右侧功能区”扩展为“消息区 + 操作区 + 右侧 Git/文件功能区”，操作区用于承载会话级文件预览标签和后续更多工具页签。
+- 服务端已补充 `/api/files/content`、`/api/files/blob` 与 Markdown 保存接口，文件树、文件预览和保存统一复用同一条 `root` 安全边界。
 
 ## Responsibility
 
-- 负责提供 Web 端 Pi 工作台，统一组织左侧会话列表、中间消息流、右侧文件树三栏结构。
+- 负责提供 Web 端 Pi 工作台，统一组织左侧会话列表、会话消息区、中间操作区和右侧 Git/文件功能区。
 - 负责提供共享页面壳与导航，把工作台、设置页、主题页、会话详情页统一收敛到同一套路由外框下。
 - 负责把 `@mariozechner/pi-coding-agent` 的持久化 session 能力桥接成前端可消费的 HTTP 与 SSE 接口，而不是只暴露运行时内存会话。
 - 负责发现并管理 Pi agent 资源，统一合并 `~/.pi/agent/agents` 与最近 `.pi/agents`，并把 project 覆盖关系投影给前端。
@@ -34,6 +36,7 @@
 - 负责约束默认工作区目录策略：macOS 默认使用 `~/ridge-workspace`，非 macOS 必须显式提供 `PI_WORKSPACE_DIR`。
 - 负责让 `文件` 一级页面稳定显示整个工作区根目录，而不是跟随当前会话 cwd 切换显示范围。
 - 负责把“工作区文件树浏览”和“用户 Home 目录项目选择”拆成两条独立后端边界，避免混淆安全语义。
+- 负责把“文件树枚举”“文件内容预览”“图片流读取”“Markdown 保存”统一收敛到服务端文件接口层，而不是让前端直接拼接本地文件能力。
 - 不负责桌面壳原生交互、PR 状态、分享链接、复杂工具执行面板，这些仍在后续迭代范围内。
 - 服务对象包括 Web 最终用户、Tauri 桌面壳中的前端运行时，以及本仓库的开发构建流程。
 
@@ -107,7 +110,7 @@
 
 - Vue 层只消费投影后的摘要和树结构，不直接拼接底层 session 文件信息。
 - 前端编排层负责把服务端的 session 摘要转成项目、group、父子会话树，并把会话派生状态、资源面板控制、主题偏好持久化拆成独立 composable。
-- 服务层同时承担三件事：列出和打开 SDK 持久化 session、维护归档元数据、约束文件树访问范围。
+- 服务层同时承担四件事：列出和打开 SDK 持久化 session、维护归档元数据、约束文件树访问范围、桥接文件内容预览与 Markdown 保存。
 - `/api/system/info` 现在同时暴露 `chatProjectId/chatProjectPath/chatProjectLabel`，前端不再自行猜测系统聊天项目位置。
 - 正常发送链路的 SSE 主流程必须绑定 `AgentSession.subscribe()`，由 Pi runtime 真实推送 `message_start/message_update/message_end/turn_end`；仅靠 `POST /api/sessions/:id/messages` 改 `status` 不能让前端消息流更新。
 - 服务端桥接 `message_start/message_end` 时必须过滤 `role === 'user'` 的事件，因为前端发送期已经做了乐观用户消息写入；不做过滤会导致每次发送重复一条用户消息。

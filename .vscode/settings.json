@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^pnpm --filter @pi/server build$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
