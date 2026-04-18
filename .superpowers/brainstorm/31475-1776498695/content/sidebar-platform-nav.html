@@ -1,0 +1,102 @@
+<h2>左侧栏升级为工作台主导航</h2>
+<p class="subtitle">目标：左栏上部承担功能入口，下部保留真实会话树；设置不再弹出新区域，而是在右侧内容区切换。</p>
+
+<div class="cards">
+  <div class="card" data-choice="recommended" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">推荐方案：导航区 + 会话区</div>
+        <div class="mockup-body" style="display:flex; min-height:520px; background:linear-gradient(180deg, #f6f7f8 0%, #f1f3f5 100%);">
+          <div style="width:290px; border-right:1px solid #d8dde3; padding:16px 14px; background:#fbfbfc;">
+            <div class="mock-nav" style="margin-bottom:14px;">ridge</div>
+            <div style="display:grid; gap:8px; margin-bottom:14px;">
+              <button class="mock-button" style="width:100%; justify-content:center; background:#111827; color:#fff;">+ 新聊天</button>
+            </div>
+            <div style="display:grid; gap:6px; margin-bottom:16px;">
+              <div style="padding:10px 12px; border-radius:12px; background:#e8eefc; color:#1d4ed8; font-weight:700;">搜索</div>
+              <div style="padding:10px 12px; border-radius:12px; background:#fff;">文件</div>
+              <div style="padding:10px 12px; border-radius:12px; background:#fff;">终端</div>
+              <div style="padding:10px 12px; border-radius:12px; background:#fff;">自动化</div>
+              <div style="padding:10px 12px; border-radius:12px; background:#fff;">数据集</div>
+              <div style="padding:10px 12px; border-radius:12px; background:#fff;">空间</div>
+            </div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:8px; font-weight:700;">会话</div>
+            <div style="display:grid; gap:6px;">
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">项目 A / 最近会话</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">项目 A / 需求讨论</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">项目 B / 调试链路</div>
+            </div>
+            <div style="margin-top:16px; padding-top:12px; border-top:1px solid #e5e7eb;">
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">设置</div>
+            </div>
+          </div>
+          <div style="flex:1; display:flex;">
+            <div style="flex:1; padding:18px; border-right:1px solid #d8dde3;">
+              <div style="font-size:13px; color:#6b7280; margin-bottom:8px;">中间区域</div>
+              <div class="placeholder" style="height:430px;">当前主视图：搜索页 / 文件页 / 终端页 / 自动化页 / 数据集页 / 空间页 / 对话页</div>
+            </div>
+            <div style="width:320px; padding:18px;">
+              <div style="font-size:13px; color:#6b7280; margin-bottom:8px;">右侧区域</div>
+              <div class="placeholder" style="height:430px;">当点击“设置”时，这里切换成设置面板，不再弹新页</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 A：分层导航</h3>
+      <p>最符合你这次目标。上部是工作台功能入口，下部继续保留会话树，设置固定进入右侧面板。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="all-mixed" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">备选方案：功能入口和会话完全混排</div>
+        <div class="mockup-body" style="display:flex; min-height:520px; background:#f7f7f8;">
+          <div style="width:290px; border-right:1px solid #d8dde3; padding:16px 14px;">
+            <div class="mock-nav" style="margin-bottom:14px;">ridge</div>
+            <div style="display:grid; gap:6px;">
+              <div style="padding:10px 12px; border-radius:10px; background:#111827; color:#fff;">+ 新聊天</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">搜索</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">项目 A / 最近会话</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">文件</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">终端</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">项目 A / 历史会话</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">自动化</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">数据集</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">空间</div>
+              <div style="padding:10px 12px; border-radius:10px; background:#fff;">设置</div>
+            </div>
+          </div>
+          <div style="flex:1; padding:18px;">
+            <div class="placeholder" style="height:470px;">主视图</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 B：全部混排</h3>
+      <p>实现更直接，但导航层级会变乱，项目会话和全局功能容易互相干扰。</p>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons" style="margin-top:20px;">
+  <div class="pros">
+    <h4>我推荐方案 A 的原因</h4>
+    <ul>
+      <li>不破坏现有真实会话树能力，只重构左栏信息层级。</li>
+      <li>新功能路由都有稳定入口，后续还能继续扩展。</li>
+      <li>“设置进右侧”可以收敛成统一的内容切换机制。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>这版需要明确的点</h4>
+    <ul>
+      <li>顶部功能入口是纯图标还是图标加文字。</li>
+      <li>搜索到底是“搜索页面”还是“只过滤会话列表”。</li>
+      <li>设置是独立右栏模式，还是某个功能页也能占用右栏。</li>
+    </ul>
+  </div>
+</div>

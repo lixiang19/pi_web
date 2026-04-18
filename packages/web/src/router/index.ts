@@ -2,10 +2,14 @@ import { createRouter, createWebHistory } from "vue-router";
 
 import PlatformShell from "@/layouts/PlatformShell.vue";
 import NotFoundPage from "@/pages/NotFoundPage.vue";
-import SessionDetailPage from "@/pages/SessionDetailPage.vue";
+import AutomationsPage from "@/pages/AutomationsPage.vue";
+import DatasetsPage from "@/pages/DatasetsPage.vue";
+import FilesPage from "@/pages/FilesPage.vue";
+import SearchPage from "@/pages/SearchPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
+import SpacesPage from "@/pages/SpacesPage.vue";
+import TerminalPage from "@/pages/TerminalPage.vue";
 import WorkbenchPage from "@/pages/WorkbenchPage.vue";
-import DesignLabPage from "@/pages/DesignLabPage.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -16,20 +20,69 @@ const router = createRouter({
       children: [
         {
           path: "",
-          name: "workbench",
+          redirect: { name: "chat" },
+        },
+        {
+          path: "chat",
+          name: "chat",
           component: WorkbenchPage,
           meta: {
-            title: "工作台",
-            description: "左侧会话、中间对话与右侧文件树的主工作区。",
+            title: "会话",
+            description: "左侧统一导航下的会话工作台。",
           },
         },
         {
-          path: "design",
-          name: "design",
-          component: DesignLabPage,
+          path: "search",
+          name: "search",
+          component: SearchPage,
           meta: {
-            title: "界面设计",
-            description: "界面概念实验室与组件研究。",
+            title: "搜索",
+            description: "统一搜索入口。",
+          },
+        },
+        {
+          path: "files",
+          name: "files",
+          component: FilesPage,
+          meta: {
+            title: "文件",
+            description: "文件浏览与工作区目录。",
+          },
+        },
+        {
+          path: "terminal",
+          name: "terminal",
+          component: TerminalPage,
+          meta: {
+            title: "终端",
+            description: "终端能力主路由。",
+          },
+        },
+        {
+          path: "automations",
+          name: "automations",
+          component: AutomationsPage,
+          meta: {
+            title: "自动化",
+            description: "自动化与周期任务入口。",
+          },
+        },
+        {
+          path: "datasets",
+          name: "datasets",
+          component: DatasetsPage,
+          meta: {
+            title: "数据集",
+            description: "数据集能力主路由。",
+          },
+        },
+        {
+          path: "spaces",
+          name: "spaces",
+          component: SpacesPage,
+          meta: {
+            title: "空间",
+            description: "空间协作与资源组织入口。",
           },
         },
         {
@@ -39,15 +92,6 @@ const router = createRouter({
           meta: {
             title: "系统设置",
             description: "工作台外观、主题和其他配置选项。",
-          },
-        },
-        {
-          path: "sessions/:sessionId",
-          name: "session-detail",
-          component: SessionDetailPage,
-          meta: {
-            title: "会话详情",
-            description: "聚焦单个会话的消息流、目录上下文与运行配置。",
           },
         },
       ],

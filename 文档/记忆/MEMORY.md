@@ -58,8 +58,10 @@
 - [写路径禁止全量重建] create/update/archive/delete 这类单会话写操作只能做局部索引更新；全量 session catalog refresh 只允许出现在启动建索引和 project scope 变化场景
 - [前端单一快照装配] usePiChat 与 usePiChatCore 不允许再各自维护 snapshot/hydrate/patch 逻辑；会话快照协议的装配必须集中在共享模块中统一演进
 - [工作台会话新基线] 工作台现已彻底删除 `usePiChat.ts` 与 `useWorkbenchPage.ts`；统一改为 `usePiChatCore + usePerSessionChat + useSessionLruPool`，详情页也只能走单会话链路，禁止再回到聚合式旧状态层。
+- [路由与会话边界] 路由只负责表达当前功能域，不能直接托管会话实例生命周期；会话这种高频活状态必须继续由 `useSessionLruPool` 托管，必要时通过 `KeepAlive` 保活 `/chat` 页面，而不是把单会话路由化后交给 URL 驱动。
 - [UI消息包装边界] `pending/localId` 这类前端乐观态字段只能放在 `UiConversationMessage` 包装层；协议层 `PiMessage/SessionSnapshot` 必须保持 Pi 原始结构，不能再回退到自造 `ChatMessage/contentBlocks`
 - [索引字段最小化] 会话目录索引只保留有明确消费方的字段；没有 UI 或接口消费的 `last_message_preview`、`message_count` 这类字段应直接删除，不能先入库再等以后再说
 - [SSE 零写库] 发送消息前和 `turn_end` 都不能顺手写 SQLite；SSE 链路只负责内存态和 session 文件，目录索引由启动重建和显式用户动作维护
 - [运行时态不入目录索引] 列表 `status` 这类运行时字段只允许由内存 active session 覆盖，不应作为数据库持久化列存在
 - [SQLite 字面量] 写 SQLite 语句时，字符串字面量必须用单引号；`""` 在 SQLite 中会按标识符解析，像 `context_id != ""` 这种写法会在启动建索引时直接触发 `no such column: ""`
+- [原生依赖安装契约] 仓库使用 `pnpm 10` 时，`better-sqlite3` 这类原生包不能只写进 dependencies；必须在根 `package.json` 的 `pnpm.onlyBuiltDependencies` 中显式放行，否则 install 后会出现“包存在但 `.node` 绑定缺失”，server 在 `new Database()` 时直接失败

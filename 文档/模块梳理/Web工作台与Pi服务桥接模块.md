@@ -4,7 +4,10 @@
 
 - Web 工作台的会话编排主链路已经收敛为 `usePiChatCore.ts + usePerSessionChat.ts + useSessionLruPool.ts`。
 - `usePiChat.ts` 与 `useWorkbenchPage.ts` 已删除，不再允许新增引用。
-- 工作台页由 `WorkbenchPage.vue` 直接组合左侧 `SessionSidebar.vue` 与中间 `SessionTabArea.vue`，不再存在旧的聚合式页面 composable。
+- 路由主壳统一收敛到 `PlatformShell.vue`，左侧固定为统一一级导航 + 会话菜单，右侧主内容由 `RouterView` 切换。
+- `/chat` 是会话主路由，`WorkbenchPage.vue` 只负责会话工作台内容本身，不再直接组合左侧栏。
+- `/search`、`/files`、`/terminal`、`/automations`、`/datasets`、`/spaces`、`/settings` 已成为独立一级主路由。
+- 会话实例仍由 `useSessionLruPool.ts` 托管，`PlatformShell.vue` 通过 `KeepAlive` 保活 `/chat` 页面。
 - 会话详情页只使用 `usePerSessionChat(sessionId)` 加载单会话消息流，并通过 `useEffectiveDirectory()` 计算目录根。
 - 草稿语义已经重置为“切换即丢失、每次新建都是全新空白草稿”，前端不再保留 localStorage 草稿恢复链路。
 
@@ -24,6 +27,7 @@
 - 负责在 Web 入口完成主题契约导入、全局 base 规则注入、默认主题 token 注册与明暗模式根节点切换，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量。
 - 负责约束工作台分隔策略：ridge 主题下优先使用 surface 层次与留白，不依赖裸 `border-*` 做结构分隔，避免 Tailwind 默认 `currentColor` 污染边框颜色。
 - 负责约束主题资产边界：`style.css` 只承载 Tailwind 构建期入口与全局 base，`assets/*.css` 主题文件只承载运行时 token，禁止把 `@import "tailwindcss"`、`@custom-variant`、`@layer base` 注入运行时主题样式。
+- 负责约束服务层原生依赖安装契约：根 `package.json` 必须通过 `pnpm.onlyBuiltDependencies` 显式允许 `better-sqlite3` 构建，避免出现 server 依赖已安装但 SQLite 原生绑定缺失的半安装状态。
 - 负责把用户级设置、收藏和自定义项目统一持久化到 ~/.ridge/ 下的服务端 JSON 文件，而不是在 Web 层散落 localStorage。
 - 负责限制文件树访问边界，只允许浏览当前工作区及同仓库 worktree 范围内的目录。
 - 负责把“工作区文件树浏览”和“用户 Home 目录项目选择”拆成两条独立后端边界，避免混淆安全语义。
