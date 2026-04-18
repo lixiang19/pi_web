@@ -28,7 +28,12 @@ vi.mock("@/composables/usePiChatCore", () => ({
   usePiChatCore: () => ({
     sessions,
     sessionContexts,
-    info: ref({ workspaceDir: "/workspace" }),
+    info: ref({
+      workspaceDir: "/workspace",
+      chatProjectId: "ridge:workspace-chat",
+      chatProjectPath: "/workspace/chat",
+      chatProjectLabel: "聊天",
+    }),
     prefetchSession: vi.fn(),
     renameSessionTitle: vi.fn(),
     removeSessionTree: vi.fn(async () => ({ sessionIds: [] })),
@@ -82,15 +87,32 @@ vi.mock("@/composables/useProjectWorktrees", () => ({
 }));
 
 vi.mock("@/lib/session-sidebar", () => ({
-  buildSessionProjects: () => [
-    {
-      id: "project-1",
-      label: "alpha",
-      projectRoot: "/workspace/alpha",
+  buildSidebarProjects: () => ({
+    workspaceChatProject: {
+      id: "ridge:workspace-chat",
+      label: "聊天",
+      projectRoot: "/workspace/chat",
+      pathLabel: "chat",
+      lastUpdatedAt: 1,
+      sessions: [],
       groups: [],
-      isGit: true,
+      isGit: false,
+      source: "workspace-chat",
     },
-  ],
+    projects: [
+      {
+        id: "project-1",
+        label: "alpha",
+        projectRoot: "/workspace/alpha",
+        pathLabel: "alpha",
+        lastUpdatedAt: 1,
+        sessions: [],
+        groups: [],
+        isGit: true,
+        source: "stored-project",
+      },
+    ],
+  }),
 }));
 
 vi.mock("@/components/chat/SessionSidebarSessionNode.vue", () => ({
@@ -124,6 +146,7 @@ describe("WorkbenchSidebar", () => {
     });
 
     expect(wrapper.text()).toContain("项目");
+    expect(wrapper.text()).toContain("聊天");
     expect(wrapper.text()).toContain("设置");
     expect(wrapper.text()).not.toContain("ridge");
     expect(wrapper.html()).not.toContain("搜索会话");

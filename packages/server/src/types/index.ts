@@ -18,6 +18,7 @@ import type {
   ProviderGroup as ProtocolProviderGroup,
   ProvidersResponse as ProtocolProvidersResponse,
   ResourceCatalogResponse as ProtocolResourceCatalogResponse,
+  ResourceSourceInfo as ProtocolResourceSourceInfo,
   SessionMessagesPayload as ProtocolSessionMessagesPayload,
   SessionRuntimePayload as ProtocolSessionRuntimePayload,
   SessionSnapshot as ProtocolSessionSnapshot,
@@ -265,6 +266,7 @@ export type ProviderInfo = ProtocolProviderGroup;
 export type ProvidersResponse = ProtocolProvidersResponse;
 export type AgentSummary = ProtocolAgentSummary;
 export type ResourceCatalogResponse = ProtocolResourceCatalogResponse;
+export type ResourceSourceInfo = ProtocolResourceSourceInfo;
 
 export interface FilesystemBrowseResult {
   homeDir: string;

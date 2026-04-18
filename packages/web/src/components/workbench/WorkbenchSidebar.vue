@@ -34,7 +34,7 @@ import {
   newChatNavItem,
   useWorkbenchPrimaryNavigation,
 } from "@/composables/useWorkbenchPrimaryNavigation";
-import { buildSessionProjects } from "@/lib/session-sidebar";
+import { buildSidebarProjects } from "@/lib/session-sidebar";
 
 const DEFAULT_VISIBLE_SESSION_COUNT = 3;
 
@@ -88,15 +88,25 @@ const isSending = computed(
       ?.status === "streaming",
 );
 
-const projects = computed(() =>
-  buildSessionProjects({
+const sidebarProjects = computed(() =>
+  buildSidebarProjects({
     sessions: core.sessions.value,
     sessionContexts: core.sessionContexts.value,
     storedProjects: storedProjects.value,
     availableWorktreesByProject: worktreeState.worktreesByProject.value,
     workspaceDir: core.info.value?.workspaceDir,
+    workspaceChat:
+      core.info.value?.chatProjectPath && core.info.value?.chatProjectId
+        ? {
+            id: core.info.value.chatProjectId,
+            path: core.info.value.chatProjectPath,
+            label: core.info.value.chatProjectLabel,
+          }
+        : undefined,
   }),
 );
+const workspaceChatProject = computed(() => sidebarProjects.value.workspaceChatProject);
+const projects = computed(() => sidebarProjects.value.projects);
 
 const isProjectCollapsed = (projectId: string) =>
   collapsedProjects.value[projectId] === true;
@@ -287,6 +297,83 @@ onMounted(() => {
         </SidebarMenu>
 
         <SidebarGroup class="mt-3 min-h-0 flex-1">
+          <SidebarGroupLabel
+            v-if="workspaceChatProject"
+            class="mb-1 flex items-center justify-between px-2 text-[11px] font-black uppercase tracking-[0.22em]"
+            :class="navigation.isChatRoute.value ? 'text-sidebar-foreground' : 'text-sidebar-foreground/45'"
+          >
+            <span>{{ workspaceChatProject.label }}</span>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  class="size-6 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  aria-label="新建聊天"
+                  :disabled="isSending"
+                  @click="navigation.createChat({ cwd: workspaceChatProject.projectRoot })"
+                >
+                  <Plus class="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="center">
+                <p>新建聊天</p>
+              </TooltipContent>
+            </Tooltip>
+          </SidebarGroupLabel>
+          <SidebarGroupContent
+            v-if="workspaceChatProject"
+            class="mb-3 overflow-y-auto px-1"
+          >
+            <div
+              v-if="workspaceChatProject.groups.length === 0"
+              class="mx-2 px-3 py-3"
+            >
+              <p class="text-[12px] text-sidebar-foreground/30">暂无聊天</p>
+            </div>
+
+            <template
+              v-for="group in workspaceChatProject.groups"
+              :key="group.key"
+            >
+              <div
+                v-for="node in getVisibleNodes(group.tree, group.key)"
+                :key="node.session.id"
+              >
+                <SessionSidebarSessionNode
+                  :node="node"
+                  :depth="1"
+                  :active-session-id="activeSessionId"
+                  :editing-session-id="editingSessionId"
+                  :editing-title="editingTitle"
+                  :expanded-parent-ids="expandedParentIds"
+                  @select="navigation.openChatSession($event)"
+                  @prefetch="core.prefetchSession($event)"
+                  @toggle-expand="toggleParentExpand($event)"
+                  @start-rename="startRename"
+                  @update-editing-title="updateEditingTitle"
+                  @save-rename="saveRename"
+                  @cancel-rename="cancelRename"
+                  @remove="removeSession"
+                />
+              </div>
+
+              <div
+                v-if="getHiddenCount(group.tree.length, group.key) > 0"
+                class="px-2 pb-1"
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-7 px-2 text-[12px] text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                  @click="toggleGroupExpansion(group.key)"
+                >
+                  展开更多（还有 {{ getHiddenCount(group.tree.length, group.key) }} 条）
+                </Button>
+              </div>
+            </template>
+          </SidebarGroupContent>
+
           <SidebarGroupLabel
             class="flex items-center justify-between px-2 text-[11px] font-black uppercase tracking-[0.22em]"
             :class="navigation.isChatRoute.value ? 'text-sidebar-foreground' : 'text-sidebar-foreground/45'"

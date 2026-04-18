@@ -229,6 +229,9 @@ export interface AgentSummary {
 export interface SystemInfo {
   appName: string;
   workspaceDir: string;
+  chatProjectId: string;
+  chatProjectPath: string;
+  chatProjectLabel: string;
   apiBase: string;
   sdkVersion: string;
 }

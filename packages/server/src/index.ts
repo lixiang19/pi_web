@@ -62,6 +62,13 @@ import { initializeRidgeDb } from './db/index.js';
 import { toPosixPath } from './utils/paths.js';
 import { normalizeString } from './utils/strings.js';
 import {
+  createWorkspaceChatProject,
+  ensureWorkspaceChatProject,
+  getWorkspaceChatConfig,
+  getWorkspaceChatTemplateDir,
+  resolveDefaultWorkspaceDir,
+} from './workspace-chat.js';
+import {
   getIndexedSessionLookup,
   getIndexedSessionContext,
   getIndexedSessionTree,
@@ -83,6 +90,7 @@ import type {
   ProviderInfo,
   ProvidersResponse,
   ResourceCatalogResponse,
+  ResourceSourceInfo,
   ThinkingLevel,
   HttpError,
   Project,
@@ -102,10 +110,14 @@ import type {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
-const defaultWorkspaceDir = process.env.PI_WORKSPACE_DIR
-  ? path.resolve(process.env.PI_WORKSPACE_DIR)
-  : rootDir;
+const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
+  explicitWorkspaceDir: process.env.PI_WORKSPACE_DIR,
+  platform: process.platform,
+  homeDir: os.homedir(),
+});
 const port = Number.parseInt(process.env.PORT || '3000', 10);
+const workspaceChatConfig = getWorkspaceChatConfig(defaultWorkspaceDir);
+const workspaceChatTemplateDir = getWorkspaceChatTemplateDir(rootDir);
 
 const app = express();
 app.use(cors());
@@ -123,6 +135,7 @@ const refreshSessionCatalogIndex = async () =>
   refreshSessionCatalog({
     projectContextResolver,
     activeSessions,
+    workspaceChatConfig,
   });
 
 // ===== Zod Schemas =====
@@ -275,6 +288,11 @@ const ensureWithinRoot = (candidatePath: string, rootPath: string): string => {
   }
 
   return candidatePath;
+};
+
+const isPathInsideRoot = (candidatePath: string, rootPath: string): boolean => {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 };
 
 const closeClients = (record: SessionRecord): void => {
@@ -513,15 +531,6 @@ const serializeProject = (project: Project): Project => ({
   path: toPosixPath(path.resolve(project.path)),
 });
 
-const isPathInAllowedRoots = (candidatePath: string, allowedRoots: string[]): boolean =>
-  allowedRoots.some((rootPath) => {
-    const relative = path.relative(rootPath, candidatePath);
-    return (
-      relative === '' ||
-      (!relative.startsWith('..') && !path.isAbsolute(relative))
-    );
-  });
-
 type RawMessageContent = string | Array<Record<string, unknown>>;
 
 const passthroughContent = (content: unknown): RawMessageContent => {
@@ -538,16 +547,6 @@ const passthroughContent = (content: unknown): RawMessageContent => {
   );
 };
 
-interface SerializedMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool' | 'toolResult';
-  content: RawMessageContent;
-  timestamp?: number;
-  toolCallId?: string;
-  toolName?: string;
-  details?: unknown;
-  isError?: boolean;
-}
-
 const serializeMessage = (message: {
   role?: string;
   content?: unknown;
@@ -556,8 +555,9 @@ const serializeMessage = (message: {
   toolName?: unknown;
   details?: unknown;
   isError?: unknown;
-} | undefined): SerializedMessage => ({
-  role: (normalizeString(message?.role) || 'system') as SerializedMessage['role'],
+} | undefined): SessionMessagesPayload['messages'][number] => ({
+  role:
+    (normalizeString(message?.role) || 'system') as SessionMessagesPayload['messages'][number]['role'],
   content: passthroughContent(message?.content),
   timestamp:
     typeof message?.timestamp === 'number' ? message.timestamp : undefined,
@@ -565,7 +565,7 @@ const serializeMessage = (message: {
   toolName: normalizeString(message?.toolName) || undefined,
   details: message?.details,
   isError: message?.isError === true ? true : undefined,
-});
+}) as SessionMessagesPayload['messages'][number];
 
 const getAvailableModels = (): ModelInfo[] => {
   modelRegistry.refresh();
@@ -596,8 +596,8 @@ const formatModelSpec = (model: ModelInfo | null | undefined): string | undefine
 interface SourceInfoOut {
   path: string;
   source: string;
-  scope: string;
-  origin?: string;
+  scope: ResourceSourceInfo['scope'];
+  origin: ResourceSourceInfo['origin'];
   baseDir?: string;
 }
 
@@ -606,14 +606,20 @@ const toSourceInfo = (sourceInfo: unknown): SourceInfoOut | undefined => {
     return undefined;
   }
   const typed = sourceInfo as Record<string, unknown>;
+  const scope = normalizeString(typed.scope);
+  if (scope !== 'user' && scope !== 'project' && scope !== 'temporary') {
+    return undefined;
+  }
+  const origin = normalizeString(typed.origin);
+  if (origin !== 'package' && origin !== 'top-level') {
+    return undefined;
+  }
   const result: SourceInfoOut = {
     path: toPosixPath(path.resolve(String(typed.path))),
     source: String(typed.source),
-    scope: String(typed.scope),
+    scope,
+    origin,
   };
-  if (typed.origin) {
-    result.origin = String(typed.origin);
-  }
   if (typed.baseDir) {
     result.baseDir = toPosixPath(path.resolve(String(typed.baseDir)));
   }
@@ -671,7 +677,7 @@ const createAgentSummary = (agent: AgentConfigInternal): AgentSummary => ({
   inheritContext: agent.inheritContext,
   runInBackground: agent.runInBackground,
   enabled: agent.enabled !== false,
-  permission: agent.permission,
+  permission: agent.permission as Record<string, unknown> | undefined,
   sourceScope: agent.sourceScope,
   source: serializeAgentSource(agent),
 });
@@ -1104,8 +1110,12 @@ interface ManagedProjectScope {
 
 const buildManagedProjectScopes = async (): Promise<ManagedProjectScope[]> => {
   const state = await getProjects();
+  const managedProjects = [
+    createWorkspaceChatProject(workspaceChatConfig),
+    ...state.projects,
+  ];
   return Promise.all(
-    state.projects.map(async (project) => {
+    managedProjects.map(async (project) => {
       const normalizedPath = normalizeFsPath(project.path);
       const projectContext = await projectContextResolver.resolveContext(normalizedPath);
       const allowedRoots = new Set<string>([
@@ -1132,8 +1142,25 @@ const buildManagedProjectScopes = async (): Promise<ManagedProjectScope[]> => {
 const resolveManagedProjectScope = (
   candidatePath: string,
   scopes: ManagedProjectScope[],
-): ManagedProjectScope | null =>
-  scopes.find((scope) => isPathInAllowedRoots(candidatePath, scope.allowedRoots)) ?? null;
+): ManagedProjectScope | null => {
+  let matchedScope: ManagedProjectScope | null = null;
+  let matchedRootLength = -1;
+
+  for (const scope of scopes) {
+    for (const root of scope.allowedRoots) {
+      if (!isPathInsideRoot(candidatePath, root)) {
+        continue;
+      }
+
+      if (root.length > matchedRootLength) {
+        matchedScope = scope;
+        matchedRootLength = root.length;
+      }
+    }
+  }
+
+  return matchedScope;
+};
 
 const ensureManagedProjectScope = async (
   candidatePath: string,
@@ -1145,7 +1172,7 @@ const ensureManagedProjectScope = async (
     return scope;
   }
 
-  const error = new Error('Requested path is outside added projects') as HttpError;
+  const error = new Error('Requested path is outside managed project scopes') as HttpError;
   error.statusCode = 400;
   throw error;
 };
@@ -1514,7 +1541,7 @@ const buildResourceCatalog = (
       name: skill.name,
       description: skill.description,
       invocation: `/skill:${skill.name}`,
-      disableModelInvocation: skill.disableModelInvocation,
+      disableModelInvocation: skill.disableModelInvocation === true,
       sourceInfo: toSourceInfo(skill.sourceInfo),
     })),
     commands: commands.map((command) => ({
@@ -1623,6 +1650,9 @@ app.get('/api/system/info', (_req: Request, res: Response) => {
   res.json({
     appName: 'Pi Web',
     workspaceDir: defaultWorkspaceDir,
+    chatProjectId: workspaceChatConfig.chatProjectId,
+    chatProjectPath: workspaceChatConfig.chatProjectPath,
+    chatProjectLabel: workspaceChatConfig.chatProjectLabel,
     apiBase: `http://127.0.0.1:${port}`,
     sdkVersion: '0.65.2',
   });
@@ -1750,7 +1780,9 @@ app.get('/api/files/tree', async (req: Request, res: Response, next: NextFunctio
     }
 
     const targetPath = normalizeOptionalFsPath(query.path) || rootPath;
-    await ensureManagedProjectScope(rootPath);
+    if (!isPathInsideRoot(rootPath, defaultWorkspaceDir)) {
+      await ensureManagedProjectScope(rootPath);
+    }
 
     ensureWithinRoot(targetPath, rootPath);
 
@@ -2001,6 +2033,7 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
     await persistSessionRecordMetadata(record);
     await upsertIndexedSessionRecord(record, {
       projectContextResolver,
+      workspaceChatConfig,
     });
     res.status(201).json(await toSessionSnapshot(record, {}));
   } catch (error) {
@@ -2036,6 +2069,7 @@ app.patch('/api/sessions/:sessionId', async (req: Request, res: Response, next: 
     await persistSessionRecordMetadata(record);
     await upsertIndexedSessionRecord(record, {
       projectContextResolver,
+      workspaceChatConfig,
     });
 
     res.json(await toSessionSnapshot(record, {}));
@@ -2504,7 +2538,11 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // ===== Start Server =====
-void initializeRidgeDb(defaultWorkspaceDir)
+void ensureWorkspaceChatProject({
+  workspaceDir: defaultWorkspaceDir,
+  templateDir: workspaceChatTemplateDir,
+})
+  .then(() => initializeRidgeDb(defaultWorkspaceDir))
   .then(async () => {
     await refreshSessionCatalogIndex();
     app.listen(port, () => {

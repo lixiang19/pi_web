@@ -85,6 +85,7 @@ export function useWorkbenchPrimaryNavigation() {
     return {
       cwd:
         payload.cwd ||
+        core.info.value?.chatProjectPath ||
         activeSnapshot?.cwd ||
         activeSummary?.cwd ||
         core.info.value?.workspaceDir ||

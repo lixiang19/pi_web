@@ -44,7 +44,7 @@ describe("useFilesRouteState", () => {
     getCachedSessionSnapshot.mockReset();
   });
 
-  it("prefers the active session worktree root when it differs from the project root", () => {
+  it("always uses workspaceDir as the files page root even when the active session is in another project", () => {
     activeSessionId.value = "session-1";
     getCachedSessionSnapshot.mockReturnValue({
       cwd: "/workspace/project/worktrees/feature",
@@ -54,7 +54,7 @@ describe("useFilesRouteState", () => {
 
     const wrapper = mount(Harness);
 
-    expect(wrapper.vm.rootDir).toBe("/workspace/project/worktrees/feature");
+    expect(wrapper.vm.rootDir).toBe("/workspace");
   });
 
   it("falls back to workspaceDir when there is no active session", () => {

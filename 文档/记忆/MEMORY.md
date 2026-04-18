@@ -11,6 +11,9 @@
 - [目录边界] 工作区文件树与 Home 目录项目选择必须拆成两个接口，不能共用一套 root 校验（安全语义不同）
 - [Pi资源隔离] 临时禁全局 prompts/skills/extensions/themes/AGENTS 时，不能只换 `SettingsManager(agentDir)`；`DefaultResourceLoader` 也必须显式传同一个隔离 `agentDir`，否则会回落 `getAgentDir()` 继续扫 `~/.pi/agent`。auth/models/sessions 可继续走全局。
 - [项目真源] 已添加项目必须是真源；会话列表、文件树、worktree 归属都从项目列表收敛，禁止再从 session 或 server 启动目录反推项目边界
+- [系统聊天项目] 工作区 `chat` 是独立系统项目：它要进入会话归属与新聊天默认落点，但不能混入 `/api/projects` 的用户项目列表
+- [工作区默认目录] 运行时工作区绝不能默认回落到仓库根；macOS 默认用 `~/ridge-workspace`，非 macOS 必须显式设置 `PI_WORKSPACE_DIR`
+- [chat 初始化契约] `<workspace>/chat` 只允许是目录；已存在但不是目录时必须直接失败，不能吞掉错误继续复制
 
 ## 规范与教训
 - [主题规范] 禁止硬编码颜色值，必须用 shadcn 主题变量（暗色模式会失效）

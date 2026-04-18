@@ -21,15 +21,6 @@ export function useFilesRouteState() {
   });
 
   const rootDir = computed(() => {
-    const session = activeSession.value;
-    if (session?.worktreeRoot && session.worktreeRoot !== session.projectRoot) {
-      return session.worktreeRoot;
-    }
-
-    if (session?.cwd) {
-      return session.cwd;
-    }
-
     return core.info.value?.workspaceDir || "";
   });
 

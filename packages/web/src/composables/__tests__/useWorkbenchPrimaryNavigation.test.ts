@@ -5,7 +5,7 @@ import type { SessionSummary } from "@/lib/types";
 import { useWorkbenchPrimaryNavigation } from "@/composables/useWorkbenchPrimaryNavigation";
 
 const sessions = ref<SessionSummary[]>([]);
-const info = ref<{ workspaceDir?: string } | null>(null);
+const info = ref<{ workspaceDir?: string; chatProjectPath?: string } | null>(null);
 const activeSessionId = ref<string | null>(null);
 const routerPush = vi.fn(async () => undefined);
 const getCachedSessionSnapshot = vi.fn();
@@ -54,7 +54,10 @@ const Harness = defineComponent({
 describe("useWorkbenchPrimaryNavigation", () => {
   beforeEach(() => {
     sessions.value = [];
-    info.value = { workspaceDir: "/workspace" };
+    info.value = {
+      workspaceDir: "/workspace",
+      chatProjectPath: "/workspace/chat",
+    };
     activeSessionId.value = null;
     routeName.value = "files";
     routerPush.mockReset();
@@ -63,7 +66,7 @@ describe("useWorkbenchPrimaryNavigation", () => {
     activateSession.mockReset();
   });
 
-  it("navigates to chat before creating a draft and inherits cwd from the active session snapshot", async () => {
+  it("navigates to chat before creating a draft and defaults cwd to the workspace chat project", async () => {
     activeSessionId.value = "session-1";
     getCachedSessionSnapshot.mockReturnValue({
       cwd: "/project/current",
@@ -74,7 +77,7 @@ describe("useWorkbenchPrimaryNavigation", () => {
 
     expect(routerPush).toHaveBeenCalledWith({ name: "chat" });
     expect(activateDraft).toHaveBeenCalledWith({
-      cwd: "/project/current",
+      cwd: "/workspace/chat",
       parentSessionId: "",
     });
   });

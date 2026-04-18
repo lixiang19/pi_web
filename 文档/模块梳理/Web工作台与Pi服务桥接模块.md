@@ -3,6 +3,7 @@
 ## 2026-04-18 当前基线
 
 - Web 工作台的会话编排主链路已经收敛为 `usePiChatCore.ts + usePerSessionChat.ts + useSessionLruPool.ts`。
+- 服务端启动时会自动引导工作区 `chat` 目录，并在首次启动时从仓库模板复制初始化内容；默认工作区不再允许回落到仓库根目录。
 - `usePiChat.ts` 与 `useWorkbenchPage.ts` 已删除，不再允许新增引用。
 - 路由主壳统一收敛到 `PlatformShell.vue`，左侧固定为统一一级导航 + 会话菜单，右侧主内容由 `RouterView` 切换。
 - `/chat` 是会话主路由，`WorkbenchPage.vue` 只负责会话工作台内容本身，不再直接组合左侧栏。
@@ -29,7 +30,9 @@
 - 负责约束主题资产边界：`style.css` 只承载 Tailwind 构建期入口与全局 base，`assets/*.css` 主题文件只承载运行时 token，禁止把 `@import "tailwindcss"`、`@custom-variant`、`@layer base` 注入运行时主题样式。
 - 负责约束服务层原生依赖安装契约：根 `package.json` 必须通过 `pnpm.onlyBuiltDependencies` 显式允许 `better-sqlite3` 构建，避免出现 server 依赖已安装但 SQLite 原生绑定缺失的半安装状态。
 - 负责把用户级设置、收藏和自定义项目统一持久化到 ~/.ridge/ 下的服务端 JSON 文件，而不是在 Web 层散落 localStorage。
-- 负责限制文件树访问边界，只允许浏览当前工作区及同仓库 worktree 范围内的目录。
+- 负责提供系统级隐藏聊天项目：固定绑定工作区 `chat` 目录，用于承接顶部“新聊天”和独立聊天分组。
+- 负责约束默认工作区目录策略：macOS 默认使用 `~/ridge-workspace`，非 macOS 必须显式提供 `PI_WORKSPACE_DIR`。
+- 负责让 `文件` 一级页面稳定显示整个工作区根目录，而不是跟随当前会话 cwd 切换显示范围。
 - 负责把“工作区文件树浏览”和“用户 Home 目录项目选择”拆成两条独立后端边界，避免混淆安全语义。
 - 不负责桌面壳原生交互、PR 状态、分享链接、复杂工具执行面板，这些仍在后续迭代范围内。
 - 服务对象包括 Web 最终用户、Tauri 桌面壳中的前端运行时，以及本仓库的开发构建流程。
@@ -105,6 +108,7 @@
 - Vue 层只消费投影后的摘要和树结构，不直接拼接底层 session 文件信息。
 - 前端编排层负责把服务端的 session 摘要转成项目、group、父子会话树，并把会话派生状态、资源面板控制、主题偏好持久化拆成独立 composable。
 - 服务层同时承担三件事：列出和打开 SDK 持久化 session、维护归档元数据、约束文件树访问范围。
+- `/api/system/info` 现在同时暴露 `chatProjectId/chatProjectPath/chatProjectLabel`，前端不再自行猜测系统聊天项目位置。
 - 正常发送链路的 SSE 主流程必须绑定 `AgentSession.subscribe()`，由 Pi runtime 真实推送 `message_start/message_update/message_end/turn_end`；仅靠 `POST /api/sessions/:id/messages` 改 `status` 不能让前端消息流更新。
 - 服务端桥接 `message_start/message_end` 时必须过滤 `role === 'user'` 的事件，因为前端发送期已经做了乐观用户消息写入；不做过滤会导致每次发送重复一条用户消息。
 - `turn_end` 不是可省略事件：桥接层需要在这里把 active record 收口为最新快照，并把会话状态回写为 `idle`（如有 ask/permission 挂起则由服务端再次解析为 `streaming`）。

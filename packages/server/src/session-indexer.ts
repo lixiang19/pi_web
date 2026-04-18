@@ -4,6 +4,10 @@ import path from 'node:path';
 import { SessionManager } from '@mariozechner/pi-coding-agent';
 import { getRidgeDb } from './db/index.js';
 import { getProjects } from './storage/index.js';
+import {
+  createWorkspaceChatProject,
+  type WorkspaceChatConfig,
+} from './workspace-chat.js';
 import type { Project, ProjectContext, SessionRecord } from './types/index.js';
 import { toPosixPath } from './utils/paths.js';
 import { normalizeString } from './utils/strings.js';
@@ -16,10 +20,12 @@ interface ProjectContextResolverLike {
 interface RefreshSessionCatalogOptions {
   projectContextResolver: ProjectContextResolverLike;
   activeSessions: Map<string, SessionRecord>;
+  workspaceChatConfig: WorkspaceChatConfig;
 }
 
 interface UpsertIndexedSessionRecordOptions {
   projectContextResolver: ProjectContextResolverLike;
+  workspaceChatConfig: WorkspaceChatConfig;
 }
 
 interface ManagedProjectScope {
@@ -43,6 +49,7 @@ interface IndexedSessionRow {
 
 interface IndexedSessionContextEntry {
   projectId: string;
+  projectLabel: string;
   context: ProjectContext;
 }
 
@@ -184,8 +191,13 @@ const readSessionCatalogStats = async (
 
 const loadManagedProjectScopes = async (
   resolver: ProjectContextResolverLike,
+  workspaceChatConfig: WorkspaceChatConfig,
 ): Promise<ManagedProjectScope[]> => {
-  const projects = (await getProjects()).projects;
+  const state = await getProjects();
+  const projects = [
+    createWorkspaceChatProject(workspaceChatConfig),
+    ...state.projects,
+  ];
   return Promise.all(
     projects.map(async (project) => {
       const context = await resolver.resolveContext(project.path);
@@ -204,9 +216,13 @@ const loadManagedProjectScopes = async (
 
 const getManagedProjectScopes = async (
   resolver: ProjectContextResolverLike,
+  workspaceChatConfig: WorkspaceChatConfig,
 ): Promise<ManagedProjectScope[]> => {
   if (!managedProjectScopesPromise) {
-    managedProjectScopesPromise = loadManagedProjectScopes(resolver);
+    managedProjectScopesPromise = loadManagedProjectScopes(
+      resolver,
+      workspaceChatConfig,
+    );
   }
 
   return managedProjectScopesPromise;
@@ -239,9 +255,10 @@ const resolveManagedProject = (
 const resolveIndexedSessionContextEntry = async (
   cwd: string,
   resolver: ProjectContextResolverLike,
+  workspaceChatConfig: WorkspaceChatConfig,
 ): Promise<IndexedSessionContextEntry | null> => {
   const normalizedCwd = path.resolve(cwd);
-  const scopes = await getManagedProjectScopes(resolver);
+  const scopes = await getManagedProjectScopes(resolver, workspaceChatConfig);
   const projectScope = resolveManagedProject(normalizedCwd, scopes, resolver);
   if (!projectScope) {
     return null;
@@ -249,6 +266,7 @@ const resolveIndexedSessionContextEntry = async (
 
   return {
     projectId: projectScope.project.id,
+    projectLabel: projectScope.project.name,
     context: await resolver.resolveContext(normalizedCwd),
   };
 };
@@ -352,12 +370,12 @@ const upsertCatalogRows = async (
         row.lastThinkingLevel || null,
       );
     }
-    for (const { projectId, context } of contexts) {
+    for (const { projectId, projectLabel, context } of contexts) {
       upsertContext.run(
         buildContextId(context.projectRoot, context.worktreeRoot),
         projectId,
         toPosixPath(path.resolve(context.projectRoot)),
-        context.projectLabel,
+        projectLabel,
         toPosixPath(path.resolve(context.worktreeRoot)),
         context.worktreeLabel,
         context.branch || null,
@@ -392,7 +410,10 @@ const refreshCatalogEntries = async (
 export const refreshSessionCatalog = async (
   options: RefreshSessionCatalogOptions,
 ) => {
-  const scopes = await getManagedProjectScopes(options.projectContextResolver);
+  const scopes = await getManagedProjectScopes(
+    options.projectContextResolver,
+    options.workspaceChatConfig,
+  );
   const allSessions = await SessionManager.listAll();
   const rows: IndexedSessionRow[] = [];
   const contexts = new Map<string, IndexedSessionContextEntry>();
@@ -462,6 +483,7 @@ export const refreshSessionCatalog = async (
 
     contexts.set(contextId, {
       projectId: projectScope.project.id,
+      projectLabel: projectScope.project.name,
       context: projectContext,
     });
     knownIds.add(entry.id);
@@ -512,6 +534,7 @@ export const upsertIndexedSessionRecord = async (
   const contextEntry = await resolveIndexedSessionContextEntry(
     record.cwd,
     options.projectContextResolver,
+    options.workspaceChatConfig,
   );
   if (!contextEntry) {
     return;
