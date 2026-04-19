@@ -27,7 +27,6 @@ const replaceTerminal = (
 export function useTerminalPool() {
   const terminals = ref<TerminalSnapshot[]>([]);
   const activeTerminalId = ref("");
-  const splitTerminalId = ref("");
   const isLoading = ref(false);
   const isMutating = ref(false);
   const error = ref("");
@@ -36,30 +35,9 @@ export function useTerminalPool() {
     () => terminals.value.find((item) => item.id === activeTerminalId.value) ?? null,
   );
 
-  const splitTerminal = computed(
-    () => terminals.value.find((item) => item.id === splitTerminalId.value) ?? null,
-  );
-
-  const visibleTerminals = computed(() => {
-    const visible = [activeTerminal.value, splitTerminal.value].filter(
-      (item): item is TerminalSnapshot => Boolean(item),
-    );
-    return visible.filter(
-      (item, index, items) => items.findIndex((entry) => entry.id === item.id) === index,
-    );
-  });
-
   const syncSelection = () => {
     if (!terminals.value.some((item) => item.id === activeTerminalId.value)) {
       activeTerminalId.value = terminals.value[0]?.id || "";
-    }
-
-    if (
-      !splitTerminalId.value ||
-      splitTerminalId.value === activeTerminalId.value ||
-      !terminals.value.some((item) => item.id === splitTerminalId.value)
-    ) {
-      splitTerminalId.value = "";
     }
   };
 
@@ -93,23 +71,14 @@ export function useTerminalPool() {
     }
   };
 
-  const createNewTerminal = async (
-    payload?: TerminalCreateRequest,
-    options?: { focus?: "active" | "split" },
-  ) => {
+  const createNewTerminal = async (payload?: TerminalCreateRequest) => {
     isMutating.value = true;
     error.value = "";
 
     try {
       const terminal = await createTerminal(payload);
       terminals.value = replaceTerminal(terminals.value, terminal);
-
-      if (options?.focus === "split" && activeTerminalId.value) {
-        splitTerminalId.value = terminal.id;
-      } else {
-        activeTerminalId.value = terminal.id;
-      }
-
+      activeTerminalId.value = terminal.id;
       syncSelection();
       return terminal;
     } catch (caughtError) {
@@ -127,47 +96,6 @@ export function useTerminalPool() {
     }
 
     activeTerminalId.value = terminalId;
-    if (splitTerminalId.value === terminalId) {
-      splitTerminalId.value = "";
-    }
-  };
-
-  const setSplitTerminal = (terminalId: string) => {
-    if (
-      !terminalId ||
-      terminalId === activeTerminalId.value ||
-      !terminals.value.some((item) => item.id === terminalId)
-    ) {
-      splitTerminalId.value = "";
-      return;
-    }
-
-    splitTerminalId.value = terminalId;
-  };
-
-  const openSplit = async () => {
-    if (!activeTerminal.value) {
-      return null;
-    }
-
-    if (splitTerminalId.value) {
-      return splitTerminal.value;
-    }
-
-    const sibling = terminals.value.find((item) => item.id !== activeTerminalId.value);
-    if (sibling) {
-      splitTerminalId.value = sibling.id;
-      return sibling;
-    }
-
-    return createNewTerminal(
-      { cwd: activeTerminal.value.cwd },
-      { focus: "split" },
-    );
-  };
-
-  const closeSplit = () => {
-    splitTerminalId.value = "";
   };
 
   const renameTerminalTitle = async (terminalId: string, title: string) => {
@@ -218,11 +146,7 @@ export function useTerminalPool() {
       terminals.value = terminals.value.filter((item) => item.id !== terminalId);
 
       if (activeTerminalId.value === terminalId) {
-        activeTerminalId.value = splitTerminalId.value || terminals.value[0]?.id || "";
-      }
-
-      if (splitTerminalId.value === terminalId) {
-        splitTerminalId.value = "";
+        activeTerminalId.value = terminals.value[0]?.id || "";
       }
 
       syncSelection();
@@ -240,20 +164,14 @@ export function useTerminalPool() {
     activeTerminal,
     activeTerminalId,
     activateTerminal,
-    closeSplit,
     closeTerminal,
     createNewTerminal,
     error,
     isLoading,
     isMutating,
     load,
-    openSplit,
     renameTerminalTitle,
     restartTerminalSession,
-    setSplitTerminal,
-    splitTerminal,
-    splitTerminalId,
     terminals,
-    visibleTerminals,
   };
 }

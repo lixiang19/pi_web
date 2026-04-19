@@ -271,8 +271,8 @@ onMounted(() => {
         <SidebarMenu class="space-y-0.5">
           <SidebarMenuItem>
             <SidebarMenuButton
-              class="h-8 gap-2.5 rounded-md bg-primary/10 px-2.5 font-semibold text-sidebar-foreground hover:bg-primary/15"
-              :class="{ 'ring-1 ring-primary/35': navigation.isChatRoute.value && lru.isViewingDraft.value }"
+              class="h-8 gap-2.5 rounded-md px-2.5 font-semibold"
+              :is-active="navigation.isChatRoute.value && lru.isViewingDraft.value"
               :disabled="isSending"
               @click="navigation.createChat({})"
             >

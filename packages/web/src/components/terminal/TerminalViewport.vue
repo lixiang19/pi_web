@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { WebSocketTransport, WTerm } from "@wterm/dom";
 import "@wterm/dom/css";
 
 import { getTerminalStreamUrl } from "@/lib/api";
 import type { TerminalSnapshot } from "@/lib/types";
-import { Badge } from "@/components/ui/badge";
 
 const props = defineProps<{
   terminal: TerminalSnapshot;
@@ -13,50 +12,11 @@ const props = defineProps<{
 }>();
 
 const hostRef = ref<HTMLElement | null>(null);
-const connectionState = ref<"connecting" | "connected" | "error">("connecting");
-const errorMessage = ref("");
-
 let terminalInstance: WTerm | null = null;
 let transport: WebSocketTransport | null = null;
 let isDisposed = false;
 
-const statusLabel = computed(() => {
-  if (connectionState.value === "error") {
-    return "连接异常";
-  }
-
-  if (connectionState.value === "connecting") {
-    return "连接中";
-  }
-
-  if (props.terminal.status === "exited") {
-    return "已退出";
-  }
-
-  if (props.terminal.status === "error") {
-    return "错误";
-  }
-
-  if (props.terminal.status === "disconnected") {
-    return "待重连";
-  }
-
-  return "运行中";
-});
-
-const statusVariant = computed(() => {
-  if (connectionState.value === "error" || props.terminal.status === "error") {
-    return "destructive" as const;
-  }
-
-  if (props.terminal.status === "exited") {
-    return "secondary" as const;
-  }
-
-  return "outline" as const;
-});
-
-const terminalStyle = computed(() => ({
+const terminalStyle = {
   "--term-bg": "hsl(var(--card))",
   "--term-fg": "hsl(var(--foreground))",
   "--term-color-0": "hsl(var(--muted-foreground) / 0.75)",
@@ -76,7 +36,7 @@ const terminalStyle = computed(() => ({
   "--term-color-14": "hsl(var(--accent-foreground) / 0.85)",
   "--term-color-15": "hsl(var(--foreground))",
   fontFamily: '"IBM Plex Mono", monospace',
-}));
+} as const;
 
 const focusTerminal = () => {
   terminalInstance?.focus();
@@ -94,13 +54,9 @@ const disposeTerminal = () => {
 
 const mountTerminal = async () => {
   const host = hostRef.value;
-  if (!host) {
-    return;
-  }
+  if (!host) return;
 
   isDisposed = false;
-  errorMessage.value = "";
-  connectionState.value = "connecting";
   disposeTransport();
   disposeTerminal();
   host.innerHTML = "";
@@ -128,19 +84,17 @@ const mountTerminal = async () => {
         terminalInstance?.write(data);
       },
       onOpen() {
-        connectionState.value = "connected";
         if (props.autofocus) {
           terminalInstance?.focus();
         }
       },
       onClose() {
         if (!isDisposed) {
-          connectionState.value = "connecting";
+          // transport handles reconnect internally
         }
       },
       onError() {
-        connectionState.value = "error";
-        errorMessage.value = "终端流连接失败";
+        // transport will retry
       },
     });
 
@@ -150,9 +104,8 @@ const mountTerminal = async () => {
       terminalInstance.focus();
     }
   } catch (caughtError) {
-    connectionState.value = "error";
-    errorMessage.value =
-      caughtError instanceof Error ? caughtError.message : String(caughtError);
+    // WASM 或网络初始化失败时静默记录，避免崩溃
+    console.error("[TerminalViewport] 终端初始化失败:", caughtError);
   }
 };
 
@@ -185,35 +138,11 @@ onBeforeUnmount(() => {
 
 <template>
   <section
-    class="relative flex h-full min-h-[360px] flex-col overflow-hidden rounded-[28px] border border-border/70 bg-card/70 shadow-sm"
+    class="relative h-full overflow-hidden"
     :style="terminalStyle"
     @click="focusTerminal"
   >
-    <div class="flex items-center justify-between border-b border-border/60 px-4 py-3">
-      <div class="min-w-0">
-        <p class="truncate text-sm font-semibold text-foreground">
-          {{ terminal.title }}
-        </p>
-        <p class="truncate text-xs text-muted-foreground">
-          {{ terminal.cwd }}
-        </p>
-      </div>
-
-      <Badge :variant="statusVariant" class="shrink-0 text-[11px]">
-        {{ statusLabel }}
-      </Badge>
-    </div>
-
-    <div class="relative min-h-0 flex-1 overflow-hidden px-3 py-3">
-      <div ref="hostRef" class="ridge-terminal-host h-full overflow-hidden rounded-2xl" />
-
-      <div
-        v-if="errorMessage"
-        class="absolute inset-x-6 top-6 rounded-2xl border border-destructive/40 bg-background/95 px-4 py-3 text-sm text-destructive shadow-sm"
-      >
-        {{ errorMessage }}
-      </div>
-    </div>
+    <div ref="hostRef" class="ridge-terminal-host absolute inset-0" />
   </section>
 </template>
 
@@ -228,7 +157,6 @@ onBeforeUnmount(() => {
 
 .ridge-terminal-host :deep(.wterm-root) {
   height: 100%;
-  border-radius: 1rem;
 }
 
 .ridge-terminal-host :deep(textarea) {

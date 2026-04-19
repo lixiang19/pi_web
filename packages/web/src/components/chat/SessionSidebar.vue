@@ -8,7 +8,6 @@ import {
   Folder,
   GitBranch,
   Plus,
-  Search,
   Settings,
   Trash2,
 } from "lucide-vue-next";
@@ -17,7 +16,6 @@ import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
 import NewWorktreeDialog from "@/components/chat/NewWorktreeDialog.vue";
 import DeleteWorktreeDialog from "@/components/chat/DeleteWorktreeDialog.vue";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Sidebar,
@@ -60,7 +58,6 @@ const emit = defineEmits<{
   "worktree-created": [worktreePath: string];
 }>();
 
-const searchQuery = ref("");
 const editingSessionId = ref("");
 const editingTitle = ref("");
 const expandedGroupKeys = ref<string[]>([]);
@@ -88,8 +85,6 @@ const worktreeDialogProjectRoot = ref("");
 const isDeleteWorktreeDialogOpen = ref(false);
 const deleteWorktreeProjectId = ref("");
 const deleteWorktreeRoot = ref("");
-const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase());
-const isSearching = computed(() => normalizedQuery.value.length > 0);
 
 const normalizePath = (value: string) =>
   value.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -100,7 +95,6 @@ const projects = computed(() => {
     sessionContexts: props.sessionContexts,
     storedProjects: storedProjects.value,
     availableWorktreesByProject: worktreeState.worktreesByProject.value,
-    query: normalizedQuery.value,
     ...(props.workspaceDir ? { workspaceDir: props.workspaceDir } : {}),
   });
 });
@@ -113,7 +107,7 @@ const isGroupExpanded = (groupKey: string) =>
   expandedGroupKeys.value.includes(groupKey);
 
 const getVisibleCount = (total: number, groupKey: string) => {
-  if (isSearching.value || isGroupExpanded(groupKey)) {
+  if (isGroupExpanded(groupKey)) {
     return total;
   }
 
@@ -299,24 +293,12 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="group relative">
-          <Search
-            class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-sidebar-foreground/40"
-          />
-          <Input
-            v-model="searchQuery"
-            placeholder="搜索会话..."
-            class="h-8 rounded-md border border-transparent bg-sidebar-accent/50 pl-9 text-[13px] shadow-none transition-all placeholder:text-sidebar-foreground/30 hover:bg-sidebar-accent focus-visible:border-sidebar-ring/50 focus-visible:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring/30"
-          />
-        </div>
       </SidebarHeader>
 
       <SidebarContent class="px-2">
 
         <SidebarGroup>
-          <SidebarGroupLabel class="px-2">
-            {{ isSearching ? "搜索结果" : "浏览项目" }}
-          </SidebarGroupLabel>
+          <SidebarGroupLabel class="px-2">浏览项目</SidebarGroupLabel>
           <SidebarGroupContent>
             <div v-if="projects.length === 0" class="py-12 text-center">
               <p class="text-[12px] text-sidebar-foreground/30">无已添加项目</p>

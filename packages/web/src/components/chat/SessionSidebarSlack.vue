@@ -6,13 +6,11 @@ import {
   ChevronDown,
   ChevronRight,
   Plus,
-  Search,
   Settings,
   Folder,
   MoreHorizontal,
   Pin,
 } from "lucide-vue-next";
-import { Input } from "@/components/ui/input";
 import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
 import { useProjects } from "@/composables/useProjects";
 import { buildSessionProjects } from "@/lib/session-sidebar";
@@ -37,9 +35,6 @@ const emit = defineEmits<{
   remove: [sessionId: string];
 }>();
 
-// Search
-const searchQuery = ref("");
-
 const collapsedSections = useLocalStorage<Record<string, boolean>>(
   "pi.sidebar.collapsed",
   { projects: false }
@@ -60,13 +55,10 @@ const {
 const isProjectDialogOpen = ref(false);
 const contextMenuSession = ref<string | null>(null);
 
-const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase());
-
 const projects = computed(() =>
   buildSessionProjects({
     sessions: props.sessions,
     storedProjects: storedProjects.value,
-    query: normalizedQuery.value,
     ...(props.workspaceDir ? { workspaceDir: props.workspaceDir } : {}),
   })
 );
@@ -164,15 +156,6 @@ onMounted(() => {
           </button>
         </div>
       </div>
-
-      <div class="relative">
-        <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#999] dark:text-[#666]" />
-        <Input
-          v-model="searchQuery"
-          placeholder="搜索会话..."
-          class="h-8 border-0 bg-white dark:bg-[#2a2a2a] text-[13px] pl-9 text-[#333] dark:text-[#e0e0e0] placeholder:text-[#999] dark:placeholder:text-[#666] focus-visible:ring-1 focus-visible:ring-[#4c6ef5] rounded shadow-sm"
-        />
-      </div>
     </div>
 
     <!-- Content -->
@@ -184,7 +167,7 @@ onMounted(() => {
           class="w-full flex items-center justify-between px-4 py-2 text-[13px] font-semibold text-[#666] dark:text-[#a0a0a0] hover:bg-[#eaeaea] dark:hover:bg-[#252525] transition-colors"
           @click="toggleSection('projects')"
         >
-          <span>{{ searchQuery ? '搜索结果' : '浏览项目' }}</span>
+          <span>浏览项目</span>
           <ChevronDown
             class="size-4 transition-transform"
             :class="{ '-rotate-90': isSectionCollapsed('projects') }"
