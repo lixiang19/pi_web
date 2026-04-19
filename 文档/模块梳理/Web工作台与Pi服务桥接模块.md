@@ -8,6 +8,8 @@
 - 路由主壳统一收敛到 `PlatformShell.vue`，左侧固定为统一一级导航 + 会话菜单，右侧主内容由 `RouterView` 切换。
 - `/chat` 是会话主路由，`WorkbenchPage.vue` 只负责会话工作台内容本身，不再直接组合左侧栏。
 - `/search`、`/files`、`/terminal`、`/automations`、`/datasets`、`/spaces`、`/settings` 已成为独立一级主路由。
+- `/search` 首版已经承接真实的会话标题搜索：前端直接基于 `core.sessions` 过滤全部会话列表数据，并通过统一导航动作打开结果会话。
+- `/terminal` 已从占位页落为真实终端工作区：前端用 `useTerminalPool + @wterm/dom` 承载全局终端池、双窗格和信息侧栏，服务端通过 `node-pty + ws` 提供 `/api/terminals` REST 与 `WS /api/terminals/:id/stream`，页面刷新只重连、不重建 PTY。
 - 会话实例仍由 `useSessionLruPool.ts` 托管，`PlatformShell.vue` 通过 `KeepAlive` 保活 `/chat` 页面。
 - 会话详情页只使用 `usePerSessionChat(sessionId)` 加载单会话消息流，并通过 `useEffectiveDirectory()` 计算目录根。
 - 草稿语义已经重置为“切换即丢失、每次新建都是全新空白草稿”，前端不再保留 localStorage 草稿恢复链路。
@@ -35,8 +37,10 @@
 - 负责提供系统级隐藏聊天项目：固定绑定工作区 `chat` 目录，用于承接顶部“新聊天”和独立聊天分组。
 - 负责约束默认工作区目录策略：macOS 默认使用 `~/ridge-workspace`，非 macOS 必须显式提供 `PI_WORKSPACE_DIR`。
 - 负责让 `文件` 一级页面稳定显示整个工作区根目录，而不是跟随当前会话 cwd 切换显示范围。
+- 负责让 `终端` 一级页面独立于聊天会话生命周期，使用服务端内存终端池承载真实 PTY，并通过 WebSocket 重附着满足刷新无损。
 - 负责把“工作区文件树浏览”和“用户 Home 目录项目选择”拆成两条独立后端边界，避免混淆安全语义。
 - 负责把“文件树枚举”“文件内容预览”“图片流读取”“Markdown 保存”统一收敛到服务端文件接口层，而不是让前端直接拼接本地文件能力。
+- 负责把“终端创建/列出/重命名/重启/销毁”和“终端字节流连接”统一收敛到服务端终端接口层，而不是让前端伪造 shell 或把终端逻辑塞进 `/chat`。
 - 不负责桌面壳原生交互、PR 状态、分享链接、复杂工具执行面板，这些仍在后续迭代范围内。
 - 服务对象包括 Web 最终用户、Tauri 桌面壳中的前端运行时，以及本仓库的开发构建流程。
 
@@ -111,6 +115,7 @@
 - Vue 层只消费投影后的摘要和树结构，不直接拼接底层 session 文件信息。
 - 前端编排层负责把服务端的 session 摘要转成项目、group、父子会话树，并把会话派生状态、资源面板控制、主题偏好持久化拆成独立 composable。
 - 服务层同时承担四件事：列出和打开 SDK 持久化 session、维护归档元数据、约束文件树访问范围、桥接文件内容预览与 Markdown 保存。
+- `TerminalPage.vue` 不走 `useSessionLruPool`，而是独立消费 `useTerminalPool.ts`；服务端 `createTerminalManager()` 负责 PTY 生命周期，`httpServer.on('upgrade')` 负责 `/api/terminals/:id/stream` 的 WebSocket 附着。
 - `/api/system/info` 现在同时暴露 `chatProjectId/chatProjectPath/chatProjectLabel`，前端不再自行猜测系统聊天项目位置。
 - 正常发送链路的 SSE 主流程必须绑定 `AgentSession.subscribe()`，由 Pi runtime 真实推送 `message_start/message_update/message_end/turn_end`；仅靠 `POST /api/sessions/:id/messages` 改 `status` 不能让前端消息流更新。
 - 服务端桥接 `message_start/message_end` 时必须过滤 `role === 'user'` 的事件，因为前端发送期已经做了乐观用户消息写入；不做过滤会导致每次发送重复一条用户消息。
@@ -118,7 +123,7 @@
 
 ### Key Abstractions
 
-- 抽象名称：增强后的会话摘要
+- 抽象名称：增强后的会话列表记录
 
 ```ts
 export interface SessionSummary {
@@ -478,7 +483,7 @@ export const applyTheme = (themeName: ThemeName, mode: ThemeMode = 'dark') => {
 
 ## Flow
 
-- 场景：左栏启动与会话摘要恢复流程
+- 场景：左栏启动与会话列表恢复流程
 
 ```text
 [1] main.ts 挂载 router
@@ -948,7 +953,7 @@ RIDGE_PI_ISOLATED=1
 
 ## 2026-04-12 项目真源收敛
 ### 变更目的
-- 左侧“浏览项目”只能显示用户**手动添加**的项目，禁止再从会话摘要反推项目节点。
+- 左侧“浏览项目”只能显示用户**手动添加**的项目，禁止再从会话列表数据反推项目节点。
 - 会话、文件树、worktree 归属统一收敛到“已添加项目”这一个真源，去掉 server 启动目录衍生出的静态 workspace scope。
 - 未选中项目时，工作台保持空态，不自动落回 `workspaceDir`。
 

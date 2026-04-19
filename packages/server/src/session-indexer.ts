@@ -61,6 +61,14 @@ interface IndexedSessionStats {
 
 let managedProjectScopesPromise: Promise<ManagedProjectScope[]> | null = null;
 
+const resolveExistingRealPath = async (candidatePath: string): Promise<string> => {
+  try {
+    return path.resolve(await fs.realpath(candidatePath));
+  } catch {
+    return path.resolve(candidatePath);
+  }
+};
+
 export const invalidateManagedProjectScopes = () => {
   managedProjectScopesPromise = null;
 };
@@ -201,11 +209,18 @@ const loadManagedProjectScopes = async (
   return Promise.all(
     projects.map(async (project) => {
       const context = await resolver.resolveContext(project.path);
-      const allowedRoots = new Set<string>([
+      const declaredRoots = [
         path.resolve(project.path),
         path.resolve(context.projectRoot),
         ...context.worktrees.map((item) => path.resolve(item.path)),
-      ]);
+      ];
+      const allowedRoots = new Set<string>();
+
+      for (const declaredRoot of declaredRoots) {
+        allowedRoots.add(declaredRoot);
+        allowedRoots.add(await resolveExistingRealPath(declaredRoot));
+      }
+
       return {
         project,
         allowedRoots: [...allowedRoots],

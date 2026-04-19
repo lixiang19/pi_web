@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, toRef, watch } from "vue";
 import { useEventListener } from "@vueuse/core";
-import { ChevronLeft } from "lucide-vue-next";
 import { usePerSessionChat } from "@/composables/usePerSessionChat";
 import {
   DEFAULT_OPERATION_PANEL_WIDTH,
   MAX_OPERATION_PANEL_WIDTH,
   MIN_OPERATION_PANEL_WIDTH,
 } from "@/composables/useWorkbenchFilePreview";
-import { Button } from "@/components/ui/button";
 import { useSessionLruPool } from "@/composables/useSessionLruPool";
 import { NO_AGENT_VALUE, thinkingOptions } from "@/composables/useWorkbenchSessionState";
 import { useWorkbenchResourcePicker } from "@/composables/useWorkbenchResourcePicker";
@@ -16,6 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import WorkbenchOperationPanel from "@/components/workbench/WorkbenchOperationPanel.vue";
 import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
 import ProjectFilePanel from "@/components/workbench/ProjectFilePanel.vue";
+import ConversationHeader from "@/components/workbench/ConversationHeader.vue";
 
 const props = defineProps<{
   tabId: string;
@@ -43,6 +42,7 @@ const operationPanelRef = ref<{
 } | null>(null);
 const operationPanelWidth = ref(DEFAULT_OPERATION_PANEL_WIDTH);
 const isOperationPanelCollapsed = ref(true);
+const isFilePanelCollapsed = ref(false);
 const isResizingOperationPanel = ref(false);
 
 const RIGHT_PANEL_WIDTH = 320;
@@ -71,8 +71,12 @@ const stopOperationResize = () => {
   document.body.style.userSelect = "";
 };
 
-const expandOperationPanel = () => {
-  isOperationPanelCollapsed.value = false;
+const toggleOperationPanel = async () => {
+  if (isOperationPanelCollapsed.value) {
+    isOperationPanelCollapsed.value = false;
+  } else {
+    await collapseOperationPanel();
+  }
 };
 
 const collapseOperationPanel = async () => {
@@ -174,12 +178,38 @@ const handleOpenFile = (filePath: string) => {
   void operationPanelRef.value?.openFile(filePath);
 };
 
+const handleRenameSession = (title: string) => {
+  if (chat.sessionId.value) {
+    void chat.core.renameSessionTitle(chat.sessionId.value, title);
+  }
+};
+
+const handleAppendToDraft = (value: string) => {
+  const content = value.trim();
+  if (!content) {
+    return;
+  }
+
+  chat.composer.draftText = chat.composer.draftText.trim()
+    ? `${chat.composer.draftText.trim()}\n\n${content}`
+    : content;
+};
+
 </script>
 
 <template>
   <div ref="layoutRef" class="flex h-full min-w-0">
     <!-- 中间对话区 -->
     <main class="min-w-0 flex-1 flex flex-col bg-background">
+      <ConversationHeader
+        :title="chat.currentSessionTitle.value"
+        :is-draft-session="chat.isDraftSession.value"
+        :is-operation-panel-collapsed="isOperationPanelCollapsed"
+        :is-file-panel-collapsed="isFilePanelCollapsed"
+        @update:title="handleRenameSession"
+        @toggle-operation-panel="toggleOperationPanel"
+        @toggle-file-panel="isFilePanelCollapsed = !isFilePanelCollapsed"
+      />
       <WorkbenchChatPanel
         :active-draft-parent-session-id="chat.activeDraftContext.value?.parentSessionId"
         :active-session-id="chat.sessionId.value"
@@ -225,21 +255,7 @@ const handleOpenFile = (filePath: string) => {
     </main>
 
     <div
-      v-if="isOperationPanelCollapsed"
-      class="flex w-9 shrink-0 items-center justify-center bg-background/80"
-    >
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        class="size-7"
-        @click="expandOperationPanel"
-      >
-        <ChevronLeft class="size-4" />
-      </Button>
-    </div>
-
-    <div
-      v-else
+      v-show="!isOperationPanelCollapsed"
       class="group flex w-3 shrink-0 cursor-col-resize items-stretch justify-center bg-background/80 transition-colors hover:bg-accent/40"
       @pointerdown="startOperationResize"
     >
@@ -255,14 +271,14 @@ const handleOpenFile = (filePath: string) => {
         ref="operationPanelRef"
         :root-dir="chat.fileTreeRoot.value"
         class="flex-1"
-        @collapse="collapseOperationPanel"
+        @append-to-draft="handleAppendToDraft"
       />
     </aside>
 
     <Separator v-show="!isOperationPanelCollapsed" orientation="vertical" class="h-full shrink-0 bg-border/40" />
 
     <!-- 右侧文件/Git 面板 -->
-    <aside class="w-80 flex shrink-0 flex-col bg-secondary">
+    <aside v-show="!isFilePanelCollapsed" class="w-80 flex shrink-0 flex-col bg-secondary">
       <ProjectFilePanel
         :project-label="chat.fileTreeRoot.value ? formatProjectLabel(chat.fileTreeRoot.value) : '未选择项目'"
         :root-dir="chat.fileTreeRoot.value"

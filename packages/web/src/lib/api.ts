@@ -4,6 +4,7 @@ import type {
   PermissionDecisionAction,
   DirectoryBrowseResponse,
   FilePreviewPayload,
+  FilePreviewWindowPayload,
   FileSaveRequest,
   FileSaveResponse,
   FileTreeResponse,
@@ -21,6 +22,12 @@ import type {
   SessionSummary,
   ThinkingLevel,
   SystemInfo,
+  TerminalCreateRequest,
+  TerminalListResponse,
+  TerminalMutationResponse,
+  TerminalRestartRequest,
+  TerminalSnapshot,
+  TerminalUpdateRequest,
   WorktreeApiInfo,
   WorktreesResponse,
   ValidateWorktreeRequest,
@@ -235,6 +242,24 @@ export function getFilePreview(path: string, root: string) {
   return request<FilePreviewPayload>(`/api/files/content?${params.toString()}`);
 }
 
+export function getFilePreviewWindow(
+  path: string,
+  root: string,
+  startLine: number,
+  lineCount: number,
+) {
+  const params = new URLSearchParams({
+    path,
+    root,
+    startLine: String(startLine),
+    lineCount: String(lineCount),
+  });
+
+  return request<FilePreviewWindowPayload>(
+    `/api/files/content-window?${params.toString()}`,
+  );
+}
+
 export function saveFileContent(payload: FileSaveRequest) {
   return request<FileSaveResponse>("/api/files/content", {
     method: "PUT",
@@ -274,6 +299,45 @@ export function deleteProject(id: string) {
   return request<{ ok: true }>(`/api/projects/${id}`, {
     method: "DELETE",
   });
+}
+
+export function getTerminals() {
+  return request<TerminalListResponse>("/api/terminals");
+}
+
+export function createTerminal(payload: TerminalCreateRequest = {}) {
+  return request<TerminalSnapshot>("/api/terminals", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateTerminal(terminalId: string, payload: TerminalUpdateRequest) {
+  return request<TerminalSnapshot>(`/api/terminals/${terminalId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function restartTerminal(
+  terminalId: string,
+  payload: TerminalRestartRequest,
+) {
+  return request<TerminalSnapshot>(`/api/terminals/${terminalId}/restart`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteTerminal(terminalId: string) {
+  return request<TerminalMutationResponse>(`/api/terminals/${terminalId}`, {
+    method: "DELETE",
+  });
+}
+
+export function getTerminalStreamUrl(terminalId: string) {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/api/terminals/${encodeURIComponent(terminalId)}/stream`;
 }
 
 // ============================================================================

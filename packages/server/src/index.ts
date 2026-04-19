@@ -1,8 +1,10 @@
 import path from 'node:path';
+import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
+import { createServer, type ServerResponse } from 'node:http';
 import os from 'node:os';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import type { ServerResponse } from 'node:http';
 
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
@@ -79,6 +81,7 @@ import {
   refreshSessionCatalog,
   upsertIndexedSessionRecord,
 } from './session-indexer.js';
+import { createTerminalManager } from './terminal-runtime.js';
 import type {
   SessionMessagesPayload,
   SessionRecord,
@@ -86,6 +89,7 @@ import type {
   SessionSummary,
   SessionSnapshot,
   FilePreviewPayload,
+  FilePreviewWindowPayload,
   FileSaveResponse,
   FileTreeEntry,
   FilesystemBrowseResult,
@@ -105,11 +109,13 @@ import type {
   PermissionDecisionAction,
   PermissionInteractiveRequest,
   PermissionRule,
+  TerminalCreateRequest,
 } from './types/index.js';
 import type {
   IndexedSessionContextSummary,
   IndexedSessionLookup,
 } from './session-indexer.js';
+import { WebSocketServer } from 'ws';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
@@ -216,6 +222,23 @@ const archiveSessionSchema = z.object({
   archived: z.boolean(),
 });
 
+const terminalCreateSchema = z.object({
+  cwd: z.string().optional(),
+  title: z.string().optional(),
+  cols: z.number().int().min(40).max(300).optional(),
+  rows: z.number().int().min(12).max(120).optional(),
+});
+
+const terminalUpdateSchema = z.object({
+  title: z.string().min(1).max(120),
+});
+
+const terminalRestartSchema = z.object({
+  cwd: z.string().min(1),
+  cols: z.number().int().min(40).max(300).optional(),
+  rows: z.number().int().min(12).max(120).optional(),
+});
+
 
 const askAnswerSchema = z.object({
   questionId: z.string().min(1),
@@ -244,6 +267,13 @@ const fileTreeQuerySchema = z.object({
 const fileContentQuerySchema = z.object({
   root: z.string().optional(),
   path: z.string().optional(),
+});
+
+const fileContentWindowQuerySchema = z.object({
+  root: z.string().optional(),
+  path: z.string().optional(),
+  startLine: z.coerce.number().int().min(1).default(1),
+  lineCount: z.coerce.number().int().min(1).max(1000).default(1000),
 });
 
 const fileSaveSchema = z.object({
@@ -275,27 +305,41 @@ const ignoredDirectoryNames = new Set([
 
 const DEFAULT_SESSION_ROUND_WINDOW = 3;
 const MAX_FILE_PREVIEW_BYTES = 5 * 1024 * 1024;
+const LARGE_FILE_PREVIEW_LINE_COUNT = 1000;
+const UTF8_SNIFF_BYTES = 64 * 1024;
 
 const markdownExtensions = new Set(['.md', '.markdown']);
+const htmlExtensions = new Set(['.htm', '.html']);
 const codeExtensions = new Set([
+  '.astro',
+  '.bash',
   '.c',
   '.cc',
   '.cpp',
   '.css',
+  '.cts',
+  '.cxx',
   '.go',
   '.h',
   '.hpp',
-  '.html',
+  '.ini',
   '.java',
   '.js',
   '.json',
   '.jsx',
+  '.kt',
+  '.less',
+  '.lua',
   '.mjs',
+  '.mts',
+  '.php',
   '.py',
   '.rb',
   '.rs',
+  '.scss',
   '.sh',
   '.sql',
+  '.swift',
   '.toml',
   '.ts',
   '.tsx',
@@ -303,6 +347,10 @@ const codeExtensions = new Set([
   '.xml',
   '.yaml',
   '.yml',
+  '.zsh',
+]);
+const codeFileNames = new Set([
+  'dockerfile',
 ]);
 const imageMimeTypesByExtension = new Map<string, string>([
   ['.avif', 'image/avif'],
@@ -324,6 +372,14 @@ const normalizeOptionalFsPath = (value: unknown): string => {
   return normalized ? path.resolve(normalized) : '';
 };
 
+const resolveExistingRealPath = async (candidatePath: string): Promise<string> => {
+  try {
+    return normalizeFsPath(await fs.realpath(candidatePath));
+  } catch {
+    return normalizeFsPath(candidatePath);
+  }
+};
+
 const resolveDiscoveryCwd = (value: unknown): string =>
   normalizeOptionalFsPath(value) || path.resolve(os.homedir());
 
@@ -335,11 +391,28 @@ const resolveManagedRoot = async (value: unknown): Promise<string> => {
     throw error;
   }
 
-  if (!isPathInsideRoot(rootPath, defaultWorkspaceDir)) {
-    await ensureManagedProjectScope(rootPath);
+  const [resolvedRootPath, resolvedDefaultWorkspaceDir] = await Promise.all([
+    resolveExistingRealPath(rootPath),
+    resolveExistingRealPath(defaultWorkspaceDir),
+  ]);
+
+  if (!isPathInsideRoot(resolvedRootPath, resolvedDefaultWorkspaceDir)) {
+    await ensureManagedProjectScope(resolvedRootPath);
   }
 
   return rootPath;
+};
+
+const ensureResolvedPathWithinRoot = async (
+  candidatePath: string,
+  rootPath: string,
+): Promise<void> => {
+  const [resolvedRootPath, resolvedCandidatePath] = await Promise.all([
+    fs.realpath(rootPath),
+    fs.realpath(candidatePath),
+  ]);
+
+  ensureWithinRoot(resolvedCandidatePath, resolvedRootPath);
 };
 
 const resolveManagedFileLocation = async (
@@ -356,6 +429,7 @@ const resolveManagedFileLocation = async (
 
   const targetPath = requestedPath || rootPath;
   ensureWithinRoot(targetPath, rootPath);
+  await ensureResolvedPathWithinRoot(targetPath, rootPath);
 
   return {
     rootPath,
@@ -418,7 +492,78 @@ const decodeUtf8File = (buffer: Buffer): string | null => {
   }
 };
 
+const readUtf8Head = async (
+  targetPath: string,
+  maxBytes = UTF8_SNIFF_BYTES,
+): Promise<string | null> => {
+  const handle = await fs.open(targetPath, 'r');
+
+  try {
+    const stats = await handle.stat();
+    const bufferSize = Math.max(1, Math.min(toFileSize(stats.size), maxBytes));
+    const buffer = Buffer.allocUnsafe(bufferSize);
+    const { bytesRead } = await handle.read(buffer, 0, bufferSize, 0);
+    return decodeUtf8File(buffer.subarray(0, bytesRead));
+  } finally {
+    await handle.close();
+  }
+};
+
+const readTextWindow = async (
+  targetPath: string,
+  startLine: number,
+  lineCount: number,
+): Promise<{
+  content: string;
+  lineCount: number;
+  hasMore: boolean;
+  nextStartLine?: number;
+}> => {
+  const lines: string[] = [];
+  const stream = createReadStream(targetPath, { encoding: 'utf8' });
+  const reader = createInterface({
+    input: stream,
+    crlfDelay: Infinity,
+  });
+
+  let currentLine = 0;
+  let hasMore = false;
+
+  try {
+    for await (const line of reader) {
+      currentLine += 1;
+
+      if (currentLine < startLine) {
+        continue;
+      }
+
+      if (lines.length < lineCount) {
+        lines.push(line);
+        continue;
+      }
+
+      hasMore = true;
+      reader.close();
+      stream.destroy();
+      break;
+    }
+  } finally {
+    reader.close();
+    stream.destroy();
+  }
+
+  const nextStartLine = hasMore ? startLine + lines.length : undefined;
+
+  return {
+    content: lines.join('\n'),
+    lineCount: lines.length,
+    hasMore,
+    nextStartLine,
+  };
+};
+
 const resolvePreviewKind = (
+  fileName: string,
   extension: string,
   isTextReadable: boolean,
 ): FilePreviewPayload['previewKind'] => {
@@ -434,7 +579,19 @@ const resolvePreviewKind = (
     return 'markdown';
   }
 
+  if (htmlExtensions.has(extension)) {
+    return 'html';
+  }
+
   if (codeExtensions.has(extension)) {
+    return 'code';
+  }
+
+  const normalizedFileName = fileName.trim().toLowerCase();
+  if (
+    codeFileNames.has(normalizedFileName)
+    || normalizedFileName.startsWith('dockerfile.')
+  ) {
     return 'code';
   }
 
@@ -457,7 +614,7 @@ const resolvePreviewMimeType = (
     return 'application/json; charset=utf-8';
   }
 
-  if (extension === '.html') {
+  if (htmlExtensions.has(extension)) {
     return 'text/html; charset=utf-8';
   }
 
@@ -474,6 +631,43 @@ const resolvePreviewMimeType = (
   }
 
   return 'text/plain; charset=utf-8';
+};
+
+const buildFilePreviewWindowPayload = async (
+  rootPath: string,
+  targetPath: string,
+  stats: Awaited<ReturnType<typeof fs.stat>>,
+  startLine: number,
+  lineCount: number,
+): Promise<FilePreviewWindowPayload> => {
+  const extension = path.extname(targetPath).toLowerCase();
+  const name = path.basename(targetPath);
+  const previewHead = await readUtf8Head(targetPath);
+  const previewKind = resolvePreviewKind(name, extension, previewHead !== null);
+
+  if (previewKind !== 'code' && previewKind !== 'text') {
+    const error = new Error('Windowed preview is only available for code or text files') as HttpError;
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (toFileSize(stats.size) <= MAX_FILE_PREVIEW_BYTES) {
+    const error = new Error('Windowed preview is only available for large files') as HttpError;
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const windowPayload = await readTextWindow(targetPath, startLine, lineCount);
+
+  return {
+    root: toPosixPath(rootPath),
+    path: toPosixPath(targetPath),
+    startLine,
+    lineCount: windowPayload.lineCount,
+    content: windowPayload.content,
+    hasMore: windowPayload.hasMore,
+    nextStartLine: windowPayload.nextStartLine,
+  };
 };
 
 const buildFilePreviewPayload = async (
@@ -499,33 +693,64 @@ const buildFilePreviewPayload = async (
     };
   }
 
+  const previewHead = size > MAX_FILE_PREVIEW_BYTES ? await readUtf8Head(targetPath) : null;
+  const previewKind =
+    previewHead === null && size <= MAX_FILE_PREVIEW_BYTES
+      ? 'unsupported'
+      : resolvePreviewKind(name, extension, previewHead !== null || size <= MAX_FILE_PREVIEW_BYTES);
+
   if (size > MAX_FILE_PREVIEW_BYTES) {
+    if (previewKind !== 'code' && previewKind !== 'text') {
+      return {
+        root: toPosixPath(rootPath),
+        path: toPosixPath(targetPath),
+        name,
+        extension,
+        mimeType: resolvePreviewMimeType(extension, 'unsupported'),
+        size,
+        previewKind: 'unsupported',
+        readOnly: true,
+      };
+    }
+
+    const windowPayload = await buildFilePreviewWindowPayload(
+      rootPath,
+      targetPath,
+      stats,
+      1,
+      LARGE_FILE_PREVIEW_LINE_COUNT,
+    );
+
     return {
       root: toPosixPath(rootPath),
       path: toPosixPath(targetPath),
       name,
       extension,
-      mimeType: resolvePreviewMimeType(extension, 'unsupported'),
+      mimeType: resolvePreviewMimeType(extension, previewKind),
       size,
-      previewKind: 'unsupported',
+      previewKind,
+      content: windowPayload.content,
+      isLargeFile: true,
+      previewLineCount: windowPayload.lineCount,
+      nextStartLine: windowPayload.nextStartLine,
       readOnly: true,
     };
   }
 
   const buffer = await fs.readFile(targetPath);
   const content = decodeUtf8File(buffer);
-  const previewKind = resolvePreviewKind(extension, content !== null);
+  const resolvedPreviewKind = resolvePreviewKind(name, extension, content !== null);
 
   return {
     root: toPosixPath(rootPath),
     path: toPosixPath(targetPath),
     name,
     extension,
-    mimeType: resolvePreviewMimeType(extension, previewKind),
+    mimeType: resolvePreviewMimeType(extension, resolvedPreviewKind),
     size,
-    previewKind,
+    previewKind: resolvedPreviewKind,
     content: content ?? undefined,
-    readOnly: previewKind !== 'markdown',
+    readOnly: resolvedPreviewKind !== 'markdown',
   };
 };
 
@@ -1352,13 +1577,19 @@ const buildManagedProjectScopes = async (): Promise<ManagedProjectScope[]> => {
     managedProjects.map(async (project) => {
       const normalizedPath = normalizeFsPath(project.path);
       const projectContext = await projectContextResolver.resolveContext(normalizedPath);
-      const allowedRoots = new Set<string>([
+      const declaredRoots = [
         normalizedPath,
         normalizeFsPath(projectContext.projectRoot),
-      ]);
+      ];
 
       for (const worktree of projectContext.worktrees) {
-        allowedRoots.add(normalizeFsPath(worktree.path));
+        declaredRoots.push(normalizeFsPath(worktree.path));
+      }
+
+      const allowedRoots = new Set<string>();
+      for (const declaredRoot of declaredRoots) {
+        allowedRoots.add(declaredRoot);
+        allowedRoots.add(await resolveExistingRealPath(declaredRoot));
       }
 
       return {
@@ -1410,6 +1641,30 @@ const ensureManagedProjectScope = async (
   error.statusCode = 400;
   throw error;
 };
+
+const resolveTerminalCwd = async (value: unknown): Promise<string> => {
+  const candidatePath = normalizeOptionalFsPath(value) || defaultWorkspaceDir;
+  const resolvedCandidatePath = await resolveExistingRealPath(candidatePath);
+  const stats = await fs.stat(resolvedCandidatePath).catch(() => null);
+
+  if (!stats?.isDirectory()) {
+    const error = new Error('Terminal cwd must be an existing directory') as HttpError;
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const resolvedDefaultWorkspaceDir = await resolveExistingRealPath(defaultWorkspaceDir);
+  if (!isPathInsideRoot(resolvedCandidatePath, resolvedDefaultWorkspaceDir)) {
+    await ensureManagedProjectScope(resolvedCandidatePath);
+  }
+
+  return resolvedCandidatePath;
+};
+
+const terminalManager = createTerminalManager({
+  defaultCwd: defaultWorkspaceDir,
+  resolveCwd: resolveTerminalCwd,
+});
 
 interface ToSessionSnapshotOptions {
   rounds?: number;
@@ -1892,6 +2147,50 @@ app.get('/api/system/info', (_req: Request, res: Response) => {
   });
 });
 
+app.get('/api/terminals', (_req: Request, res: Response) => {
+  res.json({ terminals: terminalManager.listTerminals() });
+});
+
+app.post('/api/terminals', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = terminalCreateSchema.parse(req.body ?? {}) as TerminalCreateRequest;
+    const terminal = await terminalManager.createTerminal(payload);
+    res.status(201).json(terminal);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/terminals/:id', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = terminalUpdateSchema.parse(req.body ?? {});
+    const terminal = terminalManager.updateTerminal(String(req.params.id), payload.title);
+    res.json(terminal);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/terminals/:id/restart', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = terminalRestartSchema.parse(req.body ?? {});
+    const terminal = await terminalManager.restartTerminal(String(req.params.id), payload);
+    res.json(terminal);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/terminals/:id', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const terminalId = String(req.params.id);
+    terminalManager.deleteTerminal(terminalId);
+    res.json({ ok: true, terminalId });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/providers', (_req: Request, res: Response) => {
   res.json(listProviders());
 });
@@ -2036,6 +2335,23 @@ app.get('/api/files/content', async (req: Request, res: Response, next: NextFunc
     const query = fileContentQuerySchema.parse(req.query ?? {});
     const { rootPath, targetPath, stats } = await ensureFileForPreview(query);
     const payload = await buildFilePreviewPayload(rootPath, targetPath, stats);
+    res.json(payload);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/files/content-window', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = fileContentWindowQuerySchema.parse(req.query ?? {});
+    const { rootPath, targetPath, stats } = await ensureFileForPreview(query);
+    const payload = await buildFilePreviewWindowPayload(
+      rootPath,
+      targetPath,
+      stats,
+      query.startLine,
+      query.lineCount,
+    );
     res.json(payload);
   } catch (error) {
     next(error);
@@ -2822,6 +3138,32 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(statusCode as number).send(message);
 });
 
+const httpServer = createServer(app);
+const terminalWebSocketServer = new WebSocketServer({ noServer: true });
+
+httpServer.on('upgrade', (request, socket, head) => {
+  const host = request.headers.host || `127.0.0.1:${port}`;
+  const url = new URL(request.url || '/', `http://${host}`);
+  const match = url.pathname.match(/^\/api\/terminals\/([^/]+)\/stream$/);
+
+  if (!match) {
+    socket.destroy();
+    return;
+  }
+
+  const terminalId = decodeURIComponent(match[1]);
+  if (!terminalManager.hasTerminal(terminalId)) {
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  terminalWebSocketServer.handleUpgrade(request, socket, head, (ws) => {
+    terminalManager.attachSocket(terminalId, ws);
+    terminalWebSocketServer.emit('connection', ws, request);
+  });
+});
+
 // ===== Start Server =====
 void ensureWorkspaceChatProject({
   workspaceDir: defaultWorkspaceDir,
@@ -2830,7 +3172,7 @@ void ensureWorkspaceChatProject({
   .then(() => initializeRidgeDb(defaultWorkspaceDir))
   .then(async () => {
     await refreshSessionCatalogIndex();
-    app.listen(port, () => {
+    httpServer.listen(port, () => {
       console.warn(`Pi server listening on http://127.0.0.1:${port}`);
     });
   })

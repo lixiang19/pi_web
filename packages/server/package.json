@@ -12,16 +12,20 @@
   "dependencies": {
     "@mariozechner/pi-coding-agent": "^0.65.2",
     "@pi/protocol": "workspace:*",
+    "@sinclair/typebox": "^0.34.49",
     "better-sqlite3": "^12.9.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "node-pty": "1.2.0-beta.12",
+    "ws": "^8.18.3",
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
+    "@sinclair/typebox": "^0.34.41",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.2",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }

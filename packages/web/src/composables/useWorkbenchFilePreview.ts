@@ -1,9 +1,14 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 
-import { getFilePreview, saveFileContent } from "@/lib/api";
-import type { FilePreviewKind, FilePreviewPayload } from "@/lib/types";
+import { getFilePreview, getFilePreviewWindow, saveFileContent } from "@/lib/api";
+import type {
+  FilePreviewKind,
+  FilePreviewPayload,
+  FilePreviewWindowPayload,
+} from "@/lib/types";
 
 const AUTO_SAVE_DELAY_MS = 450;
+const FILE_PREVIEW_WINDOW_LINE_COUNT = 1000;
 
 export const DEFAULT_OPERATION_PANEL_WIDTH = 560;
 export const MIN_OPERATION_PANEL_WIDTH = 360;
@@ -24,7 +29,31 @@ export interface WorkbenchPreviewTabState {
   isSaving: boolean;
   error: string;
   saveRevision: number;
+  isLargeFile: boolean;
+  previewLineCount: number;
+  nextStartLine: number | null;
+  isLoadingMore: boolean;
 }
+
+const countContentLines = (content: string) => {
+  if (!content) {
+    return 0;
+  }
+
+  return content.split(/\r\n?|\n/).length;
+};
+
+const appendContentWindow = (currentContent: string, nextContent: string) => {
+  if (!currentContent) {
+    return nextContent;
+  }
+
+  if (!nextContent) {
+    return currentContent;
+  }
+
+  return `${currentContent}\n${nextContent}`;
+};
 
 const getFileName = (filePath: string) =>
   filePath.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || filePath;
@@ -47,6 +76,10 @@ const createPreviewTab = (
   isSaving: false,
   error: "",
   saveRevision: 0,
+  isLargeFile: false,
+  previewLineCount: 0,
+  nextStartLine: null,
+  isLoadingMore: false,
 });
 
 const applyPreviewPayload = (
@@ -64,6 +97,25 @@ const applyPreviewPayload = (
   tab.readOnly = payload.readOnly;
   tab.isLoading = false;
   tab.isSaving = false;
+  tab.isLargeFile = payload.isLargeFile === true;
+  tab.previewLineCount = payload.previewLineCount ?? countContentLines(tab.content);
+  tab.nextStartLine = payload.nextStartLine ?? null;
+  tab.isLoadingMore = false;
+  tab.error = "";
+};
+
+const applyPreviewWindowPayload = (
+  tab: WorkbenchPreviewTabState,
+  payload: FilePreviewWindowPayload,
+) => {
+  tab.root = payload.root;
+  tab.path = payload.path;
+  tab.content = appendContentWindow(tab.content, payload.content);
+  tab.savedContent = tab.content;
+  tab.isLargeFile = true;
+  tab.previewLineCount += payload.lineCount;
+  tab.nextStartLine = payload.nextStartLine ?? null;
+  tab.isLoadingMore = false;
   tab.error = "";
 };
 
@@ -231,6 +283,48 @@ export function useWorkbenchFilePreview(rootDir: Ref<string>) {
     scheduleSave(tabId);
   };
 
+  const loadMore = async (tabId: string) => {
+    const tab = findTab(tabId);
+    if (
+      !tab
+      || tab.isLoading
+      || tab.isLoadingMore
+      || !tab.isLargeFile
+      || tab.nextStartLine === null
+      || (tab.previewKind !== "code" && tab.previewKind !== "text")
+    ) {
+      return;
+    }
+
+    const startLine = tab.nextStartLine;
+    tab.isLoadingMore = true;
+    tab.error = "";
+
+    try {
+      const payload = await getFilePreviewWindow(
+        tab.path,
+        tab.root,
+        startLine,
+        FILE_PREVIEW_WINDOW_LINE_COUNT,
+      );
+      const currentTab = findTab(tabId);
+      if (!currentTab) {
+        return;
+      }
+
+      applyPreviewWindowPayload(currentTab, payload);
+    } catch (caughtError) {
+      const currentTab = findTab(tabId);
+      if (!currentTab) {
+        return;
+      }
+
+      currentTab.isLoadingMore = false;
+      currentTab.error =
+        caughtError instanceof Error ? caughtError.message : String(caughtError);
+    }
+  };
+
   const activateTab = async (tabId: string) => {
     if (activeTabId.value === tabId) {
       return;
@@ -287,6 +381,7 @@ export function useWorkbenchFilePreview(rootDir: Ref<string>) {
     activateTab,
     closeTab,
     updateTabContent,
+    loadMore,
     flushActiveTab: () => saveTab(activeTabId.value),
   };
 }

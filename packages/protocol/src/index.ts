@@ -297,6 +297,7 @@ export type FilePreviewKind =
   | "markdown"
   | "code"
   | "text"
+  | "html"
   | "image"
   | "unsupported";
 
@@ -309,7 +310,20 @@ export interface FilePreviewPayload {
   size: number;
   previewKind: FilePreviewKind;
   content?: string;
+  isLargeFile?: boolean;
+  previewLineCount?: number;
+  nextStartLine?: number;
   readOnly: boolean;
+}
+
+export interface FilePreviewWindowPayload {
+  root: string;
+  path: string;
+  startLine: number;
+  lineCount: number;
+  content: string;
+  hasMore: boolean;
+  nextStartLine?: number;
 }
 
 export interface FileSaveRequest {
@@ -456,4 +470,51 @@ export interface GitRemoteInfo {
 
 export interface GitRepositoryStatusResponse {
   isGitRepo: boolean;
+}
+
+export type TerminalStatus =
+  | "starting"
+  | "running"
+  | "disconnected"
+  | "exited"
+  | "error";
+
+export interface TerminalSnapshot {
+  id: string;
+  title: string;
+  cwd: string;
+  shell: string;
+  status: TerminalStatus;
+  cols: number;
+  rows: number;
+  createdAt: number;
+  updatedAt: number;
+  exitCode?: number | null;
+  errorMessage?: string | null;
+}
+
+export interface TerminalListResponse {
+  terminals: TerminalSnapshot[];
+}
+
+export interface TerminalCreateRequest {
+  cwd?: string;
+  title?: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface TerminalUpdateRequest {
+  title: string;
+}
+
+export interface TerminalRestartRequest {
+  cwd: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface TerminalMutationResponse {
+  ok: true;
+  terminalId: string;
 }

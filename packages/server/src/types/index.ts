@@ -11,6 +11,7 @@ import type {
   DeleteWorktreeRequest as ProtocolDeleteWorktreeRequest,
   FilePreviewKind as ProtocolFilePreviewKind,
   FilePreviewPayload as ProtocolFilePreviewPayload,
+  FilePreviewWindowPayload as ProtocolFilePreviewWindowPayload,
   FileSaveRequest as ProtocolFileSaveRequest,
   FileSaveResponse as ProtocolFileSaveResponse,
   FileTreeEntry as ProtocolFileTreeEntry,
@@ -27,6 +28,13 @@ import type {
   SessionRuntimePayload as ProtocolSessionRuntimePayload,
   SessionSnapshot as ProtocolSessionSnapshot,
   SessionSummary as ProtocolSessionSummary,
+  TerminalCreateRequest as ProtocolTerminalCreateRequest,
+  TerminalListResponse as ProtocolTerminalListResponse,
+  TerminalMutationResponse as ProtocolTerminalMutationResponse,
+  TerminalRestartRequest as ProtocolTerminalRestartRequest,
+  TerminalSnapshot as ProtocolTerminalSnapshot,
+  TerminalStatus as ProtocolTerminalStatus,
+  TerminalUpdateRequest as ProtocolTerminalUpdateRequest,
   ThinkingLevel as ProtocolThinkingLevel,
   ValidateWorktreeRequest as ProtocolValidateWorktreeRequest,
   ValidateWorktreeResponse as ProtocolValidateWorktreeResponse,
@@ -202,6 +210,7 @@ export interface ProjectContext {
 export type FileTreeEntry = ProtocolFileTreeEntry;
 export type FilePreviewKind = ProtocolFilePreviewKind;
 export type FilePreviewPayload = ProtocolFilePreviewPayload;
+export type FilePreviewWindowPayload = ProtocolFilePreviewWindowPayload;
 export type FileSaveRequest = ProtocolFileSaveRequest;
 export type FileSaveResponse = ProtocolFileSaveResponse;
 
@@ -275,6 +284,13 @@ export type ProvidersResponse = ProtocolProvidersResponse;
 export type AgentSummary = ProtocolAgentSummary;
 export type ResourceCatalogResponse = ProtocolResourceCatalogResponse;
 export type ResourceSourceInfo = ProtocolResourceSourceInfo;
+export type TerminalStatus = ProtocolTerminalStatus;
+export type TerminalSnapshot = ProtocolTerminalSnapshot;
+export type TerminalListResponse = ProtocolTerminalListResponse;
+export type TerminalCreateRequest = ProtocolTerminalCreateRequest;
+export type TerminalUpdateRequest = ProtocolTerminalUpdateRequest;
+export type TerminalRestartRequest = ProtocolTerminalRestartRequest;
+export type TerminalMutationResponse = ProtocolTerminalMutationResponse;
 
 export interface FilesystemBrowseResult {
   homeDir: string;

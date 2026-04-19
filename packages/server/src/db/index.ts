@@ -6,9 +6,11 @@ import { normalizeString } from '../utils/strings.js';
 import { RIDGE_DB_BOOTSTRAP_SQL, RIDGE_DB_SCHEMA_VERSION } from './migrations.js';
 import { SETTINGS_KEYS, type RidgeSettings, type SessionMetadataState } from '../types/index.js';
 
-let dbPromise: Promise<Database.Database> | null = null;
+type RidgeDatabase = InstanceType<typeof Database>;
 
-const openDatabase = async (): Promise<Database.Database> => {
+let dbPromise: Promise<RidgeDatabase> | null = null;
+
+const openDatabase = async (): Promise<RidgeDatabase> => {
   const dbPath = await getRidgeDbPath();
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
@@ -18,7 +20,7 @@ const openDatabase = async (): Promise<Database.Database> => {
   return db;
 };
 
-const ensureSchemaVersion = (db: Database.Database) => {
+const ensureSchemaVersion = (db: RidgeDatabase) => {
   const currentVersion = db
     .prepare(`SELECT value FROM ridge_meta WHERE key = 'schema_version'`)
     .get() as { value?: string } | undefined;
@@ -32,7 +34,7 @@ const ensureSchemaVersion = (db: Database.Database) => {
   ).run(String(RIDGE_DB_SCHEMA_VERSION));
 };
 
-const migrateLegacyRidgeSettings = async (db: Database.Database) => {
+const migrateLegacyRidgeSettings = async (db: RidgeDatabase) => {
   const legacyPath = await getRidgeSettingsPath();
   const exists = await pathExists(legacyPath);
   if (!exists) {
@@ -111,7 +113,7 @@ const migrateLegacyRidgeSettings = async (db: Database.Database) => {
 };
 
 const migrateLegacySessionMetadata = async (
-  db: Database.Database,
+  db: RidgeDatabase,
   workspaceDir?: string,
 ) => {
   if (!workspaceDir) {
@@ -196,7 +198,7 @@ const pathExists = async (targetPath: string) => {
   }
 };
 
-export async function initializeRidgeDb(workspaceDir?: string): Promise<Database.Database> {
+export async function initializeRidgeDb(workspaceDir?: string): Promise<RidgeDatabase> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const db = await openDatabase();
@@ -209,6 +211,6 @@ export async function initializeRidgeDb(workspaceDir?: string): Promise<Database
   return dbPromise;
 }
 
-export async function getRidgeDb(): Promise<Database.Database> {
+export async function getRidgeDb(): Promise<RidgeDatabase> {
   return initializeRidgeDb();
 }
