@@ -11,9 +11,11 @@ Pi Web 是一个面向 Web 与桌面端的 Pi 对话工作台，目标参考 ope
 ## 本地开发
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
+
+> 本仓库锁定 `pnpm`，且 `better-sqlite3`、`node-pty` 这类原生依赖依赖 `pnpm.onlyBuiltDependencies` 执行构建脚本；不要再用 `npm install`。
 
 默认启动：
 

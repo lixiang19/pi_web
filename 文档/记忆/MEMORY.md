@@ -70,6 +70,7 @@
 - [运行时态不入目录索引] 列表 `status` 这类运行时字段只允许由内存 active session 覆盖，不应作为数据库持久化列存在
 - [SQLite 字面量] 写 SQLite 语句时，字符串字面量必须用单引号；`""` 在 SQLite 中会按标识符解析，像 `context_id != ""` 这种写法会在启动建索引时直接触发 `no such column: ""`
 - [原生依赖安装契约] 仓库使用 `pnpm 10` 时，`better-sqlite3`、`node-pty` 这类原生包不能只写进 dependencies；必须在根 `package.json` 的 `pnpm.onlyBuiltDependencies` 中显式放行，否则 install 后会出现“包存在但 `.node` 绑定缺失”，server 在运行原生模块时直接失败
+- [包管理器一致性] 既然仓库已经锁定 `pnpm` 并依赖 `pnpm.onlyBuiltDependencies` 管原生包，README/开发文档里的安装命令也必须统一写成 `pnpm install`；继续写 `npm install` 会把“依赖声明正确但本地缺包/缺绑定”的问题伪装成代码故障。
 - [终端重启竞态] PTY restart 不能让旧进程的 `onData/onExit` 继续写回共享 record；事件处理必须校验“当前活跃 PTY 实例”，否则旧进程退出会把新终端覆盖成 exited
 - [文件预览边界] 文件预览 root 校验必须同时覆盖 lexical path、realpath 和 session indexer allowedRoots；只做字符串前缀判断会被 symlink root 绕过
 - [HTML 预览隔离] HTML 文件预览不能只靠 iframe sandbox；还必须补 CSP 和禁点击交互，否则仍会保留外链跳转与资源访问面
