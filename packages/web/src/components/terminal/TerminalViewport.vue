@@ -17,8 +17,6 @@ let transport: WebSocketTransport | null = null;
 let isDisposed = false;
 
 const terminalStyle = {
-  "--term-bg": "hsl(var(--card))",
-  "--term-fg": "hsl(var(--foreground))",
   "--term-color-0": "hsl(var(--muted-foreground) / 0.75)",
   "--term-color-1": "hsl(var(--destructive))",
   "--term-color-2": "hsl(var(--primary))",
@@ -35,7 +33,7 @@ const terminalStyle = {
   "--term-color-13": "hsl(var(--primary))",
   "--term-color-14": "hsl(var(--accent-foreground) / 0.85)",
   "--term-color-15": "hsl(var(--foreground))",
-  fontFamily: '"IBM Plex Mono", monospace',
+  "--term-font-family": "var(--font-mono)",
 } as const;
 
 const focusTerminal = () => {
@@ -138,21 +136,35 @@ onBeforeUnmount(() => {
 
 <template>
   <section
-    class="relative h-full overflow-hidden"
+    ref="hostRef"
+    class="ridge-terminal-host h-full min-h-0 w-full"
     :style="terminalStyle"
     @click="focusTerminal"
-  >
-    <div ref="hostRef" class="ridge-terminal-host absolute inset-0" />
-  </section>
+  />
 </template>
 
 <style scoped>
 .ridge-terminal-host {
+  --term-bg: var(--foreground);
+  --term-fg: var(--background);
+  --term-cursor: var(--background);
+
   background: var(--term-bg);
 }
 
-.ridge-terminal-host :deep(.wterm) {
+:global(.dark) .ridge-terminal-host {
+  --term-bg: var(--background);
+  --term-fg: var(--foreground);
+  --term-cursor: var(--foreground);
+}
+
+.ridge-terminal-host.wterm {
   height: 100%;
+  min-height: 0;
+  width: 100%;
+  border-radius: 0;
+  box-shadow: none;
+  box-sizing: border-box;
 }
 
 .ridge-terminal-host :deep(.wterm-root) {

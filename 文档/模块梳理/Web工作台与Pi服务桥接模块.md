@@ -1225,3 +1225,82 @@ startup refreshSessionCatalog
 - `packages/server/src/index.ts`
 - `packages/server/src/types/index.ts`
 - `packages/web/src/lib/types.ts`
+
+## 2026-04-26 文件页重新设计
+
+### 变更目的
+- 一级 `/files` 页面从单纯文件树升级为独立文件工作区。
+- 复用聊天内已验证的文件预览标签、Markdown 自动保存、图片/HTML/代码/大文件读取能力，不新增平行文件接口。
+- 保持文件页根目录固定为 `SystemInfo.workspaceDir`，不跟随当前会话 cwd。
+
+### 当前链路
+```text
+/files
+  -> useFilesRouteState()
+  -> rootDir = core.info.workspaceDir
+  -> WorkspaceFileTree.select-file
+  -> WorkbenchOperationPanel.openFile(path)
+  -> useWorkbenchFilePreview(rootDir)
+  -> GET /api/files/content | /api/files/blob | /api/files/content-window
+  -> Markdown 保存走 PUT /api/files/content
+```
+
+### 设计结论
+- 文件预览状态仍由 `useWorkbenchFilePreview` 托管；一级文件页和聊天操作区共享同一套根目录边界与预览契约。
+- `WorkbenchOperationPanel` 是可复用预览面板，聊天页默认开启 Markdown 块级 AI 动作，文件页显式关闭，避免非会话页面出现“加入输入框”的会话语义。
+- `/files` 只负责工作区级文件浏览、收藏入口和独立预览，不负责会话 composer 注入。
+
+### 受影响文件
+- `packages/web/src/pages/FilesPage.vue`
+- `packages/web/src/components/workbench/WorkbenchOperationPanel.vue`
+- `packages/web/src/components/workbench/file-preview/WorkbenchMarkdownPreview.vue`
+- `packages/web/src/components/workbench/file-preview/markdown/MarkdownPreviewBlock.vue`
+- `packages/web/src/pages/__tests__/FilesPage.test.ts`
+
+## 2026-04-27 终端开发代理修复
+
+### 变更目的
+- 修复开发环境 `/terminal` 页面只有光标、无法输入字符的问题。
+- 保持前端终端流仍使用同源 `/api/terminals/:id/stream`，由 Vite 开发代理转发到 Node 服务层。
+
+### 当前链路
+```text
+/terminal
+  -> TerminalViewport.vue
+  -> getTerminalStreamUrl(terminalId)
+  -> ws://<vite-host>/api/terminals/:id/stream
+  -> Vite proxy ws: true
+  -> Node terminalManager.attachSocket()
+  -> node-pty
+```
+
+### 设计结论
+- 终端输入不是前端本地回显，必须以 WebSocket 附着到服务端 PTY 为真源。
+- Vite 的 REST 代理正常不代表 WebSocket 代理正常；`/api` 开发代理必须显式开启 `ws: true`。
+
+### 受影响文件
+- `packages/web/vite.config.ts`
+
+## 2026-04-27 终端视口满高修复
+
+### 变更目的
+- 修复 `/terminal` 黑色终端画布没有铺满剩余高度，底部露出页面背景的问题。
+- 保持终端为 IDE 风格的工作画布，不使用 `@wterm/dom` 默认悬浮卡片视觉。
+
+### 当前链路
+```text
+TerminalPage.vue
+  -> flex column: TerminalTabBar + content flex-1
+  -> TerminalViewport.vue
+  -> 根 section 作为 WTerm host
+  -> WTerm 给 host 添加 .wterm
+  -> .ridge-terminal-host.wterm 高度 100%
+```
+
+### 设计结论
+- 传给 `new WTerm(host)` 的元素本身会被库添加 `.wterm`，因此高度规则必须写在 host 自身上，不能依赖被 `.wterm { position: relative }` 覆盖的绝对子元素。
+- 终端画布使用主题变量生成深色背景：浅色模式取 `--foreground`，暗色模式取 `--background`，避免复用普通 `--card` 导致浅色模式变白。
+- 终端输入、WebSocket 和 PTY 生命周期不变。
+
+### 受影响文件
+- `packages/web/src/components/terminal/TerminalViewport.vue`

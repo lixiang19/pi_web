@@ -20,6 +20,7 @@ import type { WorkbenchMarkdownBlock } from "./types";
 
 const props = defineProps<{
   block: WorkbenchMarkdownBlock;
+  enableAiActions?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -87,7 +88,7 @@ const closeComposer = () => {
       </div>
 
       <div class="flex shrink-0 items-center gap-2">
-        <Popover v-model:open="isComposerOpen">
+        <Popover v-if="props.enableAiActions !== false" v-model:open="isComposerOpen">
           <PopoverTrigger as-child>
             <Button variant="ghost" size="icon-sm" class="size-7 opacity-0 transition-opacity group-hover:opacity-100">
               <MessageSquarePlus class="size-4" />

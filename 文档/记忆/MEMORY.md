@@ -39,6 +39,7 @@
 - [Composable契约] 组合层 composable 如果只依赖少数字段，就声明最小状态接口；不要把整个 composable ReturnType 暴露给调用方，更不要用 Ref<object> 去伪装对象属性是 Ref 的契约
 - [会话真源] 工作台会话显示状态只能有一个真源；组件 props、tab 状态、聊天实例三处同时持有会话身份时，草稿转正式会话一定会失真
 - [LRU 生命周期] LRU 池模型下，SSE 是否保持连接取决于“会话是否还在池里”，不能再取决于“当前是否可见”
+- [LRU布局] 草稿会话和正式会话池必须共享同一个会话舞台；隐藏实例只能在舞台内 `v-show`，外层不能作为多个 `flex-1` 兄弟节点参与布局
 - [草稿语义] 如果产品要求“新建草稿独立存在、切换即丢失”，就必须在创建草稿时主动清空 `null draft`，否则旧草稿会通过共享状态偷偷恢复
 
 - [ask 交互] 阻塞式 ask 要拆成两条线：pending 阶段走 `interactiveRequests` 底部表单，历史阶段回到普通工具消息；两者不能混成一种投影
@@ -72,6 +73,9 @@
 - [原生依赖安装契约] 仓库使用 `pnpm 10` 时，`better-sqlite3`、`node-pty` 这类原生包不能只写进 dependencies；必须在根 `package.json` 的 `pnpm.onlyBuiltDependencies` 中显式放行，否则 install 后会出现“包存在但 `.node` 绑定缺失”，server 在运行原生模块时直接失败
 - [包管理器一致性] 既然仓库已经锁定 `pnpm` 并依赖 `pnpm.onlyBuiltDependencies` 管原生包，README/开发文档里的安装命令也必须统一写成 `pnpm install`；继续写 `npm install` 会把“依赖声明正确但本地缺包/缺绑定”的问题伪装成代码故障。
 - [终端重启竞态] PTY restart 不能让旧进程的 `onData/onExit` 继续写回共享 record；事件处理必须校验“当前活跃 PTY 实例”，否则旧进程退出会把新终端覆盖成 exited
+- [终端开发代理] 终端页面如果只有光标、没有 prompt 和输入回显，优先检查 WebSocket 是否真的附着到 PTY；Vite `/api` 代理必须显式 `ws: true`，否则 REST 正常但 `/api/terminals/:id/stream` 不通
+- [终端视口承载] `@wterm/dom` 会把 `.wterm` 类加到传入的 host 元素本身；不要让该元素依赖 Tailwind `absolute` 定位撑满高度，因为库样式会设置 `position: relative`
 - [文件预览边界] 文件预览 root 校验必须同时覆盖 lexical path、realpath 和 session indexer allowedRoots；只做字符串前缀判断会被 symlink root 绕过
 - [HTML 预览隔离] HTML 文件预览不能只靠 iframe sandbox；还必须补 CSP 和禁点击交互，否则仍会保留外链跳转与资源访问面
 - [Markdown 预览安全] Markdown 渲染不能只禁 link/image trust；raw HTML 也必须改成文本输出，否则会绕过默认渲染链直接进入页面
+- [文件页复用边界] 一级文件页要复用 `useWorkbenchFilePreview` 与 `/api/files/*` 契约；只通过可配置 UI 关闭会话专属动作，不能另起一套预览/保存链路

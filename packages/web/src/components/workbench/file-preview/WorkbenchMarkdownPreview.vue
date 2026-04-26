@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 const props = defineProps<{
   content: string;
+  enableAiActions?: boolean;
   error: string;
   fileName: string;
   filePath: string;
@@ -97,6 +98,7 @@ const appendBlockToDraft = (payload: {
             v-else
             :key="block.id"
             :block="block"
+            :enable-ai-actions="props.enableAiActions"
             @append-to-draft="appendBlockToDraft"
           />
         </div>

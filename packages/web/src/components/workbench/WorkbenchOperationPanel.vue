@@ -7,9 +7,16 @@ import WorkbenchReadonlyFilePreview from "@/components/workbench/file-preview/Wo
 import { getFileBlobUrl } from "@/lib/api";
 import { useWorkbenchFilePreview } from "@/composables/useWorkbenchFilePreview";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   rootDir: string;
-}>();
+  emptyTitle?: string;
+  emptyDescription?: string;
+  enableMarkdownAiActions?: boolean;
+}>(), {
+  emptyTitle: "从文件树点击文件开始预览",
+  emptyDescription: "这里会承载当前会话的文件预览和后续更多操作标签。",
+  enableMarkdownAiActions: true,
+});
 
 const emit = defineEmits<{
   (e: "append-to-draft", value: string): void;
@@ -43,8 +50,8 @@ defineExpose<{
     <div v-if="tabs.length === 0" class="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
       <FileStack class="size-10 text-muted-foreground/35" />
       <div class="space-y-1">
-        <p class="text-sm font-medium text-foreground/80">从文件树点击文件开始预览</p>
-        <p class="text-xs text-muted-foreground">这里会承载当前会话的文件预览和后续更多操作标签。</p>
+        <p class="text-sm font-medium text-foreground/80">{{ props.emptyTitle }}</p>
+        <p class="text-xs text-muted-foreground">{{ props.emptyDescription }}</p>
       </div>
     </div>
 
@@ -88,6 +95,7 @@ defineExpose<{
           <WorkbenchMarkdownPreview
             v-if="activeTab.previewKind === 'markdown'"
             :content="activeTab.content"
+            :enable-ai-actions="props.enableMarkdownAiActions"
             :error="activeTab.error"
             :file-name="activeTab.title"
             :file-path="activeTab.path"

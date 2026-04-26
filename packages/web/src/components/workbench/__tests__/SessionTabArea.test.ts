@@ -85,4 +85,22 @@ describe("SessionTabArea", () => {
 
     expect(rendered).toEqual(["session-2", "session-1"]);
   });
+
+  it("uses a single layout stage when a draft and pooled sessions coexist", () => {
+    draftView.value = {
+      key: "draft-1",
+      cwd: "/tmp/project",
+      parentSessionId: "",
+    };
+    pool.value = [
+      { sessionId: "session-2", lastAccessedAt: 2, isStreaming: false },
+      { sessionId: "session-1", lastAccessedAt: 1, isStreaming: false },
+    ];
+    activeSessionId.value = null;
+
+    const wrapper = mount(SessionTabArea);
+
+    expect(wrapper.findAll('[data-test="session-tab-stage"]')).toHaveLength(1);
+    expect(wrapper.findAll('[data-test="session-tab-content"]')).toHaveLength(3);
+  });
 });
