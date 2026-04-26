@@ -97,6 +97,7 @@ describe("useWorkbenchPrimaryNavigation", () => {
 
     expect(wrapper.vm.primaryNavItems.map((item: { route: string }) => item.route)).toEqual([
       "search",
+      "notes",
       "files",
       "terminal",
       "automations",

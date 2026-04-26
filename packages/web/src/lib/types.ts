@@ -100,3 +100,41 @@ export interface UiSessionSnapshot
   > {
   messages: UiConversationMessage[];
 }
+
+// ===== Notes =====
+
+export interface NoteListItem {
+  name: string;
+  path: string;
+  relativePath: string;
+  updatedAt: number;
+  size: number;
+}
+
+export interface NoteListResponse {
+  root: string;
+  entries: NoteListItem[];
+}
+
+export interface NoteContentResponse {
+  path: string;
+  relativePath: string;
+  content: string;
+  updatedAt: number;
+  size: number;
+}
+
+export interface NoteSaveResponse {
+  path: string;
+  relativePath: string;
+  size: number;
+  updatedAt: number;
+}
+
+export interface NoteCreateResponse {
+  name: string;
+  path: string;
+  relativePath: string;
+  size: number;
+  updatedAt: number;
+}

@@ -125,6 +125,28 @@ export interface IndexedSessionTreeNode {
 const getFallbackTitle = (firstMessage: unknown): string =>
   normalizeString(firstMessage).slice(0, 48) || '新会话';
 
+const extractFirstMessageText = (message: unknown): string => {
+  if (!message || typeof message !== 'object') {
+    return '';
+  }
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return '';
+  }
+  for (const item of content) {
+    if (item && typeof item === 'object') {
+      const typed = item as { type?: unknown; text?: unknown };
+      if (typed.type === 'text' && typeof typed.text === 'string') {
+        return typed.text;
+      }
+    }
+  }
+  return '';
+};
+
 const buildContextId = (projectRoot: string, worktreeRoot: string) =>
   crypto
     .createHash('sha1')
@@ -508,7 +530,7 @@ export const refreshSessionCatalog = async (
     allSessions.map((info) =>
       appendSession({
         id: info.id,
-        name: info.name,
+        name: info.name || '',
         cwd: info.cwd,
         path: info.path,
         created: info.created,
@@ -524,6 +546,9 @@ export const refreshSessionCatalog = async (
       if (knownIds.has(record.id)) {
         return;
       }
+      if (!record.sessionFile) {
+        return;
+      }
 
       await appendSession({
         id: record.id,
@@ -532,7 +557,7 @@ export const refreshSessionCatalog = async (
         path: record.sessionFile,
         created: new Date(record.createdAt),
         modified: new Date(record.updatedAt),
-        firstMessage: record.session.messages[0]?.content,
+        firstMessage: extractFirstMessageText(record.session.messages[0]),
         parentSessionPath: record.parentSessionPath,
       });
     }),
@@ -555,6 +580,9 @@ export const upsertIndexedSessionRecord = async (
     return;
   }
 
+  if (!record.sessionFile) {
+    return;
+  }
   const resolvedSessionFile = path.resolve(record.sessionFile);
   const stats = buildActiveSessionStats(record);
   const contextId = buildContextId(

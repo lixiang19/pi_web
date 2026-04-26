@@ -3,6 +3,7 @@ import type { Component } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   Bot,
+  BookOpen,
   Database,
   FileText,
   FolderKanban,
@@ -17,6 +18,7 @@ import { useSessionLruPool } from "@/composables/useSessionLruPool";
 export type WorkbenchPrimaryRoute =
   | "chat"
   | "search"
+  | "notes"
   | "files"
   | "terminal"
   | "automations"
@@ -32,6 +34,7 @@ export interface WorkbenchNavItem {
 
 export const workbenchPrimaryNavItems: WorkbenchNavItem[] = [
   { route: "search", label: "搜索", icon: Search },
+  { route: "notes", label: "笔记", icon: BookOpen },
   { route: "files", label: "文件", icon: FolderKanban },
   { route: "terminal", label: "终端", icon: TerminalSquare },
   { route: "automations", label: "自动化", icon: Bot },

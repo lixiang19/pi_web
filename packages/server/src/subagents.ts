@@ -8,9 +8,9 @@ import {
   DefaultResourceLoader,
   SessionManager,
   type AgentSession,
-  type ModelInfo,
-  type PiExtensionAPI,
+  type ExtensionAPI,
 } from '@mariozechner/pi-coding-agent';
+import type { Api, Model } from '@mariozechner/pi-ai';
 
 import { compileAgentPermission, createPermissionGateExtension } from './agent-permissions.js';
 import {
@@ -26,12 +26,12 @@ import type { HttpError, SessionRecord, ThinkingLevel } from './types/index.js';
 // ============================================================
 
 interface ParentModelResolver {
-  (spec: string | undefined | null): ModelInfo | null;
+  (spec: string | undefined | null): Model<Api> | null;
 }
 
 interface ChildSessionEntry {
   sessionId: string;
-  sessionFile: string;
+  sessionFile: string | undefined;
   parentSessionId: string;
   agentName: string;
   prompt: string;
@@ -100,6 +100,9 @@ const buildInheritedContextBlock = (record: SessionRecord): string => {
 
   const lines = sourceMessages
     .map((message) => {
+      if (!('content' in message)) {
+        return '';
+      }
       const role = normalizeStr(message.role).toLowerCase();
       const text = toMessageText(message.content).trim();
       if (!text) {
@@ -370,7 +373,7 @@ export const createSubagentToolExtension = (
   parentRecord: SessionRecord,
   extOptions: SubagentExtensionOptions,
 ) =>
-  (pi: PiExtensionAPI): void => {
+  (pi: ExtensionAPI): void => {
     // ---- task ----
     pi.registerTool({
       name: 'task',
@@ -380,7 +383,7 @@ export const createSubagentToolExtension = (
         'Returns { sessionId, sessionFile, status, result?, error? }. ' +
         'Use run_in_background=true to return immediately with sessionId.',
       parameters: TaskToolSchema,
-      async execute(_toolCallId, params: Record<string, unknown>) {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         const agentName = normalizeStr(params.agent);
         if (!agentName) {
           throw createHttpError('缺少 agent 参数');
@@ -483,7 +486,7 @@ export const createSubagentToolExtension = (
         'Send a steering message to a running subagent session. ' +
         'The message interrupts after the current tool execution.',
       parameters: SteerSubagentSchema,
-      async execute(_toolCallId, params: Record<string, unknown>) {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         const sessionId = normalizeStr(params.session_id);
         if (!sessionId) {
           throw createHttpError('缺少 session_id');
@@ -527,7 +530,7 @@ export const createSubagentToolExtension = (
       label: 'Get Subagent Result',
       description: 'Check status and retrieve result from a background subagent session.',
       parameters: GetSubagentResultSchema,
-      async execute(_toolCallId, params: Record<string, unknown>) {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         const sessionId = normalizeStr(params.session_id);
         if (!sessionId) {
           throw createHttpError('缺少 session_id');

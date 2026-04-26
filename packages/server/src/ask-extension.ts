@@ -1,4 +1,4 @@
-import type { PiExtensionAPI, AgentToolResult } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI, AgentToolResult } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 
 import type {
@@ -110,7 +110,7 @@ interface CreateAskExtensionOptions {
 export const createAskExtension = (
   record: SessionRecord,
   options: CreateAskExtensionOptions,
-) => (pi: PiExtensionAPI): void => {
+) => (pi: ExtensionAPI): void => {
   pi.registerTool({
     name: 'ask',
     label: 'Ask',

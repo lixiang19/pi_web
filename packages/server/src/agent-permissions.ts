@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type {
-  PiExtensionAPI,
+  ExtensionAPI,
   ToolCallEvent as PiToolCallEvent,
 } from '@mariozechner/pi-coding-agent';
 
@@ -491,8 +491,8 @@ export const createPermissionGateExtension = (
     | null
     | undefined,
   options: PermissionGateRuntimeOptions = {},
-) => (pi: PiExtensionAPI): void => {
-  pi.on('tool_call', async (event) => {
+) => (pi: ExtensionAPI): void => {
+  pi.on('tool_call', async (event: PiToolCallEvent) => {
     const policy = resolvePolicy(policyOrGetter);
     if (!policy) {
       return undefined;

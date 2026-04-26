@@ -38,6 +38,10 @@ import type {
   GitBranchesResponse,
   GitRemoteInfo,
   GitRepositoryStatusResponse,
+  NoteListResponse,
+  NoteContentResponse,
+  NoteSaveResponse,
+  NoteCreateResponse,
 } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -474,5 +478,33 @@ export function gitRebase(payload: { cwd: string; branchName: string }) {
   return request<{ ok: true }>("/api/git/rebase", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+// ============================================================================
+// Notes API
+// ============================================================================
+
+export function listNotes() {
+  return request<NoteListResponse>("/api/notes");
+}
+
+export function getNoteContent(path: string) {
+  return request<NoteContentResponse>(
+    `/api/notes/content?path=${encodeURIComponent(path)}`,
+  );
+}
+
+export function saveNoteContent(path: string, content: string) {
+  return request<NoteSaveResponse>("/api/notes/content", {
+    method: "PUT",
+    body: JSON.stringify({ path, content }),
+  });
+}
+
+export function createNote(name: string) {
+  return request<NoteCreateResponse>("/api/notes", {
+    method: "POST",
+    body: JSON.stringify({ name }),
   });
 }

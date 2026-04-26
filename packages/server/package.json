@@ -10,13 +10,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.65.2",
+    "@mariozechner/pi-agent-core": "^0.70.2",
+    "@mariozechner/pi-ai": "^0.70.2",
+    "@mariozechner/pi-coding-agent": "^0.70.2",
     "@pi/protocol": "workspace:*",
     "@sinclair/typebox": "^0.34.49",
     "better-sqlite3": "^12.9.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "node-pty": "1.2.0-beta.12",
+    "typebox": "^1.1.33",
     "ws": "^8.18.3",
     "zod": "^4.1.12"
   },

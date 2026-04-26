@@ -136,7 +136,7 @@ export interface TurnBudget {
 
 export interface SessionRecord {
   id: string;
-  sessionFile: string;
+  sessionFile: string | undefined;
   parentSessionPath?: string;
   cwd: string;
   status: 'idle' | 'streaming' | 'error';

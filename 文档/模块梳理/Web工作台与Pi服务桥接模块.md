@@ -1139,6 +1139,45 @@ usePiChatCore / usePiChat
 - `packages/web/src/composables/usePiChatCore.ts`
 - `packages/web/src/pages/WorkbenchPage.vue`
 
+## 2026-04-26 新增笔记 API
+
+### 变更目的
+
+- 在侧边栏新增「笔记」页面，内容来源为主聊天文件夹 `chat` 下的 Markdown 文件。
+- 使用 Milkdown/Crepe 作为编辑器。
+- 支持新建和保存 Markdown 文件。
+
+### 新增接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/notes` | 列出聊天文件夹下所有 .md/.markdown 文件 |
+| GET | `/api/notes/content?path=...` | 读取指定 Markdown 文件内容 |
+| PUT | `/api/notes/content` | 保存 Markdown 文件内容 |
+| POST | `/api/notes` | 新建 Markdown 文件 |
+
+### 安全边界
+
+- 所有笔记路径以 `chatProjectPath` 为根
+- 使用 `ensureWithinRoot` 防止路径逃逸
+- 只允许 `.md` / `.markdown` 扩展名
+
+### 前端新增
+
+- `packages/web/src/pages/NotesPage.vue`：笔记页面，左侧文件列表 + 右侧编辑器
+- `packages/web/src/components/notes/NoteMilkdownEditor.vue`：Milkdown/Crepe 编辑器封装
+- `packages/web/src/lib/types.ts`：新增 `NoteListItem`、`NoteContentResponse` 等类型
+- `packages/web/src/lib/api.ts`：新增 `listNotes`、`getNoteContent`、`saveNoteContent`、`createNote` 函数
+- `packages/web/src/router/index.ts`：新增 `/notes` 路由
+- `packages/web/src/composables/useWorkbenchPrimaryNavigation.ts`：新增 `notes` 导航项
+
+### 新增依赖
+
+| 依赖 | 用途 |
+| --- | --- |
+| `@milkdown/vue` | Milkdown Vue 3 集成 |
+| `@milkdown/crepe` | 开箱即用编辑器 |
+
 ## 2026-04-15 最小会话索引与 SSE 零写库
 ### 变更目的
 - 收缩 ridge.db 中的会话目录索引，只保留左栏列表、project/worktree 分组、父子会话树和运行时恢复必需字段。

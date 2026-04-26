@@ -7,7 +7,7 @@ coverage
 .env.*.local
 *.log
 *.tsbuildinfo
-
+.pi-lens
 packages/web/node_modules
 packages/web/dist
 packages/server/node_modules

@@ -5,6 +5,7 @@ import NotFoundPage from "@/pages/NotFoundPage.vue";
 import AutomationsPage from "@/pages/AutomationsPage.vue";
 import DatasetsPage from "@/pages/DatasetsPage.vue";
 import FilesPage from "@/pages/FilesPage.vue";
+import NotesPage from "@/pages/NotesPage.vue";
 import SearchPage from "@/pages/SearchPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
 import SpacesPage from "@/pages/SpacesPage.vue";
@@ -38,6 +39,15 @@ const router = createRouter({
           meta: {
             title: "搜索",
             description: "统一搜索入口。",
+          },
+        },
+        {
+          path: "notes",
+          name: "notes",
+          component: NotesPage,
+          meta: {
+            title: "笔记",
+            description: "聊天文件夹笔记编辑。",
           },
         },
         {

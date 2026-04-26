@@ -19,9 +19,10 @@ import {
 import { z } from 'zod';
 import type {
   AgentSession,
-  ModelInfo,
-  SessionEvent,
+  AgentSessionEvent,
 } from '@mariozechner/pi-coding-agent';
+import type { Api, Model } from '@mariozechner/pi-ai';
+import type { AgentMessage } from '@mariozechner/pi-agent-core';
 
 import {
   createPiAgentScopeSettingsManager,
@@ -30,6 +31,7 @@ import {
 import { createProjectContextResolver } from './project-context.js';
 import { createGitService } from './git-service.js';
 import { createWorktreeService } from './worktree-service.js';
+import { createNotesRouter } from './notes.js';
 import {
   deleteAgent,
   discoverAgents,
@@ -1026,12 +1028,12 @@ const serializeMessage = (message: {
   isError: message?.isError === true ? true : undefined,
 }) as SessionMessagesPayload['messages'][number];
 
-const getAvailableModels = (): ModelInfo[] => {
+const getAvailableModels = (): Model<Api>[] => {
   modelRegistry.refresh();
   return [...modelRegistry.getAvailable()];
 };
 
-const findModel = (modelSpec: string | undefined | null): ModelInfo | null => {
+const findModel = (modelSpec: string | undefined | null): Model<Api> | null => {
   const normalized = normalizeString(modelSpec);
   if (!normalized) {
     return null;
@@ -1044,7 +1046,7 @@ const findModel = (modelSpec: string | undefined | null): ModelInfo | null => {
   );
 };
 
-const formatModelSpec = (model: ModelInfo | null | undefined): string | undefined => {
+const formatModelSpec = (model: Model<Api> | null | undefined): string | undefined => {
   if (!model?.provider || !model?.id) {
     return undefined;
   }
@@ -1369,7 +1371,7 @@ const updateStatus = (record: SessionRecord, nextStatus: SessionRecord['status']
   emit(record, { type: 'status', status: resolvedStatus });
 };
 
-const shouldForwardSessionEvent = (event: SessionEvent): boolean => {
+const shouldForwardSessionEvent = (event: AgentSessionEvent): boolean => {
   if (
     (event.type === 'message_start' || event.type === 'message_end') &&
     event.message?.role === 'user'
@@ -1523,26 +1525,10 @@ const destroySessionRecord = (record: SessionRecord): void => {
   openingSessionRecords.delete(record.id);
 };
 
-const persistSessionFileIfNeeded = async (record: SessionRecord): Promise<void> => {
-  if (
-    !record.sessionFile ||
-    record.session.messages.some((message) => message.role === 'assistant')
-  ) {
-    return;
-  }
-
-  const sessionManager = record.session.sessionManager;
-  if (typeof (sessionManager as { _rewriteFile?(): void })._rewriteFile !== 'function') {
-    return;
-  }
-
-  await fs.mkdir(path.dirname(record.sessionFile), { recursive: true });
-  (sessionManager as { _rewriteFile(): void })._rewriteFile();
-  sessionManager.flushed = true;
-};
-
 const persistSessionRecordMetadata = async (record: SessionRecord): Promise<void> => {
-  await persistSessionFileIfNeeded(record);
+  if (!record.sessionFile) {
+    return;
+  }
   await sessionMetadataStore.upsertSession({
     id: record.id,
     title: normalizeString(record.session.sessionName) || '新会话',
@@ -1670,7 +1656,7 @@ interface ToSessionSnapshotOptions {
   rounds?: number;
 }
 
-const getUserMessageIndexes = (messages: SessionEvent["message"][]): number[] => {
+const getUserMessageIndexes = (messages: AgentMessage[]): number[] => {
   const indexes: number[] = [];
   for (const [index, message] of messages.entries()) {
     if (message && message.role === "user") {
@@ -1682,7 +1668,7 @@ const getUserMessageIndexes = (messages: SessionEvent["message"][]): number[] =>
 
 const buildSessionMessagesPayload = (
   sessionId: string,
-  allMessages: SessionEvent["message"][],
+  allMessages: AgentMessage[],
   options: ToSessionSnapshotOptions = {},
   interactiveRequests: AskInteractiveRequest[] = [],
   permissionRequests: PermissionInteractiveRequest[] = [],
@@ -1723,7 +1709,7 @@ const getRequestedRoundCount = (options: ToSessionSnapshotOptions = {}) =>
 
 const parseStoredSessionMessageLine = (
   line: string,
-): SessionEvent["message"] | null => {
+): AgentMessage | null => {
   const trimmedLine = line.trim();
   if (!trimmedLine) {
     return null;
@@ -1742,7 +1728,7 @@ const parseStoredSessionMessageLine = (
 
   const message = parsed.message;
   return message && typeof message === 'object'
-    ? (message as SessionEvent["message"])
+    ? (message as AgentMessage)
     : null;
 };
 
@@ -1828,9 +1814,9 @@ const toSessionMessagesPayload = (
 
 const readAllStoredSessionMessages = async (
   sessionFile: string,
-): Promise<SessionEvent["message"][]> => {
+): Promise<AgentMessage[]> => {
   const content = await fs.readFile(sessionFile, 'utf8');
-  const messages: SessionEvent["message"][] = [];
+  const messages: AgentMessage[] = [];
   for (const line of content.split(/\r?\n/)) {
     const message = parseStoredSessionMessageLine(line);
     if (message) {
@@ -1843,9 +1829,9 @@ const readAllStoredSessionMessages = async (
 const readStoredSessionMessagesTail = async (
   sessionFile: string,
   requestedRounds: number,
-): Promise<SessionEvent["message"][]> => {
+): Promise<AgentMessage[]> => {
   const handle = await fs.open(sessionFile, 'r');
-  const collectedMessages: SessionEvent["message"][] = [];
+  const collectedMessages: AgentMessage[] = [];
   let position = 0;
   let remainder = Buffer.alloc(0);
   let foundUserRounds = 0;
@@ -1908,7 +1894,7 @@ const readStoredSessionMessagesTail = async (
 
 const buildStoredSessionMessagesPayload = (
   sessionId: string,
-  messages: SessionEvent["message"][],
+  messages: AgentMessage[],
   totalRounds: number,
   requestedRounds: number,
 ): SessionMessagesPayload => {
@@ -2130,6 +2116,14 @@ const ensureSessionRecord = async (
 };
 
 // ===== Routes =====
+
+// ===== Notes API =====
+const notesRouter = createNotesRouter(workspaceChatConfig);
+
+app.get('/api/notes', notesRouter.listNotes);
+app.get('/api/notes/content', notesRouter.getNoteContent);
+app.put('/api/notes/content', notesRouter.saveNoteContent);
+app.post('/api/notes', notesRouter.createNote);
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true });
