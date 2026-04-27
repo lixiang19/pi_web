@@ -50,6 +50,55 @@ export interface ProvidersResponse {
   };
 }
 
+export type AutomationSchedule =
+  | {
+      type: "daily";
+      time: string;
+    }
+  | {
+      type: "weekly";
+      time: string;
+      weekdays: number[];
+    }
+  | {
+      type: "interval";
+      everyMinutes: number;
+    };
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  cwd: string;
+  agent?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  schedule: AutomationSchedule;
+  prompt: string;
+  nextRunAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AutomationRuleInput {
+  name: string;
+  enabled: boolean;
+  cwd: string;
+  agent?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  schedule: AutomationSchedule;
+  prompt: string;
+}
+
+export interface AutomationsResponse {
+  rules: AutomationRule[];
+}
+
+export interface AutomationRunNowResponse {
+  sessionId: string;
+}
+
 export interface ResourceSourceInfo {
   path: string;
   source: string;

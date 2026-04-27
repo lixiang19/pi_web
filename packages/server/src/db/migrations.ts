@@ -69,4 +69,22 @@ CREATE TABLE IF NOT EXISTS session_selections (
   updated_at INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY(session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS automation_rules (
+  automation_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  enabled INTEGER NOT NULL,
+  cwd TEXT NOT NULL,
+  agent_name TEXT,
+  explicit_model TEXT,
+  explicit_thinking_level TEXT,
+  schedule_json TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  next_run_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_rules_next_run_at
+  ON automation_rules(enabled, next_run_at);
 `;

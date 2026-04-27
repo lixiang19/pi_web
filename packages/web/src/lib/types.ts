@@ -1,5 +1,10 @@
 export type {
   AgentSummary,
+  AutomationRule,
+  AutomationRuleInput,
+  AutomationRunNowResponse,
+  AutomationSchedule,
+  AutomationsResponse,
   AskInteractiveRequest,
   AskOption,
   AskQuestion,

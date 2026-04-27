@@ -58,8 +58,6 @@ vi.mock("@/composables/useWorkbenchPrimaryNavigation", () => ({
       { route: "files", label: "文件", icon: defineComponent({ template: "<i />" }) },
       { route: "terminal", label: "终端", icon: defineComponent({ template: "<i />" }) },
       { route: "automations", label: "自动化", icon: defineComponent({ template: "<i />" }) },
-      { route: "datasets", label: "数据集", icon: defineComponent({ template: "<i />" }) },
-      { route: "spaces", label: "空间", icon: defineComponent({ template: "<i />" }) },
       { route: "settings", label: "设置", icon: defineComponent({ template: "<i />" }) },
     ],
     navigateToRoute: vi.fn(),

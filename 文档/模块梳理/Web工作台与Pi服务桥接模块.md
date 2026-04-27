@@ -7,7 +7,7 @@
 - `usePiChat.ts` 与 `useWorkbenchPage.ts` 已删除，不再允许新增引用。
 - 路由主壳统一收敛到 `PlatformShell.vue`，左侧固定为统一一级导航 + 会话菜单，右侧主内容由 `RouterView` 切换。
 - `/chat` 是会话主路由，`WorkbenchPage.vue` 只负责会话工作台内容本身，不再直接组合左侧栏。
-- `/search`、`/files`、`/terminal`、`/automations`、`/datasets`、`/spaces`、`/settings` 已成为独立一级主路由。
+- `/search`、`/notes`、`/files`、`/terminal`、`/automations`、`/datasets`、`/spaces`、`/settings` 已成为独立一级主路由；其中 `/datasets`、`/spaces` 当前暂不在左侧侧边栏展示。
 - `/search` 首版已经承接真实的会话标题搜索：前端直接基于 `core.sessions` 过滤全部会话列表数据，并通过统一导航动作打开结果会话。
 - `/terminal` 已从占位页落为真实终端工作区：前端用 `useTerminalPool + @wterm/dom` 承载全局终端池、双窗格和信息侧栏，服务端通过 `node-pty + ws` 提供 `/api/terminals` REST 与 `WS /api/terminals/:id/stream`，页面刷新只重连、不重建 PTY。
 - 会话实例仍由 `useSessionLruPool.ts` 托管，`PlatformShell.vue` 通过 `KeepAlive` 保活 `/chat` 页面。

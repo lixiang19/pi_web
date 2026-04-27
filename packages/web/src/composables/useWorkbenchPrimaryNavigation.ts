@@ -4,8 +4,6 @@ import { useRoute, useRouter } from "vue-router";
 import {
   Bot,
   BookOpen,
-  Database,
-  FileText,
   FolderKanban,
   PlusSquare,
   Search,
@@ -38,8 +36,6 @@ export const workbenchPrimaryNavItems: WorkbenchNavItem[] = [
   { route: "files", label: "文件", icon: FolderKanban },
   { route: "terminal", label: "终端", icon: TerminalSquare },
   { route: "automations", label: "自动化", icon: Bot },
-  { route: "datasets", label: "数据集", icon: Database },
-  { route: "spaces", label: "空间", icon: FileText },
   { route: "settings", label: "设置", icon: Settings2 },
 ];
 

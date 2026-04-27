@@ -23,6 +23,7 @@ import type {
 } from '@mariozechner/pi-coding-agent';
 import type { Api, Model } from '@mariozechner/pi-ai';
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
+import type { AutomationRule } from '@pi/protocol';
 
 import {
   createPiAgentScopeSettingsManager,
@@ -32,6 +33,11 @@ import { createProjectContextResolver } from './project-context.js';
 import { createGitService } from './git-service.js';
 import { createWorktreeService } from './worktree-service.js';
 import { createNotesRouter } from './notes.js';
+import {
+  createAutomationScheduler,
+  createAutomationStore,
+  type AutomationStore,
+} from './automations.js';
 import {
   deleteAgent,
   discoverAgents,
@@ -142,6 +148,8 @@ const projectContextResolver = createProjectContextResolver(defaultWorkspaceDir)
 const sessionMetadataStore = createSessionMetadataStore();
 const gitService = createGitService();
 const worktreeService = createWorktreeService(gitService);
+let automationStore: AutomationStore | null = null;
+let automationScheduler: ReturnType<typeof createAutomationScheduler> | null = null;
 const refreshSessionCatalogIndex = async () =>
   refreshSessionCatalog({
     projectContextResolver,
@@ -164,6 +172,42 @@ const messageSchema = z.object({
   model: z.string().optional(),
   thinkingLevel: z.enum(THINKING_LEVELS).optional(),
   agent: z.string().nullable().optional(),
+});
+
+const automationScheduleSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('daily'),
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  }),
+  z.object({
+    type: z.literal('weekly'),
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1),
+  }),
+  z.object({
+    type: z.literal('interval'),
+    everyMinutes: z.number().int().min(1),
+  }),
+]);
+
+const automationRuleInputSchema = z.object({
+  name: z.string().min(1).max(80),
+  enabled: z.boolean(),
+  cwd: z.string().min(1),
+  agent: z.string().optional(),
+  model: z.string().optional(),
+  thinkingLevel: z.enum(THINKING_LEVELS).optional(),
+  schedule: automationScheduleSchema,
+  prompt: z.string().min(1),
+});
+
+const automationRulePatchSchema = automationRuleInputSchema.partial().refine(
+  (payload) => Object.keys(payload).length > 0,
+  { message: '至少要更新一个字段' },
+);
+
+const automationToggleSchema = z.object({
+  enabled: z.boolean(),
 });
 
 const updateSessionSchema = z
@@ -1628,6 +1672,50 @@ const ensureManagedProjectScope = async (
   throw error;
 };
 
+const getAutomationStore = (): AutomationStore => {
+  if (!automationStore) {
+    const error = new Error('自动化服务尚未初始化') as HttpError;
+    error.statusCode = 503;
+    throw error;
+  }
+
+  return automationStore;
+};
+
+const dispatchAutomationRule = async (
+  rule: AutomationRule,
+): Promise<{ sessionId: string }> => {
+  await ensureManagedProjectScope(rule.cwd);
+  const record = await createSessionRecord({
+    cwd: rule.cwd,
+    title: rule.name,
+    model: rule.model,
+  });
+  await applySessionAgentSelection(record, {
+    agentName: rule.agent,
+    model: rule.model,
+    thinkingLevel: rule.thinkingLevel,
+  });
+  await persistSessionRecordMetadata(record);
+  await upsertIndexedSessionRecord(record, {
+    projectContextResolver,
+    workspaceChatConfig,
+  });
+
+  updateStatus(record, 'streaming');
+  void record.session
+    .prompt(rule.prompt, { source: 'interactive' })
+    .catch((error: unknown) => {
+      record.status = 'error';
+      emit(record, {
+        type: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+  return { sessionId: record.id };
+};
+
 const resolveTerminalCwd = async (value: unknown): Promise<string> => {
   const candidatePath = normalizeOptionalFsPath(value) || defaultWorkspaceDir;
   const resolvedCandidatePath = await resolveExistingRealPath(candidatePath);
@@ -2198,6 +2286,106 @@ app.get('/api/agents', async (req: Request, res: Response, next: NextFunction) =
         .filter((agent) => agent.enabled !== false && agent.mode !== 'task')
         .map(createAgentSummary),
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/automations', (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json({ rules: getAutomationStore().listRules() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/automations', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = automationRuleInputSchema.parse(req.body ?? {});
+    await ensureManagedProjectScope(payload.cwd);
+    const rule = getAutomationStore().createRule({
+      ...payload,
+      agent: payload.agent || undefined,
+      model: payload.model || undefined,
+      thinkingLevel: payload.thinkingLevel || undefined,
+    });
+    automationScheduler?.reschedule();
+    res.status(201).json(rule);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/automations/:automationId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = automationRulePatchSchema.parse(req.body ?? {});
+    if (payload.cwd) {
+      await ensureManagedProjectScope(payload.cwd);
+    }
+    const rule = getAutomationStore().updateRule(String(req.params.automationId), {
+      ...payload,
+      agent: payload.agent === '' ? null : payload.agent,
+      model: payload.model === '' ? null : payload.model,
+      thinkingLevel: payload.thinkingLevel,
+    });
+    if (!rule) {
+      const error = new Error('自动化规则不存在') as HttpError;
+      error.statusCode = 404;
+      throw error;
+    }
+
+    automationScheduler?.reschedule();
+    res.json(rule);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/automations/:automationId/toggle', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = automationToggleSchema.parse(req.body ?? {});
+    const rule = getAutomationStore().updateRule(String(req.params.automationId), {
+      enabled: payload.enabled,
+    });
+    if (!rule) {
+      const error = new Error('自动化规则不存在') as HttpError;
+      error.statusCode = 404;
+      throw error;
+    }
+
+    automationScheduler?.reschedule();
+    res.json(rule);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/automations/:automationId/run', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rule = getAutomationStore().getRule(String(req.params.automationId));
+    if (!rule) {
+      const error = new Error('自动化规则不存在') as HttpError;
+      error.statusCode = 404;
+      throw error;
+    }
+
+    res.json(await dispatchAutomationRule(rule));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/automations/:automationId', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const removed = getAutomationStore().removeRule(String(req.params.automationId));
+    if (!removed) {
+      const error = new Error('自动化规则不存在') as HttpError;
+      error.statusCode = 404;
+      throw error;
+    }
+
+    automationScheduler?.reschedule();
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -3164,7 +3352,16 @@ void ensureWorkspaceChatProject({
   templateDir: workspaceChatTemplateDir,
 })
   .then(() => initializeRidgeDb(defaultWorkspaceDir))
-  .then(async () => {
+  .then(async (db) => {
+    automationStore = createAutomationStore(db);
+    automationScheduler = createAutomationScheduler({
+      store: automationStore,
+      dispatchRule: async (rule) => {
+        await dispatchAutomationRule(rule);
+        await refreshSessionCatalogIndex();
+      },
+    });
+    automationScheduler.start();
     await refreshSessionCatalogIndex();
     httpServer.listen(port, () => {
       console.warn(`Pi server listening on http://127.0.0.1:${port}`);

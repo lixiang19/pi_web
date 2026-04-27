@@ -101,8 +101,6 @@ describe("useWorkbenchPrimaryNavigation", () => {
       "files",
       "terminal",
       "automations",
-      "datasets",
-      "spaces",
       "settings",
     ]);
   });

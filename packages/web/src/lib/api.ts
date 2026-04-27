@@ -1,5 +1,9 @@
 import type {
   AgentSummary,
+  AutomationRule,
+  AutomationRuleInput,
+  AutomationRunNowResponse,
+  AutomationsResponse,
   AskQuestionAnswer,
   PermissionDecisionAction,
   DirectoryBrowseResponse,
@@ -87,6 +91,47 @@ export function getAgents(cwd?: string) {
   return request<AgentSummary[]>(
     `/api/agents${params.size > 0 ? `?${params.toString()}` : ""}`,
   );
+}
+
+export function getAutomations() {
+  return request<AutomationsResponse>("/api/automations");
+}
+
+export function createAutomation(payload: AutomationRuleInput) {
+  return request<AutomationRule>("/api/automations", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAutomation(
+  automationId: string,
+  payload: Partial<AutomationRuleInput>,
+) {
+  return request<AutomationRule>(`/api/automations/${automationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function toggleAutomation(automationId: string, enabled: boolean) {
+  return request<AutomationRule>(`/api/automations/${automationId}/toggle`, {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function runAutomationNow(automationId: string) {
+  return request<AutomationRunNowResponse>(
+    `/api/automations/${automationId}/run`,
+    { method: "POST" },
+  );
+}
+
+export function deleteAutomation(automationId: string) {
+  return request<{ ok: true }>(`/api/automations/${automationId}`, {
+    method: "DELETE",
+  });
 }
 
 export function getResources(options?: { cwd?: string; sessionId?: string }) {
