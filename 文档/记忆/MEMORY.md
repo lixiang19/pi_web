@@ -3,11 +3,12 @@
 > 只记决策和教训，代码/文档能查到的不记。控制在 10-15 条以内。
 
 ## 架构决策
+
 - [Pi SDK] 只能用 SDK 模式，禁止 RPC（官方限制，无替代方案）
 - [数据存储] 统一用服务端 JSON 文件存储（~/.ridge/），不混用 localStorage（架构简单统一）
 - [前后端分离] server 负责 runtime + 权限 + 持久化，web 只做投影消费，禁止在 Web 层伪造会话语义
 - [Agent注册表] agent 系统不能只依赖磁盘发现，必须先有内置默认 agent，再让 project/user 配置覆盖；否则 schema 一收紧，功能会出现“系统支持但列表为空”的假故障
-- [输入安全] 所有服务端写入必须白名单校验，防止原型污染（__proto__ 注入）
+- [输入安全] 所有服务端写入必须白名单校验，防止原型污染（**proto** 注入）
 - [目录边界] 工作区文件树与 Home 目录项目选择必须拆成两个接口，不能共用一套 root 校验（安全语义不同）
 - [Pi资源隔离] 临时禁全局 prompts/skills/extensions/themes/AGENTS 时，不能只换 `SettingsManager(agentDir)`；`DefaultResourceLoader` 也必须显式传同一个隔离 `agentDir`，否则会回落 `getAgentDir()` 继续扫 `~/.pi/agent`。auth/models/sessions 可继续走全局。
 - [项目真源] 已添加项目必须是真源；会话列表、文件树、worktree 归属都从项目列表收敛，禁止再从 session 或 server 启动目录反推项目边界
@@ -16,6 +17,7 @@
 - [chat 初始化契约] `<workspace>/chat` 只允许是目录；已存在但不是目录时必须直接失败，不能吞掉错误继续复制
 
 ## 规范与教训
+
 - [主题规范] 禁止硬编码颜色值，必须用 shadcn 主题变量（暗色模式会失效）
 - [主题链路] Tailwind 语义主题类必须在构建期通过 theme contract 暴露，运行时只负责注入真实 CSS 变量
 - [边框治理] Tailwind 裸 `border-*` 在未显式指定颜色时会回退到 `currentColor`，在 ridge 主题中必须改用语义化 surface 分层，不能依赖细线分隔
@@ -26,6 +28,7 @@
 - [P0修复] 审查发现的严重问题（安全/命名冲突）必须立即修复，不拖到下次迭代
 
 ## 功能实现经验
+
 - [长路径展示] 弹窗里的路径、命令等长字符串不能和主操作按钮挤在同一行；应独立成可换行信息块，否则会在 dialog/grid 容器里撑坏最小宽度并裁剪操作区
 - [主题持久化] 主题名和明暗模式都必须进入服务端 settings 模型，不能只放 composable 临时状态
 - [拖放实现] 原生 HTML5 Drag and Drop API 足够满足简单拖放需求，无需引入第三方库
@@ -84,3 +87,6 @@
 - [子代理上下文] task 子代理继承上下文时必须写入 child `SessionManager` 的真实消息历史；不要再把父会话压成 system prompt 文本块，否则 toolResult/assistant 结构会丢失，resume 与真实回放也会错位
 - [笔记页边界] Obsidian 感的首要来源是 vault 侧栏、编辑外壳和 Milkdown 局部主题分层；不要为了视觉相似把双链/标签/图谱混入基础笔记 API。
 - [文件管理写边界] 文件页新建、移动、上传、删除必须复用服务端统一 root/realpath 校验；删除走系统回收区也必须先校验工作区边界，不能直接把用户传入路径交给 trash。
+- [标签页 HTML 嵌套] 标签栏外层如果是 button，内层关闭按钮不能再用 button；改用 div + cursor-pointer 替代外层交互容器
+- [自动保存 debounce] 自动保存用 2s setTimeout debounce，切换/关闭标签时 flushAutoSave 清除定时器并立即保存；保存失败保持 dirty 标记
+- [笔记页边界] 笔记 API 的 rename/delete 独立新增路由（PATCH /api/notes/rename, DELETE /api/notes），不复用通用文件管理 /api/files/entries 边界

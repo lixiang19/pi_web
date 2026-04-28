@@ -1357,3 +1357,120 @@ FileManagerToolbar / FileGrid
 - `packages/web/src/pages/FilesPage.vue`
 - `packages/web/src/composables/useFileManager.ts`
 - `packages/web/src/components/files/*`
+
+## 2026-04-28 笔记页 Obsidian 风格重设计
+
+### 变更目的
+
+- 笔记页面从装饰性布局重设计为 Obsidian 风格极简双区：极简 sidebar + 全宽编辑器 + 多标签页。
+- 去掉所有装饰性标签（"VAULT"、"EDITOR"）、badge、重 header。
+- 新增多标签页支持：同时打开多篇笔记，顶部标签栏切换。
+- 新增自动保存：2 秒 debounce，替代手动保存按钮。
+- 新增文件操作：三点 DropdownMenu 提供重命名、删除、复制路径。
+- 侧栏使用 ridge sidebar 主题变量，文件列表只显示文件名，按目录分组缩进。
+
+### 布局变化
+
+```text
+旧：NoteVaultSidebar(304px) + NoteEditorShell(header+card+footer)
+新：NoteVaultSidebar(240px, sidebar主题) + NoteTabBar + NoteTabContent + NoteStatusBar
+```
+
+### 新增接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| PATCH | `/api/notes/rename` | 重命名笔记 |
+| DELETE | `/api/notes?path=` | 删除笔记 |
+
+### 新增前端状态
+
+```ts
+interface NoteTab {
+  relativePath: string
+  name: string
+  content: string
+  savedContent: string
+  saveStatus: "saved" | "unsaved" | "saving" | "error"
+  isLoading: boolean
+}
+```
+
+### 组件变更
+
+| 文件 | 操作 |
+| --- | --- |
+| `NotesPage.vue` | 重写：标签页池 + 自动保存 |
+| `NoteVaultSidebar.vue` | 重写：极简 sidebar + DropdownMenu |
+| `NoteEditorShell.vue` | 删除 |
+| `NoteTabBar.vue` | 新建 |
+| `NoteTabContent.vue` | 新建 |
+| `NoteStatusBar.vue` | 新建 |
+| `NoteMilkdownEditorInner.vue` | 修改：全宽排版 |
+
+### 自动保存链路
+
+```text
+编辑器 markdownUpdated
+  -> activeTab.content = markdown
+  -> activeTab.saveStatus = "unsaved"
+  -> 2s debounce timer
+  -> flushAutoSave()
+  -> PUT /api/notes/content
+  -> 成功: saveStatus = "saved"
+  -> 失败: saveStatus = "error"
+```
+
+### 受影响文件
+
+- `packages/server/src/notes.ts`
+- `packages/server/src/index.ts`
+- `packages/web/src/pages/NotesPage.vue`
+- `packages/web/src/components/notes/NoteVaultSidebar.vue`
+- `packages/web/src/components/notes/NoteEditorShell.vue`（已删除）
+- `packages/web/src/components/notes/NoteTabBar.vue`（新建）
+- `packages/web/src/components/notes/NoteTabContent.vue`（新建）
+- `packages/web/src/components/notes/NoteStatusBar.vue`（新建）
+- `packages/web/src/components/notes/NoteMilkdownEditorInner.vue`
+- `packages/web/src/lib/api.ts`
+- `packages/web/src/lib/types.ts`
+
+## 2026-04-28 文件页极简重设计
+
+### 变更目的
+- 文件页视觉从带边框卡片升级为 ridge 规范的无边框 + 微妙阴影卡片。
+- 预览从 WorkbenchOperationPanel（标签系统 + Markdown 编辑 + AI 动作）简化为极简预览：仅文件元信息 + 只读内容渲染。
+- 页头从信息冗余的旧版升级为：项目名 + 目录统计 + 面包屑。
+- 操作栏从 outline/primary 混用按钮统一为 ghost 风格，更克制。
+
+### 当前链路
+```text
+/files
+  -> useFilesRouteState()
+  -> rootDir = core.info.workspaceDir
+  -> useFileManager(rootDir)
+  -> GET /api/files/tree
+  -> FileGrid 无边框卡片展示
+  -> 文件夹点击进入目录
+  -> 文件点击 FilePreviewPanel 只读预览
+  -> GET /api/files/content | blob
+  -> Markdown: vue-stream-markdown 只读渲染
+  -> 代码: ReadonlyCodePreview
+  -> HTML: ReadonlyHtmlPreview sandbox iframe
+  -> 图片: blob URL <img>
+  -> 纯文本: <pre> 渲染
+```
+
+### 设计结论
+- 文件页不再使用 WorkbenchOperationPanel 和 useWorkbenchFilePreview，改为自建 FilePreviewPanel。
+- FilePreviewPanel 不提供编辑、保存、AI 动作、下载、外部打开等操作，只有只读预览。
+- FileGrid 卡片去掉 border，使用 bg-card + shadow-sm 区分层次，hover 时 shadow-md 提升。
+- 选中态使用 ring-1 ring-primary/40 而非 border 高亮。
+- 数据层（useFileManager、useFilesRouteState）完全不变，只改表现层。
+
+### 受影响文件
+- `packages/web/src/pages/FilesPage.vue`
+- `packages/web/src/components/files/FileGrid.vue`
+- `packages/web/src/components/files/FileBreadcrumbs.vue`
+- `packages/web/src/components/files/FileManagerToolbar.vue`
+- `packages/web/src/components/files/FilePreviewPanel.vue`（新建）

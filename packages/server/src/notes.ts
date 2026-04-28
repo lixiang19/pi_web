@@ -105,6 +105,15 @@ const noteCreateSchema = z.object({
 	name: z.string().min(1).max(200),
 });
 
+const noteRenameSchema = z.object({
+	path: z.string().min(1),
+	newName: z.string().min(1).max(200),
+});
+
+const noteDeleteQuerySchema = z.object({
+	path: z.string().min(1),
+});
+
 export function createNotesRouter(chatConfig: WorkspaceChatConfig) {
 	const notesRoot = chatConfig.chatProjectPath;
 
@@ -257,6 +266,62 @@ export function createNotesRouter(chatConfig: WorkspaceChatConfig) {
 					size: stats.size,
 					updatedAt: stats.mtimeMs,
 				});
+			} catch (error) {
+				next(error);
+			}
+		},
+
+		renameNote: async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const payload = noteRenameSchema.parse(req.body ?? {});
+				const oldPath = await resolveExistingNotePath(payload.path);
+				ensureMarkdownPath(oldPath, "renamed");
+
+				let newName = payload.newName.trim();
+				const ext = path.extname(newName).toLowerCase();
+				if (!markdownExtensions.has(ext)) {
+					newName = `${newName}.md`;
+				}
+
+				const newPath = path.join(path.dirname(oldPath), newName);
+				const notesRootRealPath = await fs.realpath(notesRoot);
+				ensureWithinRoot(newPath, notesRootRealPath);
+
+				try {
+					await fs.stat(newPath);
+					const error = new Error("目标文件已存在") as HttpError;
+					error.statusCode = 409;
+					throw error;
+				} catch (err) {
+					if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+						throw err;
+					}
+				}
+
+				await fs.rename(oldPath, newPath);
+				const stats = await fs.stat(newPath);
+
+				res.json({
+					oldPath: toPosixPath(path.relative(notesRoot, oldPath)),
+					name: path.basename(newPath),
+					path: toPosixPath(newPath),
+					relativePath: toPosixPath(path.relative(notesRoot, newPath)),
+					size: stats.size,
+					updatedAt: stats.mtimeMs,
+				});
+			} catch (error) {
+				next(error);
+			}
+		},
+
+		deleteNote: async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const query = noteDeleteQuerySchema.parse(req.query ?? {});
+				const targetPath = await resolveExistingNotePath(query.path);
+				ensureMarkdownPath(targetPath, "deleted");
+
+				await fs.unlink(targetPath);
+				res.json({ deleted: true });
 			} catch (error) {
 				next(error);
 			}

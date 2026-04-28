@@ -4,7 +4,6 @@ import {
   FolderPlus,
   RefreshCw,
   Search,
-  SlidersHorizontal,
   Upload,
 } from "lucide-vue-next";
 
@@ -36,20 +35,19 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+  <div class="flex items-center justify-between gap-3 px-5 py-2.5">
     <div class="flex min-w-0 flex-1 items-center gap-2">
-      <div class="relative min-w-48 flex-1 lg:max-w-sm">
-        <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <div class="relative min-w-40 flex-1 lg:max-w-sm">
+        <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           v-model="query"
-          class="h-9 pl-9"
-          placeholder="搜索当前目录"
+          class="h-8 pl-8 text-xs"
+          placeholder="搜索"
         />
       </div>
 
       <Select v-model="sortKey">
-        <SelectTrigger class="h-9 w-36">
-          <SlidersHorizontal class="size-3.5" />
+        <SelectTrigger class="h-8 w-28 text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -60,7 +58,7 @@ const emit = defineEmits<{
       </Select>
     </div>
 
-    <div class="flex shrink-0 items-center gap-2">
+    <div class="flex shrink-0 items-center gap-1.5">
       <Button
         type="button"
         variant="ghost"
@@ -68,35 +66,36 @@ const emit = defineEmits<{
         :disabled="isLoading || isMutating"
         @click="emit('refresh')"
       >
-        <RefreshCw class="size-4" :class="isLoading ? 'animate-spin' : ''" />
+        <RefreshCw class="size-3.5" :class="isLoading ? 'animate-spin' : ''" />
       </Button>
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
         :disabled="isMutating"
         @click="emit('create-folder')"
       >
-        <FolderPlus class="size-4" />
+        <FolderPlus class="size-3.5" />
         文件夹
       </Button>
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
         :disabled="isMutating"
         @click="emit('create-file')"
       >
-        <FilePlus2 class="size-4" />
+        <FilePlus2 class="size-3.5" />
         文件
       </Button>
       <Button
         type="button"
+        variant="ghost"
         size="sm"
         :disabled="isMutating"
         @click="emit('upload')"
       >
-        <Upload class="size-4" />
+        <Upload class="size-3.5" />
         上传
       </Button>
     </div>

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { FileCode2, FolderKanban, HardDrive, PanelsRightBottom } from "lucide-vue-next";
+import { FolderKanban } from "lucide-vue-next";
 
 import FileBreadcrumbs from "@/components/files/FileBreadcrumbs.vue";
 import FileEntryDialog from "@/components/files/FileEntryDialog.vue";
 import FileGrid from "@/components/files/FileGrid.vue";
 import FileManagerToolbar from "@/components/files/FileManagerToolbar.vue";
+import FilePreviewPanel from "@/components/files/FilePreviewPanel.vue";
 import FileTrashDialog from "@/components/files/FileTrashDialog.vue";
-import WorkbenchOperationPanel from "@/components/workbench/WorkbenchOperationPanel.vue";
 import { useFileManager } from "@/composables/useFileManager";
 import { useFilesRouteState } from "@/composables/useFilesRouteState";
 import type { FileTreeEntry } from "@/lib/types";
@@ -15,9 +15,8 @@ import type { FileTreeEntry } from "@/lib/types";
 const { projectLabel, rootDir } = useFilesRouteState();
 const manager = useFileManager(rootDir);
 
-const operationPanelRef = ref<InstanceType<typeof WorkbenchOperationPanel> | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
-const activeFilePath = ref("");
+const activeEntry = ref<FileTreeEntry | null>(null);
 
 const entryDialogOpen = ref(false);
 const entryDialogMode = ref<"create-file" | "create-folder" | "rename">("create-file");
@@ -25,29 +24,23 @@ const editingEntry = ref<FileTreeEntry | null>(null);
 const trashDialogOpen = ref(false);
 const trashTarget = ref<FileTreeEntry | null>(null);
 
-const relativeActiveFilePath = computed(() => {
-  if (!activeFilePath.value || !rootDir.value) {
-    return "";
-  }
-
-  return activeFilePath.value
-    .replace(rootDir.value, "")
-    .replace(/^\/+/, "");
+const directoryStats = computed(() => {
+  const entries = manager.entries.value;
+  const files = entries.filter((e) => e.kind === "file").length;
+  const dirs = entries.filter((e) => e.kind === "directory").length;
+  const parts: string[] = [];
+  if (files > 0) parts.push(`${files} 个文件`);
+  if (dirs > 0) parts.push(`${dirs} 个文件夹`);
+  return parts.join(" · ") || "空目录";
 });
 
 const entryDialogTitle = computed(() => {
-  if (entryDialogMode.value === "rename") {
-    return "重命名";
-  }
-
+  if (entryDialogMode.value === "rename") return "重命名";
   return entryDialogMode.value === "create-folder" ? "新建文件夹" : "新建文件";
 });
 
 const entryDialogDescription = computed(() => {
-  if (entryDialogMode.value === "rename") {
-    return "名称会直接更新到当前工作区。";
-  }
-
+  if (entryDialogMode.value === "rename") return "名称会直接更新到当前工作区。";
   return "新条目会创建在当前目录。";
 });
 
@@ -71,7 +64,6 @@ const handleEntryDialogSubmit = async (name: string) => {
       entryDialogMode.value === "create-folder" ? "directory" : "file",
     );
   }
-
   entryDialogOpen.value = false;
   editingEntry.value = null;
 };
@@ -79,11 +71,10 @@ const handleEntryDialogSubmit = async (name: string) => {
 const handleEntryOpen = async (entry: FileTreeEntry) => {
   if (entry.kind === "directory") {
     await manager.openDirectory(entry.path);
+    activeEntry.value = null;
     return;
   }
-
-  activeFilePath.value = entry.path;
-  await operationPanelRef.value?.openFile(entry.path);
+  activeEntry.value = entry;
 };
 
 const handleTrashRequest = (entry: FileTreeEntry) => {
@@ -92,27 +83,17 @@ const handleTrashRequest = (entry: FileTreeEntry) => {
 };
 
 const handleTrashConfirm = async () => {
-  if (!trashTarget.value) {
-    return;
+  if (!trashTarget.value) return;
+  if (activeEntry.value?.path === trashTarget.value.path) {
+    activeEntry.value = null;
   }
-
-  const targetPath = trashTarget.value.path;
   await manager.trashEntry(trashTarget.value);
-  if (activeFilePath.value === targetPath) {
-    activeFilePath.value = "";
-  }
   trashDialogOpen.value = false;
   trashTarget.value = null;
 };
 
-const handleMove = async (
-  entry: FileTreeEntry,
-  targetDirectory: FileTreeEntry,
-) => {
-  if (entry.path === targetDirectory.path) {
-    return;
-  }
-
+const handleMove = async (entry: FileTreeEntry, targetDirectory: FileTreeEntry) => {
+  if (entry.path === targetDirectory.path) return;
   await manager.moveEntry(entry, targetDirectory.path);
 };
 
@@ -130,44 +111,23 @@ const handleUploadChange = async (event: Event) => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-background text-foreground">
-    <header class="ridge-panel-header flex min-h-16 items-center justify-between gap-4 px-6">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <FolderKanban class="size-4 text-primary" />
-          <p class="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">
-            Files
-          </p>
-        </div>
-        <div class="mt-1 flex min-w-0 items-center gap-3">
-          <h1 class="truncate text-lg font-semibold tracking-tight">
-            {{ projectLabel }}
-          </h1>
-          <span class="hidden rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground md:inline-flex">
-            workspace
-          </span>
-        </div>
+    <!-- 页头 -->
+    <header class="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3">
+      <div class="flex min-w-0 items-center gap-3">
+        <FolderKanban class="size-4 shrink-0 text-primary" />
+        <h1 class="text-sm font-semibold text-foreground">{{ projectLabel }}</h1>
+        <span class="text-[11px] text-muted-foreground">{{ directoryStats }}</span>
       </div>
-
-      <div class="min-w-0 text-right">
-        <div class="flex items-center justify-end gap-2 text-xs font-medium text-muted-foreground">
-          <HardDrive class="size-3.5" />
-          <span class="truncate">{{ rootDir || "当前没有可用目录" }}</span>
-        </div>
-        <p class="mt-1 truncate text-[11px] text-muted-foreground/80">
-          {{ manager.relativeDirectory.value || "工作区根目录" }}
-        </p>
-      </div>
+      <FileBreadcrumbs
+        :items="manager.breadcrumbs.value"
+        @navigate="manager.openDirectory"
+      />
     </header>
 
-    <main class="grid min-h-0 flex-1 grid-cols-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_520px]">
+    <!-- 主区域 -->
+    <main class="grid min-h-0 flex-1 grid-cols-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_480px]">
+      <!-- 左侧：文件管理 -->
       <section class="flex min-h-0 flex-col overflow-hidden bg-background">
-        <div class="ridge-panel-header flex min-h-12 items-center px-5">
-          <FileBreadcrumbs
-            :items="manager.breadcrumbs.value"
-            @navigate="manager.openDirectory"
-          />
-        </div>
-
         <FileManagerToolbar
           v-model:query="manager.query.value"
           v-model:sort-key="manager.sortKey.value"
@@ -181,13 +141,13 @@ const handleUploadChange = async (event: Event) => {
 
         <div
           v-if="manager.error.value"
-          class="mx-5 mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          class="mx-5 mb-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
         >
           {{ manager.error.value }}
         </div>
 
         <FileGrid
-          :active-path="activeFilePath"
+          :active-path="activeEntry?.path ?? ''"
           :entries="manager.visibleEntries.value"
           :is-loading="manager.isLoading.value"
           @move="handleMove"
@@ -197,34 +157,16 @@ const handleUploadChange = async (event: Event) => {
         />
       </section>
 
-      <section class="flex min-h-0 flex-col border-t border-border/40 bg-background xl:border-l xl:border-t-0">
-        <div class="flex h-11 shrink-0 items-center justify-between border-b border-border/40 px-4">
-          <div class="flex min-w-0 items-center gap-2">
-            <PanelsRightBottom class="size-3.5 text-muted-foreground" />
-            <span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
-              预览
-            </span>
-          </div>
-          <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-            <FileCode2 class="size-3.5 shrink-0" />
-            <span class="truncate">
-              {{ activeFilePath ? relativeActiveFilePath : "未打开文件" }}
-            </span>
-          </div>
-        </div>
-
-        <div class="min-h-0 flex-1">
-          <WorkbenchOperationPanel
-            ref="operationPanelRef"
-            :root-dir="rootDir"
-            :enable-markdown-ai-actions="false"
-            empty-title="选择文件开始预览"
-            empty-description="Markdown 文件可直接编辑保存，代码、图片、HTML 和大文件按类型预览。"
-          />
-        </div>
+      <!-- 右侧：极简预览 -->
+      <section class="hidden min-h-0 flex-col border-t border-border/40 bg-background xl:flex xl:border-l xl:border-t-0">
+        <FilePreviewPanel
+          :entry="activeEntry"
+          :root-dir="rootDir"
+        />
       </section>
     </main>
 
+    <!-- 隐藏文件上传 -->
     <input
       ref="fileInputRef"
       class="hidden"

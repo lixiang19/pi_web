@@ -74,16 +74,18 @@ useEditor((container) => {
 
 .milkdown-editor :deep([data-milkdown-root]) {
   min-height: 100%;
-  padding: 3rem 4.5rem 6rem;
+  padding: 2rem 2rem 4rem;
   outline: none;
 }
 
 .milkdown-editor :deep(.ProseMirror) {
-  min-height: calc(100vh - 11rem);
+  min-height: calc(100vh - 12rem);
   outline: none;
   color: var(--foreground);
   font-size: 15px;
   line-height: 1.78;
+  max-width: 48rem;
+  margin: 0 auto;
 }
 
 .milkdown-editor :deep(.ProseMirror h1) {
@@ -93,7 +95,7 @@ useEditor((container) => {
 
 .milkdown-editor :deep(.ProseMirror pre) {
   border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-  border-radius: 8px;
+  border-radius: 6px;
   background: color-mix(in oklab, var(--background) 76%, var(--muted));
 }
 
@@ -102,9 +104,15 @@ useEditor((container) => {
   color: var(--muted-foreground);
 }
 
-@media (max-width: 768px) {
+@media (min-width: 768px) {
   .milkdown-editor :deep([data-milkdown-root]) {
-    padding: 2rem 1.5rem 5rem;
+    padding: 3rem 3rem 6rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .milkdown-editor :deep([data-milkdown-root]) {
+    padding: 3rem 4rem 6rem;
   }
 }
 </style>
