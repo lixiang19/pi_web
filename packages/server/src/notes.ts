@@ -102,7 +102,7 @@ const noteSaveSchema = z.object({
 });
 
 const noteCreateSchema = z.object({
-	name: z.string().min(1).max(200),
+	name: z.string().max(200).optional(),
 });
 
 const noteRenameSchema = z.object({
@@ -112,6 +112,10 @@ const noteRenameSchema = z.object({
 
 const noteDeleteQuerySchema = z.object({
 	path: z.string().min(1),
+});
+
+const noteCreateFolderSchema = z.object({
+	path: z.string().max(200).optional(),
 });
 
 export function createNotesRouter(chatConfig: WorkspaceChatConfig) {
@@ -225,16 +229,22 @@ export function createNotesRouter(chatConfig: WorkspaceChatConfig) {
 		createNote: async (req: Request, res: Response, next: NextFunction) => {
 			try {
 				const payload = noteCreateSchema.parse(req.body ?? {});
-				let fileName = payload.name.trim();
-				if (!fileName) {
-					const error = new Error("File name is required") as HttpError;
-					error.statusCode = 400;
-					throw error;
-				}
+				let fileName = (payload.name ?? "").trim();
 
-				const ext = path.extname(fileName).toLowerCase();
-				if (!markdownExtensions.has(ext)) {
-					fileName = `${fileName}.md`;
+				if (!fileName) {
+					const existing = await walkMarkdownFiles(notesRoot, notesRoot);
+					const unnamedNums = existing
+						.map((e) => e.name.match(/^未命名(\d+)\.md$/))
+						.filter(Boolean)
+						.map((m) => Number(m![1]));
+					const nextNum =
+						unnamedNums.length === 0 ? 1 : Math.max(...unnamedNums) + 1;
+					fileName = `未命名${nextNum}.md`;
+				} else {
+					const ext = path.extname(fileName).toLowerCase();
+					if (!markdownExtensions.has(ext)) {
+						fileName = `${fileName}.md`;
+					}
 				}
 
 				const targetPath = await resolveNewNotePath(fileName);
@@ -322,6 +332,42 @@ export function createNotesRouter(chatConfig: WorkspaceChatConfig) {
 
 				await fs.unlink(targetPath);
 				res.json({ deleted: true });
+			} catch (error) {
+				next(error);
+			}
+		},
+
+		createNoteFolder: async (
+			req: Request,
+			res: Response,
+			next: NextFunction,
+		) => {
+			try {
+				const payload = noteCreateFolderSchema.parse(req.body ?? {});
+				let folderPath = (payload.path ?? "").trim();
+
+				if (!folderPath) {
+					folderPath = "未命名文件夹";
+				}
+
+				const targetPath = await resolveNewNotePath(folderPath);
+				const notesRootRealPath = await fs.realpath(notesRoot);
+				ensureWithinRoot(targetPath, notesRootRealPath);
+
+				// 禁止路径中有扩展名（不是文件夹）
+				if (path.extname(folderPath) !== "") {
+					const error = new Error("文件夹路径不应包含扩展名") as HttpError;
+					error.statusCode = 400;
+					throw error;
+				}
+
+				await fs.mkdir(targetPath, { recursive: true });
+
+				res.status(201).json({
+					name: path.basename(targetPath),
+					path: toPosixPath(targetPath),
+					relativePath: toPosixPath(path.relative(notesRoot, targetPath)),
+				});
 			} catch (error) {
 				next(error);
 			}

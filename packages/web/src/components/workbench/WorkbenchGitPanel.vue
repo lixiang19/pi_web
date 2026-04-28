@@ -3,15 +3,17 @@ import { computed, ref, toRef } from "vue";
 import { AlertTriangle, GitBranch } from "lucide-vue-next";
 
 import { useGitState } from "@/composables/useGitState";
+import type { GitRepositoryStatus } from "@/composables/useGitRepositoryStatus";
 import GitStatusHeader from "@/components/workbench/git/GitStatusHeader.vue";
 import GitChangesSection from "@/components/workbench/git/GitChangesSection.vue";
 import GitCommitSection from "@/components/workbench/git/GitCommitSection.vue";
 
 const props = defineProps<{
-  cwd: string;
+	cwd: string;
+	gitStatus: GitRepositoryStatus | null;
 }>();
 
-const git = useGitState(toRef(() => props.cwd));
+const git = useGitState(toRef(() => props.cwd), toRef(() => props.gitStatus));
 
 const commitMessage = ref("");
 const selectedPaths = ref<Set<string>>(new Set());
@@ -20,56 +22,56 @@ const currentBranch = computed(() => git.status.value?.current ?? null);
 const ahead = computed(() => git.status.value?.ahead ?? 0);
 const behind = computed(() => git.status.value?.behind ?? 0);
 const files = computed(() => git.status.value?.files ?? []);
+const canPushPull = computed(() => props.gitStatus?.canPushPull ?? false);
 
 const togglePath = (path: string) => {
-  const next = new Set(selectedPaths.value);
-  if (next.has(path)) {
-    next.delete(path);
-  } else {
-    next.add(path);
-  }
-  selectedPaths.value = next;
+	const next = new Set(selectedPaths.value);
+	if (next.has(path)) {
+		next.delete(path);
+	} else {
+		next.add(path);
+	}
+	selectedPaths.value = next;
 };
 
 const toggleAll = () => {
-  if (
-    files.value.length > 0 &&
-    files.value.every((f) => selectedPaths.value.has(f.path))
-  ) {
-    selectedPaths.value = new Set();
-  } else {
-    selectedPaths.value = new Set(files.value.map((f) => f.path));
-  }
+	if (
+		files.value.length > 0 &&
+		files.value.every((f) => selectedPaths.value.has(f.path))
+	) {
+		selectedPaths.value = new Set();
+	} else {
+		selectedPaths.value = new Set(files.value.map((f) => f.path));
+	}
 };
 
 const handleCommit = async () => {
-  const message = commitMessage.value.trim();
-  const paths = [...selectedPaths.value];
-  if (!message || paths.length === 0) return;
+	const message = commitMessage.value.trim();
+	const paths = [...selectedPaths.value];
+	if (!message || paths.length === 0) return;
 
-  await git.commit(message, paths, false);
-  commitMessage.value = "";
-  selectedPaths.value = new Set();
+	await git.commit(message, paths, false);
+	commitMessage.value = "";
+	selectedPaths.value = new Set();
 };
 
 const handleCommitAndPush = async () => {
-  const message = commitMessage.value.trim();
-  const paths = [...selectedPaths.value];
-  if (!message || paths.length === 0) return;
+	const message = commitMessage.value.trim();
+	const paths = [...selectedPaths.value];
+	if (!message || paths.length === 0) return;
 
-  await git.commit(message, paths, true);
-  commitMessage.value = "";
-  selectedPaths.value = new Set();
+	await git.commit(message, paths, true);
+	commitMessage.value = "";
+	selectedPaths.value = new Set();
 };
 
 // 当 status 刷新时，自动全选新增的文件
 const autoSelectNewFiles = () => {
-  if (files.value.length > 0 && selectedPaths.value.size === 0) {
-    selectedPaths.value = new Set(files.value.map((f) => f.path));
-  }
+	if (files.value.length > 0 && selectedPaths.value.size === 0) {
+		selectedPaths.value = new Set(files.value.map((f) => f.path));
+	}
 };
 
-// 监听 files 变化自动全选（首次加载）
 import { watch } from "vue";
 watch(files, () => autoSelectNewFiles(), { immediate: true });
 </script>
@@ -96,6 +98,7 @@ watch(files, () => autoSelectNewFiles(), { immediate: true });
         :behind="behind"
         :is-loading="git.isLoading.value"
         :is-syncing="git.isSyncing.value"
+        :can-push-pull="canPushPull"
         @refresh="git.refresh()"
         @fetch="git.fetch()"
         @pull="git.pull()"
@@ -115,6 +118,7 @@ watch(files, () => autoSelectNewFiles(), { immediate: true });
         :commit-message="commitMessage"
         :selected-count="selectedPaths.size"
         :is-committing="git.isCommitting.value"
+        :can-push-pull="canPushPull"
         @update:commit-message="commitMessage = $event"
         @commit="handleCommit"
         @commit-and-push="handleCommitAndPush"

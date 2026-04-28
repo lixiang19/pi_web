@@ -1,12 +1,24 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 
-import NoteTabBar from "@/components/notes/NoteTabBar.vue";
+import TabBar from "@/components/common/TabBar.vue";
+import type { TabItem } from "@/components/common/TabBar.vue";
 import NoteTabContent from "@/components/notes/NoteTabContent.vue";
 import NoteVaultSidebar from "@/components/notes/NoteVaultSidebar.vue";
 import NoteStatusBar from "@/components/notes/NoteStatusBar.vue";
+import NoteNameDialog from "@/components/notes/NoteNameDialog.vue";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   createNote,
+  createNoteFolder,
   deleteNote,
   getNoteContent,
   listNotes,
@@ -19,24 +31,61 @@ const notes = ref<NoteListItem[]>([]);
 const openTabs = ref<NoteTab[]>([]);
 const activeTabPath = ref<string | null>(null);
 const searchQuery = ref("");
-const showNewNoteInput = ref(false);
-const newNoteName = ref("");
+const sidebarFilter = ref<"all" | "search" | "starred" | "recent">("all");
+
+/** 收藏列表，持久化到 localStorage */
+const starredPaths = ref<Set<string>>(
+  new Set(
+    JSON.parse(localStorage.getItem("note-starred") ?? "[]") as string[],
+  ),
+);
+
+function toggleStar(path: string) {
+  if (starredPaths.value.has(path)) {
+    starredPaths.value.delete(path);
+  } else {
+    starredPaths.value.add(path);
+  }
+  localStorage.setItem(
+    "note-starred",
+    JSON.stringify([...starredPaths.value]),
+  );
+}
 
 /** 自动保存定时器 */
 const autoSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const activeTab = computed(() =>
-  openTabs.value.find((t) => t.relativePath === activeTabPath.value) ?? null,
+	openTabs.value.find((t) => t.relativePath === activeTabPath.value) ?? null,
+);
+
+const tabBarItems = computed<TabItem[]>(() =>
+	openTabs.value.map((t) => ({
+		id: t.relativePath,
+		title: t.name.replace(/\.md$/, "").replace(/\.markdown$/, ""),
+		status: t.isLoading ? "loading" : t.saveStatus === "unsaved" ? "unsaved" : t.saveStatus === "saving" ? "saving" : t.saveStatus === "error" ? "error" : "idle",
+	})),
 );
 
 const filteredNotes = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
-  if (!query) return notes.value;
-  return notes.value.filter(
-    (note) =>
-      note.name.toLowerCase().includes(query) ||
-      note.relativePath.toLowerCase().includes(query),
-  );
+  let list = notes.value;
+
+  if (sidebarFilter.value === "starred") {
+    list = list.filter((n) => starredPaths.value.has(n.relativePath));
+  } else if (sidebarFilter.value === "recent") {
+    list = [...list].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 10);
+  }
+
+  if (query) {
+    list = list.filter(
+      (note) =>
+        note.name.toLowerCase().includes(query) ||
+        note.relativePath.toLowerCase().includes(query),
+    );
+  }
+
+  return list;
 });
 
 async function loadNotes() {
@@ -92,7 +141,6 @@ async function openNote(note: NoteListItem) {
 }
 
 function closeTab(path: string) {
-  // 保存再关闭
   flushAutoSave(path);
 
   const index = openTabs.value.findIndex((t) => t.relativePath === path);
@@ -142,7 +190,6 @@ async function flushAutoSave(path: string) {
     tab.savedContent = tab.content;
     tab.saveStatus = "saved";
 
-    // 同步更新 notes 列表中的 updatedAt
     const noteIndex = notes.value.findIndex(
       (n) => n.relativePath === tab.relativePath,
     );
@@ -159,13 +206,8 @@ async function flushAutoSave(path: string) {
 }
 
 async function handleCreateNote() {
-  const name = newNoteName.value.trim();
-  if (!name) return;
-
   try {
-    const response = await createNote(name);
-    showNewNoteInput.value = false;
-    newNoteName.value = "";
+    const response = await createNote("");
 
     const newItem: NoteListItem = {
       name: response.name,
@@ -182,14 +224,43 @@ async function handleCreateNote() {
   }
 }
 
-async function handleRenameNote(note: NoteListItem) {
-  const newName = prompt("新笔记名称", note.name);
-  if (!newName || newName === note.name) return;
+const folderDialogOpen = ref(false);
+const folderCreating = ref(false);
 
+async function handleCreateFolder() {
+  folderDialogOpen.value = true;
+}
+
+async function handleFolderDialogSubmit(name: string) {
+  folderCreating.value = true;
+  try {
+    await createNoteFolder(name);
+    await loadNotes();
+  } catch (err) {
+    console.error("Failed to create folder", err);
+  } finally {
+    folderCreating.value = false;
+    folderDialogOpen.value = false;
+  }
+}
+
+const renameDialogOpen = ref(false);
+const renameTarget = ref<NoteListItem | null>(null);
+const renameSaving = ref(false);
+
+function handleRenameNote(note: NoteListItem) {
+  renameTarget.value = note;
+  renameDialogOpen.value = true;
+}
+
+async function handleRenameDialogSubmit(newName: string) {
+  const note = renameTarget.value;
+  if (!note || newName === note.name) return;
+
+  renameSaving.value = true;
   try {
     const response = await renameNote(note.relativePath, newName);
 
-    // 更新 notes 列表
     const noteIndex = notes.value.findIndex(
       (n) => n.relativePath === note.relativePath,
     );
@@ -203,7 +274,6 @@ async function handleRenameNote(note: NoteListItem) {
       };
     }
 
-    // 更新 tab
     const tab = openTabs.value.find(
       (t) => t.relativePath === note.relativePath,
     );
@@ -212,18 +282,32 @@ async function handleRenameNote(note: NoteListItem) {
       tab.relativePath = response.relativePath;
     }
 
-    // 如果是当前活动标签，更新路径
     if (activeTabPath.value === note.relativePath) {
       activeTabPath.value = response.relativePath;
     }
   } catch (err) {
     console.error("Failed to rename note", err);
+  } finally {
+    renameSaving.value = false;
+    renameDialogOpen.value = false;
+    renameTarget.value = null;
   }
 }
 
-async function handleDeleteNote(note: NoteListItem) {
-  if (!confirm(`确定要删除「${note.name}」吗？`)) return;
+const deleteDialogOpen = ref(false);
+const deleteTarget = ref<NoteListItem | null>(null);
+const deleteSaving = ref(false);
 
+function handleDeleteNote(note: NoteListItem) {
+  deleteTarget.value = note;
+  deleteDialogOpen.value = true;
+}
+
+async function handleDeleteConfirm() {
+  const note = deleteTarget.value;
+  if (!note) return;
+
+  deleteSaving.value = true;
   try {
     await deleteNote(note.relativePath);
 
@@ -231,10 +315,19 @@ async function handleDeleteNote(note: NoteListItem) {
       (n) => n.relativePath !== note.relativePath,
     );
 
-    // 关闭对应的 tab
+    starredPaths.value.delete(note.relativePath);
+    localStorage.setItem(
+      "note-starred",
+      JSON.stringify([...starredPaths.value]),
+    );
+
     closeTab(note.relativePath);
   } catch (err) {
     console.error("Failed to delete note", err);
+  } finally {
+    deleteSaving.value = false;
+    deleteDialogOpen.value = false;
+    deleteTarget.value = null;
   }
 }
 
@@ -244,24 +337,28 @@ loadNotes();
 <template>
   <div class="flex h-full min-h-0 bg-background text-foreground">
     <NoteVaultSidebar
-      v-model:new-note-name="newNoteName"
-      v-model:search-query="searchQuery"
-      v-model:show-new-note-input="showNewNoteInput"
       :active-path="activeTabPath ?? ''"
       :filtered-notes="filteredNotes"
       :total-count="notes.length"
+      :starred-paths="starredPaths"
+      :filter="sidebarFilter"
+      :search-query="searchQuery"
+      @update:filter="sidebarFilter = $event"
+      @update:search-query="searchQuery = $event"
       @create-note="handleCreateNote"
+      @create-folder="handleCreateFolder"
       @delete-note="handleDeleteNote"
       @open-note="openNote"
       @rename-note="handleRenameNote"
+      @toggle-star="toggleStar"
     />
 
     <main class="flex min-h-0 flex-1 flex-col">
-      <NoteTabBar
-        :tabs="openTabs"
-        :active-tab-path="activeTabPath"
-        @close-tab="closeTab"
-        @select-tab="selectTab"
+      <TabBar
+        :tabs="tabBarItems"
+        :active-tab-id="activeTabPath ?? ''"
+        @select="selectTab"
+        @close="closeTab"
       />
 
       <NoteTabContent
@@ -271,5 +368,35 @@ loadNotes();
 
       <NoteStatusBar :tab="activeTab" />
     </main>
+
+    <NoteNameDialog
+      v-model="folderDialogOpen"
+      title="新建文件夹"
+      description="新文件夹将创建在工作空间根目录。"
+      :is-saving="folderCreating"
+      @submit="handleFolderDialogSubmit"
+    />
+
+    <NoteNameDialog
+      v-model="renameDialogOpen"
+      title="重命名"
+      description="名称会直接更新到当前笔记。"
+      :initial-name="renameTarget?.name ?? ''"
+      :is-saving="renameSaving"
+      @submit="handleRenameDialogSubmit"
+    />
+
+    <Dialog :open="deleteDialogOpen" @update:open="deleteDialogOpen = $event">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>删除笔记</DialogTitle>
+          <DialogDescription>确定要删除「{{ deleteTarget?.name }}」吗？此操作不可撤销。</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" :disabled="deleteSaving" @click="deleteDialogOpen = false">取消</Button>
+          <Button variant="destructive" :disabled="deleteSaving" @click="handleDeleteConfirm">删除</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

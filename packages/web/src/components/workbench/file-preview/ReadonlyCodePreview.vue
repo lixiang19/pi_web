@@ -16,7 +16,7 @@ const props = defineProps<{
 
 const htmlElement = typeof document !== "undefined" ? document.documentElement : null;
 const isDark = ref(htmlElement?.classList.contains("dark") ?? false);
-const themeName = ref(htmlElement?.dataset["theme"] ?? "ridge");
+const themeName = ref(htmlElement?.dataset["theme"] ?? "default");
 const isHighlighting = ref(true);
 const hasHighlightedHtml = ref(false);
 const highlightError = ref("");
@@ -30,7 +30,7 @@ if (htmlElement) {
     htmlElement,
     () => {
       isDark.value = htmlElement.classList.contains("dark");
-      themeName.value = htmlElement.dataset["theme"] ?? "ridge";
+      themeName.value = htmlElement.dataset["theme"] ?? "default";
     },
     {
       attributes: true,
@@ -42,7 +42,7 @@ if (htmlElement) {
 const ridgeTheme = computed(() => {
   if (!htmlElement) {
     return createRidgeCodeTheme({
-      themeName: "ridge",
+      themeName: "default",
       isDark: isDark.value,
       styles: {
         getPropertyValue: () => "",

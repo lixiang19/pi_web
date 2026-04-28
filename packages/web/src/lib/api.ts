@@ -23,6 +23,7 @@ import type {
 	GitRepositoryStatusResponse,
 	GitStatusResponse,
 	NoteContentResponse,
+	NoteCreateFolderResponse,
 	NoteCreateResponse,
 	NoteListResponse,
 	NoteRenameResponse,
@@ -375,6 +376,13 @@ export function getFileBlobUrl(path: string, root: string) {
 	return `/api/files/blob?${params.toString()}`;
 }
 
+export function openFileWithDefaultApp(root: string, path: string) {
+	return request<{ ok: true }>("/api/files/open", {
+		method: "POST",
+		body: JSON.stringify({ root, path }),
+	});
+}
+
 export function browseFilesystem(path?: string) {
 	const params = new URLSearchParams();
 
@@ -641,4 +649,11 @@ export function deleteNote(path: string) {
 		`/api/notes?path=${encodeURIComponent(path)}`,
 		{ method: "DELETE" },
 	);
+}
+
+export function createNoteFolder(folderPath?: string) {
+	return request<NoteCreateFolderResponse>("/api/notes/folder", {
+		method: "POST",
+		body: JSON.stringify({ path: folderPath }),
+	});
 }

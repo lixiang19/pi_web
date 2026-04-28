@@ -4,15 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 defineProps<{
-  commitMessage: string;
-  selectedCount: number;
-  isCommitting: boolean;
+	commitMessage: string;
+	selectedCount: number;
+	isCommitting: boolean;
+	canPushPull: boolean;
 }>();
 
 const emit = defineEmits<{
-  "update:commitMessage": [value: string];
-  commit: [];
-  "commit-and-push": [];
+	"update:commitMessage": [value: string];
+	commit: [];
+	"commit-and-push": [];
 }>();
 </script>
 
@@ -43,6 +44,7 @@ const emit = defineEmits<{
       </Button>
 
       <Button
+        v-if="canPushPull"
         size="sm"
         variant="outline"
         :disabled="!commitMessage.trim() || selectedCount === 0 || isCommitting"

@@ -90,3 +90,5 @@
 - [标签页 HTML 嵌套] 标签栏外层如果是 button，内层关闭按钮不能再用 button；改用 div + cursor-pointer 替代外层交互容器
 - [自动保存 debounce] 自动保存用 2s setTimeout debounce，切换/关闭标签时 flushAutoSave 清除定时器并立即保存；保存失败保持 dirty 标记
 - [笔记页边界] 笔记 API 的 rename/delete 独立新增路由（PATCH /api/notes/rename, DELETE /api/notes），不复用通用文件管理 /api/files/entries 边界
+- [Tauri弹窗禁用] 浏览器原生 `prompt()/confirm()/alert()` 在 Tauri Webview 中不可用或行为不可靠；所有用户输入和确认必须用 Vue 组件化对话框（如 shadcn Dialog），文件管理页已有 `FileEntryDialog` 可复用
+- [统一组件优先] 工作空间和会话页的重复功能必须统一为 `components/common/` 下的通用组件；`TabBar` 统一标签栏（替代 NoteTabBar），`FileTreePanel` + `useFileTreeData` 统一文件树渲染和数据逻辑（替代 WorkspaceFileTree 内联实现）。NoteVaultSidebar 因笔记专属交互（搜索/筛选/CRUD）保持独立

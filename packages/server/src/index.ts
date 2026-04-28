@@ -1,10 +1,11 @@
+import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type {
@@ -58,7 +59,9 @@ import {
 	normalizeOptionalFsPath,
 	resolveExistingRealPath,
 } from "./file-manager.js";
+import { resolveGitContext } from "./git-resolver.js";
 import { createGitService } from "./git-service.js";
+import { createIsoGitService } from "./iso-git-service.js";
 import { createNotesRouter } from "./notes.js";
 import {
 	createPiAgentScopeSettingsManager,
@@ -125,15 +128,11 @@ import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
 import {
 	createWorkspaceChatProject,
-	ensureWorkspaceChatProject,
 	getWorkspaceChatConfig,
-	getWorkspaceChatTemplateDir,
 	resolveDefaultWorkspaceDir,
 } from "./workspace-chat.js";
 import { createWorktreeService } from "./worktree-service.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, "../../..");
 const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
 	explicitWorkspaceDir: process.env.PI_WORKSPACE_DIR,
 	platform: process.platform,
@@ -141,7 +140,6 @@ const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
 });
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 const workspaceChatConfig = getWorkspaceChatConfig(defaultWorkspaceDir);
-const workspaceChatTemplateDir = getWorkspaceChatTemplateDir(rootDir);
 
 const app = express();
 app.use(cors());
@@ -162,6 +160,7 @@ const projectContextResolver =
 	createProjectContextResolver(defaultWorkspaceDir);
 const sessionMetadataStore = createSessionMetadataStore();
 const gitService = createGitService();
+const isoGitService = createIsoGitService();
 const worktreeService = createWorktreeService(gitService);
 let automationStore: AutomationStore | null = null;
 let automationScheduler: ReturnType<typeof createAutomationScheduler> | null =
@@ -371,6 +370,11 @@ const filesystemBrowseQuerySchema = z.object({
 	path: z.string().optional(),
 });
 
+const fileOpenSchema = z.object({
+	root: z.string().min(1),
+	path: z.string().min(1),
+});
+
 const createProjectSchema = z.object({
 	path: z.string().min(1),
 });
@@ -435,6 +439,20 @@ const imageMimeTypesByExtension = new Map<string, string>([
 ]);
 
 // ===== Utility Functions =====
+
+const execFileAsync = promisify(execFile);
+
+const openWithDefaultApp = async (targetPath: string): Promise<void> => {
+	if (process.platform === "win32") {
+		const { exec: execCmd } = await import("node:child_process");
+		const execCmdAsync = promisify(execCmd);
+		await execCmdAsync(`cmd /c start "" ${JSON.stringify(targetPath)}`);
+	} else if (process.platform === "darwin") {
+		await execFileAsync("open", [targetPath]);
+	} else {
+		await execFileAsync("xdg-open", [targetPath]);
+	}
+};
 
 const resolveDiscoveryCwd = (value: unknown): string =>
 	normalizeOptionalFsPath(value) || path.resolve(os.homedir());
@@ -2207,6 +2225,7 @@ app.get("/api/notes", notesRouter.listNotes);
 app.get("/api/notes/content", notesRouter.getNoteContent);
 app.put("/api/notes/content", notesRouter.saveNoteContent);
 app.post("/api/notes", notesRouter.createNote);
+app.post("/api/notes/folder", notesRouter.createNoteFolder);
 app.patch("/api/notes/rename", notesRouter.renameNote);
 app.delete("/api/notes", notesRouter.deleteNote);
 
@@ -2650,6 +2669,28 @@ app.post(
 	},
 );
 
+app.post(
+	"/api/files/open",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const payload = fileOpenSchema.parse(req.body ?? {});
+			const { targetPath } = await fileManager.resolveManagedFileLocation({
+				root: payload.root,
+				path: payload.path,
+			});
+			const stats = await fs.stat(targetPath);
+			if (!stats.isFile()) {
+				const error = new Error("Requested path is not a file") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			await openWithDefaultApp(targetPath);
+			res.json({ ok: true });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
 app.get(
 	"/api/files/content",
 	async (req: Request, res: Response, next: NextFunction) => {
@@ -3394,14 +3435,32 @@ const resolveGitCwd = (rawCwd?: string): string => {
 	return path.resolve(rawCwd || defaultWorkspaceDir);
 };
 
+// iso 引擎下远程/分支操作的 400 守卫
+const requireCliEngine = (
+	ctx: { engine: string; label: string },
+	capability: string,
+) => {
+	if (ctx.engine !== "cli") {
+		const error = new Error(`内置 Git 不支持${capability}`) as HttpError;
+		error.statusCode = 400;
+		throw error;
+	}
+};
+
 app.get(
 	"/api/git/is-repo",
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const query = gitCwdQuerySchema.parse(req.query ?? {});
 			const cwd = resolveGitCwd(query.cwd);
-			const isGitRepo = await gitService.isGitRepository(cwd);
-			res.json({ isGitRepo });
+			const ctx = await resolveGitContext(cwd);
+			res.json({
+				engine: ctx.engine,
+				canCommit: ctx.canCommit,
+				canPushPull: ctx.canPushPull,
+				canWorktree: ctx.canWorktree,
+				label: ctx.label,
+			});
 		} catch (error) {
 			next(error);
 		}
@@ -3414,8 +3473,12 @@ app.get(
 		try {
 			const query = gitCwdQuerySchema.parse(req.query ?? {});
 			const cwd = resolveGitCwd(query.cwd);
-			const status = await gitService.getStatus(cwd);
-			res.json(status);
+			const ctx = await resolveGitContext(cwd);
+			if (ctx.engine === "cli") {
+				res.json(await gitService.getStatus(cwd));
+			} else {
+				res.json(await isoGitService.getStatus(ctx));
+			}
 		} catch (error) {
 			next(error);
 		}
@@ -3428,8 +3491,12 @@ app.get(
 		try {
 			const query = gitCwdQuerySchema.parse(req.query ?? {});
 			const cwd = resolveGitCwd(query.cwd);
-			const branches = await gitService.getBranches(cwd);
-			res.json(branches);
+			const ctx = await resolveGitContext(cwd);
+			if (ctx.engine === "cli") {
+				res.json(await gitService.getBranches(cwd));
+			} else {
+				res.json(await isoGitService.getBranches(ctx));
+			}
 		} catch (error) {
 			next(error);
 		}
@@ -3442,6 +3509,8 @@ app.get(
 		try {
 			const query = gitCwdQuerySchema.parse(req.query ?? {});
 			const cwd = resolveGitCwd(query.cwd);
+			const ctx = await resolveGitContext(cwd);
+			requireCliEngine(ctx, "远程操作");
 			const remotes = await gitService.getRemotes(cwd);
 			res.json(remotes);
 		} catch (error) {
@@ -3461,6 +3530,8 @@ app.post(
 					branch: z.string().optional(),
 				})
 				.parse(req.body ?? {});
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			requireCliEngine(ctx, "fetch");
 			await gitService.fetch(resolveGitCwd(cwd), { remote, branch });
 			res.json({ ok: true });
 		} catch (error) {
@@ -3479,6 +3550,8 @@ app.post(
 					remote: z.string().optional(),
 				})
 				.parse(req.body ?? {});
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			requireCliEngine(ctx, "pull");
 			await gitService.pull(resolveGitCwd(cwd), { remote });
 			res.json({ ok: true });
 		} catch (error) {
@@ -3499,6 +3572,8 @@ app.post(
 					force: z.boolean().optional(),
 				})
 				.parse(req.body ?? {});
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			requireCliEngine(ctx, "push");
 			await gitService.push(resolveGitCwd(cwd), { remote, branch, force });
 			res.json({ ok: true });
 		} catch (error) {
@@ -3518,12 +3593,18 @@ app.post(
 					files: z.array(z.string()),
 				})
 				.parse(req.body ?? {});
-			const result = await gitService.commit(
-				resolveGitCwd(cwd),
-				message,
-				files,
-			);
-			res.json({ ok: true, hash: result.hash });
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			if (ctx.engine === "cli") {
+				const result = await gitService.commit(
+					resolveGitCwd(cwd),
+					message,
+					files,
+				);
+				res.json({ ok: true, hash: result.hash });
+			} else {
+				const result = await isoGitService.commit(ctx, message, files);
+				res.json({ ok: true, hash: result.hash });
+			}
 		} catch (error) {
 			next(error);
 		}
@@ -3541,6 +3622,8 @@ app.post(
 					fromRef: z.string().optional(),
 				})
 				.parse(req.body ?? {});
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			requireCliEngine(ctx, "create-branch");
 			await gitService.createBranch(resolveGitCwd(cwd), branchName, fromRef);
 			res.json({ ok: true });
 		} catch (error) {
@@ -3559,6 +3642,8 @@ app.post(
 					branchName: z.string(),
 				})
 				.parse(req.body ?? {});
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			requireCliEngine(ctx, "checkout");
 			await gitService.checkoutBranch(resolveGitCwd(cwd), branchName);
 			res.json({ ok: true });
 		} catch (error) {
@@ -3578,6 +3663,8 @@ app.post(
 					newName: z.string(),
 				})
 				.parse(req.body ?? {});
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			requireCliEngine(ctx, "rename-branch");
 			await gitService.renameBranch(resolveGitCwd(cwd), oldName, newName);
 			res.json({ ok: true });
 		} catch (error) {
@@ -3596,6 +3683,8 @@ app.post(
 					branchName: z.string(),
 				})
 				.parse(req.body ?? {});
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			requireCliEngine(ctx, "merge");
 			await gitService.merge(resolveGitCwd(cwd), branchName);
 			res.json({ ok: true });
 		} catch (error) {
@@ -3614,6 +3703,8 @@ app.post(
 					branchName: z.string(),
 				})
 				.parse(req.body ?? {});
+			const ctx = await resolveGitContext(resolveGitCwd(cwd));
+			requireCliEngine(ctx, "rebase");
 			await gitService.rebase(resolveGitCwd(cwd), branchName);
 			res.json({ ok: true });
 		} catch (error) {
@@ -3659,11 +3750,7 @@ httpServer.on("upgrade", (request, socket, head) => {
 });
 
 // ===== Start Server =====
-void ensureWorkspaceChatProject({
-	workspaceDir: defaultWorkspaceDir,
-	templateDir: workspaceChatTemplateDir,
-})
-	.then(() => initializeRidgeDb(defaultWorkspaceDir))
+void initializeRidgeDb(defaultWorkspaceDir)
 	.then(async (db) => {
 		automationStore = createAutomationStore(db);
 		automationScheduler = createAutomationScheduler({

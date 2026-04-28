@@ -1,32 +1,33 @@
 <script setup lang="ts">
 import {
-  ArrowDown,
-  ArrowUp,
-  GitBranch,
-  LoaderCircle,
-  RefreshCw,
+	ArrowDown,
+	ArrowUp,
+	GitBranch,
+	LoaderCircle,
+	RefreshCw,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
 } from "@/components/ui/tooltip";
 
 defineProps<{
-  currentBranch: string | null;
-  ahead: number;
-  behind: number;
-  isLoading: boolean;
-  isSyncing: boolean;
+	currentBranch: string | null;
+	ahead: number;
+	behind: number;
+	isLoading: boolean;
+	isSyncing: boolean;
+	canPushPull: boolean;
 }>();
 
 const emit = defineEmits<{
-  refresh: [];
-  fetch: [];
-  pull: [];
-  push: [];
+	refresh: [];
+	fetch: [];
+	pull: [];
+	push: [];
 }>();
 </script>
 
@@ -73,36 +74,38 @@ const emit = defineEmits<{
           <TooltipContent side="bottom"><p>刷新状态</p></TooltipContent>
         </Tooltip>
 
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="text-muted-foreground hover:text-foreground"
-              :disabled="isSyncing"
-              @click="emit('pull')"
-            >
-              <LoaderCircle v-if="isSyncing" class="size-3.5 animate-spin" />
-              <ArrowDown v-else class="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom"><p>Pull</p></TooltipContent>
-        </Tooltip>
+        <template v-if="canPushPull">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-muted-foreground hover:text-foreground"
+                :disabled="isSyncing"
+                @click="emit('pull')"
+              >
+                <LoaderCircle v-if="isSyncing" class="size-3.5 animate-spin" />
+                <ArrowDown v-else class="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom"><p>Pull</p></TooltipContent>
+          </Tooltip>
 
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="text-muted-foreground hover:text-foreground"
-              :disabled="isSyncing || ahead === 0"
-              @click="emit('push')"
-            >
-              <ArrowUp class="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom"><p>Push</p></TooltipContent>
-        </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-muted-foreground hover:text-foreground"
+                :disabled="isSyncing || ahead === 0"
+                @click="emit('push')"
+              >
+                <ArrowUp class="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom"><p>Push</p></TooltipContent>
+          </Tooltip>
+        </template>
       </div>
     </TooltipProvider>
   </div>

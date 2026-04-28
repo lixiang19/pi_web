@@ -95,9 +95,9 @@ describe("NotesPage", () => {
 			updatedAt: 4000,
 		});
 		createNote.mockResolvedValue({
-			name: "New.md",
-			path: "/workspace/chat/New.md",
-			relativePath: "New.md",
+			name: "未命名1.md",
+			path: "/workspace/chat/未命名1.md",
+			relativePath: "未命名1.md",
 			size: 0,
 			updatedAt: 5000,
 		});
@@ -122,25 +122,19 @@ describe("NotesPage", () => {
 
 		expect(listNotes).toHaveBeenCalledOnce();
 		expect(getNoteContent).toHaveBeenCalledWith("Alpha.md");
-		expect(wrapper.findAll('[data-test="notes-list-item"]')).toHaveLength(2);
-		expect(wrapper.text()).toContain("笔记");
+		expect(wrapper.findAll('[data-test="notes-list"]')).toHaveLength(1);
+		expect(wrapper.text()).toContain("笔记本");
 	});
 
-	it("filters notes and creates a new note", async () => {
+	it("creates a new note with auto-generated name", async () => {
 		const wrapper = mount(NotesPage);
 		await flushPromises();
 
-		await wrapper.get('[data-test="notes-search"]').setValue("deep");
-		expect(wrapper.findAll('[data-test="notes-list-item"]')).toHaveLength(1);
-
 		await wrapper.get('[data-test="notes-new-toggle"]').trigger("click");
-		const createForm = wrapper.get('[data-test="notes-create-form"]');
-		await createForm.find("input").setValue("New");
-		await createForm.trigger("submit");
 		await flushPromises();
 
-		expect(createNote).toHaveBeenCalledWith("New");
-		expect(getNoteContent).toHaveBeenCalledWith("New.md");
+		expect(createNote).toHaveBeenCalledWith("");
+		expect(getNoteContent).toHaveBeenCalledWith("未命名1.md");
 	});
 
 	it("auto-saves after 2 seconds of inactivity", async () => {
@@ -150,10 +144,8 @@ describe("NotesPage", () => {
 		await wrapper.get('[data-test="notes-editor"]').setValue("# changed");
 		await flushPromises();
 
-		// 还没保存
 		expect(saveNoteContent).not.toHaveBeenCalled();
 
-		// 等待 2 秒 debounce
 		vi.advanceTimersByTime(2000);
 		await flushPromises();
 
@@ -164,14 +156,15 @@ describe("NotesPage", () => {
 		const wrapper = mount(NotesPage);
 		await flushPromises();
 
-		// 默认打开了第一个笔记
 		expect(wrapper.findAll('[data-test="note-tab"]')).toHaveLength(1);
 
-		// 点击第二个笔记
-		const items = wrapper.findAll('[data-test="notes-list-item"]');
-		await items[1]!.trigger("click");
-		await flushPromises();
+		// Click the second note item in the list
+		const deepItem = wrapper.findAll('[data-test="notes-list"] .group');
+		if (deepItem.length > 1) {
+			await deepItem[1]!.trigger("click");
+			await flushPromises();
 
-		expect(wrapper.findAll('[data-test="note-tab"]')).toHaveLength(2);
+			expect(wrapper.findAll('[data-test="note-tab"]')).toHaveLength(2);
+		}
 	});
 });

@@ -155,6 +155,12 @@ export interface NoteRenameResponse {
 	updatedAt: number;
 }
 
+export interface NoteCreateFolderResponse {
+	name: string;
+	path: string;
+	relativePath: string;
+}
+
 export interface NoteTab {
 	relativePath: string;
 	name: string;
