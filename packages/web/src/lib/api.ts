@@ -7,10 +7,15 @@ import type {
   AskQuestionAnswer,
   PermissionDecisionAction,
   DirectoryBrowseResponse,
+  FileEntryCreateRequest,
+  FileEntryMoveRequest,
+  FileEntryMutationResponse,
+  FileEntryTrashResponse,
   FilePreviewPayload,
   FilePreviewWindowPayload,
   FileSaveRequest,
   FileSaveResponse,
+  FileUploadResponse,
   FileTreeResponse,
   ProjectItem,
   ProjectsResponse,
@@ -49,9 +54,10 @@ import type {
 } from "./types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const response = await fetch(input, {
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -283,6 +289,42 @@ export function getFileTree(path?: string, root?: string) {
   return request<FileTreeResponse>(
     `/api/files/tree${params.size > 0 ? `?${params.toString()}` : ""}`,
   );
+}
+
+export function createFileEntry(payload: FileEntryCreateRequest) {
+  return request<FileEntryMutationResponse>("/api/files/entries", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function moveFileEntry(payload: FileEntryMoveRequest) {
+  return request<FileEntryMutationResponse>("/api/files/entries/path", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function trashFileEntry(root: string, path: string) {
+  const params = new URLSearchParams({ root, path });
+  return request<FileEntryTrashResponse>(`/api/files/entries?${params.toString()}`, {
+    method: "DELETE",
+  });
+}
+
+export function uploadFiles(root: string, directory: string, files: File[]) {
+  const formData = new FormData();
+  formData.set("root", root);
+  formData.set("directory", directory);
+
+  for (const file of files) {
+    formData.append("files", file, file.name);
+  }
+
+  return request<FileUploadResponse>("/api/files/upload", {
+    method: "POST",
+    body: formData,
+  });
 }
 
 export function getFilePreview(path: string, root: string) {

@@ -33,6 +33,7 @@ const SUPPORTED_FRONTMATTER_FIELDS = new Set([
   'model',
   'thinking',
   'max_turns',
+  'grace_turns',
   'skills',
   'inherit_context',
   'run_in_background',
@@ -77,6 +78,21 @@ const normalizeInteger = (value: unknown): number | undefined => {
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number.parseInt(value.trim(), 10);
     if (Number.isInteger(parsed) && parsed >= 1) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
+const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isInteger(parsed) && parsed >= 0) {
       return parsed;
     }
   }
@@ -213,6 +229,7 @@ interface ParsedAgent {
   model?: string;
   thinking?: ThinkingLevel;
   maxTurns?: number;
+  graceTurns?: number;
   skills?: string[];
   inheritContext?: boolean;
   runInBackground?: boolean;
@@ -281,6 +298,17 @@ const parseAgentFile = (rawContent: string, filePath: string, sourceScope: Agent
     );
   }
 
+  const graceTurns =
+    frontmatter.grace_turns === undefined
+      ? undefined
+      : normalizeNonNegativeInteger(frontmatter.grace_turns);
+  if (frontmatter.grace_turns !== undefined && graceTurns === undefined) {
+    throw createAgentError(
+      'INVALID_AGENT_GRACE_TURNS',
+      `agent 的 grace_turns 必须是大于等于 0 的整数: ${filePath}`,
+    );
+  }
+
   const skills = normalizeStringList(frontmatter.skills, 'skills');
   const inheritContext = normalizeOptionalBoolean(frontmatter.inherit_context, 'inherit_context');
   const runInBackground = normalizeOptionalBoolean(
@@ -307,6 +335,7 @@ const parseAgentFile = (rawContent: string, filePath: string, sourceScope: Agent
     model,
     thinking,
     maxTurns,
+    graceTurns,
     skills,
     inheritContext,
     runInBackground,
@@ -392,6 +421,7 @@ export const getAgentConfigSignature = (agent: ParsedAgent | null | undefined): 
     model: agent.model || '',
     thinking: agent.thinking || '',
     maxTurns: agent.maxTurns || 0,
+    graceTurns: agent.graceTurns ?? null,
     skills: agent.skills || [],
     inheritContext: agent.inheritContext ?? null,
     runInBackground: agent.runInBackground ?? null,
@@ -498,6 +528,7 @@ interface AgentPayload {
   model: string | null;
   thinking: ThinkingLevel | null;
   max_turns: number | null;
+  grace_turns: number | null;
   skills: string[] | string | null;
   inherit_context: boolean | null;
   run_in_background: boolean | null;
@@ -516,6 +547,7 @@ const serializeAgentFile = (config: AgentPayload): string => {
   pushYamlValue(lines, 'model', config.model ?? undefined);
   pushYamlValue(lines, 'thinking', config.thinking);
   pushYamlValue(lines, 'max_turns', config.max_turns);
+  pushYamlValue(lines, 'grace_turns', config.grace_turns);
   pushYamlValue(lines, 'skills', serializeStringList(config.skills));
   pushYamlValue(lines, 'inherit_context', config.inherit_context ?? undefined);
   pushYamlValue(lines, 'run_in_background', config.run_in_background ?? undefined);
@@ -550,6 +582,7 @@ const normalizeAgentPayload = (
     'model',
     'thinking',
     'max_turns',
+    'grace_turns',
     'skills',
     'inherit_context',
     'run_in_background',
@@ -624,6 +657,23 @@ const normalizeAgentPayload = (
     );
   }
 
+  const graceTurns =
+    payload.grace_turns === undefined
+      ? options.existing?.graceTurns
+      : payload.grace_turns === null
+        ? undefined
+        : normalizeNonNegativeInteger(payload.grace_turns);
+  if (
+    payload.grace_turns !== undefined &&
+    payload.grace_turns !== null &&
+    graceTurns === undefined
+  ) {
+    throw createAgentError(
+      'INVALID_AGENT_GRACE_TURNS',
+      'agent grace_turns 必须是大于等于 0 的整数',
+    );
+  }
+
   const skills =
     payload.skills === undefined
       ? options.existing?.skills
@@ -684,6 +734,7 @@ const normalizeAgentPayload = (
     model: normalizeString(payload.model ?? options.existing?.model) || null,
     thinking: thinking ?? null,
     max_turns: maxTurns ?? null,
+    grace_turns: graceTurns ?? null,
     skills: skills ?? null,
     inherit_context: inheritContext ?? null,
     run_in_background: runInBackground ?? null,

@@ -18,7 +18,9 @@
     "better-sqlite3": "^12.9.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "multer": "2.1.1",
     "node-pty": "1.2.0-beta.12",
+    "trash": "10.1.1",
     "typebox": "^1.1.33",
     "ws": "^8.18.3",
     "zod": "^4.1.12"
@@ -27,6 +29,7 @@
     "@sinclair/typebox": "^0.34.41",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/multer": "2.1.0",
     "@types/node": "^25.5.2",
     "@types/ws": "^8.18.1",
     "tsx": "^4.21.0",

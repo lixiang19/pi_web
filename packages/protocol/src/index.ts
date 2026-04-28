@@ -266,6 +266,7 @@ export interface AgentSummary {
   model?: string;
   thinking?: ThinkingLevel;
   maxTurns?: number;
+  graceTurns?: number;
   skills?: string[];
   inheritContext?: boolean;
   runInBackground?: boolean;
@@ -334,6 +335,9 @@ export interface FileTreeEntry {
   path: string;
   kind: "file" | "directory";
   relativePath: string;
+  size: number | null;
+  modifiedAt: number;
+  extension: string;
 }
 
 export interface FileTreeResponse {
@@ -386,6 +390,34 @@ export interface FileSaveResponse {
   path: string;
   size: number;
   savedAt: number;
+}
+
+export interface FileEntryCreateRequest {
+  root: string;
+  directory: string;
+  name: string;
+  kind: "file" | "directory";
+}
+
+export interface FileEntryMoveRequest {
+  root: string;
+  path: string;
+  targetDirectory?: string;
+  name?: string;
+}
+
+export interface FileEntryMutationResponse {
+  entry: FileTreeEntry;
+}
+
+export interface FileEntryTrashResponse {
+  root: string;
+  path: string;
+  trashedAt: number;
+}
+
+export interface FileUploadResponse {
+  entries: FileTreeEntry[];
 }
 
 export interface DirectoryBrowseResponse {

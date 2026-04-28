@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
+import multer from 'multer';
 import {
   AuthStorage,
   DefaultResourceLoader,
@@ -33,6 +34,14 @@ import { createProjectContextResolver } from './project-context.js';
 import { createGitService } from './git-service.js';
 import { createWorktreeService } from './worktree-service.js';
 import { createNotesRouter } from './notes.js';
+import {
+  createFileManager,
+  ensureWithinRoot,
+  isPathInsideRoot,
+  normalizeFsPath,
+  normalizeOptionalFsPath,
+  resolveExistingRealPath,
+} from './file-manager.js';
 import {
   createAutomationScheduler,
   createAutomationStore,
@@ -99,7 +108,6 @@ import type {
   FilePreviewPayload,
   FilePreviewWindowPayload,
   FileSaveResponse,
-  FileTreeEntry,
   FilesystemBrowseResult,
   AgentSummary,
   ProviderInfo,
@@ -139,6 +147,13 @@ const workspaceChatTemplateDir = getWorkspaceChatTemplateDir(rootDir);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '6mb' }));
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    files: 20,
+    fileSize: 50 * 1024 * 1024,
+  },
+});
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
@@ -249,6 +264,7 @@ const agentUpsertSchema = z
       .nullable()
       .optional(),
     max_turns: z.number().int().min(1).nullable().optional(),
+    grace_turns: z.number().int().min(0).nullable().optional(),
     skills: z.union([z.string(), z.array(z.string())]).nullable().optional(),
     inherit_context: z.boolean().nullable().optional(),
     run_in_background: z.boolean().nullable().optional(),
@@ -328,6 +344,23 @@ const fileSaveSchema = z.object({
   content: z.string().max(5 * 1024 * 1024),
 });
 
+const fileEntryCreateSchema = z.object({
+  root: z.string().min(1),
+  directory: z.string().min(1),
+  name: z.string().min(1),
+  kind: z.enum(['file', 'directory']),
+});
+
+const fileEntryMoveSchema = z.object({
+  root: z.string().min(1),
+  path: z.string().min(1),
+  targetDirectory: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+}).refine(
+  (value) => value.targetDirectory !== undefined || value.name !== undefined,
+  'targetDirectory or name is required',
+);
+
 const filesystemBrowseQuerySchema = z.object({
   path: z.string().optional(),
 });
@@ -337,18 +370,6 @@ const createProjectSchema = z.object({
 });
 
 // ===== Constants =====
-const ignoredDirectoryNames = new Set([
-  '.git',
-  'node_modules',
-  'dist',
-  'build',
-  'target',
-  '.next',
-  '.turbo',
-  'coverage',
-  '.pi-web',
-]);
-
 const DEFAULT_SESSION_ROUND_WINDOW = 3;
 const MAX_FILE_PREVIEW_BYTES = 5 * 1024 * 1024;
 const LARGE_FILE_PREVIEW_LINE_COUNT = 1000;
@@ -411,82 +432,13 @@ const imageMimeTypesByExtension = new Map<string, string>([
 
 // ===== Utility Functions =====
 
-const normalizeFsPath = (value: unknown): string =>
-  path.resolve(normalizeString(value) || defaultWorkspaceDir);
-const normalizeOptionalFsPath = (value: unknown): string => {
-  const normalized = normalizeString(value);
-  return normalized ? path.resolve(normalized) : '';
-};
-
-const resolveExistingRealPath = async (candidatePath: string): Promise<string> => {
-  try {
-    return normalizeFsPath(await fs.realpath(candidatePath));
-  } catch {
-    return normalizeFsPath(candidatePath);
-  }
-};
-
 const resolveDiscoveryCwd = (value: unknown): string =>
   normalizeOptionalFsPath(value) || path.resolve(os.homedir());
-
-const resolveManagedRoot = async (value: unknown): Promise<string> => {
-  const rootPath = normalizeOptionalFsPath(value);
-  if (!rootPath) {
-    const error = new Error('File root is required') as HttpError;
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const [resolvedRootPath, resolvedDefaultWorkspaceDir] = await Promise.all([
-    resolveExistingRealPath(rootPath),
-    resolveExistingRealPath(defaultWorkspaceDir),
-  ]);
-
-  if (!isPathInsideRoot(resolvedRootPath, resolvedDefaultWorkspaceDir)) {
-    await ensureManagedProjectScope(resolvedRootPath);
-  }
-
-  return rootPath;
-};
-
-const ensureResolvedPathWithinRoot = async (
-  candidatePath: string,
-  rootPath: string,
-): Promise<void> => {
-  const [resolvedRootPath, resolvedCandidatePath] = await Promise.all([
-    fs.realpath(rootPath),
-    fs.realpath(candidatePath),
-  ]);
-
-  ensureWithinRoot(resolvedCandidatePath, resolvedRootPath);
-};
-
-const resolveManagedFileLocation = async (
-  options: { root?: unknown; path?: unknown; fallbackToRoot?: boolean },
-): Promise<{ rootPath: string; targetPath: string }> => {
-  const rootPath = await resolveManagedRoot(options.root);
-  const requestedPath = normalizeOptionalFsPath(options.path);
-
-  if (!requestedPath && !options.fallbackToRoot) {
-    const error = new Error('File path is required') as HttpError;
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const targetPath = requestedPath || rootPath;
-  ensureWithinRoot(targetPath, rootPath);
-  await ensureResolvedPathWithinRoot(targetPath, rootPath);
-
-  return {
-    rootPath,
-    targetPath,
-  };
-};
 
 const ensureFileForPreview = async (
   options: { root?: unknown; path?: unknown },
 ): Promise<{ rootPath: string; targetPath: string; stats: Awaited<ReturnType<typeof fs.stat>> }> => {
-  const { rootPath, targetPath } = await resolveManagedFileLocation(options);
+  const { rootPath, targetPath } = await fileManager.resolveManagedFileLocation(options);
   const stats = await fs.stat(targetPath);
 
   if (!stats.isFile()) {
@@ -503,28 +455,6 @@ const ensureFileForPreview = async (
 };
 
 const toFileSize = (value: number | bigint): number => Number(value);
-
-const ensureWithinRoot = (candidatePath: string, rootPath: string): string => {
-  const relative = path.relative(rootPath, candidatePath);
-  if (relative === '') {
-    return candidatePath;
-  }
-
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    const error = new Error(
-      'Requested path is outside the allowed workspace root',
-    ) as HttpError;
-    error.statusCode = 400;
-    throw error;
-  }
-
-  return candidatePath;
-};
-
-const isPathInsideRoot = (candidatePath: string, rootPath: string): boolean => {
-  const relative = path.relative(rootPath, candidatePath);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-};
 
 const decodeUtf8File = (buffer: Buffer): string | null => {
   if (buffer.includes(0)) {
@@ -1003,34 +933,6 @@ const cancelPendingPermissions = (record: SessionRecord, reason: string): void =
   }
 };
 
-const listDirectoryEntries = async (
-  directoryPath: string,
-  rootPath: string,
-): Promise<FileTreeEntry[]> => {
-  const dirents = await fs.readdir(directoryPath, { withFileTypes: true });
-  const entries = dirents
-    .filter(
-      (entry) => entry.name !== '.' && !ignoredDirectoryNames.has(entry.name),
-    )
-    .map((entry) => {
-      const entryPath = path.join(directoryPath, entry.name);
-      return {
-        name: entry.name,
-        path: toPosixPath(entryPath),
-        kind: entry.isDirectory() ? ('directory' as const) : ('file' as const),
-        relativePath: toPosixPath(path.relative(rootPath, entryPath)) || '.',
-      };
-    })
-    .sort((left, right) => {
-      if (left.kind !== right.kind) {
-        return left.kind === 'directory' ? -1 : 1;
-      }
-      return left.name.localeCompare(right.name);
-    });
-
-  return entries;
-};
-
 const serializeProject = (project: Project): Project => ({
   ...project,
   path: toPosixPath(path.resolve(project.path)),
@@ -1178,6 +1080,7 @@ const createAgentSummary = (agent: AgentConfigInternal): AgentSummary => ({
   model: agent.model,
   thinking: agent.thinking,
   maxTurns: agent.maxTurns,
+  graceTurns: agent.graceTurns,
   skills: agent.skills,
   inheritContext: agent.inheritContext,
   runInBackground: agent.runInBackground,
@@ -1195,6 +1098,7 @@ const createAgentConfigResponse = (agent: AgentConfigInternal) => ({
   model: agent.model ?? null,
   thinking: agent.thinking ?? null,
   max_turns: agent.maxTurns ?? null,
+  grace_turns: agent.graceTurns ?? null,
   skills: agent.skills ?? null,
   inherit_context: agent.inheritContext ?? null,
   run_in_background: agent.runInBackground ?? null,
@@ -1671,6 +1575,13 @@ const ensureManagedProjectScope = async (
   error.statusCode = 400;
   throw error;
 };
+
+const fileManager = createFileManager({
+  defaultWorkspaceDir,
+  ensureManagedProjectScope: async (candidatePath) => {
+    await ensureManagedProjectScope(candidatePath);
+  },
+});
 
 const getAutomationStore = (): AutomationStore => {
   if (!automationStore) {
@@ -2487,7 +2398,7 @@ app.delete('/api/config/agents/:name', async (req: Request, res: Response, next:
 app.get('/api/files/tree', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const query = fileTreeQuerySchema.parse(req.query ?? {});
-    const { rootPath, targetPath } = await resolveManagedFileLocation({
+    const { rootPath, targetPath } = await fileManager.resolveManagedFileLocation({
       root: query.root,
       path: query.path,
       fallbackToRoot: true,
@@ -2500,7 +2411,7 @@ app.get('/api/files/tree', async (req: Request, res: Response, next: NextFunctio
       throw error;
     }
 
-    const entries = await listDirectoryEntries(targetPath, rootPath);
+    const entries = await fileManager.listDirectoryEntries(targetPath, rootPath);
 
     res.json({
       root: toPosixPath(rootPath),
@@ -2511,6 +2422,63 @@ app.get('/api/files/tree', async (req: Request, res: Response, next: NextFunctio
     next(error);
   }
 });
+
+app.post('/api/files/entries', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = fileEntryCreateSchema.parse(req.body ?? {});
+    const entry = await fileManager.createEntry(payload);
+    res.status(201).json({
+      entry,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/files/entries/path', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = fileEntryMoveSchema.parse(req.body ?? {});
+    const entry = await fileManager.moveEntry(payload);
+    res.json({
+      entry,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/files/entries', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = fileContentQuerySchema.parse(req.query ?? {});
+    const payload = await fileManager.trashEntry(query.root, query.path);
+    res.json(payload);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post(
+  '/api/files/upload',
+  upload.array('files'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const root = normalizeString(req.body?.root);
+      const directory = normalizeString(req.body?.directory);
+      const files = Array.isArray(req.files) ? req.files : [];
+      const entries = await fileManager.uploadFiles({
+        root,
+        directory,
+        files,
+      });
+
+      res.status(201).json({
+        entries,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 app.get('/api/files/content', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -2603,7 +2571,7 @@ app.get('/api/filesystem/browse', async (req: Request, res: Response, next: Next
       throw error;
     }
 
-    const entries = (await listDirectoryEntries(targetPath, homeDir)).filter(
+    const entries = (await fileManager.listDirectoryEntries(targetPath, homeDir)).filter(
       (entry) => entry.kind === 'directory' && !entry.name.startsWith('.'),
     );
 

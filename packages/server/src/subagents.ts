@@ -10,7 +10,7 @@ import {
   type AgentSession,
   type ExtensionAPI,
 } from '@mariozechner/pi-coding-agent';
-import type { Api, Model } from '@mariozechner/pi-ai';
+import type { Api, Message, Model } from '@mariozechner/pi-ai';
 
 import { compileAgentPermission, createPermissionGateExtension } from './agent-permissions.js';
 import {
@@ -29,17 +29,25 @@ interface ParentModelResolver {
   (spec: string | undefined | null): Model<Api> | null;
 }
 
+type ChildSessionStatus = 'queued' | 'running' | 'completed' | 'steered' | 'error';
+
 interface ChildSessionEntry {
   sessionId: string;
   sessionFile: string | undefined;
   parentSessionId: string;
   agentName: string;
   prompt: string;
-  status: 'running' | 'completed' | 'error';
+  status: ChildSessionStatus;
   result?: string;
   error?: string;
   session?: AgentSession;
   promise?: Promise<void>;
+}
+
+interface QueuedChildRun {
+  entry: ChildSessionEntry;
+  execute: () => Promise<void>;
+  resolve: () => void;
 }
 
 export interface SubagentExtensionOptions {
@@ -53,6 +61,12 @@ export interface SubagentExtensionOptions {
 // ============================================================
 
 const childRegistry = new Map<string, ChildSessionEntry>();
+const runningChildSessions = new Set<string>();
+const queuedChildRuns: QueuedChildRun[] = [];
+
+const DEFAULT_MAX_CONCURRENT_CHILD_SESSIONS = 4;
+const DEFAULT_GRACE_TURNS = 3;
+const INHERITED_CONTEXT_MESSAGE_LIMIT = 12;
 
 // ============================================================
 // Helpers
@@ -92,44 +106,93 @@ const toMessageText = (content: unknown): string => {
     .join('\n');
 };
 
-const buildInheritedContextBlock = (record: SessionRecord): string => {
-  const sourceMessages = record.session.messages.slice(-12);
-  if (sourceMessages.length === 0) {
-    return '';
+const isConversationMessage = (message: unknown): message is Message => {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+  const role = (message as { role?: unknown }).role;
+  return role === 'user' || role === 'assistant' || role === 'toolResult';
+};
+
+const cloneMessage = (message: Message): Message =>
+  JSON.parse(JSON.stringify(message)) as Message;
+
+const selectInheritedMessages = (record: SessionRecord): Message[] => {
+  const messages = record.session.messages
+    .slice(-INHERITED_CONTEXT_MESSAGE_LIMIT)
+    .filter(isConversationMessage)
+    .map(cloneMessage);
+
+  while (messages[0]?.role === 'toolResult') {
+    messages.shift();
   }
 
-  const lines = sourceMessages
-    .map((message) => {
-      if (!('content' in message)) {
-        return '';
-      }
-      const role = normalizeStr(message.role).toLowerCase();
-      const text = toMessageText(message.content).trim();
-      if (!text) {
-        return '';
-      }
-      if (role === 'user') {
-        return `[User]\n${text}`;
-      }
-      if (role === 'assistant') {
-        return `[Assistant]\n${text}`;
-      }
-      if (role === 'toolresult' || role === 'tool') {
-        return `[Tool]\n${text}`;
-      }
-      return '';
-    })
-    .filter(Boolean);
+  return messages;
+};
 
-  if (lines.length === 0) {
-    return '';
+const appendInheritedMessages = (
+  sessionManager: SessionManager,
+  parentRecord: SessionRecord,
+  inheritContext: boolean,
+): void => {
+  if (!inheritContext) {
+    return;
   }
 
-  return [
-    '## Parent Conversation Context',
-    'Below is recent parent conversation context. Use it only when relevant to the assigned task.',
-    lines.join('\n\n'),
-  ].join('\n\n');
+  for (const message of selectInheritedMessages(parentRecord)) {
+    sessionManager.appendMessage(message);
+  }
+};
+
+const parsePositiveEnvInteger = (value: string | undefined): number | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+};
+
+const getMaxConcurrentChildSessions = (): number =>
+  parsePositiveEnvInteger(process.env.RIDGE_SUBAGENT_MAX_CONCURRENT) ??
+  DEFAULT_MAX_CONCURRENT_CHILD_SESSIONS;
+
+const pumpQueuedChildRuns = (): void => {
+  const maxConcurrent = getMaxConcurrentChildSessions();
+  while (runningChildSessions.size < maxConcurrent) {
+    const next = queuedChildRuns.shift();
+    if (!next) {
+      return;
+    }
+
+    runningChildSessions.add(next.entry.sessionId);
+    next.entry.status = 'running';
+    void next
+      .execute()
+      .catch((error: unknown) => {
+        if (next.entry.status === 'running') {
+          next.entry.status = 'error';
+          next.entry.error = error instanceof Error ? error.message : String(error);
+        }
+      })
+      .finally(() => {
+        runningChildSessions.delete(next.entry.sessionId);
+        next.resolve();
+        pumpQueuedChildRuns();
+      });
+  }
+};
+
+const scheduleChildRun = (
+  entry: ChildSessionEntry,
+  execute: () => Promise<void>,
+): Promise<void> => {
+  const promise = new Promise<void>((resolve) => {
+    queuedChildRuns.push({ entry, execute, resolve });
+  });
+  entry.status = 'queued';
+  entry.promise = promise;
+  pumpQueuedChildRuns();
+  return promise;
 };
 
 const findNearestProjectSkillsDir = async (cwd: string): Promise<string | null> => {
@@ -200,7 +263,6 @@ const loadSkillBlocks = async (cwd: string, names: string[] | undefined): Promis
 const buildSubagentSystemPrompt = async (
   agent: AgentConfigInternal,
   parentRecord: SessionRecord,
-  inheritContext: boolean,
 ): Promise<string> => {
   const skillBlocks = await loadSkillBlocks(parentRecord.cwd, agent.skills);
   const sections = [
@@ -208,13 +270,6 @@ const buildSubagentSystemPrompt = async (
     `Agent name: ${agent.displayName || agent.name}`,
     agent.systemPrompt.trim(),
   ].filter(Boolean);
-
-  if (inheritContext) {
-    const contextBlock = buildInheritedContextBlock(parentRecord);
-    if (contextBlock) {
-      sections.push(contextBlock);
-    }
-  }
 
   if (skillBlocks.length > 0) {
     sections.push(skillBlocks.join('\n\n'));
@@ -242,8 +297,9 @@ const getLastAssistantText = (session: AgentSession): string => {
 // ============================================================
 
 const TaskToolSchema = Type.Object({
-  agent: Type.String({ description: '子代理 agent 名称' }),
+  agent: Type.Optional(Type.String({ description: '子代理 agent 名称' })),
   prompt: Type.String({ description: '交给子代理的任务' }),
+  resume: Type.Optional(Type.String({ description: '恢复已有子代理会话 ID' })),
   run_in_background: Type.Optional(
     Type.Boolean({ description: '后台执行，工具立即返回 sessionId' }),
   ),
@@ -275,6 +331,81 @@ const GetSubagentResultSchema = Type.Object({
 // Child session runner
 // ============================================================
 
+const sendSteerMessage = async (session: AgentSession, message: string): Promise<void> => {
+  const steerable = session as AgentSession & {
+    steer?: (text: string) => Promise<void>;
+  };
+  if (typeof steerable.steer === 'function') {
+    await steerable.steer(message);
+    return;
+  }
+  await session.prompt(message, { streamingBehavior: 'steer' });
+};
+
+const runPromptWithTurnBudget = async (
+  entry: ChildSessionEntry,
+  session: AgentSession,
+  prompt: string,
+  maxTurns: number | undefined,
+  graceTurns: number,
+): Promise<void> => {
+  let turnCount = 0;
+  let steered = false;
+  let graceTurnsUsed = 0;
+  let forcedAbortByTurnBudget = false;
+
+  const unsubscribe = session.subscribe((event) => {
+    if (event.type !== 'turn_end' || !maxTurns) {
+      return;
+    }
+
+    turnCount += 1;
+    if (turnCount < maxTurns) {
+      return;
+    }
+
+    if (!steered) {
+      steered = true;
+      void sendSteerMessage(
+        session,
+        '已达到子代理 max_turns，请立即收尾，给出当前结果。',
+      );
+      if (graceTurns === 0) {
+        forcedAbortByTurnBudget = true;
+        void session.abort();
+      }
+      return;
+    }
+
+    graceTurnsUsed += 1;
+    if (graceTurnsUsed >= graceTurns) {
+      forcedAbortByTurnBudget = true;
+      void session.abort();
+    }
+  });
+
+  try {
+    await session.prompt(prompt, { source: 'interactive' });
+    entry.status = forcedAbortByTurnBudget ? 'steered' : 'completed';
+    entry.result =
+      getLastAssistantText(session) ||
+      (forcedAbortByTurnBudget
+        ? '子代理已达到 max_turns 宽限上限并停止。'
+        : '子代理已完成，但没有输出文本。');
+  } catch (error) {
+    if (forcedAbortByTurnBudget) {
+      entry.status = 'steered';
+      entry.result = getLastAssistantText(session) || '子代理已达到 max_turns 宽限上限并停止。';
+      entry.error = undefined;
+      return;
+    }
+    entry.status = 'error';
+    entry.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    unsubscribe();
+  }
+};
+
 const runChildSession = async (
   entry: ChildSessionEntry,
   parentRecord: SessionRecord,
@@ -293,11 +424,7 @@ const runChildSession = async (
   const settingsManager = createPiAgentScopeSettingsManager(parentRecord.cwd);
   let permissionPolicy: ReturnType<typeof compileAgentPermission> | null = null;
 
-  const childSystemPrompt = await buildSubagentSystemPrompt(
-    agent,
-    parentRecord,
-    runOptions.inheritContext,
-  );
+  const childSystemPrompt = await buildSubagentSystemPrompt(agent, parentRecord);
 
   const resourceLoader = new DefaultResourceLoader({
     cwd: parentRecord.cwd,
@@ -307,6 +434,8 @@ const runChildSession = async (
     extensionFactories: [createPermissionGateExtension(() => permissionPolicy)],
   });
   await resourceLoader.reload();
+
+  appendInheritedMessages(sessionManager, parentRecord, runOptions.inheritContext);
 
   const { session } = await createAgentSession({
     cwd: parentRecord.cwd,
@@ -342,27 +471,8 @@ const runChildSession = async (
   await session.setActiveToolsByName(permissionPolicy.activeToolNames);
 
   const maxTurns = runOptions.maxTurns ?? agent.maxTurns;
-  let turnCount = 0;
-
-  const unsubscribe = session.subscribe((event) => {
-    if (event.type === 'turn_end') {
-      turnCount += 1;
-      if (maxTurns && turnCount >= maxTurns) {
-        void session.abort();
-      }
-    }
-  });
-
-  try {
-    await session.prompt(entry.prompt, { source: 'interactive' });
-    entry.status = 'completed';
-    entry.result = getLastAssistantText(session) || '子代理已完成，但没有输出文本。';
-  } catch (error) {
-    entry.status = 'error';
-    entry.error = error instanceof Error ? error.message : String(error);
-  } finally {
-    unsubscribe();
-  }
+  const graceTurns = agent.graceTurns ?? DEFAULT_GRACE_TURNS;
+  await runPromptWithTurnBudget(entry, session, entry.prompt, maxTurns, graceTurns);
 };
 
 // ============================================================
@@ -384,13 +494,42 @@ export const createSubagentToolExtension = (
         'Use run_in_background=true to return immediately with sessionId.',
       parameters: TaskToolSchema,
       async execute(_toolCallId: string, params: Record<string, unknown>) {
-        const agentName = normalizeStr(params.agent);
-        if (!agentName) {
-          throw createHttpError('缺少 agent 参数');
-        }
         const prompt = normalizeStr(params.prompt);
         if (!prompt) {
           throw createHttpError('缺少 prompt 参数');
+        }
+
+        const resumeSessionId = normalizeStr(params.resume);
+        const requestedAgentName = normalizeStr(params.agent);
+        let agentName = requestedAgentName;
+        let existingEntry: ChildSessionEntry | null = null;
+
+        if (resumeSessionId) {
+          const entry = childRegistry.get(resumeSessionId);
+          if (!entry) {
+            throw createHttpError(`子代理会话不存在: ${resumeSessionId}`, 404);
+          }
+          if (entry.parentSessionId !== parentRecord.id) {
+            throw createHttpError(`无权恢复此子代理会话: ${resumeSessionId}`, 403);
+          }
+          if (entry.status === 'running' || entry.status === 'queued') {
+            throw createHttpError(`子代理当前未结束，无法 resume: ${resumeSessionId}`);
+          }
+          if (entry.status !== 'completed' && entry.status !== 'steered') {
+            throw createHttpError(`子代理当前状态不可 resume: ${resumeSessionId}`);
+          }
+          if (!entry.session) {
+            throw createHttpError(`子代理运行时不存在，无法 resume: ${resumeSessionId}`);
+          }
+          if (requestedAgentName && requestedAgentName !== entry.agentName) {
+            throw createHttpError(`resume 指定的 agent 与原子代理不一致: ${entry.agentName}`);
+          }
+          agentName = entry.agentName;
+          existingEntry = entry;
+        }
+
+        if (!agentName) {
+          throw createHttpError('缺少 agent 参数');
         }
 
         const agents = await discoverAgents(parentRecord.cwd);
@@ -421,6 +560,51 @@ export const createSubagentToolExtension = (
             ? params.max_turns
             : undefined;
 
+        if (existingEntry) {
+          const resumedSession = existingEntry.session;
+          if (!resumedSession) {
+            throw createHttpError(`子代理运行时不存在，无法 resume: ${resumeSessionId}`);
+          }
+          existingEntry.prompt = prompt;
+          existingEntry.result = undefined;
+          existingEntry.error = undefined;
+
+          const promise = scheduleChildRun(existingEntry, () =>
+            runPromptWithTurnBudget(
+              existingEntry,
+              resumedSession,
+              prompt,
+              maxTurns ?? agent.maxTurns,
+              agent.graceTurns ?? DEFAULT_GRACE_TURNS,
+            ),
+          );
+
+          if (!runInBackground) {
+            await promise;
+          }
+
+          const details = {
+            sessionId: existingEntry.sessionId,
+            sessionFile: existingEntry.sessionFile,
+            status: existingEntry.status,
+            result: existingEntry.result,
+            error: existingEntry.error,
+          };
+
+          const text = runInBackground
+            ? existingEntry.status === 'queued'
+              ? `子代理已进入后台队列，会话 ID：${resumeSessionId}`
+              : `子代理已后台恢复，会话 ID：${resumeSessionId}`
+            : existingEntry.status === 'completed' || existingEntry.status === 'steered'
+              ? existingEntry.result || '子代理已完成。'
+              : `子代理失败：${existingEntry.error || '未知错误'}`;
+
+          return {
+            content: [{ type: 'text' as const, text }],
+            details,
+          };
+        }
+
         // Pre-create the session manager so we have a stable sessionId before the async run
         const sessionManager = SessionManager.create(parentRecord.cwd);
         sessionManager.newSession({ parentSession: parentRecord.sessionFile });
@@ -433,25 +617,21 @@ export const createSubagentToolExtension = (
           parentSessionId: parentRecord.id,
           agentName: agent.name,
           prompt,
-          status: 'running',
+          status: 'queued',
         };
         childRegistry.set(sessionId, entry);
 
-        const promise = runChildSession(entry, parentRecord, agent, sessionManager, {
-          authStorage: extOptions.authStorage,
-          modelRegistry: extOptions.modelRegistry,
-          resolveModel: extOptions.resolveModel,
-          inheritContext,
-          model: normalizeStr(params.model) || undefined,
-          thinkingLevel: normalizeThinkingLevel(params.thinking) as ThinkingLevel | undefined,
-          maxTurns,
-        }).catch((error: unknown) => {
-          if (entry.status === 'running') {
-            entry.status = 'error';
-            entry.error = error instanceof Error ? error.message : String(error);
-          }
-        });
-        entry.promise = promise;
+        const promise = scheduleChildRun(entry, () =>
+          runChildSession(entry, parentRecord, agent, sessionManager, {
+            authStorage: extOptions.authStorage,
+            modelRegistry: extOptions.modelRegistry,
+            resolveModel: extOptions.resolveModel,
+            inheritContext,
+            model: normalizeStr(params.model) || undefined,
+            thinkingLevel: normalizeThinkingLevel(params.thinking) as ThinkingLevel | undefined,
+            maxTurns,
+          }),
+        );
 
         if (!runInBackground) {
           await promise;
@@ -466,8 +646,10 @@ export const createSubagentToolExtension = (
         };
 
         const text = runInBackground
-          ? `子代理已后台启动，会话 ID：${sessionId}`
-          : entry.status === 'completed'
+          ? entry.status === 'queued'
+            ? `子代理已进入后台队列，会话 ID：${sessionId}`
+            : `子代理已后台启动，会话 ID：${sessionId}`
+          : entry.status === 'completed' || entry.status === 'steered'
             ? entry.result || '子代理已完成。'
             : `子代理失败：${entry.error || '未知错误'}`;
 
@@ -507,14 +689,7 @@ export const createSubagentToolExtension = (
           throw createHttpError(`子代理当前不在运行态，无法 steer: ${sessionId}`);
         }
 
-        const steerable = entry.session as AgentSession & {
-          steer?: (text: string) => Promise<void>;
-        };
-        if (typeof steerable.steer === 'function') {
-          await steerable.steer(message);
-        } else {
-          await entry.session.prompt(message, { streamingBehavior: 'steer' });
-        }
+        await sendSteerMessage(entry.session, message);
 
         const details = { sessionId, status: 'running' as const, ok: true };
         return {
@@ -553,9 +728,11 @@ export const createSubagentToolExtension = (
         };
 
         let text: string;
-        if (entry.status === 'running') {
+        if (entry.status === 'queued') {
+          text = `子代理正在排队中，会话 ID：${sessionId}`;
+        } else if (entry.status === 'running') {
           text = `子代理正在运行中，会话 ID：${sessionId}`;
-        } else if (entry.status === 'completed') {
+        } else if (entry.status === 'completed' || entry.status === 'steered') {
           text = entry.result || '子代理已完成，无输出。';
         } else {
           text = `子代理失败：${entry.error || '未知错误'}`;

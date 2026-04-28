@@ -1171,6 +1171,13 @@ usePiChatCore / usePiChat
 - `packages/web/src/router/index.ts`：新增 `/notes` 路由
 - `packages/web/src/composables/useWorkbenchPrimaryNavigation.ts`：新增 `notes` 导航项
 
+### 2026-04-28 笔记页视觉分层
+
+- `NotesPage.vue` 收缩为笔记数据流容器，继续负责列表加载、当前笔记、搜索、新建、保存与 dirty 状态。
+- `NoteVaultSidebar.vue` 承担 Obsidian 式 vault 侧栏：搜索、新建入口、Markdown 列表、目录/大小/更新时间展示、选中态和空态。
+- `NoteEditorShell.vue` 承担编辑工作区外壳：当前文件标题、路径、保存状态、加载态、空态、Milkdown 容器和底部状态栏。
+- `NoteMilkdownEditorInner.vue` 只做 Milkdown/Crepe 局部主题覆盖和编辑区排版，不新增笔记协议能力。
+
 ### 新增依赖
 
 | 依赖 | 用途 |
@@ -1304,3 +1311,49 @@ TerminalPage.vue
 
 ### 受影响文件
 - `packages/web/src/components/terminal/TerminalViewport.vue`
+
+## 2026-04-28 文件页网盘式文件管理器
+
+### 变更目的
+- 将一级 `/files` 页面从小型文件树改为当前工作区内的网盘式文件管理器。
+- 支持新建文件/文件夹、重命名、拖拽移动、上传文件和移入系统回收区。
+- 继续复用现有 `/api/files/content`、`/api/files/blob`、`/api/files/content-window` 与 `WorkbenchOperationPanel`，不新增平行预览链路。
+
+### 当前链路
+```text
+/files
+  -> useFilesRouteState()
+  -> rootDir = core.info.workspaceDir
+  -> useFileManager(rootDir)
+  -> GET /api/files/tree
+  -> 网格卡片展示目录与文件
+  -> 文件夹点击进入目录
+  -> 文件点击 WorkbenchOperationPanel.openFile(path)
+  -> 预览仍走 /api/files/content | blob | content-window
+```
+
+### 写操作链路
+```text
+FileManagerToolbar / FileGrid
+  -> useFileManager
+  -> POST /api/files/entries
+  -> PATCH /api/files/entries/path
+  -> POST /api/files/upload
+  -> DELETE /api/files/entries
+  -> file-manager.ts 统一 root + realpath 校验
+  -> fs 写入 / fs.rename / multer 上传 / trash 回收区
+```
+
+### 设计结论
+- 文件页管理范围固定为 `SystemInfo.workspaceDir`，不接入 Home 全盘浏览。
+- 文件写操作集中在 `packages/server/src/file-manager.ts`，不能在路由里散落独立路径判断。
+- `FileTreeEntry` 已扩展 `size / modifiedAt / extension`，用于网格卡片展示；聊天右侧 `WorkspaceFileTree` 继续只消费 `name/path/kind`。
+- 删除语义是移入系统回收区，不实现项目内 `.trash` 伪回收站。
+
+### 受影响文件
+- `packages/server/src/file-manager.ts`
+- `packages/server/src/index.ts`
+- `packages/protocol/src/index.ts`
+- `packages/web/src/pages/FilesPage.vue`
+- `packages/web/src/composables/useFileManager.ts`
+- `packages/web/src/components/files/*`

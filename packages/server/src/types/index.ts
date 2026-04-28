@@ -64,6 +64,7 @@ export interface AgentConfig {
   model?: string;
   thinking?: ThinkingLevel;
   maxTurns?: number;
+  graceTurns?: number;
   skills?: string[];
   inheritContext?: boolean;
   runInBackground?: boolean;

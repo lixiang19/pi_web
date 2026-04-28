@@ -81,3 +81,6 @@
 - [Markdown 预览安全] Markdown 渲染不能只禁 link/image trust；raw HTML 也必须改成文本输出，否则会绕过默认渲染链直接进入页面
 - [文件页复用边界] 一级文件页要复用 `useWorkbenchFilePreview` 与 `/api/files/*` 契约；只通过可配置 UI 关闭会话专属动作，不能另起一套预览/保存链路
 - [自动化边界] 自动化首版就是“定时创建普通会话并发送消息”；不要把它做成任务中心、运行记录中心、工作流编排器或审批中心，结果入口天然是普通会话列表
+- [子代理上下文] task 子代理继承上下文时必须写入 child `SessionManager` 的真实消息历史；不要再把父会话压成 system prompt 文本块，否则 toolResult/assistant 结构会丢失，resume 与真实回放也会错位
+- [笔记页边界] Obsidian 感的首要来源是 vault 侧栏、编辑外壳和 Milkdown 局部主题分层；不要为了视觉相似把双链/标签/图谱混入基础笔记 API。
+- [文件管理写边界] 文件页新建、移动、上传、删除必须复用服务端统一 root/realpath 校验；删除走系统回收区也必须先校验工作区边界，不能直接把用户传入路径交给 trash。

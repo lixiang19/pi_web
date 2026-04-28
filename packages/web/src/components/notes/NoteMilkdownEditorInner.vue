@@ -41,15 +41,15 @@ useEditor((container) => {
 
 <style scoped>
 .milkdown-editor {
-  background: var(--color-card);
+  background: transparent;
   color: var(--color-foreground);
 }
 
 .milkdown-editor :deep(.milkdown) {
-  --crepe-color-background: var(--card);
-  --crepe-color-on-background: var(--card-foreground);
-  --crepe-color-surface: var(--secondary);
-  --crepe-color-surface-low: var(--muted);
+  --crepe-color-background: transparent;
+  --crepe-color-on-background: var(--foreground);
+  --crepe-color-surface: color-mix(in oklab, var(--background) 82%, var(--muted));
+  --crepe-color-surface-low: color-mix(in oklab, var(--background) 88%, var(--muted));
   --crepe-color-on-surface: var(--foreground);
   --crepe-color-on-surface-variant: var(--muted-foreground);
   --crepe-color-outline: var(--border);
@@ -60,19 +60,51 @@ useEditor((container) => {
   --crepe-color-on-inverse: var(--background);
   --crepe-color-inline-code: var(--destructive);
   --crepe-color-error: var(--destructive);
-  --crepe-color-hover: var(--muted);
+  --crepe-color-hover: color-mix(in oklab, var(--background) 72%, var(--muted));
   --crepe-color-selected: var(--accent);
   --crepe-color-inline-area: var(--muted);
-  --crepe-font-title: var(--font-serif);
-  --crepe-font-default: var(--font-sans);
-  --crepe-font-code: var(--font-mono);
+  --crepe-font-title: 'Manrope Variable', sans-serif;
+  --crepe-font-default: 'Manrope Variable', sans-serif;
+  --crepe-font-code: 'IBM Plex Mono', monospace;
   --crepe-shadow-1: var(--shadow-sm);
   --crepe-shadow-2: var(--shadow-md);
+  min-height: 100%;
+  background: transparent;
 }
 
 .milkdown-editor :deep([data-milkdown-root]) {
   min-height: 100%;
-  padding: 1rem 1.5rem;
+  padding: 3rem 4.5rem 6rem;
   outline: none;
+}
+
+.milkdown-editor :deep(.ProseMirror) {
+  min-height: calc(100vh - 11rem);
+  outline: none;
+  color: var(--foreground);
+  font-size: 15px;
+  line-height: 1.78;
+}
+
+.milkdown-editor :deep(.ProseMirror h1) {
+  margin-top: 0;
+  letter-spacing: 0;
+}
+
+.milkdown-editor :deep(.ProseMirror pre) {
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--background) 76%, var(--muted));
+}
+
+.milkdown-editor :deep(.ProseMirror blockquote) {
+  border-left-color: var(--primary);
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 768px) {
+  .milkdown-editor :deep([data-milkdown-root]) {
+    padding: 2rem 1.5rem 5rem;
+  }
 }
 </style>

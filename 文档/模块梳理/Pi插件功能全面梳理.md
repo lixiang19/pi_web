@@ -614,6 +614,14 @@ interface Preset {
 ]}
 ```
 
+**ridge 内嵌 task 子代理更新（2026-04-28）**:
+
+- `packages/server/src/subagents.ts` 的 `task` 工具支持 `resume`，可恢复同一父会话下已完成或 `steered` 的子代理 session，运行中与排队中的子代理必须继续走 `steer_subagent`
+- 子代理后台运行新增模块级并发队列，默认最大并发为 4，可通过 `RIDGE_SUBAGENT_MAX_CONCURRENT` 覆盖；超限任务状态为 `queued`，运行槽释放后自动启动
+- `max_turns` 不再直接 abort；到达上限后先发送 steer 收尾消息，再按 `grace_turns` 宽限轮次继续，超出后标记为 `steered`
+- `inherit_context` 改为把父会话最近 12 条原始 `user/assistant/toolResult` 消息写入 child `SessionManager`，不再把上下文压扁成 system prompt 文本块
+- agent frontmatter/API 新增 `grace_turns`，语义是 max_turns 后允许继续执行的宽限轮次，默认 3
+
 ### 12.2 Plan Mode - 计划模式
 
 **两阶段工作流**:
