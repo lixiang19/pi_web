@@ -38,6 +38,10 @@
 - [事件命名] Vue defineEmits 中带有冒号的事件名必须用引号包裹（"update:modelValue"）
 - [类型校验] 即使 TypeScript 编译通过，也要验证运行时数据字段（如 AgentSummary 实际无 id 字段）
 - [共享列表状态] 同一份项目列表如果会被侧栏、空态、弹窗同时消费，composable 必须提升为模块级共享状态并做请求去重，否则不同区域会出现数据不同步
+- [任务store共享] useWorkspaceTasks 必须通过 provide/inject 在 WorkspacePage 层级共享，不能让 DashboardView 和 TaskView 各自实例化（会导致 checkbox scan 请求被发两次）
+- [乐观更新] 任务 toggle/create/delete 应先本地更新状态、失败再回滚，避免每次操作后 await load() 全量重新加载的延迟感
+- [Checkbox ID] checkbox 任务 ID 不能含数组下标（顺序变化会致 key 失效），只能用 (sourcePath, lineNumber) 组合
+- [Checkbox toggle] 文件行号定位 toggle 必须带 expectedText 校验，防止文件被编辑后行号偏移改错行
 - [草稿标签] 多标签工作台不能把“打开标签”和“创建服务端 session”合并；新建会话必须先落在前端草稿标签，cwd 继承链至少保持 payload -> 当前活动标签 -> workspaceDir
 - [Composable契约] 组合层 composable 如果只依赖少数字段，就声明最小状态接口；不要把整个 composable ReturnType 暴露给调用方，更不要用 Ref<object> 去伪装对象属性是 Ref 的契约
 - [会话真源] 工作台会话显示状态只能有一个真源；组件 props、tab 状态、聊天实例三处同时持有会话身份时，草稿转正式会话一定会失真
@@ -92,3 +96,11 @@
 - [笔记页边界] 笔记 API 的 rename/delete 独立新增路由（PATCH /api/notes/rename, DELETE /api/notes），不复用通用文件管理 /api/files/entries 边界
 - [Tauri弹窗禁用] 浏览器原生 `prompt()/confirm()/alert()` 在 Tauri Webview 中不可用或行为不可靠；所有用户输入和确认必须用 Vue 组件化对话框（如 shadcn Dialog），文件管理页已有 `FileEntryDialog` 可复用
 - [统一组件优先] 工作空间和会话页的重复功能必须统一为 `components/common/` 下的通用组件；`TabBar` 统一标签栏（替代 NoteTabBar），`FileTreePanel` + `useFileTreeData` 统一文件树渲染和数据逻辑（替代 WorkspaceFileTree 内联实现）。NoteVaultSidebar 因笔记专属交互（搜索/筛选/CRUD）保持独立
+- [工作空间替代笔记] `/notes` 已被 `/workspace` 完全替代，NotePage+NoteVault+NoteTabContent+NoteStatusBar+NoteNameDialog+NoteTabBar 全部删除。Milkdown 编辑器保留移至 `components/workspace/`
+- [工作空间标签页模型] 视图标签页（仪表盘/待办/日历/收件箱）和文件标签页(.md/.canvas/.base/其他)合并到一个 TabBar；activeId 统一管理切换
+- [文件内容分发] WorkspaceContentArea 根据 tab.previewKind 分发：markdown→WorkspaceMarkdownEditor, unsupported→OpenWithDefaultApp, 其他→WorkbenchReadonlyFilePreview
+- [编辑器保存状态] WorkspaceMarkdownEditor 自管 saveStatus，通过 @update:save-status 事件上报到 WorkspacePage 的 saveStatusMap，TabBar 的 tabBarItems computed 读取 map 值反映圆点状态
+- [路径规范] 工作空间内部统一用绝对路径（workspaceDir 为前缀），只在调后端 API 时转为相对路径（strip workspaceDir 前缀）。CalendarView/DashboardView emit 的 open-file 路径必须也是绝对路径
+- [createNote 必须支持路径] 后端 createNote API 必须增强支持指定子目录路径，否则日记（日记/YYYY/MM/）、闪念（收件箱/）都无法正确创建
+- [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
+- [反思先行] 每个里程碑完成后必须做功能反思，确认每个子功能真的可端到端跑通，而非"调 API 了就当完成"。见 `文档/功能开发/2026-04-28_工作空间功能反思.md`

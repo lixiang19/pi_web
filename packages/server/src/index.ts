@@ -50,7 +50,7 @@ import {
 	createAutomationScheduler,
 	createAutomationStore,
 } from "./automations.js";
-import { initializeRidgeDb } from "./db/index.js";
+import { getRidgeDb, initializeRidgeDb } from "./db/index.js";
 import {
 	createFileManager,
 	ensureWithinRoot,
@@ -581,6 +581,14 @@ const resolvePreviewKind = (
 
 	if (markdownExtensions.has(extension)) {
 		return "markdown";
+	}
+
+	if (extension === ".base") {
+		return "base";
+	}
+
+	if (extension === ".canvas") {
+		return "canvas";
 	}
 
 	if (htmlExtensions.has(extension)) {
@@ -2597,6 +2605,519 @@ app.get(
 				directory: toPosixPath(targetPath),
 				entries,
 			});
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+app.get(
+	"/api/workspace/recent-files",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const root =
+				typeof req.query.root === "string"
+					? req.query.root
+					: defaultWorkspaceDir;
+			const limit = Math.min(Number(req.query.limit) || 20, 50);
+
+			const collectFiles = async (
+				dir: string,
+			): Promise<
+				Array<{
+					name: string;
+					path: string;
+					relativePath: string;
+					modifiedAt: number;
+					extension: string;
+					size: number | null;
+				}>
+			> => {
+				const entries = await fileManager.listDirectoryEntries(dir, root);
+				const files: Array<{
+					name: string;
+					path: string;
+					relativePath: string;
+					modifiedAt: number;
+					extension: string;
+					size: number | null;
+				}> = [];
+				for (const entry of entries) {
+					if (entry.kind === "file") {
+						files.push(entry);
+					} else if (entry.kind === "directory") {
+						const childFiles = await collectFiles(entry.path);
+						files.push(...childFiles);
+					}
+				}
+				return files;
+			};
+
+			const allFiles = await collectFiles(root);
+			allFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
+
+			res.json({ files: allFiles.slice(0, limit) });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+// Workspace Tasks API
+app.get(
+	"/api/workspace/tasks",
+	async (_req: Request, res: Response, next: NextFunction) => {
+		try {
+			const db = await getRidgeDb();
+			const rows = db
+				.prepare("SELECT * FROM workspace_tasks ORDER BY updated_at DESC")
+				.all();
+			res.json({ tasks: rows });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+app.post(
+	"/api/workspace/tasks",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const db = await getRidgeDb();
+			const { title, priority, dueDate, tags } = req.body ?? {};
+			if (!title || typeof title !== "string") {
+				const error = new Error("title is required") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			const now = Date.now();
+			db.prepare(
+				`INSERT INTO workspace_tasks(task_id, title, status, priority, due_date, tags, note_path, created_at, updated_at)
+				 VALUES(?, ?, 'pending', ?, ?, ?, NULL, ?, ?)`,
+			).run(
+				taskId,
+				title,
+				priority || "medium",
+				dueDate ?? null,
+				tags ?? "",
+				now,
+				now,
+			);
+			res.json({
+				task: {
+					task_id: taskId,
+					title,
+					status: "pending",
+					priority: priority || "medium",
+					due_date: dueDate ?? null,
+					tags: tags ?? "",
+					note_path: null,
+					created_at: now,
+					updated_at: now,
+				},
+			});
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+app.patch(
+	"/api/workspace/tasks/:taskId",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const db = await getRidgeDb();
+			const { taskId } = req.params;
+			const { status, title, priority, dueDate, tags } = req.body ?? {};
+			const now = Date.now();
+			const sets: string[] = [];
+			const values: unknown[] = [];
+			if (status !== undefined) {
+				sets.push("status = ?");
+				values.push(status);
+			}
+			if (title !== undefined) {
+				sets.push("title = ?");
+				values.push(title);
+			}
+			if (priority !== undefined) {
+				sets.push("priority = ?");
+				values.push(priority);
+			}
+			if (dueDate !== undefined) {
+				sets.push("due_date = ?");
+				values.push(dueDate);
+			}
+			if (tags !== undefined) {
+				sets.push("tags = ?");
+				values.push(tags);
+			}
+			if (sets.length === 0) {
+				res.json({ ok: true });
+				return;
+			}
+			sets.push("updated_at = ?");
+			values.push(now);
+			values.push(taskId);
+			db.prepare(
+				`UPDATE workspace_tasks SET ${sets.join(", ")} WHERE task_id = ?`,
+			).run(...values);
+			res.json({ ok: true });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+app.delete(
+	"/api/workspace/tasks/:taskId",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const db = await getRidgeDb();
+			const { taskId } = req.params;
+			db.prepare("DELETE FROM workspace_tasks WHERE task_id = ?").run(taskId);
+			res.json({ ok: true });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+// Checkbox scan API
+app.get(
+	"/api/workspace/tasks/checkboxes",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const root =
+				typeof req.query.root === "string"
+					? req.query.root
+					: defaultWorkspaceDir;
+			const checkboxes: Array<{
+				text: string;
+				done: boolean;
+				dueDate: number | null;
+				priority: string;
+				tags: string;
+				sourcePath: string;
+				lineNumber: number;
+				createdAt: number | null;
+				updatedAt: number | null;
+			}> = [];
+
+			const scanForCheckboxes = async (dir: string) => {
+				const entries = await fileManager.listDirectoryEntries(dir, root);
+				for (const entry of entries) {
+					if (
+						entry.kind === "file" &&
+						(entry.extension === ".md" || entry.extension === ".markdown")
+					) {
+						try {
+							const content = await fs.readFile(entry.path, "utf-8");
+							const stat = await fs.stat(entry.path);
+							const fileCreatedAt = stat.birthtime?.getTime() ?? stat.mtimeMs;
+							const fileUpdatedAt = stat.mtimeMs;
+							const lines = content.split("\n");
+							for (let i = 0; i < lines.length; i++) {
+								const line = lines[i];
+								const match = line.match(/^\s*- \[([ xX])]\s+(.+)/);
+								if (match) {
+									const done = match[1] !== " ";
+									let text = match[2].trim();
+									let dueDate: number | null = null;
+									let priority = "medium";
+									let tags = "";
+									const dueMatch = text.match(/截止[:\s]+(\d{4}-\d{2}-\d{2})/);
+									if (dueMatch) {
+										dueDate = new Date(dueMatch[1]).getTime();
+										text = text
+											.replace(/截止[:\s]+\d{4}-\d{2}-\d{2}/, "")
+											.trim();
+									}
+									const prioMatch = text.match(/优先级[:\s]*(高|中|低)/);
+									if (prioMatch) {
+										priority =
+											prioMatch[1] === "高"
+												? "high"
+												: prioMatch[1] === "低"
+													? "low"
+													: "medium";
+										text = text.replace(/优先级[:\s]*(高|中|低)/, "").trim();
+									}
+									const tagMatch = text.match(/#([\w,-]+)/);
+									if (tagMatch) {
+										tags = tagMatch[1];
+										text = text.replace(/#[\w,-]+/, "").trim();
+									}
+									checkboxes.push({
+										text,
+										done,
+										dueDate,
+										priority,
+										tags,
+										sourcePath: entry.relativePath,
+										lineNumber: i + 1,
+										createdAt: fileCreatedAt,
+										updatedAt: fileUpdatedAt,
+									});
+								}
+							}
+						} catch {
+							/* skip unreadable files */
+						}
+					} else if (entry.kind === "directory") {
+						await scanForCheckboxes(entry.path);
+					}
+				}
+			};
+
+			await scanForCheckboxes(root);
+			res.json({ checkboxes });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+// Checkbox toggle API
+app.patch(
+	"/api/workspace/tasks/checkbox",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const { path: relPath, lineNumber, done, expectedText } = req.body ?? {};
+			if (!relPath || lineNumber == null || done == null) {
+				const error = new Error(
+					"path, lineNumber, done are required",
+				) as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			const fullPath = path.join(defaultWorkspaceDir, relPath);
+			const content = await fs.readFile(fullPath, "utf-8");
+			const lines = content.split("\n");
+			const idx = lineNumber - 1;
+			if (idx < 0 || idx >= lines.length) {
+				const error = new Error("Line number out of range") as HttpError;
+				error.statusCode = 409;
+				throw error;
+			}
+			const line = lines[idx];
+			// Validate line content if expectedText provided
+			if (expectedText != null) {
+				const currentMatch = line.match(/^\s*- \[[ xX]\]\s+(.+)/);
+				const currentText = currentMatch ? currentMatch[1].trim() : line.trim();
+				if (currentText !== expectedText) {
+					const error = new Error(
+						"Line content mismatch — file has been modified",
+					) as HttpError;
+					error.statusCode = 409;
+					throw error;
+				}
+			}
+			if (done) {
+				lines[idx] = line.replace(/- \[ \]/, "- [x]");
+			} else {
+				lines[idx] = line.replace(/- \[x?\]/, "- [ ]");
+			}
+			await fs.writeFile(fullPath, lines.join("\n"), "utf-8");
+			res.json({ ok: true });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+// Journal API
+app.get(
+	"/api/workspace/journal",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const root =
+				typeof req.query.root === "string"
+					? req.query.root
+					: defaultWorkspaceDir;
+			const year = Number(req.query.year) || new Date().getFullYear();
+			const month = Number(req.query.month);
+
+			if (month) {
+				const monthStr = String(month).padStart(2, "0");
+				const journalDir = path.join(root, "日记", String(year), monthStr);
+				let entries: string[] = [];
+				try {
+					const files = await fs.readdir(journalDir);
+					entries = files
+						.filter((f) => f.endsWith(".md"))
+						.map((f) => f.replace(/\.md$/, ""));
+				} catch {
+					// 目录不存在
+				}
+				res.json({ entries });
+			} else {
+				const yearDir = path.join(root, "日记", String(year));
+				let months: number[] = [];
+				try {
+					const dirs = await fs.readdir(yearDir);
+					months = dirs.filter((d) => /^\d{2}$/.test(d)).map((d) => Number(d));
+				} catch {
+					// 目录不存在
+				}
+				res.json({ months });
+			}
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+// Bases API
+app.get(
+	"/api/workspace/base",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const relPath = typeof req.query.path === "string" ? req.query.path : "";
+			if (!relPath) {
+				const error = new Error("path is required") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			const fullPath = path.join(defaultWorkspaceDir, relPath);
+			const content = await fs.readFile(fullPath, "utf-8");
+			const baseData = JSON.parse(content);
+
+			// 解析文件引用行：读取 frontmatter 合并到行数据
+			for (const row of baseData.rows ?? []) {
+				if (row.type === "file" && row.path) {
+					const filePath = path.join(defaultWorkspaceDir, row.path);
+					try {
+						const fileContent = await fs.readFile(filePath, "utf-8");
+						const fmMatch = fileContent.match(/^---\n([\s\S]*?)\n---/);
+						if (fmMatch) {
+							const fm: Record<string, unknown> = {};
+							for (const line of fmMatch[1].split("\n")) {
+								const kv = line.match(/^(\w[\w-]*)\s*:\s*(.+)/);
+								if (kv) fm[kv[1]] = kv[2].trim();
+							}
+							row.cells = { ...row.cells, ...fm };
+						}
+						row.fileTitle = path.basename(row.path, ".md");
+					} catch {
+						row.fileTitle = path.basename(row.path);
+					}
+				}
+			}
+
+			res.json(baseData);
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+app.put(
+	"/api/workspace/base",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const { path: relPath, data } = req.body ?? {};
+			if (!relPath) {
+				const error = new Error("path is required") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			const fullPath = path.join(defaultWorkspaceDir, relPath);
+
+			// 保存时剥离运行时添加的 fileTitle
+			const cleanRows = (data.rows ?? []).map(
+				(row: Record<string, unknown>) => {
+					const { fileTitle, ...rest } = row;
+					return rest;
+				},
+			);
+			const saveData = { ...data, rows: cleanRows };
+
+			await fs.writeFile(fullPath, JSON.stringify(saveData, null, 2), "utf-8");
+			res.json({ ok: true });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+app.post(
+	"/api/workspace/base/create",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const { name, folder } = req.body ?? {};
+			if (!name) {
+				const error = new Error("name is required") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			const baseName = name.endsWith(".base") ? name : `${name}.base`;
+			const dir = folder
+				? path.join(defaultWorkspaceDir, folder)
+				: path.join(defaultWorkspaceDir, "数据库");
+			await fs.mkdir(dir, { recursive: true });
+			const fullPath = path.join(dir, baseName);
+
+			const colId = () =>
+				`c${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+			const rowId = () =>
+				`r${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+			const viewId = () =>
+				`v${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+			const defaultData = {
+				name: name.replace(/\.base$/, ""),
+				columns: [
+					{ id: colId(), name: "名称", type: "text" },
+					{
+						id: colId(),
+						name: "状态",
+						type: "select",
+						options: ["待做", "进行中", "完成"],
+					},
+				],
+				sources: [],
+				rows: [{ id: rowId(), type: "independent", cells: {} }],
+				views: [
+					{
+						id: viewId(),
+						name: "表格",
+						type: "table",
+						sort: null,
+						filters: [],
+					},
+				],
+				activeViewId: "",
+			};
+			defaultData.activeViewId = defaultData.views[0].id;
+
+			await fs.writeFile(
+				fullPath,
+				JSON.stringify(defaultData, null, 2),
+				"utf-8",
+			);
+			const relPath = path.relative(defaultWorkspaceDir, fullPath);
+			res.json({ path: relPath, data: defaultData });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+app.delete(
+	"/api/workspace/base",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const relPath = typeof req.query.path === "string" ? req.query.path : "";
+			if (!relPath) {
+				const error = new Error("path is required") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			const fullPath = path.join(defaultWorkspaceDir, relPath);
+			await fs.unlink(fullPath);
+			res.json({ ok: true });
 		} catch (error) {
 			next(error);
 		}

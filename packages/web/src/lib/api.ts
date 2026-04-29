@@ -630,10 +630,14 @@ export function saveNoteContent(path: string, content: string) {
 	});
 }
 
-export function createNote(name: string) {
+export function createNote(data: {
+	name?: string;
+	path?: string;
+	content?: string;
+}) {
 	return request<NoteCreateResponse>("/api/notes", {
 		method: "POST",
-		body: JSON.stringify({ name }),
+		body: JSON.stringify(data),
 	});
 }
 
@@ -655,5 +659,192 @@ export function createNoteFolder(folderPath?: string) {
 	return request<NoteCreateFolderResponse>("/api/notes/folder", {
 		method: "POST",
 		body: JSON.stringify({ path: folderPath }),
+	});
+}
+
+export interface RecentFileItem {
+	name: string;
+	path: string;
+	relativePath: string;
+	modifiedAt: number;
+	extension: string;
+	size: number | null;
+}
+
+export function getRecentFiles(root: string, limit = 20) {
+	const params = new URLSearchParams({ root, limit: String(limit) });
+	return request<{ files: RecentFileItem[] }>(
+		`/api/workspace/recent-files?${params.toString()}`,
+	);
+}
+
+// Workspace Tasks API
+export interface WorkspaceTask {
+	task_id: string;
+	title: string;
+	status: "pending" | "in_progress" | "done";
+	priority: "low" | "medium" | "high";
+	due_date: number | null;
+	tags: string;
+	note_path: string | null;
+	created_at: number;
+	updated_at: number;
+}
+
+export interface CheckboxTask {
+	text: string;
+	done: boolean;
+	dueDate: number | null;
+	priority: string;
+	tags: string;
+	sourcePath: string;
+	lineNumber: number;
+	createdAt: number | null;
+	updatedAt: number | null;
+}
+
+export function getWorkspaceTasks() {
+	return request<{ tasks: WorkspaceTask[] }>("/api/workspace/tasks");
+}
+
+export function createWorkspaceTask(data: {
+	title: string;
+	priority?: string;
+	dueDate?: number;
+	tags?: string;
+}) {
+	return request<{ task: WorkspaceTask }>("/api/workspace/tasks", {
+		method: "POST",
+		body: JSON.stringify(data),
+	});
+}
+
+export function updateWorkspaceTask(
+	taskId: string,
+	data: {
+		status?: string;
+		title?: string;
+		priority?: string;
+		dueDate?: number;
+		tags?: string;
+	},
+) {
+	return request<{ ok: true }>(`/api/workspace/tasks/${taskId}`, {
+		method: "PATCH",
+		body: JSON.stringify(data),
+	});
+}
+
+export function deleteWorkspaceTask(taskId: string) {
+	return request<{ ok: true }>(`/api/workspace/tasks/${taskId}`, {
+		method: "DELETE",
+	});
+}
+
+export function getCheckboxTasks(root: string) {
+	const params = new URLSearchParams({ root });
+	return request<{ checkboxes: CheckboxTask[] }>(
+		`/api/workspace/tasks/checkboxes?${params.toString()}`,
+	);
+}
+
+// Journal API
+export function getJournalMonths(root: string, year: number) {
+	const params = new URLSearchParams({ root, year: String(year) });
+	return request<{ months: number[] }>(
+		`/api/workspace/journal?${params.toString()}`,
+	);
+}
+
+export function getJournalEntries(root: string, year: number, month: number) {
+	const params = new URLSearchParams({
+		root,
+		year: String(year),
+		month: String(month),
+	});
+	return request<{ entries: string[] }>(
+		`/api/workspace/journal?${params.toString()}`,
+	);
+}
+
+// Bases API
+export interface BaseColumn {
+	id: string;
+	name: string;
+	type:
+		| "text"
+		| "number"
+		| "date"
+		| "select"
+		| "multiselect"
+		| "checkbox"
+		| "file";
+	options?: string[];
+}
+
+export interface BaseRow {
+	id: string;
+	type: "independent" | "file";
+	path?: string;
+	cells: Record<string, unknown>;
+	fileTitle?: string;
+}
+
+export interface BaseView {
+	id: string;
+	name: string;
+	type: "table" | "kanban" | "gallery" | "calendar";
+	sort: { column: string; direction: "asc" | "desc" } | null;
+	filters: Array<{ column: string; operator: string; value: string }>;
+	groupColumn?: string;
+}
+
+export interface BaseData {
+	name: string;
+	columns: BaseColumn[];
+	sources: Array<{ type: string; path: string }>;
+	rows: BaseRow[];
+	views: BaseView[];
+	activeViewId: string;
+}
+
+export function getBaseData(path: string) {
+	const params = new URLSearchParams({ path });
+	return request<BaseData>(`/api/workspace/base?${params.toString()}`);
+}
+
+export function saveBaseData(path: string, data: BaseData) {
+	return request<{ ok: true }>("/api/workspace/base", {
+		method: "PUT",
+		body: JSON.stringify({ path, data }),
+	});
+}
+
+export function createBase(name: string, folder?: string) {
+	return request<{ path: string; data: BaseData }>(
+		"/api/workspace/base/create",
+		{
+			method: "POST",
+			body: JSON.stringify({ name, folder }),
+		},
+	);
+}
+
+export function deleteBase(path: string) {
+	const params = new URLSearchParams({ path });
+	return request<{ ok: true }>(`/api/workspace/base?${params.toString()}`, {
+		method: "DELETE",
+	});
+}
+
+export function toggleCheckbox(data: {
+	path: string;
+	lineNumber: number;
+	done: boolean;
+	expectedText?: string;
+}) {
+	return request<{ ok: true }>("/api/workspace/tasks/checkbox", {
+		method: "PATCH",
+		body: JSON.stringify(data),
 	});
 }

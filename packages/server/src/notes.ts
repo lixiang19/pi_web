@@ -103,6 +103,8 @@ const noteSaveSchema = z.object({
 
 const noteCreateSchema = z.object({
 	name: z.string().max(200).optional(),
+	path: z.string().max(500).optional(),
+	content: z.string().max(100000).optional(),
 });
 
 const noteRenameSchema = z.object({
@@ -229,25 +231,42 @@ export function createNotesRouter(chatConfig: WorkspaceChatConfig) {
 		createNote: async (req: Request, res: Response, next: NextFunction) => {
 			try {
 				const payload = noteCreateSchema.parse(req.body ?? {});
-				let fileName = (payload.name ?? "").trim();
 
-				if (!fileName) {
-					const existing = await walkMarkdownFiles(notesRoot, notesRoot);
-					const unnamedNums = existing
-						.map((e) => e.name.match(/^未命名(\d+)\.md$/))
-						.filter(Boolean)
-						.map((m) => Number(m![1]));
-					const nextNum =
-						unnamedNums.length === 0 ? 1 : Math.max(...unnamedNums) + 1;
-					fileName = `未命名${nextNum}.md`;
-				} else {
-					const ext = path.extname(fileName).toLowerCase();
+				// 如果指定了 path，直接用 path 创建到指定位置
+				let targetPath: string;
+				if (payload.path) {
+					let relPath = payload.path.trim();
+					const ext = path.extname(relPath).toLowerCase();
 					if (!markdownExtensions.has(ext)) {
-						fileName = `${fileName}.md`;
+						relPath = `${relPath}.md`;
 					}
+					const resolved = await resolveNotePath(relPath);
+					const notesRootRealPath = await fs.realpath(notesRoot);
+					// 自动创建父目录
+					const parentDir = path.dirname(resolved);
+					await fs.mkdir(parentDir, { recursive: true });
+					const parentRealPath = await fs.realpath(parentDir);
+					ensureWithinRoot(parentRealPath, notesRootRealPath);
+					targetPath = resolved;
+				} else {
+					let fileName = (payload.name ?? "").trim();
+					if (!fileName) {
+						const existing = await walkMarkdownFiles(notesRoot, notesRoot);
+						const unnamedNums = existing
+							.map((e) => e.name.match(/^未命名(\d+)\.md$/))
+							.filter(Boolean)
+							.map((m) => Number(m![1]));
+						const nextNum =
+							unnamedNums.length === 0 ? 1 : Math.max(...unnamedNums) + 1;
+						fileName = `未命名${nextNum}.md`;
+					} else {
+						const ext = path.extname(fileName).toLowerCase();
+						if (!markdownExtensions.has(ext)) {
+							fileName = `${fileName}.md`;
+						}
+					}
+					targetPath = await resolveNewNotePath(fileName);
 				}
-
-				const targetPath = await resolveNewNotePath(fileName);
 				ensureMarkdownPath(targetPath, "created");
 
 				try {
@@ -263,10 +282,10 @@ export function createNotesRouter(chatConfig: WorkspaceChatConfig) {
 					}
 				}
 
-				await atomicWriteFile(
-					targetPath,
-					`# ${path.basename(fileName, path.extname(fileName))}\n\n`,
-				);
+				const writeContent =
+					payload.content ??
+					`# ${path.basename(targetPath, path.extname(targetPath))}\n\n`;
+				await atomicWriteFile(targetPath, writeContent);
 				const stats = await fs.stat(targetPath);
 
 				res.status(201).json({

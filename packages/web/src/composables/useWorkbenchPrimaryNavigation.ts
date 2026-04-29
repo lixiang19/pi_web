@@ -15,7 +15,7 @@ import { useSessionLruPool } from "@/composables/useSessionLruPool";
 export type WorkbenchPrimaryRoute =
 	| "chat"
 	| "search"
-	| "notes"
+	| "workspace"
 	| "terminal"
 	| "automations"
 	| "datasets"
@@ -30,7 +30,7 @@ export interface WorkbenchNavItem {
 
 export const workbenchPrimaryNavItems: WorkbenchNavItem[] = [
 	{ route: "search", label: "搜索", icon: Search },
-	{ route: "notes", label: "工作空间", icon: BookOpen },
+	{ route: "workspace", label: "工作空间", icon: BookOpen },
 	{ route: "terminal", label: "终端", icon: TerminalSquare },
 	{ route: "automations", label: "自动化", icon: Bot },
 	{ route: "settings", label: "设置", icon: Settings2 },

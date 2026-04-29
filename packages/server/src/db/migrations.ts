@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 1;
+export const RIDGE_DB_SCHEMA_VERSION = 2;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -87,4 +87,19 @@ CREATE TABLE IF NOT EXISTS automation_rules (
 
 CREATE INDEX IF NOT EXISTS idx_automation_rules_next_run_at
   ON automation_rules(enabled, next_run_at);
+
+CREATE TABLE IF NOT EXISTS workspace_tasks (
+  task_id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  priority TEXT NOT NULL DEFAULT 'medium',
+  due_date INTEGER,
+  tags TEXT DEFAULT '',
+  note_path TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_status ON workspace_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_due_date ON workspace_tasks(due_date);
 `;

@@ -352,6 +352,8 @@ export type FilePreviewKind =
 	| "text"
 	| "html"
 	| "image"
+	| "base"
+	| "canvas"
 	| "unsupported";
 
 export interface FilePreviewPayload {

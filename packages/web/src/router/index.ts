@@ -3,13 +3,13 @@ import { createRouter, createWebHistory } from "vue-router";
 import PlatformShell from "@/layouts/PlatformShell.vue";
 import AutomationsPage from "@/pages/AutomationsPage.vue";
 import DatasetsPage from "@/pages/DatasetsPage.vue";
-import NotesPage from "@/pages/NotesPage.vue";
 import NotFoundPage from "@/pages/NotFoundPage.vue";
 import SearchPage from "@/pages/SearchPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
 import SpacesPage from "@/pages/SpacesPage.vue";
 import TerminalPage from "@/pages/TerminalPage.vue";
 import WorkbenchPage from "@/pages/WorkbenchPage.vue";
+import WorkspacePage from "@/pages/WorkspacePage.vue";
 
 const router = createRouter({
 	history: createWebHistory(),
@@ -41,12 +41,12 @@ const router = createRouter({
 					},
 				},
 				{
-					path: "notes",
-					name: "notes",
-					component: NotesPage,
+					path: "workspace",
+					name: "workspace",
+					component: WorkspacePage,
 					meta: {
 						title: "工作空间",
-						description: "聊天文件夹笔记编辑。",
+						description: "个人内容平台：笔记、待办、日历、白板、数据库。",
 					},
 				},
 				{
