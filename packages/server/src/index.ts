@@ -70,6 +70,7 @@ import {
 import { createProjectContextResolver } from "./project-context.js";
 import { createGitRouter } from "./routes/git.js";
 import { createSystemRouter } from "./routes/system.js";
+import { createCoreRouter } from "./routes/core.js";
 import { createWorkspaceTasksRouter } from "./routes/workspace-tasks.js";
 import { createWorktreeRouter } from "./routes/worktrees.js";
 import type {
@@ -136,6 +137,7 @@ import {
 	resolveDefaultWorkspaceDir,
 } from "./workspace-chat.js";
 import { createWorktreeService } from "./worktree-service.js";
+import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
 
 const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
 	explicitWorkspaceDir: process.env.PI_WORKSPACE_DIR,
@@ -387,7 +389,6 @@ const createProjectSchema = z.object({
 const DEFAULT_SESSION_ROUND_WINDOW = 3;
 const MAX_FILE_PREVIEW_BYTES = 5 * 1024 * 1024;
 const LARGE_FILE_PREVIEW_LINE_COUNT = 1000;
-const UTF8_SNIFF_BYTES = 64 * 1024;
 
 const markdownExtensions = new Set([".md", ".markdown"]);
 const htmlExtensions = new Set([".htm", ".html"]);
@@ -442,46 +443,27 @@ const imageMimeTypesByExtension = new Map<string, string>([
 	[".webp", "image/webp"],
 ]);
 
-// ===== Utility Functions =====
+// ===== Session Modules =====
 import {
-	buildFilePreviewPayload,
-	buildFilePreviewWindowPayload,
-	ensureFileForPreview,
-	openWithDefaultApp,
-	resolveDiscoveryCwd,
-	toFileSize,
-} from "./file-preview.js";
-import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
-
-// ===== Session Lifecycle =====
-import {
+	initSessionContext,
 	applySessionAgentSelection,
 	cancelPendingPermissions,
-	createActiveSessionRecord,
 	createAgentConfigResponse,
 	createAgentSummary,
 	createSessionRecord,
-	createSessionResourceLoader,
 	destroySessionRecord,
 	emit,
 	ensureManagedProjectScope,
-	formatModelSpec,
-	getInteractiveRequests,
-	getPermissionRequests,
 	listProviders,
 	normalizeAskAnswers,
 	persistSessionRecordMetadata,
-	restoreSessionSelection,
-	serializeMessage,
 	serializeProject,
 	settlePendingAsk,
 	settlePendingPermission,
-	toSourceInfo,
 	updateStatus,
 } from "./session-context.js";
-
-// ===== Session Payload & Services =====
 import {
+	initSessionPayload,
 	buildResourceCatalog,
 	createTransientCatalogSession,
 	dispatchAutomationRule,
@@ -496,7 +478,36 @@ import {
 	toSessionRuntimePayload,
 	toSessionSnapshot,
 } from "./session-payload.js";
+import {
+	buildFilePreviewPayload,
+	ensureFileForPreview,
+	openWithDefaultApp,
+	resolveDiscoveryCwd,
+	toFileSize,
+} from "./file-preview.js";
 
+// Initialize session modules
+initSessionContext({
+	modelRegistry,
+	authStorage,
+	sessionMetadataStore,
+	activeSessions,
+	openingSessionRecords,
+	defaultWorkspaceDir,
+	workspaceChatConfig,
+	projectContextResolver,
+});
+initSessionPayload({
+	defaultWorkspaceDir,
+	workspaceChatConfig,
+	authStorage,
+	modelRegistry,
+	activeSessions,
+	openingSessionRecords,
+	projectContextResolver,
+	DEFAULT_SESSION_ROUND_WINDOW,
+	automationStore,
+});
 // ===== Routes =====
 
 // ===== Notes API =====
@@ -551,7 +562,9 @@ const coreRouter = createCoreRouter({
 	fileTreeQuerySchema,
 });
 app.use(coreRouter);
+const workspaceTasksRouter = createWorkspaceTasksRouter(defaultWorkspaceDir);
 app.use("/api/workspace/tasks", workspaceTasksRouter);
+// ===== Workspace Data Routes =====
 // ===== Workspace Data Routes =====
 const workspaceDataRouter = createWorkspaceDataRouter({
 	defaultWorkspaceDir,

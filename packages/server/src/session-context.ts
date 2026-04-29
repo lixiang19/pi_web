@@ -1,5 +1,64 @@
-// Session lifecycle context
-// Auto-extracted from index.ts
+import path from "node:path";
+import type { Api, Model } from "@mariozechner/pi-ai";
+import type {
+	AgentSession,
+	AgentSessionEvent,
+	DefaultResourceLoader,
+} from "@mariozechner/pi-coding-agent";
+import type { AutomationStore } from "./automations.js";
+import { compileAgentPermission } from "./agent-permissions.js";
+import { buildResolvedAskResult, createAskExtension } from "./ask-extension.js";
+import {
+	type AgentConfigInternal,
+	discoverAgents,
+	getAgentConfigSignature,
+	normalizeThinkingLevel,
+} from "./agents.js";
+import { createPermissionGateExtension } from "./agent-permissions.js";
+import { createSubagentToolExtension } from "./subagents.js";
+import {
+	createPiAgentScopeSettingsManager,
+	getPiAgentScopeAgentDir,
+} from "./pi-resource-scope.js";
+import type {
+	AgentPermission,
+	AgentSummary,
+	AskInteractiveRequest,
+	AskQuestionAnswer,
+	HttpError,
+	LogicalPermissionKey,
+	PendingPermissionRecord,
+	PermissionDecisionAction,
+	PermissionInteractiveRequest,
+	PermissionRule,
+	Project,
+	ProviderInfo,
+	ProvidersResponse,
+	ResourceSourceInfo,
+	SessionMessagesPayload,
+	SessionRecord,
+	ThinkingLevel,
+} from "./types/index.js";
+import { toPosixPath } from "./utils/paths.js";
+import { normalizeString } from "./utils/strings.js";
+
+// ===== Dependency injection =====
+export interface SessionContextDeps {
+	modelRegistry: { refresh: () => void; getAvailable: () => Model<Api>[] };
+	authStorage: unknown;
+	sessionMetadataStore: { getMeta: (id: string) => Promise<unknown>; setMeta: (id: string, meta: unknown) => Promise<void> };
+	activeSessions: Map<string, SessionRecord>;
+	openingSessionRecords: Map<string, Promise<SessionRecord>>;
+	defaultWorkspaceDir: string;
+	workspaceChatConfig: unknown;
+	projectContextResolver: { resolveContext: (cwd: string) => Promise<unknown> };
+}
+
+const deps = {} as SessionContextDeps;
+
+export const initSessionContext = (d: SessionContextDeps): void => {
+	Object.assign(deps, d);
+};
 
 export const closeClients = (record: SessionRecord): void => {
 	for (const client of record.clients) {
@@ -67,9 +126,7 @@ export const requestPendingPermission = async (
 		void emitSessionSnapshot(record);
 	});
 
-export const emitSessionSnapshot = async (
-	record: SessionRecord,
-): Promise<void> => {
+export const emitSessionSnapshot = async (record: SessionRecord): Promise<void> => {
 	const messagesPayload = toSessionMessagesPayload(record, {});
 	emit(record, {
 		type: "snapshot",
@@ -173,10 +230,7 @@ export const settlePendingAsk = async (
 	pendingAsk.resolve(buildResolvedAskResult(pendingAsk, answers, dismissed));
 };
 
-export const cancelPendingAsks = (
-	record: SessionRecord,
-	reason: string,
-): void => {
+export const cancelPendingAsks = (record: SessionRecord, reason: string): void => {
 	const pendingAsks = [...record.pendingAskRecords.values()];
 	record.pendingAskRecords.clear();
 	for (const pendingAsk of pendingAsks) {
@@ -270,13 +324,11 @@ export const serializeMessage = (
 	}) as SessionMessagesPayload["messages"][number];
 
 export const getAvailableModels = (): Model<Api>[] => {
-	modelRegistry.refresh();
+	deps.modelRegistry.refresh();
 	return [...modelRegistry.getAvailable()];
 };
 
-export const findModel = (
-	modelSpec: string | undefined | null,
-): Model<Api> | null => {
+export const findModel = (modelSpec: string | undefined | null): Model<Api> | null => {
 	const normalized = normalizeString(modelSpec);
 	if (!normalized) {
 		return null;
@@ -306,9 +358,7 @@ export interface SourceInfoOut {
 	baseDir?: string;
 }
 
-export const toSourceInfo = (
-	sourceInfo: unknown,
-): SourceInfoOut | undefined => {
+export const toSourceInfo = (sourceInfo: unknown): SourceInfoOut | undefined => {
 	if (!sourceInfo || typeof sourceInfo !== "object") {
 		return undefined;
 	}
@@ -372,9 +422,7 @@ export const serializeAgentSource = (agent: AgentConfigInternal): string =>
 	agent.sourceScope === "default"
 		? agent.source
 		: toPosixPath(path.resolve(agent.source));
-export const createAgentSummary = (
-	agent: AgentConfigInternal,
-): AgentSummary => ({
+export const createAgentSummary = (agent: AgentConfigInternal): AgentSummary => ({
 	name: agent.name,
 	description: agent.description,
 	displayName: agent.displayName,
@@ -447,8 +495,8 @@ export const createSessionResourceLoader = (record: SessionRecord) =>
 				},
 			}),
 			createSubagentToolExtension(record, {
-				authStorage,
-				modelRegistry,
+				authStorage: deps.authStorage,
+				modelRegistry: deps.modelRegistry,
 				resolveModel: findModel,
 			}),
 		],
@@ -593,7 +641,7 @@ export const applySessionAgentSelection = async (
 export const restoreSessionSelection = async (
 	record: SessionRecord,
 ): Promise<void> => {
-	const metadata = await sessionMetadataStore.getSessionMetadata(record.id);
+	const metadata = await deps.sessionMetadataStore.getSessionMetadata(record.id);
 	const selectedAgentName = normalizeString(metadata.agent);
 	const explicitModelSpec = normalizeString(metadata.model) || undefined;
 	const explicitThinkingLevel = normalizeThinkingLevel(metadata.thinkingLevel);
@@ -610,7 +658,7 @@ export const restoreSessionSelection = async (
 	} catch {
 		record.explicitModelSpec = undefined;
 		record.explicitThinkingLevel = undefined;
-		await sessionMetadataStore.setSelection(record.id, {
+		await deps.sessionMetadataStore.setSelection(record.id, {
 			agent: undefined,
 			model: undefined,
 			thinkingLevel: undefined,
@@ -639,9 +687,7 @@ export const updateStatus = (
 	emit(record, { type: "status", status: resolvedStatus });
 };
 
-export const shouldForwardSessionEvent = (
-	event: AgentSessionEvent,
-): boolean => {
+export const shouldForwardSessionEvent = (event: AgentSessionEvent): boolean => {
 	if (
 		(event.type === "message_start" || event.type === "message_end") &&
 		event.message?.role === "user"
@@ -720,7 +766,7 @@ export const createActiveSessionRecord = ({
 			exhausted: false,
 		},
 	}) as SessionRecord;
-	activeSessions.set(record.id, record);
+	deps.activeSessions.set(record.id, record);
 	record.unsubscribe = bindSessionRuntime(record);
 	return record;
 };
@@ -759,8 +805,8 @@ export const createSessionRecord = async ({
 	await resourceLoader.reload();
 	const { session } = await createAgentSession({
 		cwd,
-		authStorage,
-		modelRegistry,
+		authStorage: deps.authStorage,
+		modelRegistry: deps.modelRegistry,
 		sessionManager,
 		settingsManager,
 		resourceLoader,
@@ -795,8 +841,8 @@ export const destroySessionRecord = (record: SessionRecord): void => {
 	cancelPendingPermissions(record, "Session closed");
 	record.unsubscribe?.();
 	closeClients(record);
-	activeSessions.delete(record.id);
-	openingSessionRecords.delete(record.id);
+	deps.activeSessions.delete(record.id);
+	deps.openingSessionRecords.delete(record.id);
 };
 
 export const persistSessionRecordMetadata = async (
@@ -805,10 +851,10 @@ export const persistSessionRecordMetadata = async (
 	if (!record.sessionFile) {
 		return;
 	}
-	await sessionMetadataStore.upsertSession({
+	await deps.sessionMetadataStore.upsertSession({
 		id: record.id,
 		title: normalizeString(record.session.sessionName) || "新会话",
-		cwd: normalizeFsPath(record.cwd || defaultWorkspaceDir),
+		cwd: normalizeFsPath(record.cwd || deps.defaultWorkspaceDir),
 		sessionFile: path.resolve(record.sessionFile),
 		parentSessionPath: record.parentSessionPath,
 		createdAt: record.createdAt,
@@ -829,19 +875,17 @@ export interface ManagedProjectScope {
 	projectContext: ProjectContextInfo;
 }
 
-export const buildManagedProjectScopes = async (): Promise<
-	ManagedProjectScope[]
-> => {
+export const buildManagedProjectScopes = async (): Promise<ManagedProjectScope[]> => {
 	const state = await getProjects();
 	const managedProjects = [
-		createWorkspaceChatProject(workspaceChatConfig),
+		createWorkspaceChatProject(deps.workspaceChatConfig),
 		...state.projects,
 	];
 	return Promise.all(
 		managedProjects.map(async (project) => {
 			const normalizedPath = normalizeFsPath(project.path);
 			const projectContext =
-				await projectContextResolver.resolveContext(normalizedPath);
+				await deps.projectContextResolver.resolveContext(normalizedPath);
 			const declaredRoots = [
 				normalizedPath,
 				normalizeFsPath(projectContext.projectRoot),
@@ -908,3 +952,4 @@ export const ensureManagedProjectScope = async (
 	error.statusCode = 400;
 	throw error;
 };
+

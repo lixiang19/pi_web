@@ -10,7 +10,7 @@ import type { HttpError } from "../types/index.js";
 
 const execFileAsync = promisify(execFile);
 
-const openWithDefaultApp = async (targetPath: string): Promise<void> => {
+export const openWithDefaultApp = async (targetPath: string): Promise<void> => {
 	if (process.platform === "win32") {
 		const { exec: execCmd } = await import("node:child_process");
 		const execCmdAsync = promisify(execCmd);
@@ -22,10 +22,10 @@ const openWithDefaultApp = async (targetPath: string): Promise<void> => {
 	}
 };
 
-const resolveDiscoveryCwd = (value: unknown): string =>
+export const resolveDiscoveryCwd = (value: unknown): string =>
 	normalizeOptionalFsPath(value) || path.resolve(os.homedir());
 
-const ensureFileForPreview = async (options: {
+export const ensureFileForPreview = async (options: {
 	root?: unknown;
 	path?: unknown;
 }): Promise<{
@@ -50,7 +50,7 @@ const ensureFileForPreview = async (options: {
 	};
 };
 
-const toFileSize = (value: number | bigint): number => Number(value);
+export const toFileSize = (value: number | bigint): number => Number(value);
 
 const decodeUtf8File = (buffer: Buffer): string | null => {
 	if (buffer.includes(0)) {
@@ -215,7 +215,7 @@ const resolvePreviewMimeType = (
 	return "text/plain; charset=utf-8";
 };
 
-const buildFilePreviewWindowPayload = async (
+export const buildFilePreviewWindowPayload = async (
 	rootPath: string,
 	targetPath: string,
 	stats: Awaited<ReturnType<typeof fs.stat>>,
@@ -256,7 +256,7 @@ const buildFilePreviewWindowPayload = async (
 	};
 };
 
-const buildFilePreviewPayload = async (
+export const buildFilePreviewPayload = async (
 	rootPath: string,
 	targetPath: string,
 	stats: Awaited<ReturnType<typeof fs.stat>>,

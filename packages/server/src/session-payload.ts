@@ -1,21 +1,104 @@
-// Session payload builders and utilities
-// Auto-extracted from index.ts
+import fs from "node:fs/promises";
+import path from "node:path";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import {
+	AuthStorage,
+	createAgentSession,
+	DefaultResourceLoader,
+	ModelRegistry,
+	SessionManager,
+} from "@mariozechner/pi-coding-agent";
+import type { AutomationRule } from "@pi/protocol";
+import type { AutomationStore } from "./automations.js";
+import {
+	createFileManager,
+	isPathInsideRoot,
+	normalizeOptionalFsPath,
+	resolveExistingRealPath,
+} from "./file-manager.js";
+import {
+	createPiAgentScopeSettingsManager,
+	getPiAgentScopeAgentDir,
+} from "./pi-resource-scope.js";
+import { createProjectContextResolver } from "./project-context.js";
+import { normalizeThinkingLevel } from "./agents.js";
+import {
+	applySessionAgentSelection,
+	createActiveSessionRecord,
+	createSessionRecord,
+	createSessionResourceLoader,
+	emit,
+	ensureManagedProjectScope,
+	formatModelSpec,
+	getInteractiveRequests,
+	getPermissionRequests,
+	persistSessionRecordMetadata,
+	restoreSessionSelection,
+	serializeMessage,
+	toSourceInfo,
+	updateStatus,
+} from "./session-context.js";
+import {
+	getIndexedSessionContext,
+	getIndexedSessionLookup,
+	upsertIndexedSessionRecord,
+} from "./session-indexer.js";
+import { createTerminalManager } from "./terminal-runtime.js";
+import type {
+	IndexedSessionContextSummary,
+	IndexedSessionLookup,
+} from "./session-indexer.js";
+import type {
+	AskInteractiveRequest,
+	HttpError,
+	PermissionInteractiveRequest,
+	ResourceCatalogResponse,
+	SessionMessagesPayload,
+	SessionRecord,
+	SessionRuntimePayload,
+	SessionSnapshot,
+	SessionSummary,
+} from "./types/index.js";
+import { toPosixPath } from "./utils/paths.js";
+import { normalizeString } from "./utils/strings.js";
+import { getWorkspaceChatConfig } from "./workspace-chat.js";
+
+// ===== Dependency injection =====
+export interface SessionPayloadDeps {
+	defaultWorkspaceDir: string;
+	workspaceChatConfig: ReturnType<typeof getWorkspaceChatConfig>;
+	authStorage: AuthStorage;
+	modelRegistry: ModelRegistry;
+	activeSessions: Map<string, SessionRecord>;
+	openingSessionRecords: Map<string, Promise<SessionRecord>>;
+	projectContextResolver: ReturnType<typeof createProjectContextResolver>;
+	DEFAULT_SESSION_ROUND_WINDOW: number;
+	automationStore: AutomationStore | null;
+}
+
+const deps = {} as SessionPayloadDeps;
+
+export const initSessionPayload = (d: SessionPayloadDeps): void => {
+	Object.assign(deps, d);
+};
 
 export const fileManager = createFileManager({
-	defaultWorkspaceDir,
-	ensureManagedProjectScope: async (candidatePath) => {
+	defaultWorkspaceDir: deps.defaultWorkspaceDir,
+	ensureManagedProjectScope: async (candidatePath: string) => {
 		await ensureManagedProjectScope(candidatePath);
 	},
 });
 
 export const getAutomationStore = (): AutomationStore => {
-	if (!automationStore) {
+	const store = deps.automationStore as AutomationStore | null;
+	if (!store) {
 		const error = new Error("自动化服务尚未初始化") as HttpError;
 		error.statusCode = 503;
 		throw error;
 	}
 
-	return automationStore;
+	return store;
 };
 
 export const dispatchAutomationRule = async (
@@ -34,8 +117,12 @@ export const dispatchAutomationRule = async (
 	});
 	await persistSessionRecordMetadata(record);
 	await upsertIndexedSessionRecord(record, {
-		projectContextResolver,
-		workspaceChatConfig,
+		projectContextResolver: deps.projectContextResolver as ReturnType<
+			typeof createProjectContextResolver
+		>,
+		workspaceChatConfig: deps.workspaceChatConfig as ReturnType<
+			typeof getWorkspaceChatConfig
+		>,
 	});
 
 	updateStatus(record, "streaming");
@@ -53,7 +140,8 @@ export const dispatchAutomationRule = async (
 };
 
 export const resolveTerminalCwd = async (value: unknown): Promise<string> => {
-	const candidatePath = normalizeOptionalFsPath(value) || defaultWorkspaceDir;
+	const candidatePath =
+		normalizeOptionalFsPath(value) || deps.defaultWorkspaceDir;
 	const resolvedCandidatePath = await resolveExistingRealPath(candidatePath);
 	const stats = await fs.stat(resolvedCandidatePath).catch(() => null);
 
@@ -65,8 +153,9 @@ export const resolveTerminalCwd = async (value: unknown): Promise<string> => {
 		throw error;
 	}
 
-	const resolvedDefaultWorkspaceDir =
-		await resolveExistingRealPath(defaultWorkspaceDir);
+	const resolvedDefaultWorkspaceDir = await resolveExistingRealPath(
+		deps.defaultWorkspaceDir,
+	);
 	if (!isPathInsideRoot(resolvedCandidatePath, resolvedDefaultWorkspaceDir)) {
 		await ensureManagedProjectScope(resolvedCandidatePath);
 	}
@@ -75,7 +164,7 @@ export const resolveTerminalCwd = async (value: unknown): Promise<string> => {
 };
 
 export const terminalManager = createTerminalManager({
-	defaultCwd: defaultWorkspaceDir,
+	defaultCwd: deps.defaultWorkspaceDir,
 	resolveCwd: resolveTerminalCwd,
 });
 
@@ -104,7 +193,7 @@ export const buildSessionMessagesPayload = (
 	const totalRounds = userMessageIndexes.length;
 	const requestedRounds = Number.isInteger(options.rounds)
 		? Math.max(1, options.rounds!)
-		: DEFAULT_SESSION_ROUND_WINDOW;
+		: deps.DEFAULT_SESSION_ROUND_WINDOW;
 	let visibleMessages = allMessages;
 	let loadedRounds = totalRounds;
 	let hasMoreAbove = false;
@@ -135,7 +224,7 @@ export const getRequestedRoundCount = (
 ) =>
 	Number.isInteger(options.rounds)
 		? Math.max(1, options.rounds!)
-		: DEFAULT_SESSION_ROUND_WINDOW;
+		: deps.DEFAULT_SESSION_ROUND_WINDOW;
 
 export const parseStoredSessionMessageLine = (
 	line: string,
@@ -204,9 +293,8 @@ export const resolveSessionSummary = async (
 	}
 
 	const fallbackProjectScope = await ensureManagedProjectScope(record.cwd);
-	const fallbackProjectContext = await projectContextResolver.resolveContext(
-		record.cwd,
-	);
+	const fallbackProjectContext =
+		await deps.projectContextResolver.resolveContext(record.cwd);
 	return {
 		id: record.id,
 		title: normalizeString(record.session.sessionName) || "新会话",
@@ -483,8 +571,8 @@ export const createTransientCatalogSession = async (cwd: string) => {
 
 	const { session } = await createAgentSession({
 		cwd,
-		authStorage,
-		modelRegistry,
+		authStorage: deps.authStorage,
+		modelRegistry: deps.modelRegistry,
 		settingsManager,
 		resourceLoader,
 		sessionManager: SessionManager.inMemory(cwd),
@@ -499,12 +587,12 @@ export const createTransientCatalogSession = async (cwd: string) => {
 export const ensureSessionRecord = async (
 	sessionId: string,
 ): Promise<SessionRecord> => {
-	const existing = activeSessions.get(sessionId);
+	const existing = deps.activeSessions.get(sessionId);
 	if (existing) {
 		return existing;
 	}
 
-	const opening = openingSessionRecords.get(sessionId);
+	const opening = deps.openingSessionRecords.get(sessionId);
 	if (opening) {
 		return opening;
 	}
@@ -528,8 +616,8 @@ export const ensureSessionRecord = async (
 		await resourceLoader.reload();
 		const { session } = await createAgentSession({
 			cwd: lookup.cwd,
-			authStorage,
-			modelRegistry,
+			authStorage: deps.authStorage,
+			modelRegistry: deps.modelRegistry,
 			sessionManager,
 			settingsManager,
 			resourceLoader,
@@ -546,11 +634,11 @@ export const ensureSessionRecord = async (
 		await restoreSessionSelection(record);
 		return record;
 	})().finally(() => {
-		if (openingSessionRecords.get(sessionId) === pendingRecord) {
-			openingSessionRecords.delete(sessionId);
+		if (deps.openingSessionRecords.get(sessionId) === pendingRecord) {
+			deps.openingSessionRecords.delete(sessionId);
 		}
 	});
 
-	openingSessionRecords.set(sessionId, pendingRecord);
+	deps.openingSessionRecords.set(sessionId, pendingRecord);
 	return pendingRecord;
 };

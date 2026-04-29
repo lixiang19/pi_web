@@ -1,10 +1,9 @@
 import path from "node:path";
-import {
+import express, {
 	type NextFunction,
 	type Request,
 	type Response,
 } from "express";
-import Router from "express/lib/router/index.js";
 import { z } from "zod";
 
 import { getProjects } from "../storage/index.js";
@@ -96,7 +95,7 @@ export function createWorktreeRouter(deps: WorktreeDeps) {
 		projectContextResolver,
 		invalidateManagedProjectScopes,
 	} = deps;
-	const router = Router();
+	const router = express.Router();
 
 	router.get(
 		"/:id/worktrees",
