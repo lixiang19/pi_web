@@ -680,43 +680,39 @@ export function getRecentFiles(root: string, limit = 20) {
 
 // Workspace Tasks API
 export interface WorkspaceTask {
-	task_id: string;
+	id: string;
 	title: string;
 	status: "pending" | "in_progress" | "done";
 	priority: "low" | "medium" | "high";
-	due_date: number | null;
-	tags: string;
-	note_path: string | null;
-	created_at: number;
-	updated_at: number;
+	dueDate: number | null;
+	tags: string[];
+	createdAt: number;
+	updatedAt: number;
 }
 
-export interface CheckboxTask {
-	text: string;
-	done: boolean;
-	dueDate: number | null;
-	priority: string;
-	tags: string;
-	sourcePath: string;
-	lineNumber: number;
-	createdAt: number | null;
-	updatedAt: number | null;
+export interface TasksListResponse {
+	tasks: WorkspaceTask[];
+	updatedAt: number;
 }
 
 export function getWorkspaceTasks() {
-	return request<{ tasks: WorkspaceTask[] }>("/api/workspace/tasks");
+	return request<TasksListResponse>("/api/workspace/tasks");
 }
 
 export function createWorkspaceTask(data: {
 	title: string;
 	priority?: string;
 	dueDate?: number;
-	tags?: string;
+	tags?: string[];
+	_expectedUpdatedAt?: number;
 }) {
-	return request<{ task: WorkspaceTask }>("/api/workspace/tasks", {
-		method: "POST",
-		body: JSON.stringify(data),
-	});
+	return request<{ task: WorkspaceTask; updatedAt: number }>(
+		"/api/workspace/tasks",
+		{
+			method: "POST",
+			body: JSON.stringify(data),
+		},
+	);
 }
 
 export function updateWorkspaceTask(
@@ -725,26 +721,30 @@ export function updateWorkspaceTask(
 		status?: string;
 		title?: string;
 		priority?: string;
-		dueDate?: number;
-		tags?: string;
+		dueDate?: number | null;
+		tags?: string[];
+		_expectedUpdatedAt?: number;
 	},
 ) {
-	return request<{ ok: true }>(`/api/workspace/tasks/${taskId}`, {
-		method: "PATCH",
-		body: JSON.stringify(data),
-	});
+	return request<{ ok: true; updatedAt: number }>(
+		`/api/workspace/tasks/${taskId}`,
+		{
+			method: "PATCH",
+			body: JSON.stringify(data),
+		},
+	);
 }
 
-export function deleteWorkspaceTask(taskId: string) {
-	return request<{ ok: true }>(`/api/workspace/tasks/${taskId}`, {
-		method: "DELETE",
-	});
-}
-
-export function getCheckboxTasks(root: string) {
-	const params = new URLSearchParams({ root });
-	return request<{ checkboxes: CheckboxTask[] }>(
-		`/api/workspace/tasks/checkboxes?${params.toString()}`,
+export function deleteWorkspaceTask(
+	taskId: string,
+	_expectedUpdatedAt?: number,
+) {
+	return request<{ ok: true; updatedAt: number }>(
+		`/api/workspace/tasks/${taskId}`,
+		{
+			method: "DELETE",
+			body: JSON.stringify({ _expectedUpdatedAt }),
+		},
 	);
 }
 
@@ -837,14 +837,3 @@ export function deleteBase(path: string) {
 	});
 }
 
-export function toggleCheckbox(data: {
-	path: string;
-	lineNumber: number;
-	done: boolean;
-	expectedText?: string;
-}) {
-	return request<{ ok: true }>("/api/workspace/tasks/checkbox", {
-		method: "PATCH",
-		body: JSON.stringify(data),
-	});
-}

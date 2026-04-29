@@ -7,10 +7,7 @@ import {
 	CircleCheck,
 	Plus,
 	LoaderCircle,
-	ExternalLink,
 	Trash2,
-	SquareCheck,
-	FileText,
 	ChevronDown,
 	ChevronRight,
 	Pencil,
@@ -34,18 +31,13 @@ import {
 	TabsTrigger,
 	TabsContent,
 } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 defineProps<{
 	workspaceDir: string;
 }>();
 
-const emit = defineEmits<{
-	(e: "open-file", path: string): void;
-}>();
-
 const {
-	allTasks,
+	tasks,
 	pendingTasks,
 	completedTasks,
 	todayTasks,
@@ -80,11 +72,14 @@ const handleAddTask = async () => {
 		const dueDate = newTaskDueDate.value
 			? new Date(newTaskDueDate.value).getTime()
 			: undefined;
+		const tags = newTaskTags.value.trim()
+			? newTaskTags.value.split(",").map((t) => t.trim()).filter(Boolean)
+			: undefined;
 		await addTask({
 			title,
 			priority: newTaskPriority.value,
 			dueDate,
-			tags: newTaskTags.value.trim() || undefined,
+			tags,
 		});
 		newTaskTitle.value = "";
 		newTaskPriority.value = "medium";
@@ -104,8 +99,7 @@ const handleCollapseForm = () => {
 	isFormExpanded.value = false;
 };
 
-const startEdit = (task: typeof allTasks.value[0]) => {
-	if (task.source.type === "checkbox") return; // Cannot edit checkbox tasks inline
+const startEdit = (task: typeof tasks.value[0]) => {
 	editingTaskId.value = task.id;
 	editTitle.value = task.title;
 	editPriority.value = task.priority;
@@ -177,11 +171,7 @@ const priorityBarClass = (p: string) =>
 			? "bg-green-500"
 			: "bg-amber-500";
 
-const sourceFileName = (source: { type: string; path?: string }) => {
-	if (source.type !== "checkbox" || !source.path) return "";
-	const parts = source.path.split("/");
-	return parts[parts.length - 1];
-};
+const formatTags = (tags: string[]) => tags.join(", ");
 
 const kanbanGroups = [
 	{ key: "pending", label: "待做", icon: Circle },
@@ -190,7 +180,7 @@ const kanbanGroups = [
 ] as const;
 
 const tasksByStatus = (status: string) =>
-	allTasks.value.filter((t) => t.status === status);
+	tasks.value.filter((t) => t.status === status);
 </script>
 
 <template>
@@ -304,7 +294,6 @@ const tasksByStatus = (status: string) =>
         <div v-else-if="pendingTasks.length === 0 && !showCompleted" class="flex flex-col items-center py-12">
           <CheckSquare class="size-8 text-muted-foreground/30 mb-2" />
           <p class="text-xs text-muted-foreground">没有待办任务</p>
-          <p class="mt-1 text-[11px] text-muted-foreground/60">在 .md 文件中写 <code class="bg-muted px-1 rounded">- [ ] 待办事项</code> 就能自动出现在这里</p>
         </div>
         <div v-else class="space-y-1 p-4">
           <!-- 待做 + 进行中 -->
@@ -373,42 +362,14 @@ const tasksByStatus = (status: string) =>
                 <div class="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
                   <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
-                  <TooltipProvider v-if="task.source.type === 'checkbox' && task.source.path" :delay-duration="300">
-                    <Tooltip>
-                      <TooltipTrigger as-child>
-                        <span class="flex items-center gap-0.5 cursor-pointer hover:text-foreground" @click="emit('open-file', task.source.path)">
-                          <FileText class="size-2.5" />
-                          {{ sourceFileName(task.source) }}
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" class="text-xs">
-                        {{ task.source.path }}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <span v-else class="text-muted-foreground/50">独立</span>
+                  <span v-if="task.tags.length">{{ formatTags(task.tags) }}</span>
                 </div>
               </template>
             </div>
 
             <!-- 操作按钮 -->
             <template v-if="editingTaskId !== task.id">
-              <TooltipProvider v-if="task.source.type === 'checkbox' && task.source.path" :delay-duration="500">
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <button
-                      type="button"
-                      class="shrink-0 opacity-0 group-hover:opacity-60 hover:opacity-100"
-                      @click="emit('open-file', task.source.path)"
-                    >
-                      <ExternalLink class="size-3" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent class="text-xs">打开源文件</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
               <button
-                v-if="task.source.type === 'independent'"
                 type="button"
                 class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-foreground"
                 @click="startEdit(task)"
@@ -416,7 +377,6 @@ const tasksByStatus = (status: string) =>
                 <Pencil class="size-3" />
               </button>
               <button
-                v-if="task.source.type === 'independent'"
                 type="button"
                 class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-destructive"
                 @click="removeTask(task.id)"
@@ -455,7 +415,6 @@ const tasksByStatus = (status: string) =>
                   <p class="text-sm text-muted-foreground line-through">{{ task.title }}</p>
                 </div>
                 <button
-                  v-if="task.source.type === 'independent'"
                   type="button"
                   class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-destructive"
                   @click="removeTask(task.id)"
@@ -497,9 +456,7 @@ const tasksByStatus = (status: string) =>
                 <div class="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
                   <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
                   <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
-                  <!-- 来源图标 -->
-                  <FileText v-if="task.source.type === 'checkbox'" class="size-2.5 text-muted-foreground/50" />
-                  <SquareCheck v-else class="size-2.5 text-muted-foreground/50" />
+                  <span v-if="task.tags.length">{{ formatTags(task.tags) }}</span>
                 </div>
                 <div class="mt-2 flex gap-1">
                   <Button
@@ -511,18 +468,7 @@ const tasksByStatus = (status: string) =>
                   >
                     {{ group.key === 'pending' ? '开始' : '完成' }}
                   </Button>
-                  <!-- checkbox 任务显示跳转，独立任务显示删除 -->
                   <Button
-                    v-if="task.source.type === 'checkbox' && task.source.path"
-                    variant="ghost"
-                    size="sm"
-                    class="h-5 text-[10px] px-1.5"
-                    @click="emit('open-file', task.source.path)"
-                  >
-                    跳转
-                  </Button>
-                  <Button
-                    v-else-if="task.source.type === 'independent'"
                     variant="ghost"
                     size="sm"
                     class="h-5 text-[10px] px-1.5 text-destructive"
