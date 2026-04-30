@@ -1,27 +1,13 @@
-import { execFile } from "node:child_process";
-import { createReadStream, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
-import { createServer, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { Api, Model } from "@mariozechner/pi-ai";
-import type {
-	AgentSession,
-	AgentSessionEvent,
-} from "@mariozechner/pi-coding-agent";
 import {
 	AuthStorage,
-	createAgentSession,
-	DefaultResourceLoader,
 	ModelRegistry,
-	SessionManager,
-	type SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import type { AutomationRule } from "@pi/protocol";
 import cors from "cors";
 import express, {
 	type NextFunction,
@@ -32,20 +18,12 @@ import multer from "multer";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 import {
-	compileAgentPermission,
-	createPermissionGateExtension,
-} from "./agent-permissions.js";
-import {
-	type AgentConfigInternal,
 	deleteAgent,
 	discoverAgents,
 	getAgentByName,
-	getAgentConfigSignature,
-	normalizeThinkingLevel,
 	saveAgent,
 	THINKING_LEVELS,
 } from "./agents.js";
-import { buildResolvedAskResult, createAskExtension } from "./ask-extension.js";
 import {
 	type AutomationStore,
 	createAutomationScheduler,
@@ -53,21 +31,13 @@ import {
 } from "./automations.js";
 import { initializeRidgeDb } from "./db/index.js";
 import {
-	createFileManager,
 	ensureWithinRoot,
-	isPathInsideRoot,
 	normalizeFsPath,
 	normalizeOptionalFsPath,
-	resolveExistingRealPath,
 } from "./file-manager.js";
-import { resolveGitContext } from "./git-resolver.js";
 import { createGitService } from "./git-service.js";
 import { createIsoGitService } from "./iso-git-service.js";
 import { createNotesRouter } from "./notes.js";
-import {
-	createPiAgentScopeSettingsManager,
-	getPiAgentScopeAgentDir,
-} from "./pi-resource-scope.js";
 import { createProjectContextResolver } from "./project-context.js";
 import { createCoreRouter } from "./routes/core.js";
 import { createGitRouter } from "./routes/git.js";
@@ -75,13 +45,7 @@ import { createSystemRouter } from "./routes/system.js";
 import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
 import { createWorkspaceTasksRouter } from "./routes/workspace-tasks.js";
 import { createWorktreeRouter } from "./routes/worktrees.js";
-import type {
-	IndexedSessionContextSummary,
-	IndexedSessionLookup,
-} from "./session-indexer.js";
 import {
-	getIndexedSessionContext,
-	getIndexedSessionLookup,
 	getIndexedSessionTree,
 	invalidateManagedProjectScopes,
 	listIndexedSessionContexts,
@@ -100,41 +64,16 @@ import {
 	removeProject,
 	setSettings,
 } from "./storage/index.js";
-import { createSubagentToolExtension } from "./subagents.js";
-import { createTerminalManager } from "./terminal-runtime.js";
 import type {
-	AgentPermission,
-	AgentSummary,
-	AskInteractiveRequest,
-	AskQuestionAnswer,
-	FilePreviewPayload,
-	FilePreviewWindowPayload,
 	FileSaveResponse,
 	FilesystemBrowseResult,
 	HttpError,
-	LogicalPermissionKey,
-	PendingPermissionRecord,
-	PermissionDecisionAction,
-	PermissionInteractiveRequest,
-	PermissionRule,
-	Project,
-	ProviderInfo,
-	ProvidersResponse,
-	ResourceCatalogResponse,
-	ResourceSourceInfo,
-	SessionMessagesPayload,
 	SessionRecord,
-	SessionRuntimePayload,
-	SessionSnapshot,
-	SessionSummary,
-	TerminalCreateRequest,
-	ThinkingLevel,
 } from "./types/index.js";
-import { atomicWriteFile, writeJsonFile } from "./utils/fs.js";
+import { atomicWriteFile } from "./utils/fs.js";
 import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
 import {
-	createWorkspaceChatProject,
 	getWorkspaceChatConfig,
 	resolveDefaultWorkspaceDir,
 } from "./workspace-chat.js";
@@ -389,7 +328,6 @@ const createProjectSchema = z.object({
 // ===== Constants =====
 const DEFAULT_SESSION_ROUND_WINDOW = 3;
 const markdownExtensions = new Set([".md", ".markdown"]);
-const htmlExtensions = new Set([".htm", ".html"]);
 
 import {
 	buildFilePreviewPayload,

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-
 import AutomationRuleEditor from "@/components/automation/AutomationRuleEditor.vue";
 import AutomationRuleList from "@/components/automation/AutomationRuleList.vue";
 import {
@@ -14,34 +13,18 @@ import type {
 } from "@/components/automation/types";
 import { useAutomations } from "@/composables/useAutomations";
 import { usePiChatCore } from "@/composables/usePiChatCore";
-import { useProjects } from "@/composables/useProjects";
 import {
   thinkingOptions as workbenchThinkingOptions,
 } from "@/composables/useWorkbenchSessionState";
-import { useWorkbenchPrimaryNavigation } from "@/composables/useWorkbenchPrimaryNavigation";
 
 const automations = useAutomations();
 const core = usePiChatCore();
-const navigation = useWorkbenchPrimaryNavigation();
-const projects = useProjects();
 
 const selectedId = ref("");
 
-const projectOptions = computed<AutomationOption[]>(() => {
-  const chatProject =
-    core.info.value?.chatProjectPath && core.info.value.chatProjectLabel
-      ? [{
-          label: core.info.value.chatProjectLabel,
-          value: core.info.value.chatProjectPath,
-        }]
-      : [];
-  const storedProjects = projects.projects.value.map((project) => ({
-    label: project.name,
-    value: project.path,
-  }));
-
-  return [...chatProject, ...storedProjects];
-});
+const defaultCwd = computed(() =>
+  core.info.value?.chatProjectPath || core.info.value?.workspaceDir || "",
+);
 
 const modelOptions = computed<AutomationOption[]>(() => core.models.value);
 const agentOptions = computed<AutomationOption[]>(() =>
@@ -57,7 +40,7 @@ const thinkingOptions = computed<AutomationOption[]>(() =>
   })),
 );
 const draft = ref<AutomationRuleDraft>(
-  createAutomationDraft({ projectPath: projectOptions.value[0]?.value }),
+  createAutomationDraft({ projectPath: defaultCwd.value }),
 );
 
 const canSave = computed(() => {
@@ -98,7 +81,7 @@ const selectRule = (id: string) => {
 
 const createNewRule = () => {
   selectedId.value = "";
-  draft.value = createAutomationDraft({ projectPath: projectOptions.value[0]?.value });
+  draft.value = createAutomationDraft({ projectPath: defaultCwd.value });
 };
 
 const saveRule = async () => {
@@ -128,10 +111,9 @@ const runRule = async () => {
     return;
   }
 
-  const response = await automations.runNow(draft.value.id);
+  await automations.runNow(draft.value.id);
   await core.refreshSessions();
   await core.refreshSessionContexts();
-  await navigation.openChatSession(response.sessionId);
 };
 
 const deleteRule = async () => {
@@ -144,10 +126,10 @@ const deleteRule = async () => {
 };
 
 watch(
-  () => projectOptions.value,
-  (options) => {
-    if (!draft.value.cwd && options[0]) {
-      draft.value = { ...draft.value, cwd: options[0].value };
+  () => defaultCwd.value,
+  (cwd) => {
+    if (!draft.value.cwd && cwd) {
+      draft.value = { ...draft.value, cwd };
     }
   },
   { immediate: true },
@@ -166,7 +148,6 @@ watch(
 onMounted(async () => {
   await Promise.all([
     automations.load().catch(() => []),
-    projects.load().catch(() => []),
     core.bootPromise.value,
   ]);
 
@@ -196,7 +177,6 @@ onMounted(async () => {
       :is-saving="automations.isLoading.value"
       :model-options="modelOptions"
       :next-run-text="nextRunText"
-      :project-options="projectOptions"
       :thinking-options="thinkingOptions"
       @delete="deleteRule"
       @run="runRule"

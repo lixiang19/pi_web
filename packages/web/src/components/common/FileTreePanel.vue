@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch, type ComponentPublicInstance } from "vue";
 import {
 	ChevronDown,
 	ChevronRight,
@@ -78,15 +78,15 @@ let searchTimer: ReturnType<typeof setTimeout>;
 const editingPath = ref<string | null>(null);
 const editingName = ref("");
 const editingInput = ref<HTMLInputElement | null>(null);
-function setEditingInputRef(el: Element | null) {
-	editingInput.value = el as HTMLInputElement | null;
+function setEditingInputRef(el: Element | ComponentPublicInstance | null) {
+	editingInput.value = el instanceof HTMLInputElement ? el : null;
 }
 
 const creatingFolderPath = ref<string | null>(null);
 const creatingFolderName = ref("");
 const creatingFolderInput = ref<HTMLInputElement | null>(null);
-function setCreatingFolderInputRef(el: Element | null) {
-	creatingFolderInput.value = el as HTMLInputElement | null;
+function setCreatingFolderInputRef(el: Element | ComponentPublicInstance | null) {
+	creatingFolderInput.value = el instanceof HTMLInputElement ? el : null;
 }
 
 // --- delete confirmation ---
@@ -116,10 +116,13 @@ const displayNodes = computed<DisplayNode[]>(() => {
 	let parentDepth = -1;
 
 	for (let i = 0; i < items.length; i++) {
-		if (items[i].entry.path === creatingFolderPath.value) {
-			parentDepth = items[i].depth;
+		const item = items[i];
+		if (item?.entry.path === creatingFolderPath.value) {
+			parentDepth = item.depth;
 			insertIdx = i + 1;
-			while (insertIdx < items.length && items[insertIdx].depth > parentDepth) {
+			while (true) {
+				const nextItem = items[insertIdx];
+				if (!nextItem || nextItem.depth <= parentDepth) break;
 				insertIdx++;
 			}
 			break;
@@ -128,7 +131,15 @@ const displayNodes = computed<DisplayNode[]>(() => {
 
 	if (insertIdx >= 0) {
 		items.splice(insertIdx, 0, {
-			entry: { path: creatingFolderPath.value + "/.", name: "", kind: "directory" } as FileTreeEntry,
+			entry: {
+				path: `${creatingFolderPath.value}/.`,
+				name: "",
+				kind: "directory",
+				relativePath: ".",
+				size: null,
+				modifiedAt: 0,
+				extension: "",
+			},
 			depth: parentDepth + 1,
 			isNewFolderPlaceholder: true,
 		});

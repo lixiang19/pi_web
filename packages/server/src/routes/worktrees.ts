@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { getProjects } from "../storage/index.js";
 import type { HttpError } from "../types/index.js";
+import type { WorktreeService } from "../worktree-service.js";
 
 type GitService = {
 	isGitRepository: (cwd: string) => Promise<boolean>;
@@ -39,13 +40,6 @@ type GitService = {
 	) => Promise<void>;
 	merge: (cwd: string, branchName: string) => Promise<void>;
 	rebase: (cwd: string, branchName: string) => Promise<void>;
-};
-
-type WorktreeService = {
-	list: (projectRoot: string) => Promise<unknown[]>;
-	validate: (projectRoot: string, payload: unknown) => Promise<unknown>;
-	create: (projectRoot: string, payload: unknown) => Promise<unknown>;
-	remove: (projectRoot: string, payload: unknown) => Promise<unknown>;
 };
 
 export interface WorktreeDeps {

@@ -21,10 +21,12 @@ export type GridNode = PaneGroup | SplitContainer;
 export interface SplitTabItem {
 	id: string;
 	title: string;
-	kind: "view" | "file" | "home";
+	kind: "view" | "file" | "home" | "terminal" | "automation" | "settings";
 	viewId?: string;
 	filePath?: string;
+	terminalId?: string;
 	status?: "idle" | "saving" | "unsaved" | "error" | "loading";
+	onClose?: (tab: SplitTabItem) => void;
 }
 
 // 序列化类型
@@ -37,6 +39,7 @@ export type SerializableGridNode =
 				kind: string;
 				viewId?: string;
 				filePath?: string;
+				terminalId?: string;
 				title: string;
 			}[];
 			activeTabId: string;
@@ -53,11 +56,39 @@ export type SerializableGridNode =
 let idCounter = 0;
 const generateId = () => `sp-${++idCounter}-${Date.now().toString(36)}`;
 let homeCounter = 0;
+let terminalCounter = 0;
 export const generateHomeId = () => `home-${++homeCounter}`;
+export const generateTerminalTabId = () => `terminal-tab-${++terminalCounter}`;
+
 export const createHomeTab = (): SplitTabItem => ({
 	id: generateHomeId(),
 	title: "主页",
 	kind: "home",
+	status: "idle",
+});
+
+export const createTerminalTab = (
+	terminalId: string,
+	title?: string,
+): SplitTabItem => ({
+	id: generateTerminalTabId(),
+	title: title ?? `终端 ${terminalCounter}`,
+	kind: "terminal",
+	terminalId,
+	status: "idle",
+});
+
+export const createAutomationTab = (): SplitTabItem => ({
+	id: "automation",
+	title: "自动化",
+	kind: "automation",
+	status: "idle",
+});
+
+export const createSettingsTab = (): SplitTabItem => ({
+	id: "settings",
+	title: "设置",
+	kind: "settings",
 	status: "idle",
 });
 
@@ -176,6 +207,11 @@ export function useSplitPanes() {
 		const root = rootNode.value;
 		const pane = findPaneGroup(root, paneGroupId);
 		if (!pane) return;
+
+		const closedTab = pane.tabs.find((t) => t.id === tabId);
+		if (closedTab?.onClose) {
+			closedTab.onClose(closedTab);
+		}
 
 		const newTabs = pane.tabs.filter((t) => t.id !== tabId);
 
@@ -460,6 +496,7 @@ function serializeNode(node: GridNode): SerializableGridNode {
 				kind: t.kind,
 				viewId: t.viewId,
 				filePath: t.filePath,
+				terminalId: t.terminalId,
 				title: t.title,
 			})),
 			activeTabId: node.activeTabId,
@@ -484,9 +521,10 @@ function deserializeNode(node: SerializableGridNode): GridNode {
 			tabs: node.tabs.map((t) => ({
 				id: t.id,
 				title: t.title,
-				kind: t.kind as "view" | "file" | "home",
+				kind: t.kind as SplitTabItem["kind"],
 				viewId: t.viewId,
 				filePath: t.filePath,
+				terminalId: t.terminalId,
 				status: "idle" as const,
 			})),
 			activeTabId: node.activeTabId,

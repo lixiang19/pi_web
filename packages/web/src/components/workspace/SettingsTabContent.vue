@@ -39,7 +39,12 @@ const handleNotificationsChange = async (checked: boolean) => {
   await settingsStore.setNotifications(checked);
 };
 
-// 主题色块预览映射
+const handleLanguageChange = async (value: AcceptableValue) => {
+  if (typeof value === "string") {
+    await settingsStore.setLanguage(value);
+  }
+};
+
 const themePreviewColors: Record<string, string> = {
   ridge: "#e07a5f",
   default: "#6366f1",
@@ -55,20 +60,17 @@ const themePreviewColors: Record<string, string> = {
 <template>
   <div class="h-full overflow-auto bg-background">
     <div class="mx-auto max-w-2xl px-6 py-10">
-      <!-- 页面标题 -->
       <div class="mb-10">
         <h1 class="text-2xl font-semibold tracking-tight text-foreground">设置</h1>
         <p class="mt-2 text-sm text-muted-foreground">管理你的 ridge 工作台偏好。</p>
       </div>
 
-      <!-- ========== 外观 ========== -->
       <section>
         <div class="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
           <Palette class="size-3.5" />
           外观
         </div>
 
-        <!-- 主题选择 -->
         <Card class="mb-3">
           <CardHeader class="pb-3">
             <CardTitle class="text-sm font-medium">颜色主题</CardTitle>
@@ -103,7 +105,6 @@ const themePreviewColors: Record<string, string> = {
           </CardContent>
         </Card>
 
-        <!-- 明暗模式 -->
         <Card>
           <CardHeader class="pb-3">
             <CardTitle class="text-sm font-medium">显示模式</CardTitle>
@@ -141,7 +142,6 @@ const themePreviewColors: Record<string, string> = {
 
       <Separator class="my-8" />
 
-      <!-- ========== 偏好 ========== -->
       <section>
         <div class="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
           <Sparkles class="size-3.5" />
@@ -150,7 +150,6 @@ const themePreviewColors: Record<string, string> = {
 
         <Card>
           <CardContent class="divide-y divide-border/60 p-0">
-            <!-- 通知 -->
             <div class="flex items-center justify-between px-5 py-4">
               <div class="flex items-center gap-3">
                 <div class="flex size-8 items-center justify-center rounded-md bg-muted">
@@ -167,7 +166,6 @@ const themePreviewColors: Record<string, string> = {
               />
             </div>
 
-            <!-- 侧边栏折叠 -->
             <div class="flex items-center justify-between px-5 py-4">
               <div class="flex items-center gap-3">
                 <div class="flex size-8 items-center justify-center rounded-md bg-muted">
@@ -184,7 +182,6 @@ const themePreviewColors: Record<string, string> = {
               />
             </div>
 
-            <!-- 语言 -->
             <div class="flex items-center justify-between px-5 py-4">
               <div class="flex items-center gap-3">
                 <div class="flex size-8 items-center justify-center rounded-md bg-muted">
@@ -197,7 +194,7 @@ const themePreviewColors: Record<string, string> = {
               </div>
               <Select
                 :model-value="settingsStore.language"
-                @update:model-value="(v: string) => settingsStore.setLanguage(v)"
+                @update:model-value="handleLanguageChange"
               >
                 <SelectTrigger class="w-28">
                   <SelectValue />
@@ -214,7 +211,6 @@ const themePreviewColors: Record<string, string> = {
 
       <Separator class="my-8" />
 
-      <!-- ========== 关于 ========== -->
       <section>
         <div class="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
           <Monitor class="size-3.5" />

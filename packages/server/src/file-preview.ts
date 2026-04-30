@@ -5,13 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
+import { normalizeOptionalFsPath } from "./file-manager.js";
+import { getFileManager } from "./session-payload.js";
 import type {
 	FilePreviewPayload,
 	FilePreviewWindowPayload,
 	HttpError,
-} from "../types/index.js";
-import { normalizeOptionalFsPath } from "./file-manager.js";
-import { getFileManager } from "./session-payload.js";
+} from "./types/index.js";
 import { toPosixPath } from "./utils/paths.js";
 
 // File preview utilities

@@ -260,11 +260,27 @@ const switchView = (viewId: string) => {
 	debouncedSave();
 };
 
+const firstColumnId = computed(() => data.value?.columns[0]?.id ?? "");
+
+const isFirstColumn = (colId: string) => colId === firstColumnId.value;
+
 const getCellValue = (row: BaseRow, colId: string): unknown => {
-	if (row.type === "file" && row.fileTitle && colId === data.value?.columns[0]?.id) {
+	if (row.type === "file" && row.fileTitle && isFirstColumn(colId)) {
 		return row.fileTitle;
 	}
 	return row.cells[colId] ?? "";
+};
+
+const getRowTitle = (row: BaseRow) => {
+	if (row.type === "file") return row.fileTitle ?? "—";
+	const colId = firstColumnId.value;
+	return colId ? String(row.cells[colId] ?? "—") : "—";
+};
+
+const updateSelectCell = (row: BaseRow, colId: string, value: unknown) => {
+	if (typeof value !== "string") return;
+	row.cells[colId] = value;
+	debouncedSave();
 };
 
 // 看板分组
@@ -490,7 +506,7 @@ const sortIndicator = (colId: string) => {
               <Select
                 v-else-if="col.type === 'select' && col.options"
                 :model-value="String(getCellValue(row, col.id) ?? '')"
-                @update:model-value="(val: string) => { row.cells[col.id] = val; debouncedSave() }"
+                @update:model-value="updateSelectCell(row, col.id, $event)"
               >
                 <SelectTrigger class="h-6 w-full border-none bg-transparent text-xs shadow-none">
                   <SelectValue />
@@ -568,10 +584,10 @@ const sortIndicator = (colId: string) => {
               class="rounded-md border border-border/40 bg-card p-2.5"
             >
               <p class="text-xs font-medium text-foreground">
-                {{ row.type === "file" ? row.fileTitle : String(row.cells[data.columns[0]?.id] ?? "—") }}
+                {{ getRowTitle(row) }}
               </p>
               <div class="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                <template v-for="col in data.columns.filter(c => c.id !== data.columns[0]?.id && c.id !== kanbanGroupColumn?.id)" :key="col.id">
+                <template v-for="col in data.columns.filter(c => !isFirstColumn(c.id) && c.id !== kanbanGroupColumn?.id)" :key="col.id">
                   <span v-if="row.cells[col.id]">{{ col.name }}: {{ row.cells[col.id] }}</span>
                 </template>
               </div>
@@ -595,7 +611,7 @@ const sortIndicator = (colId: string) => {
               class="rounded-md border border-border/40 bg-card p-2.5"
             >
               <p class="text-xs font-medium text-foreground">
-                {{ row.type === "file" ? row.fileTitle : String(row.cells[data.columns[0]?.id] ?? "—") }}
+                {{ getRowTitle(row) }}
               </p>
             </div>
           </div>
@@ -612,10 +628,10 @@ const sortIndicator = (colId: string) => {
           class="rounded-lg border border-border/50 bg-card p-4 hover:shadow-sm transition-shadow"
         >
           <p class="text-sm font-medium text-foreground">
-            {{ row.type === "file" ? row.fileTitle : String(row.cells[data.columns[0]?.id] ?? "—") }}
+            {{ getRowTitle(row) }}
           </p>
           <div class="mt-2 space-y-1">
-            <template v-for="col in data.columns.filter(c => c.id !== data.columns[0]?.id)" :key="col.id">
+            <template v-for="col in data.columns.filter(c => !isFirstColumn(c.id))" :key="col.id">
               <p v-if="row.cells[col.id] != null" class="text-[11px] text-muted-foreground">
                 {{ col.name }}: {{ row.cells[col.id] }}
               </p>
@@ -644,7 +660,7 @@ const sortIndicator = (colId: string) => {
               class="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent/30 transition-colors"
             >
               <span class="text-sm text-foreground">
-                {{ row.type === "file" ? row.fileTitle : String(row.cells[data.columns[0]?.id] ?? "—") }}
+                {{ getRowTitle(row) }}
               </span>
             </div>
           </div>

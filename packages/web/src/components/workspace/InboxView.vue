@@ -88,6 +88,7 @@ const handleCapture = async () => {
 	isSaving.value = true;
 	try {
 		const response = await captureNote(text);
+		if (!response) return;
 		fleetingText.value = "";
 		emit("refresh-tree");
 		emit("open-file", response.path);

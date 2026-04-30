@@ -1,35 +1,44 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
+import express, {
 	type NextFunction,
 	type Request,
 	type Response,
-	Router,
 } from "express";
+import type multer from "multer";
+import type { createFileManager } from "../file-manager.js";
 import type { HttpError } from "../types/index.js";
 import { normalizeString } from "../utils/strings.js";
 
 export interface WorkspaceDataDeps {
 	defaultWorkspaceDir: string;
-	fileManager: {
-		createEntry: (payload: unknown) => Promise<unknown>;
-		moveEntry: (payload: unknown) => Promise<unknown>;
-		trashEntry: (root: string, path: string) => Promise<unknown>;
-		uploadFiles: (opts: unknown) => Promise<unknown[]>;
-		resolveManagedFileLocation: (
-			opts: unknown,
-		) => Promise<{ rootPath: string; targetPath: string }>;
-	};
+	fileManager: ReturnType<typeof createFileManager>;
 	openWithDefaultApp: (targetPath: string) => Promise<void>;
-	upload: unknown;
-	fileEntryCreateSchema: { parse: (data: unknown) => unknown };
-	fileEntryMoveSchema: { parse: (data: unknown) => unknown };
-	fileContentQuerySchema: { parse: (data: unknown) => unknown };
-	fileOpenSchema: { parse: (data: unknown) => unknown };
+	upload: multer.Multer;
+	fileEntryCreateSchema: {
+		parse: (data: unknown) => {
+			root: unknown;
+			directory: unknown;
+			name: unknown;
+			kind: "file" | "directory";
+		};
+	};
+	fileEntryMoveSchema: {
+		parse: (data: unknown) => {
+			root: unknown;
+			path: unknown;
+			targetDirectory?: unknown;
+			name?: unknown;
+		};
+	};
+	fileContentQuerySchema: {
+		parse: (data: unknown) => { root?: string; path?: string };
+	};
+	fileOpenSchema: { parse: (data: unknown) => { root: string; path: string } };
 }
 
 export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
-	const router = Router();
+	const router = express.Router();
 
 	const {
 		defaultWorkspaceDir,
@@ -145,7 +154,8 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 				// 保存时剥离运行时添加的 fileTitle
 				const cleanRows = (data.rows ?? []).map(
 					(row: Record<string, unknown>) => {
-						const { fileTitle, ...rest } = row;
+						const rest = { ...row };
+						delete rest.fileTitle;
 						return rest;
 					},
 				);

@@ -28,7 +28,6 @@ const props = defineProps<{
   isRunnable: boolean;
   modelOptions: AutomationOption[];
   nextRunText: string;
-  projectOptions: AutomationOption[];
   thinkingOptions: AutomationOption[];
 }>();
 
@@ -136,27 +135,6 @@ const handleModelChange = (value: unknown) => {
         </section>
 
         <section class="grid gap-4 md:grid-cols-2">
-          <div class="space-y-2">
-            <Label>项目</Label>
-            <Select
-              :model-value="draft.cwd || undefined"
-              @update:model-value="updateDraft({ cwd: String($event) })"
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="选择项目" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="project in projectOptions"
-                  :key="project.value"
-                  :value="project.value"
-                >
-                  {{ project.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           <div class="space-y-2">
             <Label>Agent</Label>
             <Select

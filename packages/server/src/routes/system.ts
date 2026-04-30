@@ -1,9 +1,13 @@
-import {
+import express, {
 	type NextFunction,
 	type Request,
 	type Response,
-	Router,
 } from "express";
+import type {
+	TerminalCreateRequest,
+	TerminalRestartRequest,
+	TerminalSnapshot,
+} from "../types/index.js";
 
 export interface SystemDeps {
 	port: number;
@@ -14,15 +18,20 @@ export interface SystemDeps {
 		chatProjectLabel: string;
 	};
 	terminalManager: {
-		listTerminals: () => unknown[];
-		createTerminal: (payload: unknown) => Promise<unknown>;
-		updateTerminal: (id: string, title: string) => unknown;
-		restartTerminal: (id: string, payload: unknown) => Promise<unknown>;
+		listTerminals: () => TerminalSnapshot[];
+		createTerminal: (
+			payload: TerminalCreateRequest,
+		) => Promise<TerminalSnapshot>;
+		updateTerminal: (id: string, title: string) => TerminalSnapshot;
+		restartTerminal: (
+			id: string,
+			payload: TerminalRestartRequest,
+		) => Promise<TerminalSnapshot>;
 		deleteTerminal: (id: string) => void;
 	};
-	terminalCreateSchema: { parse: (data: unknown) => unknown };
-	terminalUpdateSchema: { parse: (data: unknown) => unknown };
-	terminalRestartSchema: { parse: (data: unknown) => unknown };
+	terminalCreateSchema: { parse: (data: unknown) => TerminalCreateRequest };
+	terminalUpdateSchema: { parse: (data: unknown) => { title: string } };
+	terminalRestartSchema: { parse: (data: unknown) => TerminalRestartRequest };
 }
 
 export function createSystemRouter(deps: SystemDeps) {
@@ -35,7 +44,7 @@ export function createSystemRouter(deps: SystemDeps) {
 		terminalUpdateSchema,
 		terminalRestartSchema,
 	} = deps;
-	const router = Router();
+	const router = express.Router();
 
 	router.get("/health", (_req: Request, res: Response) => {
 		res.json({ ok: true });
@@ -61,12 +70,7 @@ export function createSystemRouter(deps: SystemDeps) {
 		"/api/terminals",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				const payload = terminalCreateSchema.parse(req.body ?? {}) as {
-					cwd?: string;
-					title?: string;
-					cols?: number;
-					rows?: number;
-				};
+				const payload = terminalCreateSchema.parse(req.body ?? {});
 				const terminal = await terminalManager.createTerminal(payload);
 				res.status(201).json(terminal);
 			} catch (error) {
@@ -79,9 +83,7 @@ export function createSystemRouter(deps: SystemDeps) {
 		"/api/terminals/:id",
 		(req: Request, res: Response, next: NextFunction) => {
 			try {
-				const payload = terminalUpdateSchema.parse(req.body ?? {}) as {
-					title: string;
-				};
+				const payload = terminalUpdateSchema.parse(req.body ?? {});
 				const terminal = terminalManager.updateTerminal(
 					String(req.params.id),
 					payload.title,
@@ -97,11 +99,7 @@ export function createSystemRouter(deps: SystemDeps) {
 		"/api/terminals/:id/restart",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				const payload = terminalRestartSchema.parse(req.body ?? {}) as {
-					cwd: string;
-					cols?: number;
-					rows?: number;
-				};
+				const payload = terminalRestartSchema.parse(req.body ?? {});
 				const terminal = await terminalManager.restartTerminal(
 					String(req.params.id),
 					payload,

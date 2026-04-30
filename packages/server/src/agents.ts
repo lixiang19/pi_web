@@ -520,7 +520,7 @@ const pushYamlValue = (
   }
 };
 
-interface AgentPayload {
+export interface AgentPayload {
   name: string;
   description: string;
   display_name?: string | null;
@@ -560,7 +560,7 @@ const serializeAgentFile = (config: AgentPayload): string => {
   return lines.join('\n');
 };
 
-interface SaveAgentOptions {
+export interface SaveAgentOptions {
   allowCreate: boolean;
   requireScope: boolean;
 }

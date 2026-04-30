@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GridNode } from "@/composables/useSplitPanes";
+import type { GridNode, SplitTabItem } from "@/composables/useSplitPanes";
 import type { DropZone } from "@/composables/useSplitDrag";
 import PaneGroupComponent from "./PaneGroupComponent.vue";
 import SplitContainerComponent from "./SplitContainerComponent.vue";
@@ -17,6 +17,10 @@ const emit = defineEmits<{
   (e: "resize-split", splitContainerId: string, sizes: [number, number]): void;
   (e: "activate-pane", paneGroupId: string): void;
   (e: "drop-tab", payload: { fromPaneId: string; tabId: string; toPaneId: string; zone: DropZone }): void;
+}>();
+
+defineSlots<{
+  default(props: { tabs: SplitTabItem[]; activeTabId: string; paneGroupId: string }): unknown;
 }>();
 </script>
 

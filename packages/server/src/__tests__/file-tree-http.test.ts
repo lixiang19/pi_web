@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { FileTreeEntry } from "@pi/protocol";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { app } from "../index.js";
@@ -42,8 +43,9 @@ describe("GET /api/files/tree", () => {
 			`/api/files/tree?root=${encodeURIComponent(TEST_ROOT)}&path=${encodeURIComponent(TEST_ROOT)}`,
 		);
 		expect(res.status).toBe(200);
-		const dirs = res.body.entries.filter((e: any) => e.kind === "directory");
-		const files = res.body.entries.filter((e: any) => e.kind === "file");
+		const entries = res.body.entries as FileTreeEntry[];
+		const dirs = entries.filter((entry) => entry.kind === "directory");
+		const files = entries.filter((entry) => entry.kind === "file");
 		if (dirs.length > 0 && files.length > 0) {
 			expect(
 				dirs[dirs.length - 1].name.localeCompare(files[0].name),
@@ -77,9 +79,8 @@ describe("GET /api/files/tree", () => {
 			`/api/files/tree?root=${encodeURIComponent(TEST_ROOT)}&path=${encodeURIComponent(TEST_ROOT)}`,
 		);
 		expect(res.status).toBe(200);
-		expect(
-			res.body.entries.find((e: any) => e.name === ".git"),
-		).toBeUndefined();
+		const entries = res.body.entries as FileTreeEntry[];
+		expect(entries.find((entry) => entry.name === ".git")).toBeUndefined();
 		await fs.rmdir(path.join(TEST_ROOT, ".git"));
 	});
 
@@ -107,8 +108,9 @@ describe("GET /api/files/search", () => {
 		expect(res.status).toBe(200);
 		expect(Array.isArray(res.body.entries)).toBe(true);
 		expect(res.body.entries.length).toBeGreaterThan(0);
-		res.body.entries.forEach((e: any) => {
-			expect(e.name.toLowerCase()).toContain("md");
+		const entries = res.body.entries as FileTreeEntry[];
+		entries.forEach((entry) => {
+			expect(entry.name.toLowerCase()).toContain("md");
 		});
 	});
 

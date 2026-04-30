@@ -48,7 +48,7 @@ const isUnsupported = computed(() => {
 
     <!-- 不支持预览 -->
     <OpenWithDefaultApp
-      v-else-if="isUnsupported"
+      v-else-if="tab && isUnsupported"
       :file-name="tab.title"
       :file-path="tab.path"
       @open="emit('open-with-default-app', $event)"

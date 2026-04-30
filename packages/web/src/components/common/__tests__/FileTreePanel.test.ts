@@ -261,7 +261,7 @@ describe("FileTreePanel - delete dialog", () => {
 
 	it("renders AlertDialog when handleDelete is called", async () => {
 		const wrapper = mountWithDialog();
-		const fileEntry = defaultProps.nodes[1].entry; // readme.md
+		const fileEntry = defaultProps.nodes[1]!.entry; // readme.md
 		await wrapper.vm.handleDelete(fileEntry);
 		await nextTick();
 
@@ -273,7 +273,7 @@ describe("FileTreePanel - delete dialog", () => {
 
 	it("emits delete when confirming AlertDialog", async () => {
 		const wrapper = mountWithDialog();
-		const fileEntry = defaultProps.nodes[1].entry; // readme.md
+		const fileEntry = defaultProps.nodes[1]!.entry; // readme.md
 		await wrapper.vm.handleDelete(fileEntry);
 		await nextTick();
 
@@ -282,8 +282,9 @@ describe("FileTreePanel - delete dialog", () => {
 		await actionBtn.trigger("click");
 		await nextTick();
 
-		expect(wrapper.emitted("delete")).toBeTruthy();
-		expect(wrapper.emitted("delete")![0][0]).toEqual(fileEntry);
+		const emittedDelete = wrapper.emitted("delete");
+		expect(emittedDelete).toBeTruthy();
+		expect(emittedDelete![0]![0]).toEqual(fileEntry);
 	});
 });
 
@@ -313,8 +314,9 @@ describe("FileTreePanel - create folder inline", () => {
 		);
 		await nextTick();
 
-		expect(wrapper.emitted("create-folder")).toBeTruthy();
-		const payload = wrapper.emitted("create-folder")![0][0] as {
+		const emittedCreateFolder = wrapper.emitted("create-folder");
+		expect(emittedCreateFolder).toBeTruthy();
+		const payload = emittedCreateFolder![0]![0] as {
 			parentPath: string;
 			name: string;
 		};

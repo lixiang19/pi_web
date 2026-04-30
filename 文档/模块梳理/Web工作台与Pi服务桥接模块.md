@@ -29,10 +29,11 @@
 - 负责把输入区升级为会话级输入编排器，统一管理草稿、发送态、模型/thinking/agent 显式选择、`@agent` 提及与 `/` 资源选择。
 - 负责在前端把消息、草稿和加载生命周期按 `sessionId` 分桶缓存，并通过邻近会话预取减少会话切换时的整份重新拉取。
 - 负责通过限窗快照和前端扩窗机制控制长会话历史加载，避免中间区默认渲染整份消息历史。
-- 负责在 Web 入口完成主题契约导入、全局 base 规则注入、默认主题 token 注册与明暗模式根节点切换，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量。
+- 负责在 Web 入口完成主题契约导入、全局 base 规则注入、默认主题 token 注册、明暗模式根节点切换与全局 `TooltipProvider` 注入，让 shadcn-vue 组件和工作台自定义样式共享同一套设计变量与浮层上下文。
 - 负责约束工作台分隔策略：ridge 主题下优先使用 surface 层次与留白，不依赖裸 `border-*` 做结构分隔，避免 Tailwind 默认 `currentColor` 污染边框颜色。
 - 负责约束主题资产边界：`style.css` 只承载 Tailwind 构建期入口与全局 base，`assets/*.css` 主题文件只承载运行时 token，禁止把 `@import "tailwindcss"`、`@custom-variant`、`@layer base` 注入运行时主题样式。
 - 负责约束服务层原生依赖安装契约：根 `package.json` 必须通过 `pnpm.onlyBuiltDependencies` 显式允许 `better-sqlite3`、`node-pty` 构建，避免出现 server 依赖已安装但原生绑定缺失的半安装状态。
+- 负责约束服务端拆分路由的依赖接口：`routes/*` 的 `Deps` 类型必须直接使用真实领域类型与 schema 输出类型，禁止用 `unknown` 伪装服务边界，否则 server `tsc --noEmit` 会在调用点丢失契约。
 - 负责把用户级设置、收藏和自定义项目统一持久化到 ~/.ridge/ 下的服务端 JSON 文件，而不是在 Web 层散落 localStorage。
 - 负责提供系统级隐藏聊天项目：固定绑定工作区 `chat` 目录，用于承接顶部“新聊天”和独立聊天分组。
 - 负责约束默认工作区目录策略：macOS 默认使用 `~/ridge-workspace`，非 macOS 必须显式提供 `PI_WORKSPACE_DIR`。

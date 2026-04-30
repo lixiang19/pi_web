@@ -1,10 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
+import express, {
 	type NextFunction,
 	type Request,
 	type Response,
-	Router,
 } from "express";
 
 import { writeJsonFile } from "../utils/fs.js";
@@ -64,7 +63,7 @@ const checkOptimisticLock = (
 };
 
 export function createWorkspaceTasksRouter(defaultWorkspaceDir: string) {
-	const router = Router();
+	const router = express.Router();
 
 	router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
 		try {

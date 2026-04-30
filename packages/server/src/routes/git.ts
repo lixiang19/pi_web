@@ -1,14 +1,15 @@
 import path from "node:path";
-import {
+import express, {
 	type NextFunction,
 	type Request,
 	type Response,
-	Router,
 } from "express";
 import { z } from "zod";
 
 import { resolveGitContext } from "../git-resolver.js";
-import type { HttpError } from "../types/index.js";
+import type { GitStatusResult } from "../git-service.js";
+import type { IsoGitContext } from "../iso-git-service.js";
+import type { GitBranchesApiResponse, HttpError } from "../types/index.js";
 
 type GitService = {
 	isGitRepository: (cwd: string) => Promise<boolean>;
@@ -45,10 +46,10 @@ type GitService = {
 };
 
 type IsoGitService = {
-	getStatus: (ctx: unknown) => Promise<unknown>;
-	getBranches: (ctx: unknown) => Promise<unknown>;
+	getStatus: (ctx: IsoGitContext) => Promise<GitStatusResult>;
+	getBranches: (ctx: IsoGitContext) => Promise<GitBranchesApiResponse>;
 	commit: (
-		ctx: unknown,
+		ctx: IsoGitContext,
 		message: string,
 		files: string[],
 	) => Promise<{ hash: string }>;
@@ -82,7 +83,7 @@ const requireCliEngine = (
 
 export function createGitRouter(deps: GitDeps) {
 	const { defaultWorkspaceDir, gitService, isoGitService } = deps;
-	const router = Router();
+	const router = express.Router();
 
 	router.get(
 		"/is-repo",

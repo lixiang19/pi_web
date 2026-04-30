@@ -1,75 +1,95 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
+import type {
+	AgentSession,
+	DefaultResourceLoader,
+} from "@mariozechner/pi-coding-agent";
+import type { AutomationRule, AutomationRuleInput } from "@pi/protocol";
+import express, {
 	type NextFunction,
 	type Request,
 	type Response,
-	Router,
 } from "express";
 import { z } from "zod";
-import type { HttpError } from "../types/index.js";
+import type {
+	AgentConfigInternal,
+	AgentPayload,
+	SaveAgentOptions,
+} from "../agents.js";
+import type { AutomationStore } from "../automations.js";
+import { createFileManager } from "../file-manager.js";
+import type {
+	AgentScope,
+	AgentSummary,
+	FileTreeEntry,
+	HttpError,
+	ResourceCatalogResponse,
+	SessionRecord,
+} from "../types/index.js";
 
 export interface CoreDeps {
-	app: unknown;
+	app?: unknown;
 	defaultWorkspaceDir: string;
 	resolveDiscoveryCwd: (value: unknown) => string;
 	listProviders: () => unknown;
-	discoverAgents: (
-		cwd: string,
-	) => Promise<
-		Array<{ enabled?: boolean; mode: string; [key: string]: unknown }>
-	>;
-	createAgentSummary: (agent: unknown) => unknown;
-	createAgentConfigResponse: (agent: unknown) => unknown;
+	discoverAgents: (cwd: string) => Promise<AgentConfigInternal[]>;
+	createAgentSummary: (agent: AgentConfigInternal) => AgentSummary;
+	createAgentConfigResponse: (
+		agent: AgentConfigInternal,
+	) => Record<string, unknown>;
 	getAgentByName: (
 		cwd: string,
 		name: string,
-		scope?: string,
-	) => Promise<unknown>;
+		scope?: AgentScope,
+	) => Promise<AgentConfigInternal | null>;
 	saveAgent: (
 		cwd: string,
 		name: string,
-		payload: unknown,
-		opts: unknown,
-	) => Promise<unknown>;
-	deleteAgent: (cwd: string, name: string, scope: string) => Promise<string>;
-	getAutomationStore: () => {
-		listRules: () => unknown[];
-		createRule: (data: unknown) => unknown;
-		updateRule: (id: string, data: unknown) => unknown | null;
-		getRule: (id: string) => unknown | null;
-		removeRule: (id: string) => unknown | null;
-	};
-	automationScheduler: { reschedule: () => void } | null;
-	dispatchAutomationRule: (rule: unknown) => Promise<{ sessionId: string }>;
-	ensureManagedProjectScope: (path: string) => Promise<unknown>;
-	ensureSessionRecord: (sessionId: string) => Promise<unknown>;
-	buildResourceCatalog: (session: unknown, resourceLoader: unknown) => unknown;
-	createTransientCatalogSession: (
+		payload: Partial<AgentPayload>,
+		opts: SaveAgentOptions,
+	) => Promise<AgentConfigInternal>;
+	deleteAgent: (
 		cwd: string,
-	) => Promise<{ session: unknown; resourceLoader: unknown }>;
-	fileManager: {
-		resolveManagedFileLocation: (
-			opts: unknown,
-		) => Promise<{ rootPath: string; targetPath: string }>;
-		listDirectoryEntries: (
-			dir: string,
-			root: string,
-		) => Promise<Array<{ kind: string; path: string; [key: string]: unknown }>>;
-	};
+		name: string,
+		scope: AgentScope,
+	) => Promise<string>;
+	getAutomationStore: () => AutomationStore;
+	automationScheduler: { reschedule: () => void } | null;
+	dispatchAutomationRule: (
+		rule: AutomationRule,
+	) => Promise<{ sessionId: string }>;
+	ensureManagedProjectScope: (path: string) => Promise<unknown>;
+	ensureSessionRecord: (sessionId: string) => Promise<SessionRecord>;
+	buildResourceCatalog: (
+		session: AgentSession,
+		resourceLoader: DefaultResourceLoader,
+	) => ResourceCatalogResponse;
+	createTransientCatalogSession: (cwd: string) => Promise<{
+		session: AgentSession;
+		resourceLoader: DefaultResourceLoader;
+	}>;
+	fileManager: ReturnType<typeof createFileManager>;
 	normalizeString: (value: unknown) => string;
 	toPosixPath: (p: string) => string;
-	agentScopeQuerySchema: { parse: (data: unknown) => unknown };
-	agentUpsertSchema: { parse: (data: unknown) => unknown };
-	automationRuleInputSchema: { parse: (data: unknown) => unknown };
-	automationRulePatchSchema: { parse: (data: unknown) => unknown };
-	automationToggleSchema: { parse: (data: unknown) => unknown };
-	resourceCatalogQuerySchema: { parse: (data: unknown) => unknown };
-	fileTreeQuerySchema: { parse: (data: unknown) => unknown };
+	agentScopeQuerySchema: {
+		parse: (data: unknown) => { scope?: AgentScope; cwd?: string };
+	};
+	agentUpsertSchema: { parse: (data: unknown) => Partial<AgentPayload> };
+	automationRuleInputSchema: { parse: (data: unknown) => AutomationRuleInput };
+	automationRulePatchSchema: {
+		parse: (data: unknown) => Partial<AutomationRuleInput>;
+	};
+	automationToggleSchema: { parse: (data: unknown) => { enabled: boolean } };
+	resourceCatalogQuerySchema: {
+		parse: (data: unknown) => { cwd?: string; sessionId?: string };
+	};
+	fileTreeQuerySchema: {
+		parse: (data: unknown) => { root?: string; path?: string };
+	};
 }
 
 export function createCoreRouter(deps: CoreDeps) {
-	const router = Router();
+	const router = express.Router();
 
 	const {
 		defaultWorkspaceDir,
@@ -466,11 +486,7 @@ export function createCoreRouter(deps: CoreDeps) {
 					fallbackToRoot: true,
 				});
 
-				const results: Array<{
-					kind: string;
-					path: string;
-					[key: string]: unknown;
-				}> = [];
+				const results: FileTreeEntry[] = [];
 				const queryLower = searchQueryStr.toLowerCase();
 
 				const searchDir = async (dir: string, depth: number): Promise<void> => {

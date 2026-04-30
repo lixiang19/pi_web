@@ -1,9 +1,15 @@
+import type { ServerResponse } from "node:http";
 import path from "node:path";
 import type { Api, Model } from "@mariozechner/pi-ai";
-import type {
-	AgentSession,
-	AgentSessionEvent,
+import {
+	type AgentSession,
+	type AgentSessionEvent,
+	AuthStorage,
+	createAgentSession,
 	DefaultResourceLoader,
+	ModelRegistry,
+	SessionManager,
+	type SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import {
 	compileAgentPermission,
@@ -16,7 +22,6 @@ import {
 	normalizeThinkingLevel,
 } from "./agents.js";
 import { buildResolvedAskResult, createAskExtension } from "./ask-extension.js";
-import type { AutomationStore } from "./automations.js";
 import {
 	isPathInsideRoot,
 	normalizeFsPath,
@@ -26,6 +31,8 @@ import {
 	createPiAgentScopeSettingsManager,
 	getPiAgentScopeAgentDir,
 } from "./pi-resource-scope.js";
+import type { createProjectContextResolver } from "./project-context.js";
+import type { SessionMetadataStore } from "./session-metadata.js";
 import { getProjects } from "./storage/index.js";
 import { createSubagentToolExtension } from "./subagents.js";
 import type {
@@ -49,22 +56,23 @@ import type {
 } from "./types/index.js";
 import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
+import type { WorkspaceChatConfig } from "./workspace-chat.js";
 import { createWorkspaceChatProject } from "./workspace-chat.js";
 
 // ===== Dependency injection =====
 export interface SessionContextDeps {
-	modelRegistry: { refresh: () => void; getAvailable: () => Model<Api>[] };
-	authStorage: unknown;
-	sessionMetadataStore: {
-		getMeta: (id: string) => Promise<unknown>;
-		setMeta: (id: string, meta: unknown) => Promise<void>;
-	};
+	modelRegistry: ModelRegistry;
+	authStorage: AuthStorage;
+	sessionMetadataStore: SessionMetadataStore;
 	activeSessions: Map<string, SessionRecord>;
 	openingSessionRecords: Map<string, Promise<SessionRecord>>;
 	defaultWorkspaceDir: string;
-	workspaceChatConfig: unknown;
-	projectContextResolver: { resolveContext: (cwd: string) => Promise<unknown> };
-	toSessionMessagesPayload: (record: any, options: any) => any;
+	workspaceChatConfig: WorkspaceChatConfig;
+	projectContextResolver: ReturnType<typeof createProjectContextResolver>;
+	toSessionMessagesPayload: (
+		record: SessionRecord,
+		options: { rounds?: number },
+	) => SessionMessagesPayload;
 }
 
 const deps = {} as SessionContextDeps;

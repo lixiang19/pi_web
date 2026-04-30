@@ -21,15 +21,27 @@ import TaskView from "@/components/workspace/TaskView.vue";
 import CalendarView from "@/components/workspace/CalendarView.vue";
 import InboxView from "@/components/workspace/InboxView.vue";
 import GitChangesView from "@/components/workspace/GitChangesView.vue";
+import TerminalTabContent from "@/components/workspace/TerminalTabContent.vue";
+import AutomationTabContent from "@/components/workspace/AutomationTabContent.vue";
+import SettingsTabContent from "@/components/workspace/SettingsTabContent.vue";
+import WorkspaceTopMenu from "@/components/workspace/WorkspaceTopMenu.vue";
 import SplitGrid from "@/components/workspace/split/SplitGrid.vue";
 import { useFileTreeData } from "@/composables/useFileTreeData";
 import { useWorkspaceFilePreview } from "@/composables/useWorkspaceFilePreview";
-import { useSplitPanes, createHomeTab } from "@/composables/useSplitPanes";
+import {
+	useSplitPanes,
+	createHomeTab,
+	createTerminalTab,
+	createAutomationTab,
+	createSettingsTab,
+} from "@/composables/useSplitPanes";
 import type { SplitTabItem } from "@/composables/useSplitPanes";
 import type { DropZone } from "@/composables/useSplitDrag";
 import { provideWorkspaceTasks } from "@/composables/useWorkspaceTasks";
 import { provideWorkspaceInbox, useWorkspaceInbox } from "@/composables/useInbox";
 import { usePiChatCore } from "@/composables/usePiChatCore";
+import { useTerminalContextOptions } from "@/composables/useTerminalContextOptions";
+import { useTerminalPool } from "@/composables/useTerminalPool";
 import { useFavoritesStore } from "@/stores/favorites";
 import { createNote, createNoteFolder, createFile, createBase, getRecentFiles, type RecentFileItem, moveFileEntry, trashFileEntry, createFileEntry } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
@@ -39,6 +51,8 @@ import type { FileTreeEntry } from "@/lib/types";
 
 const core = usePiChatCore();
 const favoritesStore = useFavoritesStore();
+const terminalPool = useTerminalPool();
+const terminalContextOptions = useTerminalContextOptions();
 
 const workspaceDir = computed(() => core.info.value?.workspaceDir ?? "");
 
@@ -117,6 +131,25 @@ const handleSaveStatusUpdate = (tabId: string, status: string) => {
 	saveStatusMap.value = { ...saveStatusMap.value, [tabId]: status };
 };
 
+function createWorkspaceFileEntry(path: string): FileTreeEntry {
+	const normalizedWorkspaceDir = workspaceDir.value.replace(/\/+$/, "");
+	const relativePath = path.startsWith(`${normalizedWorkspaceDir}/`)
+		? path.slice(normalizedWorkspaceDir.length + 1)
+		: path;
+	const name = relativePath.split("/").filter(Boolean).at(-1) ?? relativePath;
+	const dot = name.lastIndexOf(".");
+
+	return {
+		kind: "file",
+		path,
+		name,
+		relativePath,
+		size: null,
+		modifiedAt: Date.now(),
+		extension: dot >= 0 ? name.slice(dot) : "",
+	};
+}
+
 // ===== 左侧面板 → 分屏面板 交互 =====
 
 /** 左侧面板点击：创建新主页标签页 */
@@ -186,6 +219,45 @@ async function handleToggleFavorite(path: string) {
 	}
 }
 
+// ===== 顶部系统菜单操作 =====
+
+/** 打开终端标签页：创建新终端实例 + 工作空间标签页 */
+async function handleOpenTerminal() {
+	await terminalContextOptions.load().catch(() => {});
+	const terminal = await terminalPool.createNewTerminal(
+		terminalContextOptions.createDefaultPayload(),
+	);
+	const tab = createTerminalTab(terminal.id, terminal.title);
+	tab.onClose = (closedTab) => {
+		if (closedTab.terminalId) {
+			void terminalPool.closeTerminal(closedTab.terminalId);
+		}
+	};
+	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
+}
+
+/** 打开/激活自动化标签页 */
+function handleOpenAutomation() {
+	const existing = splitPanes.findTabAcrossPanes("automation");
+	if (existing) {
+		splitPanes.setActiveTab(existing.pane.id, "automation");
+		return;
+	}
+	const tab = createAutomationTab();
+	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
+}
+
+/** 打开/激活设置标签页 */
+function handleOpenSettings() {
+	const existing = splitPanes.findTabAcrossPanes("settings");
+	if (existing) {
+		splitPanes.setActiveTab(existing.pane.id, "settings");
+		return;
+	}
+	const tab = createSettingsTab();
+	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
+}
+
 // ===== SplitGrid 事件处理 =====
 
 function handleSetActiveTab(paneGroupId: string, tabId: string) {
@@ -237,7 +309,7 @@ async function handleCreateNote(subdir: string) {
 		const relPath = subdir ? `${subdir}/未命名.md` : "未命名.md";
 		const response = await createNote({ path: relPath });
 		refreshTree();
-		handleSelectFile({ kind: "file", path: response.path, name: "" });
+		handleSelectFile(createWorkspaceFileEntry(response.path));
 	} catch (err) {
 		console.error("Failed to create note", err);
 	}
@@ -254,7 +326,7 @@ async function handleCreateJournal(dateOverride?: string) {
 	try {
 		const response = await createNote({ path: journalRelPath });
 		refreshTree();
-		handleSelectFile({ kind: "file", path: response.path, name: "" });
+		handleSelectFile(createWorkspaceFileEntry(response.path));
 	} catch (err) {
 		console.error("Failed to create journal", err);
 	}
@@ -277,7 +349,7 @@ async function handleCreateCanvas() {
 		if (!dir) return;
 		const response = await createFile("canvas/未命名.canvas", "{}");
 		refreshTree();
-		handleSelectFile({ kind: "file", path: response.path, name: "" });
+		handleSelectFile(createWorkspaceFileEntry(response.path));
 	} catch (err) {
 		console.error("Failed to create canvas", err);
 	}
@@ -289,7 +361,7 @@ async function handleCreateBase() {
 		const result = await createBase("新数据库");
 		refreshTree();
 		const fullPath = `${workspaceDir.value}/${result.path}`;
-		handleSelectFile({ kind: "file", path: fullPath, name: "" });
+		handleSelectFile(createWorkspaceFileEntry(fullPath));
 	} catch (err) {
 		console.error("Failed to create base", err);
 	}
@@ -364,206 +436,244 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 bg-background text-foreground">
-    <!-- 左侧面板 -->
-    <aside class="flex w-[260px] shrink-0 flex-col border-r border-border/50 bg-background">
-      <!-- 固定视图入口 -->
-      <div class="shrink-0 space-y-0.5 px-2 pt-3 pb-2">
-        <!-- 主页入口 -->
-        <button
-          type="button"
-          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-          @click="handleOpenHome"
-        >
-          <component :is="homeEntry.icon" class="size-4" />
-          <span class="flex-1">{{ homeEntry.label }}</span>
-        </button>
+  <div class="flex h-full min-h-0 flex-col bg-background text-foreground">
+    <!-- 顶部系统菜单 -->
+    <WorkspaceTopMenu
+      @open-terminal="handleOpenTerminal"
+      @open-automation="handleOpenAutomation"
+      @open-settings="handleOpenSettings"
+    />
 
-        <Separator class="my-1" />
+    <div class="flex min-h-0 flex-1">
+      <!-- 左侧面板 -->
+      <aside class="flex w-[260px] shrink-0 flex-col border-r border-border/50 bg-background">
+        <!-- 固定视图入口 -->
+        <div class="shrink-0 space-y-0.5 px-2 pt-3 pb-2">
+          <!-- 主页入口 -->
+          <button
+            type="button"
+            class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+            @click="handleOpenHome"
+          >
+            <component :is="homeEntry.icon" class="size-4" />
+            <span class="flex-1">{{ homeEntry.label }}</span>
+          </button>
 
-        <button
-          v-for="view in fixedViews"
-          :key="view.id"
-          type="button"
-          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-          @click="handleSelectView(view.id)"
-        >
-          <component :is="view.icon" class="size-4" />
-          <span class="flex-1">{{ view.label }}</span>
-          <Badge v-if="view.id === 'inbox' && inboxCount > 0" variant="secondary" class="h-4 min-w-4 px-1 text-[10px]">
-            {{ inboxCount }}
-          </Badge>
-        </button>
-      </div>
+          <Separator class="my-1" />
 
-      <Separator class="mx-3" />
-
-      <!-- 新建按钮行 -->
-      <div class="shrink-0 px-3 py-2">
-        <div class="flex items-center justify-between gap-1">
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                type="button"
-                class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                @click="handleCreateNote('笔记')"
-              >
-                <FilePlus2 class="size-3.5" />
-                新建
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">新建笔记</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                type="button"
-                class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                @click="handleCreateFolder"
-              >
-                <FolderPlus class="size-3.5" />
-                文件夹
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">新建文件夹</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                type="button"
-                class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                @click="handleCreateCanvas"
-              >
-                <LayoutGrid class="size-3.5" />
-                Canvas
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">新建 Canvas</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                type="button"
-                class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                @click="handleCreateBase"
-              >
-                <Database class="size-3.5" />
-                Base
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">新建数据库</TooltipContent>
-          </Tooltip>
+          <button
+            v-for="view in fixedViews"
+            :key="view.id"
+            type="button"
+            class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+            @click="handleSelectView(view.id)"
+          >
+            <component :is="view.icon" class="size-4" />
+            <span class="flex-1">{{ view.label }}</span>
+            <Badge v-if="view.id === 'inbox' && inboxCount > 0" variant="secondary" class="h-4 min-w-4 px-1 text-[10px]">
+              {{ inboxCount }}
+            </Badge>
+          </button>
         </div>
-      </div>
 
-      <!-- 文件树 -->
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <FileTreePanel
-          :nodes="visibleNodes"
-          :is-root-loading="isDirectoryLoading(rootPath)"
-          :error="fileTreeError"
-          :is-expanded="isDirectoryExpanded"
-          :is-loading="isDirectoryLoading"
-          :recent-files="recentFiles"
-          :is-recent-loading="isRecentLoading"
-          :root-path="rootPath"
-          @select="handleSelectFile"
-          @toggle-expand="handleToggleExpand"
-          @toggle-favorite="handleToggleFavorite"
-          @refresh="refreshTree"
-          @rename="handleRename"
-          @delete="handleDelete"
-          @create-folder="handleCreateFolderInTree"
-        />
-      </div>
-    </aside>
+        <Separator class="mx-3" />
 
-    <!-- 中间分屏区域 -->
-    <main class="flex min-h-0 flex-1 overflow-hidden">
-      <SplitGrid
-        :node="splitPanes.rootNode.value"
-        :active-pane-group-id="splitPanes.activePaneGroupId.value"
-        @set-active-tab="handleSetActiveTab"
-        @close-tab="handleCloseTab"
-        @split-right="handleSplitRight"
-        @new-tab="handleNewTab"
-        @resize-split="handleResizeSplit"
-        @activate-pane="handleActivatePane"
-        @drop-tab="handleDropTab"
-      >
-        <!-- 每个 PaneGroup 的内容区通过 slot 渲染 -->
-        <template #default="{ tabs, activeTabId }">
-          <!-- 视图标签页 -->
-          <div v-show="activeTabId === 'dashboard'" class="h-full">
-            <DashboardView
-              :workspace-dir="workspaceDir"
-              @open-file="handleSelectFile({ kind: 'file', path: $event, name: '' }) as any"
-              @create-journal="handleCreateJournal"
-              @create-note="handleCreateNote('笔记')"
-              @create-inbox-note="handleCreateNote('收件箱')"
-              @open-tasks-view="handleSelectView('tasks')"
-              @open-inbox-view="handleSelectView('inbox')"
-            />
+        <!-- 新建按钮行 -->
+        <div class="shrink-0 px-3 py-2">
+          <div class="flex items-center justify-between gap-1">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  type="button"
+                  class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                  @click="handleCreateNote('笔记')"
+                >
+                  <FilePlus2 class="size-3.5" />
+                  新建
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">新建笔记</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  type="button"
+                  class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                  @click="handleCreateFolder"
+                >
+                  <FolderPlus class="size-3.5" />
+                  文件夹
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">新建文件夹</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  type="button"
+                  class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                  @click="handleCreateCanvas"
+                >
+                  <LayoutGrid class="size-3.5" />
+                  Canvas
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">新建 Canvas</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  type="button"
+                  class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                  @click="handleCreateBase"
+                >
+                  <Database class="size-3.5" />
+                  Base
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">新建数据库</TooltipContent>
+            </Tooltip>
           </div>
+        </div>
 
-          <div v-show="activeTabId === 'tasks'" class="h-full">
-            <TaskView
-              :workspace-dir="workspaceDir"
-              @open-file="handleSelectFile({ kind: 'file', path: $event, name: '' }) as any"
-            />
-          </div>
+        <!-- 文件树 -->
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <FileTreePanel
+            :nodes="visibleNodes"
+            :is-root-loading="isDirectoryLoading(rootPath)"
+            :error="fileTreeError"
+            :is-expanded="isDirectoryExpanded"
+            :is-loading="isDirectoryLoading"
+            :recent-files="recentFiles"
+            :is-recent-loading="isRecentLoading"
+            :root-path="rootPath"
+            @select="handleSelectFile"
+            @toggle-expand="handleToggleExpand"
+            @toggle-favorite="handleToggleFavorite"
+            @refresh="refreshTree"
+            @rename="handleRename"
+            @delete="handleDelete"
+            @create-folder="handleCreateFolderInTree"
+          />
+        </div>
+      </aside>
 
-          <div v-show="activeTabId === 'calendar'" class="h-full">
-            <CalendarView
-              :workspace-dir="workspaceDir"
-              @open-file="handleSelectFile({ kind: 'file', path: $event, name: '' }) as any"
-              @create-journal="handleCreateJournal($event)"
-            />
-          </div>
+      <!-- 中间分屏区域 -->
+      <main class="flex min-h-0 flex-1 overflow-hidden">
+        <SplitGrid
+          :node="splitPanes.rootNode.value"
+          :active-pane-group-id="splitPanes.activePaneGroupId.value"
+          @set-active-tab="handleSetActiveTab"
+          @close-tab="handleCloseTab"
+          @split-right="handleSplitRight"
+          @new-tab="handleNewTab"
+          @resize-split="handleResizeSplit"
+          @activate-pane="handleActivatePane"
+          @drop-tab="handleDropTab"
+        >
+          <!-- 每个 PaneGroup 的内容区通过 slot 渲染 -->
+          <template #default="{ tabs, activeTabId }">
+            <!-- 视图标签页 -->
+            <div v-show="activeTabId === 'dashboard'" class="h-full">
+              <DashboardView
+                :workspace-dir="workspaceDir"
+                @open-file="handleSelectFile(createWorkspaceFileEntry($event))"
+                @create-journal="handleCreateJournal"
+                @create-note="handleCreateNote('笔记')"
+                @create-inbox-note="handleCreateNote('收件箱')"
+                @open-tasks-view="handleSelectView('tasks')"
+                @open-inbox-view="handleSelectView('inbox')"
+              />
+            </div>
 
-          <div v-show="activeTabId === 'inbox'" class="h-full">
-            <InboxView
-              :workspace-dir="workspaceDir"
-              @open-file="handleSelectFile({ kind: 'file', path: $event, name: '' }) as any"
-              @refresh-tree="refreshTree"
-            />
-          </div>
+            <div v-show="activeTabId === 'tasks'" class="h-full">
+              <TaskView
+                :workspace-dir="workspaceDir"
+                @open-file="handleSelectFile(createWorkspaceFileEntry($event))"
+              />
+            </div>
 
-          <div v-show="activeTabId === 'git-changes'" class="h-full">
-            <GitChangesView :workspace-dir="workspaceDir" />
-          </div>
+            <div v-show="activeTabId === 'calendar'" class="h-full">
+              <CalendarView
+                :workspace-dir="workspaceDir"
+                @open-file="handleSelectFile(createWorkspaceFileEntry($event))"
+                @create-journal="handleCreateJournal($event)"
+              />
+            </div>
 
-          <!-- 主页标签页 -->
-          <div
-            v-for="tab in tabs"
-            :key="tab.id"
-            v-show="activeTabId === tab.id && tab.kind === 'home'"
-            class="h-full"
-          >
-            <HomePage v-if="tab.kind === 'home'" />
-          </div>
+            <div v-show="activeTabId === 'inbox'" class="h-full">
+              <InboxView
+                :workspace-dir="workspaceDir"
+                @open-file="handleSelectFile(createWorkspaceFileEntry($event))"
+                @refresh-tree="refreshTree"
+              />
+            </div>
 
-          <!-- 文件标签页 -->
-          <div
-            v-for="tab in tabs"
-            :key="tab.id"
-            v-show="activeTabId === tab.id && tab.kind === 'file'"
-            class="h-full"
-          >
-            <WorkspaceContentArea
-              v-if="tab.kind === 'file'"
-              :tab="preview.tabs.value.find((t) => t.id === tab.id) ?? null"
-              :root-dir="workspaceDir"
-              @open-with-default-app="handleOpenWithDefaultApp"
-              @load-more="preview.loadMore"
-              @save-status="handleSaveStatusUpdate"
-            />
-          </div>
-        </template>
-      </SplitGrid>
-    </main>
+            <div v-show="activeTabId === 'git-changes'" class="h-full">
+              <GitChangesView :workspace-dir="workspaceDir" />
+            </div>
+
+            <!-- 主页标签页 -->
+            <div
+              v-for="tab in tabs"
+              :key="tab.id"
+              v-show="activeTabId === tab.id && tab.kind === 'home'"
+              class="h-full"
+            >
+              <HomePage v-if="tab.kind === 'home'" />
+            </div>
+
+            <!-- 文件标签页 -->
+            <div
+              v-for="tab in tabs"
+              :key="tab.id"
+              v-show="activeTabId === tab.id && tab.kind === 'file'"
+              class="h-full"
+            >
+              <WorkspaceContentArea
+                v-if="tab.kind === 'file'"
+                :tab="preview.tabs.value.find((t) => t.id === tab.id) ?? null"
+                :root-dir="workspaceDir"
+                @open-with-default-app="handleOpenWithDefaultApp"
+                @load-more="preview.loadMore"
+                @save-status="handleSaveStatusUpdate"
+              />
+            </div>
+
+            <!-- 终端标签页 -->
+            <div
+              v-for="tab in tabs"
+              :key="tab.id"
+              v-show="activeTabId === tab.id && tab.kind === 'terminal'"
+              class="h-full"
+            >
+              <TerminalTabContent
+                v-if="tab.kind === 'terminal' && tab.terminalId"
+                :terminal-id="tab.terminalId"
+              />
+            </div>
+
+            <!-- 自动化标签页 -->
+            <div
+              v-show="activeTabId === 'automation'"
+              class="h-full"
+            >
+              <AutomationTabContent />
+            </div>
+
+            <!-- 设置标签页 -->
+            <div
+              v-show="activeTabId === 'settings'"
+              class="h-full"
+            >
+              <SettingsTabContent />
+            </div>
+          </template>
+        </SplitGrid>
+      </main>
+    </div>
   </div>
 </template>
