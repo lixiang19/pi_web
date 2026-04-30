@@ -175,6 +175,7 @@ export function useFileTreeData(rootDir: () => string) {
 		visibleNodes,
 		isDirectoryExpanded,
 		isDirectoryLoading,
+		loadDirectory,
 		toggleDirectory,
 		expandToPath,
 		refreshTree,

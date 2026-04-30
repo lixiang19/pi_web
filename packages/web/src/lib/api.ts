@@ -16,6 +16,7 @@ import type {
 	FilePreviewWindowPayload,
 	FileSaveRequest,
 	FileSaveResponse,
+	FileTreeEntry,
 	FileTreeResponse,
 	FileUploadResponse,
 	GitBranchesResponse,
@@ -298,6 +299,13 @@ export function getFileTree(path?: string, root?: string) {
 
 	return request<FileTreeResponse>(
 		`/api/files/tree${params.size > 0 ? `?${params.toString()}` : ""}`,
+	);
+}
+
+export function searchFiles(root: string, query: string, limit = 50) {
+	const params = new URLSearchParams({ root, q: query, limit: String(limit) });
+	return request<{ entries: FileTreeEntry[] }>(
+		`/api/files/search?${params.toString()}`,
 	);
 }
 
@@ -662,6 +670,13 @@ export function createNoteFolder(folderPath?: string) {
 	});
 }
 
+export function createFile(relPath: string, content = "") {
+	return request<NoteCreateResponse>("/api/files/create", {
+		method: "POST",
+		body: JSON.stringify({ path: relPath, content }),
+	});
+}
+
 export interface RecentFileItem {
 	name: string;
 	path: string;
@@ -836,4 +851,3 @@ export function deleteBase(path: string) {
 		method: "DELETE",
 	});
 }
-

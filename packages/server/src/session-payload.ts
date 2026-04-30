@@ -3,13 +3,14 @@ import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import {
-	AuthStorage,
+	type AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
-	ModelRegistry,
+	type ModelRegistry,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import type { AutomationRule } from "@pi/protocol";
+import { normalizeThinkingLevel } from "./agents.js";
 import type { AutomationStore } from "./automations.js";
 import {
 	createFileManager,
@@ -21,8 +22,7 @@ import {
 	createPiAgentScopeSettingsManager,
 	getPiAgentScopeAgentDir,
 } from "./pi-resource-scope.js";
-import { createProjectContextResolver } from "./project-context.js";
-import { normalizeThinkingLevel } from "./agents.js";
+import type { createProjectContextResolver } from "./project-context.js";
 import {
 	applySessionAgentSelection,
 	createActiveSessionRecord,
@@ -39,16 +39,16 @@ import {
 	toSourceInfo,
 	updateStatus,
 } from "./session-context.js";
+import type {
+	IndexedSessionContextSummary,
+	IndexedSessionLookup,
+} from "./session-indexer.js";
 import {
 	getIndexedSessionContext,
 	getIndexedSessionLookup,
 	upsertIndexedSessionRecord,
 } from "./session-indexer.js";
 import { createTerminalManager } from "./terminal-runtime.js";
-import type {
-	IndexedSessionContextSummary,
-	IndexedSessionLookup,
-} from "./session-indexer.js";
 import type {
 	AskInteractiveRequest,
 	HttpError,
@@ -62,7 +62,7 @@ import type {
 } from "./types/index.js";
 import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
-import { getWorkspaceChatConfig } from "./workspace-chat.js";
+import type { getWorkspaceChatConfig } from "./workspace-chat.js";
 
 // ===== Dependency injection =====
 export interface SessionPayloadDeps {
@@ -83,12 +83,19 @@ export const initSessionPayload = (d: SessionPayloadDeps): void => {
 	Object.assign(deps, d);
 };
 
-export const fileManager = createFileManager({
-	defaultWorkspaceDir: deps.defaultWorkspaceDir,
-	ensureManagedProjectScope: async (candidatePath: string) => {
-		await ensureManagedProjectScope(candidatePath);
-	},
-});
+let fileManagerInstance: ReturnType<typeof createFileManager> | null = null;
+
+export const getFileManager = () => {
+	if (!fileManagerInstance) {
+		fileManagerInstance = createFileManager({
+			defaultWorkspaceDir: deps.defaultWorkspaceDir,
+			ensureManagedProjectScope: async (candidatePath: string) => {
+				await ensureManagedProjectScope(candidatePath);
+			},
+		});
+	}
+	return fileManagerInstance;
+};
 
 export const getAutomationStore = (): AutomationStore => {
 	const store = deps.automationStore as AutomationStore | null;

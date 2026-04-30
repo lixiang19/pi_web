@@ -76,6 +76,7 @@ onMounted(() => {
     :error="fileTreeError"
     :is-expanded="isDirectoryExpanded"
     :is-loading="isDirectoryLoading"
+    :root-path="rootPath"
     @select="handleSelect"
     @toggle-expand="handleToggleExpand"
     @toggle-favorite="handleToggleFavorite"

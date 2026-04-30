@@ -5,21 +5,29 @@ import type {
 	AgentSessionEvent,
 	DefaultResourceLoader,
 } from "@mariozechner/pi-coding-agent";
-import type { AutomationStore } from "./automations.js";
-import { compileAgentPermission } from "./agent-permissions.js";
-import { buildResolvedAskResult, createAskExtension } from "./ask-extension.js";
+import {
+	compileAgentPermission,
+	createPermissionGateExtension,
+} from "./agent-permissions.js";
 import {
 	type AgentConfigInternal,
 	discoverAgents,
 	getAgentConfigSignature,
 	normalizeThinkingLevel,
 } from "./agents.js";
-import { createPermissionGateExtension } from "./agent-permissions.js";
-import { createSubagentToolExtension } from "./subagents.js";
+import { buildResolvedAskResult, createAskExtension } from "./ask-extension.js";
+import type { AutomationStore } from "./automations.js";
+import {
+	isPathInsideRoot,
+	normalizeFsPath,
+	resolveExistingRealPath,
+} from "./file-manager.js";
 import {
 	createPiAgentScopeSettingsManager,
 	getPiAgentScopeAgentDir,
 } from "./pi-resource-scope.js";
+import { getProjects } from "./storage/index.js";
+import { createSubagentToolExtension } from "./subagents.js";
 import type {
 	AgentPermission,
 	AgentSummary,
@@ -41,17 +49,22 @@ import type {
 } from "./types/index.js";
 import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
+import { createWorkspaceChatProject } from "./workspace-chat.js";
 
 // ===== Dependency injection =====
 export interface SessionContextDeps {
 	modelRegistry: { refresh: () => void; getAvailable: () => Model<Api>[] };
 	authStorage: unknown;
-	sessionMetadataStore: { getMeta: (id: string) => Promise<unknown>; setMeta: (id: string, meta: unknown) => Promise<void> };
+	sessionMetadataStore: {
+		getMeta: (id: string) => Promise<unknown>;
+		setMeta: (id: string, meta: unknown) => Promise<void>;
+	};
 	activeSessions: Map<string, SessionRecord>;
 	openingSessionRecords: Map<string, Promise<SessionRecord>>;
 	defaultWorkspaceDir: string;
 	workspaceChatConfig: unknown;
 	projectContextResolver: { resolveContext: (cwd: string) => Promise<unknown> };
+	toSessionMessagesPayload: (record: any, options: any) => any;
 }
 
 const deps = {} as SessionContextDeps;
@@ -126,8 +139,10 @@ export const requestPendingPermission = async (
 		void emitSessionSnapshot(record);
 	});
 
-export const emitSessionSnapshot = async (record: SessionRecord): Promise<void> => {
-	const messagesPayload = toSessionMessagesPayload(record, {});
+export const emitSessionSnapshot = async (
+	record: SessionRecord,
+): Promise<void> => {
+	const messagesPayload = deps.toSessionMessagesPayload(record, {});
 	emit(record, {
 		type: "snapshot",
 		sessionId: record.id,
@@ -230,7 +245,10 @@ export const settlePendingAsk = async (
 	pendingAsk.resolve(buildResolvedAskResult(pendingAsk, answers, dismissed));
 };
 
-export const cancelPendingAsks = (record: SessionRecord, reason: string): void => {
+export const cancelPendingAsks = (
+	record: SessionRecord,
+	reason: string,
+): void => {
 	const pendingAsks = [...record.pendingAskRecords.values()];
 	record.pendingAskRecords.clear();
 	for (const pendingAsk of pendingAsks) {
@@ -325,10 +343,12 @@ export const serializeMessage = (
 
 export const getAvailableModels = (): Model<Api>[] => {
 	deps.modelRegistry.refresh();
-	return [...modelRegistry.getAvailable()];
+	return [...deps.modelRegistry.getAvailable()];
 };
 
-export const findModel = (modelSpec: string | undefined | null): Model<Api> | null => {
+export const findModel = (
+	modelSpec: string | undefined | null,
+): Model<Api> | null => {
 	const normalized = normalizeString(modelSpec);
 	if (!normalized) {
 		return null;
@@ -358,7 +378,9 @@ export interface SourceInfoOut {
 	baseDir?: string;
 }
 
-export const toSourceInfo = (sourceInfo: unknown): SourceInfoOut | undefined => {
+export const toSourceInfo = (
+	sourceInfo: unknown,
+): SourceInfoOut | undefined => {
 	if (!sourceInfo || typeof sourceInfo !== "object") {
 		return undefined;
 	}
@@ -422,7 +444,9 @@ export const serializeAgentSource = (agent: AgentConfigInternal): string =>
 	agent.sourceScope === "default"
 		? agent.source
 		: toPosixPath(path.resolve(agent.source));
-export const createAgentSummary = (agent: AgentConfigInternal): AgentSummary => ({
+export const createAgentSummary = (
+	agent: AgentConfigInternal,
+): AgentSummary => ({
 	name: agent.name,
 	description: agent.description,
 	displayName: agent.displayName,
@@ -641,7 +665,9 @@ export const applySessionAgentSelection = async (
 export const restoreSessionSelection = async (
 	record: SessionRecord,
 ): Promise<void> => {
-	const metadata = await deps.sessionMetadataStore.getSessionMetadata(record.id);
+	const metadata = await deps.sessionMetadataStore.getSessionMetadata(
+		record.id,
+	);
 	const selectedAgentName = normalizeString(metadata.agent);
 	const explicitModelSpec = normalizeString(metadata.model) || undefined;
 	const explicitThinkingLevel = normalizeThinkingLevel(metadata.thinkingLevel);
@@ -687,7 +713,9 @@ export const updateStatus = (
 	emit(record, { type: "status", status: resolvedStatus });
 };
 
-export const shouldForwardSessionEvent = (event: AgentSessionEvent): boolean => {
+export const shouldForwardSessionEvent = (
+	event: AgentSessionEvent,
+): boolean => {
 	if (
 		(event.type === "message_start" || event.type === "message_end") &&
 		event.message?.role === "user"
@@ -875,7 +903,9 @@ export interface ManagedProjectScope {
 	projectContext: ProjectContextInfo;
 }
 
-export const buildManagedProjectScopes = async (): Promise<ManagedProjectScope[]> => {
+export const buildManagedProjectScopes = async (): Promise<
+	ManagedProjectScope[]
+> => {
 	const state = await getProjects();
 	const managedProjects = [
 		createWorkspaceChatProject(deps.workspaceChatConfig),
@@ -952,4 +982,3 @@ export const ensureManagedProjectScope = async (
 	error.statusCode = 400;
 	throw error;
 };
-

@@ -1,9 +1,13 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
 	type NextFunction,
 	type Request,
 	type Response,
 	Router,
 } from "express";
+import { z } from "zod";
+import type { HttpError } from "../types/index.js";
 
 export interface CoreDeps {
 	app: unknown;
@@ -392,55 +396,104 @@ export function createCoreRouter(deps: CoreDeps) {
 	);
 
 	router.get(
-	"/api/workspace/recent-files",
-	async (req: Request, res: Response, next: NextFunction) => {
-		try {
-			const root =
-				typeof req.query.root === "string"
-					? req.query.root
-					: defaultWorkspaceDir;
-			const limit = Math.min(Number(req.query.limit) || 20, 50);
+		"/api/workspace/recent-files",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const root =
+					typeof req.query.root === "string"
+						? req.query.root
+						: defaultWorkspaceDir;
+				const limit = Math.min(Number(req.query.limit) || 20, 50);
 
-			const collectFiles = async (
-				dir: string,
-			): Promise<
-				Array<{
-					name: string;
-					path: string;
-					relativePath: string;
-					modifiedAt: number;
-					extension: string;
-					size: number | null;
-				}>
-			> => {
-				const entries = await fileManager.listDirectoryEntries(dir, root);
-				const files: Array<{
-					name: string;
-					path: string;
-					relativePath: string;
-					modifiedAt: number;
-					extension: string;
-					size: number | null;
-				}> = [];
-				for (const entry of entries) {
-					if (entry.kind === "file") {
-						files.push(entry);
-					} else if (entry.kind === "directory") {
-						const childFiles = await collectFiles(entry.path);
-						files.push(...childFiles);
+				const collectFiles = async (
+					dir: string,
+				): Promise<
+					Array<{
+						name: string;
+						path: string;
+						relativePath: string;
+						modifiedAt: number;
+						extension: string;
+						size: number | null;
+					}>
+				> => {
+					const entries = await fileManager.listDirectoryEntries(dir, root);
+					const files: Array<{
+						name: string;
+						path: string;
+						relativePath: string;
+						modifiedAt: number;
+						extension: string;
+						size: number | null;
+					}> = [];
+					for (const entry of entries) {
+						if (entry.kind === "file") {
+							files.push(entry);
+						} else if (entry.kind === "directory") {
+							const childFiles = await collectFiles(entry.path);
+							files.push(...childFiles);
+						}
 					}
-				}
-				return files;
-			};
+					return files;
+				};
 
-			const allFiles = await collectFiles(root);
-			allFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
+				const allFiles = await collectFiles(root);
+				allFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
 
-			res.json({ files: allFiles.slice(0, limit) });
-		} catch (error) {
-			next(error);
-		}
-	});
+				res.json({ files: allFiles.slice(0, limit) });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
+
+	router.get(
+		"/api/files/search",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const searchQuerySchema = z.object({
+					root: z.string().optional(),
+					path: z.string().optional(),
+					q: z.string().min(1).max(200),
+					limit: z.coerce.number().int().min(1).max(100).optional(),
+				});
+				const parsed = searchQuerySchema.parse(req.query ?? {});
+				const searchQueryStr = parsed.q;
+				const limit = parsed.limit ?? 50;
+
+				const { rootPath } = await fileManager.resolveManagedFileLocation({
+					root: parsed.root,
+					fallbackToRoot: true,
+				});
+
+				const results: Array<{
+					kind: string;
+					path: string;
+					[key: string]: unknown;
+				}> = [];
+				const queryLower = searchQueryStr.toLowerCase();
+
+				const searchDir = async (dir: string, depth: number): Promise<void> => {
+					if (results.length >= limit || depth > 10) return;
+					const entries = await fileManager.listDirectoryEntries(dir, rootPath);
+					for (const entry of entries) {
+						if (results.length >= limit) return;
+						if (entry.name.toLowerCase().includes(queryLower)) {
+							results.push(entry);
+						}
+						if (entry.kind === "directory") {
+							await searchDir(entry.path, depth + 1);
+						}
+					}
+				};
+
+				await searchDir(rootPath, 0);
+				res.json({ entries: results });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
 
 	return router;
 }

@@ -1,12 +1,78 @@
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
-import type { HttpError } from "../types/index.js";
+import type {
+	FilePreviewPayload,
+	FilePreviewWindowPayload,
+	HttpError,
+} from "../types/index.js";
+import { normalizeOptionalFsPath } from "./file-manager.js";
+import { getFileManager } from "./session-payload.js";
+import { toPosixPath } from "./utils/paths.js";
 
 // File preview utilities
+
+export const MAX_FILE_PREVIEW_BYTES = 5 * 1024 * 1024;
+const UTF8_SNIFF_BYTES = 100 * 1024;
+export const LARGE_FILE_PREVIEW_LINE_COUNT = 1000;
+
+export const imageMimeTypesByExtension = new Map<string, string>([
+	[".avif", "image/avif"],
+	[".bmp", "image/bmp"],
+	[".gif", "image/gif"],
+	[".jpeg", "image/jpeg"],
+	[".jpg", "image/jpeg"],
+	[".png", "image/png"],
+	[".svg", "image/svg+xml"],
+	[".webp", "image/webp"],
+]);
+
+const markdownExtensions = new Set([".md", ".markdown"]);
+const htmlExtensions = new Set([".htm", ".html"]);
+const codeExtensions = new Set([
+	".astro",
+	".bash",
+	".c",
+	".cc",
+	".cpp",
+	".css",
+	".cts",
+	".cxx",
+	".go",
+	".h",
+	".hpp",
+	".ini",
+	".java",
+	".js",
+	".json",
+	".jsx",
+	".kt",
+	".less",
+	".lua",
+	".mjs",
+	".mts",
+	".php",
+	".py",
+	".rb",
+	".rs",
+	".scss",
+	".sh",
+	".sql",
+	".swift",
+	".toml",
+	".ts",
+	".tsx",
+	".vue",
+	".xml",
+	".yaml",
+	".yml",
+	".zsh",
+]);
+const codeFileNames = new Set(["dockerfile"]);
 
 const execFileAsync = promisify(execFile);
 
@@ -34,7 +100,7 @@ export const ensureFileForPreview = async (options: {
 	stats: Awaited<ReturnType<typeof fs.stat>>;
 }> => {
 	const { rootPath, targetPath } =
-		await fileManager.resolveManagedFileLocation(options);
+		await getFileManager().resolveManagedFileLocation(options);
 	const stats = await fs.stat(targetPath);
 
 	if (!stats.isFile()) {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import {
-	BookOpen,
 	CheckSquare,
 	Circle,
 	CircleDot,
@@ -11,6 +10,7 @@ import {
 	Calendar,
 } from "lucide-vue-next";
 
+import { fileIconByExtension } from "@/composables/useFileIcons";
 import { Button } from "@/components/ui/button";
 import { useDashboard } from "@/composables/useDashboard";
 import { useWorkspaceTasks } from "@/composables/useWorkspaceTasks";
@@ -50,13 +50,6 @@ const formatDate = (timestamp: number) =>
 		hour: "2-digit",
 		minute: "2-digit",
 	}).format(timestamp);
-
-const fileIcon = (ext: string) => {
-	if (ext === ".md") return FileText;
-	if (ext === ".canvas") return BookOpen;
-	if (ext === ".base") return CheckSquare;
-	return FileText;
-};
 
 const handleJournalAction = () => {
 	if (hasTodayJournal.value) {
@@ -204,7 +197,7 @@ const priorityDot = (p: string) =>
             class="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
             @click="emit('open-file', file.path)"
           >
-            <component :is="fileIcon(file.extension)" class="size-4 shrink-0 text-muted-foreground" />
+            <component :is="fileIconByExtension(file.extension)" class="size-4 shrink-0 text-muted-foreground" />
             <span class="min-w-0 flex-1 truncate text-sm text-foreground">{{ file.name }}</span>
             <span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">
               {{ formatDate(file.modifiedAt) }}

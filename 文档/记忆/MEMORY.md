@@ -104,3 +104,24 @@
 - [createNote 必须支持路径] 后端 createNote API 必须增强支持指定子目录路径，否则日记（日记/YYYY/MM/）、闪念（收件箱/）都无法正确创建
 - [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
 - [反思先行] 每个里程碑完成后必须做功能反思，确认每个子功能真的可端到端跑通，而非"调 API 了就当完成"。见 `文档/功能开发/2026-04-28_工作空间功能反思.md`
+
+## 2026-04-29 文件树修复与功能完善
+
+### 成功点
+
+- 根因是 session-payload.ts 的 fileManager 在模块加载时创建（deps 未初始化）+ session-context.ts 缺失 5 个 import，导致运行时 ReferenceError
+- 使用懒初始化函数 getFileManager() 模式解决模块级常量依赖注入时序问题
+- deps 回调注入方式解决循环依赖（session-context ↔ session-payload）
+- shadcn-vue ContextMenu/AlertDialog 已在 InboxView 中有参考实现，复用到 FileTreePanel 很顺畅
+- 文件类型图标提取为公共 composable，FileTreePanel 和 DashboardView 共用
+
+### 改进点
+
+- esbuild/tsx 不做类型检查，模块拆分时遗漏 import 只在运行时暴露，应增加 tsc --noEmit CI 检查
+- 后端 API 安全校验不统一（notes.ts 和 file-manager.ts 各自实现 ensureWithinRoot），应统一
+- fileManager 懒初始化模式应考虑重置场景（如 workspaceDir 变化时）
+
+### 阻塞点
+
+- core.ts 使用 fs.stat/path.resolve 但未 import（与 session-context 同源问题：从 index.ts 拆出时未携带 import）
+- index.ts 大量预存未使用 import，eslint 报错但属于历史代码

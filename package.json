@@ -20,7 +20,8 @@
     "lint:fix": "eslint . --ext .ts,.vue --fix",
     "typecheck": "npm run check --workspace @pi/web",
     "check": "npm run lint && npm run typecheck",
-    "check:fix": "npm run lint:fix && npm run typecheck"
+    "check:fix": "npm run lint:fix && npm run typecheck",
+    "test": "pnpm -r run test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

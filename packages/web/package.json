@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "check": "vue-tsc --noEmit -p tsconfig.app.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.2.7",
@@ -46,6 +48,7 @@
     "vue-stream-markdown": "0.7.0-beta.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^24.12.2",
     "@vitejs/plugin-vue": "^6.0.5",

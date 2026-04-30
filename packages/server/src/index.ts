@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { createReadStream, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
@@ -68,9 +69,10 @@ import {
 	getPiAgentScopeAgentDir,
 } from "./pi-resource-scope.js";
 import { createProjectContextResolver } from "./project-context.js";
+import { createCoreRouter } from "./routes/core.js";
 import { createGitRouter } from "./routes/git.js";
 import { createSystemRouter } from "./routes/system.js";
-import { createCoreRouter } from "./routes/core.js";
+import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
 import { createWorkspaceTasksRouter } from "./routes/workspace-tasks.js";
 import { createWorktreeRouter } from "./routes/worktrees.js";
 import type {
@@ -137,7 +139,6 @@ import {
 	resolveDefaultWorkspaceDir,
 } from "./workspace-chat.js";
 import { createWorktreeService } from "./worktree-service.js";
-import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
 
 const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
 	explicitWorkspaceDir: process.env.PI_WORKSPACE_DIR,
@@ -147,7 +148,7 @@ const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 const workspaceChatConfig = getWorkspaceChatConfig(defaultWorkspaceDir);
 
-const app = express();
+export const app = express();
 app.use(cors());
 app.use(express.json({ limit: "6mb" }));
 const upload = multer({
@@ -387,65 +388,20 @@ const createProjectSchema = z.object({
 
 // ===== Constants =====
 const DEFAULT_SESSION_ROUND_WINDOW = 3;
-const MAX_FILE_PREVIEW_BYTES = 5 * 1024 * 1024;
-const LARGE_FILE_PREVIEW_LINE_COUNT = 1000;
-
 const markdownExtensions = new Set([".md", ".markdown"]);
 const htmlExtensions = new Set([".htm", ".html"]);
-const codeExtensions = new Set([
-	".astro",
-	".bash",
-	".c",
-	".cc",
-	".cpp",
-	".css",
-	".cts",
-	".cxx",
-	".go",
-	".h",
-	".hpp",
-	".ini",
-	".java",
-	".js",
-	".json",
-	".jsx",
-	".kt",
-	".less",
-	".lua",
-	".mjs",
-	".mts",
-	".php",
-	".py",
-	".rb",
-	".rs",
-	".scss",
-	".sh",
-	".sql",
-	".swift",
-	".toml",
-	".ts",
-	".tsx",
-	".vue",
-	".xml",
-	".yaml",
-	".yml",
-	".zsh",
-]);
-const codeFileNames = new Set(["dockerfile"]);
-const imageMimeTypesByExtension = new Map<string, string>([
-	[".avif", "image/avif"],
-	[".bmp", "image/bmp"],
-	[".gif", "image/gif"],
-	[".jpeg", "image/jpeg"],
-	[".jpg", "image/jpeg"],
-	[".png", "image/png"],
-	[".svg", "image/svg+xml"],
-	[".webp", "image/webp"],
-]);
 
+import {
+	buildFilePreviewPayload,
+	buildFilePreviewWindowPayload,
+	ensureFileForPreview,
+	imageMimeTypesByExtension,
+	openWithDefaultApp,
+	resolveDiscoveryCwd,
+	toFileSize,
+} from "./file-preview.js";
 // ===== Session Modules =====
 import {
-	initSessionContext,
 	applySessionAgentSelection,
 	cancelPendingPermissions,
 	createAgentConfigResponse,
@@ -454,6 +410,7 @@ import {
 	destroySessionRecord,
 	emit,
 	ensureManagedProjectScope,
+	initSessionContext,
 	listProviders,
 	normalizeAskAnswers,
 	persistSessionRecordMetadata,
@@ -463,28 +420,21 @@ import {
 	updateStatus,
 } from "./session-context.js";
 import {
-	initSessionPayload,
 	buildResourceCatalog,
 	createTransientCatalogSession,
 	dispatchAutomationRule,
 	ensureSessionRecord,
-	fileManager,
 	getAutomationStore,
+	getFileManager,
 	getIndexedSessionLookupOrThrow,
 	getStoredSessionMessagesPayload,
 	getStoredSessionRuntimePayload,
+	initSessionPayload,
 	terminalManager,
 	toSessionMessagesPayload,
 	toSessionRuntimePayload,
 	toSessionSnapshot,
 } from "./session-payload.js";
-import {
-	buildFilePreviewPayload,
-	ensureFileForPreview,
-	openWithDefaultApp,
-	resolveDiscoveryCwd,
-	toFileSize,
-} from "./file-preview.js";
 
 // Initialize session modules
 initSessionContext({
@@ -496,6 +446,7 @@ initSessionContext({
 	defaultWorkspaceDir,
 	workspaceChatConfig,
 	projectContextResolver,
+	toSessionMessagesPayload,
 });
 initSessionPayload({
 	defaultWorkspaceDir,
@@ -520,6 +471,50 @@ app.post("/api/notes", notesRouter.createNote);
 app.post("/api/notes/folder", notesRouter.createNoteFolder);
 app.patch("/api/notes/rename", notesRouter.renameNote);
 app.delete("/api/notes", notesRouter.deleteNote);
+
+// ===== Generic File Create (non-markdown) =====
+app.post(
+	"/api/files/create",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const { path: relPath, content } = req.body ?? {};
+			if (!relPath || typeof relPath !== "string") {
+				const error = new Error("path is required") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			const trimmed = relPath.trim();
+			const targetPath = path.resolve(defaultWorkspaceDir, trimmed);
+			const rootReal = await fs.realpath(
+				await fs.access(defaultWorkspaceDir).then(
+					() => defaultWorkspaceDir,
+					() => defaultWorkspaceDir,
+				),
+			);
+			const parentDir = path.dirname(targetPath);
+			await fs.mkdir(parentDir, { recursive: true });
+			const parentReal = await fs.realpath(parentDir);
+			if (!parentReal.startsWith(rootReal)) {
+				const error = new Error("Path escapes workspace") as HttpError;
+				error.statusCode = 403;
+				throw error;
+			}
+			await fs.writeFile(targetPath, content ?? "", "utf-8");
+			const stats = await fs.stat(targetPath);
+			res.status(201).json({
+				name: path.basename(targetPath),
+				path: targetPath.replace(/\\/g, "/"),
+				relativePath: path
+					.relative(defaultWorkspaceDir, targetPath)
+					.replace(/\\/g, "/"),
+				size: stats.size,
+				updatedAt: stats.mtimeMs,
+			});
+		} catch (error) {
+			next(error);
+		}
+	},
+);
 
 // ===== System & Terminals =====
 const systemRouter = createSystemRouter({
@@ -550,7 +545,7 @@ const coreRouter = createCoreRouter({
 	ensureSessionRecord,
 	buildResourceCatalog,
 	createTransientCatalogSession,
-	fileManager,
+	fileManager: getFileManager(),
 	normalizeString,
 	toPosixPath,
 	agentScopeQuerySchema,
@@ -568,7 +563,7 @@ app.use("/api/workspace/tasks", workspaceTasksRouter);
 // ===== Workspace Data Routes =====
 const workspaceDataRouter = createWorkspaceDataRouter({
 	defaultWorkspaceDir,
-	fileManager,
+	fileManager: getFileManager(),
 	openWithDefaultApp,
 	upload,
 	fileEntryCreateSchema,
@@ -694,7 +689,7 @@ app.get(
 			}
 
 			const entries = (
-				await fileManager.listDirectoryEntries(targetPath, homeDir)
+				await getFileManager().listDirectoryEntries(targetPath, homeDir)
 			).filter(
 				(entry) => entry.kind === "directory" && !entry.name.startsWith("."),
 			);
@@ -1233,6 +1228,10 @@ const gitRouter = createGitRouter({
 app.use("/api/git", gitRouter);
 // ===== Error Handler =====
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+	if (error instanceof z.ZodError) {
+		res.status(400).json({ error: error.issues });
+		return;
+	}
 	const statusCode = Number.isInteger((error as HttpError)?.statusCode)
 		? (error as HttpError).statusCode
 		: 500;
@@ -1241,50 +1240,61 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 	res.status(statusCode as number).send(message);
 });
 
-const httpServer = createServer(app);
-const terminalWebSocketServer = new WebSocketServer({ noServer: true });
+export async function startServer() {
+	const httpServer = createServer(app);
+	const terminalWebSocketServer = new WebSocketServer({ noServer: true });
 
-httpServer.on("upgrade", (request, socket, head) => {
-	const host = request.headers.host || `127.0.0.1:${port}`;
-	const url = new URL(request.url || "/", `http://${host}`);
-	const match = url.pathname.match(/^\/api\/terminals\/([^/]+)\/stream$/);
+	httpServer.on("upgrade", (request, socket, head) => {
+		const host = request.headers.host || `127.0.0.1:${port}`;
+		const url = new URL(request.url || "/", `http://${host}`);
+		const match = url.pathname.match(/^\/api\/terminals\/([^/]+)\/stream$/);
 
-	if (!match) {
-		socket.destroy();
-		return;
-	}
+		if (!match) {
+			socket.destroy();
+			return;
+		}
 
-	const terminalId = decodeURIComponent(match[1]);
-	if (!terminalManager.hasTerminal(terminalId)) {
-		socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
-		socket.destroy();
-		return;
-	}
+		const terminalId = decodeURIComponent(match[1]);
+		if (!terminalManager.hasTerminal(terminalId)) {
+			socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+			socket.destroy();
+			return;
+		}
 
-	terminalWebSocketServer.handleUpgrade(request, socket, head, (ws) => {
-		terminalManager.attachSocket(terminalId, ws);
-		terminalWebSocketServer.emit("connection", ws, request);
-	});
-});
-
-// ===== Start Server =====
-void initializeRidgeDb(defaultWorkspaceDir)
-	.then(async (db) => {
-		automationStore = createAutomationStore(db);
-		automationScheduler = createAutomationScheduler({
-			store: automationStore,
-			dispatchRule: async (rule) => {
-				await dispatchAutomationRule(rule);
-				await refreshSessionCatalogIndex();
-			},
+		terminalWebSocketServer.handleUpgrade(request, socket, head, (ws) => {
+			terminalManager.attachSocket(terminalId, ws);
+			terminalWebSocketServer.emit("connection", ws, request);
 		});
-		automationScheduler.start();
-		await refreshSessionCatalogIndex();
+	});
+
+	const db = await initializeRidgeDb(defaultWorkspaceDir);
+	automationStore = createAutomationStore(db);
+	automationScheduler = createAutomationScheduler({
+		store: automationStore,
+		dispatchRule: async (rule) => {
+			await dispatchAutomationRule(rule);
+			await refreshSessionCatalogIndex();
+		},
+	});
+	automationScheduler.start();
+	await refreshSessionCatalogIndex();
+
+	return new Promise<void>((resolve) => {
 		httpServer.listen(port, () => {
 			console.warn(`Pi server listening on http://127.0.0.1:${port}`);
+			resolve();
 		});
-	})
-	.catch((error) => {
+	});
+}
+
+const isMainModule =
+	process.argv[1] &&
+	realpathSync(fileURLToPath(import.meta.url)) ===
+		realpathSync(path.resolve(process.argv[1]));
+
+if (isMainModule) {
+	startServer().catch((error) => {
 		console.error("Failed to initialize ridge.db", error);
 		process.exit(1);
 	});
+}

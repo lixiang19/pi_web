@@ -31,7 +31,6 @@ import { useProjectWorktrees } from "@/composables/useProjectWorktrees";
 import { useProjects } from "@/composables/useProjects";
 import { useSessionLruPool } from "@/composables/useSessionLruPool";
 import {
-  newChatNavItem,
   useWorkbenchPrimaryNavigation,
 } from "@/composables/useWorkbenchPrimaryNavigation";
 import { buildSidebarProjects } from "@/lib/session-sidebar";
@@ -269,18 +268,6 @@ onMounted(() => {
     <Sidebar collapsible="none" class="w-full border-r bg-sidebar">
       <SidebarContent class="flex min-h-0 flex-col px-2 py-3">
         <SidebarMenu class="space-y-0.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              class="h-8 gap-2.5 rounded-md px-2.5 font-semibold"
-              :is-active="navigation.isChatRoute.value && lru.isViewingDraft.value"
-              :disabled="isSending"
-              @click="navigation.createChat({})"
-            >
-              <component :is="newChatNavItem.icon" class="size-4" />
-              <span>{{ newChatNavItem.label }}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-
           <SidebarMenuItem
             v-for="item in topPrimaryNavItems"
             :key="item.route"
