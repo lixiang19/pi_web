@@ -46,6 +46,8 @@
 - [草稿标签] 多标签工作台不能把“打开标签”和“创建服务端 session”合并；新建会话必须先落在前端草稿标签，cwd 继承链至少保持 payload -> 当前活动标签 -> workspaceDir
 - [Composable契约] 组合层 composable 如果只依赖少数字段，就声明最小状态接口；不要把整个 composable ReturnType 暴露给调用方，更不要用 Ref<object> 去伪装对象属性是 Ref 的契约
 - [会话真源] 工作台会话显示状态只能有一个真源；组件 props、tab 状态、聊天实例三处同时持有会话身份时，草稿转正式会话一定会失真
+- [目标到会话] Phase 1 目标入口只在 DashboardView；Goal 复用 Task，可选 `kind/sessionId/source` 关联 Pi session，旧 task 无需迁移；session 失效只能提示，不能静默新建覆盖。
+- [笔记可靠性] markdown 编辑器保存失败必须保留当前输入并给出可见重试；关闭 `unsaved/saving/error` 文件标签先阻止并提示，不能静默丢内容。
 - [LRU 生命周期] LRU 池模型下，SSE 是否保持连接取决于“会话是否还在池里”，不能再取决于“当前是否可见”
 - [LRU布局] 草稿会话和正式会话池必须共享同一个会话舞台；隐藏实例只能在舞台内 `v-show`，外层不能作为多个 `flex-1` 兄弟节点参与布局
 - [草稿语义] 如果产品要求“新建草稿独立存在、切换即丢失”，就必须在创建草稿时主动清空 `null draft`，否则旧草稿会通过共享状态偷偷恢复
@@ -128,3 +130,10 @@
 
 - core.ts 使用 fs.stat/path.resolve 但未 import（与 session-context 同源问题：从 index.ts 拆出时未携带 import）
 - index.ts 大量预存未使用 import，eslint 报错但属于历史代码
+
+## 2026-05-01 task #13 任务 SQLite 真源最小实现
+
+- task #13 是任务系统当前唯一 canonical 实现任务；旧 #8/#9/#10 不再推进。
+- 实现口径：`SqliteTaskRepository` 作为 `/api/workspace/tasks` 底层真源，写入 `<workspace>/.ridge/ridge.db` 的 `tasks` 表。
+- 不读取/写入/迁移/兼容 `.ridge/tasks.json`；不改 UI、不接 AI 工具、不做 `ai_operations` 或 RAG 投影。
+- 新增 spec：`文档/spec/任务系统SQLite真源最小实现.spec.md`。

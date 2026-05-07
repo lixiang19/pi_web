@@ -17,6 +17,9 @@ export type TaskItem = {
 	tags: string[];
 	createdAt: number;
 	updatedAt: number;
+	kind?: "goal" | "task";
+	sessionId?: string;
+	source?: "dashboard";
 };
 
 // Provide/Inject key for shared task store
@@ -102,6 +105,9 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		priority?: string;
 		dueDate?: number;
 		tags?: string[];
+		kind?: "goal" | "task";
+		sessionId?: string;
+		source?: "dashboard";
 	}) => {
 		try {
 			const res = await createWorkspaceTask({
@@ -111,6 +117,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 			tasks.value.unshift(res.task as TaskItem);
 			updatedAt.value = res.updatedAt;
 			toast.success("任务已创建");
+			return res.task as TaskItem;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			if (message.includes("409")) {
@@ -119,6 +126,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 			} else {
 				toast.error("创建任务失败", { description: message });
 			}
+			throw err;
 		}
 	};
 
@@ -174,6 +182,9 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 			priority?: string;
 			dueDate?: number | null;
 			tags?: string[];
+			kind?: "goal" | "task";
+			sessionId?: string;
+			source?: "dashboard";
 		},
 	) => {
 		const target = tasks.value.find((t) => t.id === taskId);
@@ -184,6 +195,9 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 				target.priority = data.priority as TaskItem["priority"];
 			if (data.dueDate !== undefined) target.dueDate = data.dueDate;
 			if (data.tags !== undefined) target.tags = data.tags;
+			if (data.kind !== undefined) target.kind = data.kind;
+			if (data.sessionId !== undefined) target.sessionId = data.sessionId;
+			if (data.source !== undefined) target.source = data.source;
 			target.updatedAt = Date.now();
 		}
 

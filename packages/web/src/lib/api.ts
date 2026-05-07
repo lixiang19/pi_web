@@ -703,6 +703,9 @@ export interface WorkspaceTask {
 	tags: string[];
 	createdAt: number;
 	updatedAt: number;
+	kind?: "goal" | "task";
+	sessionId?: string;
+	source?: "dashboard";
 }
 
 export interface TasksListResponse {
@@ -719,6 +722,9 @@ export function createWorkspaceTask(data: {
 	priority?: string;
 	dueDate?: number;
 	tags?: string[];
+	kind?: "goal" | "task";
+	sessionId?: string;
+	source?: "dashboard";
 	_expectedUpdatedAt?: number;
 }) {
 	return request<{ task: WorkspaceTask; updatedAt: number }>(
@@ -738,6 +744,9 @@ export function updateWorkspaceTask(
 		priority?: string;
 		dueDate?: number | null;
 		tags?: string[];
+		kind?: "goal" | "task";
+		sessionId?: string;
+		source?: "dashboard";
 		_expectedUpdatedAt?: number;
 	},
 ) {

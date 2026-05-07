@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onBeforeUnmount, ref } from "vue";
 import { LoaderCircle } from "lucide-vue-next";
+import { toast } from "vue-sonner";
 
 import NoteMilkdownEditor from "@/components/workspace/NoteMilkdownEditor.vue";
+import { Button } from "@/components/ui/button";
 import { getNoteContent, saveNoteContent } from "@/lib/api";
 
 const AUTO_SAVE_DELAY_MS = 2000;
@@ -58,7 +60,7 @@ const scheduleAutoSave = () => {
 
 const flushAutoSave = async () => {
 	clearSaveTimer();
-	if (saveStatus.value !== "unsaved") return;
+	if (saveStatus.value !== "unsaved" && saveStatus.value !== "error") return true;
 
 	saveStatus.value = "saving";
 	emit("update:save-status", saveStatus.value);
@@ -68,11 +70,19 @@ const flushAutoSave = async () => {
 		savedContent.value = content.value;
 		saveStatus.value = "saved";
 		saveError.value = "";
+		emit("update:save-status", saveStatus.value);
+		return true;
 	} catch (err) {
 		saveError.value = err instanceof Error ? err.message : String(err);
 		saveStatus.value = "error";
+		toast.error("笔记保存失败", { description: saveError.value });
+		emit("update:save-status", saveStatus.value);
+		return false;
 	}
-	emit("update:save-status", saveStatus.value);
+};
+
+const handleRetrySave = () => {
+	void flushAutoSave();
 };
 
 const clearSaveTimer = () => {
@@ -85,6 +95,14 @@ const clearSaveTimer = () => {
 
 // 暴露给父组件
 defineExpose({ flushAutoSave });
+
+onBeforeUnmount(() => {
+	if (saveStatus.value === "unsaved") {
+		void flushAutoSave();
+		return;
+	}
+	clearSaveTimer();
+});
 
 loadContent();
 </script>
@@ -100,11 +118,29 @@ loadContent();
       正在加载笔记...
     </div>
 
-    <!-- 编辑器 -->
-    <NoteMilkdownEditor
-      v-else
-      :content="content"
-      @markdown-updated="handleMarkdownUpdated"
-    />
+    <div v-else class="flex h-full min-h-0 flex-col">
+      <div class="flex shrink-0 items-center justify-between border-b border-border/40 px-3 py-2 text-xs text-muted-foreground">
+        <span data-test="save-status">
+          <template v-if="saveStatus === 'unsaved'">未保存</template>
+          <template v-else-if="saveStatus === 'saving'">保存中...</template>
+          <template v-else-if="saveStatus === 'error'">保存失败</template>
+          <template v-else>已保存</template>
+        </span>
+        <div v-if="saveStatus === 'error'" class="flex items-center gap-2">
+          <span data-test="save-error" class="max-w-[24rem] truncate text-destructive">
+            {{ saveError }}
+          </span>
+          <Button data-test="retry-save" variant="outline" size="sm" class="h-7 text-xs" @click="handleRetrySave">
+            重试保存
+          </Button>
+        </div>
+      </div>
+      <!-- 编辑器 -->
+      <NoteMilkdownEditor
+        :content="content"
+        class="min-h-0 flex-1"
+        @markdown-updated="handleMarkdownUpdated"
+      />
+    </div>
   </div>
 </template>

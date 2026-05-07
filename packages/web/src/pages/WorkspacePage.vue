@@ -24,6 +24,7 @@ import GitChangesView from "@/components/workspace/GitChangesView.vue";
 import TerminalTabContent from "@/components/workspace/TerminalTabContent.vue";
 import AutomationTabContent from "@/components/workspace/AutomationTabContent.vue";
 import SettingsTabContent from "@/components/workspace/SettingsTabContent.vue";
+import SessionTabContent from "@/components/workbench/SessionTabContent.vue";
 import WorkspaceTopMenu from "@/components/workspace/WorkspaceTopMenu.vue";
 import SplitGrid from "@/components/workspace/split/SplitGrid.vue";
 import { useFileTreeData } from "@/composables/useFileTreeData";
@@ -43,11 +44,12 @@ import { usePiChatCore } from "@/composables/usePiChatCore";
 import { useTerminalContextOptions } from "@/composables/useTerminalContextOptions";
 import { useTerminalPool } from "@/composables/useTerminalPool";
 import { useFavoritesStore } from "@/stores/favorites";
-import { createNote, createNoteFolder, createFile, createBase, getRecentFiles, type RecentFileItem, moveFileEntry, trashFileEntry, createFileEntry } from "@/lib/api";
+import { createNote, createNoteFolder, createFile, createBase, getRecentFiles, type RecentFileItem, moveFileEntry, trashFileEntry, createFileEntry, createSession, sendMessage, getSessionHydrate } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { FileTreeEntry } from "@/lib/types";
+import { toast } from "vue-sonner";
 
 const core = usePiChatCore();
 const favoritesStore = useFavoritesStore();
@@ -57,7 +59,7 @@ const terminalContextOptions = useTerminalContextOptions();
 const workspaceDir = computed(() => core.info.value?.workspaceDir ?? "");
 
 // 共享任务 store
-provideWorkspaceTasks(() => workspaceDir.value);
+const workspaceTasks = provideWorkspaceTasks(() => workspaceDir.value);
 
 // 共享收件箱 store
 provideWorkspaceInbox(() => workspaceDir.value);
@@ -174,6 +176,55 @@ function handleSelectView(viewId: string) {
 	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
 }
 
+function openSessionTab(sessionId: string, title?: string) {
+	const tab: SplitTabItem = {
+		id: `session-${sessionId}`,
+		title: title ?? "Pi 会话",
+		kind: "session",
+		sessionId,
+		status: "idle",
+	};
+	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
+}
+
+async function handleCreateGoal(goal: string) {
+	const target = goal.trim();
+	if (!target || !workspaceDir.value) return;
+
+	try {
+		const task = await workspaceTasks.addTask({
+			title: target,
+			kind: "goal",
+			source: "dashboard",
+		});
+		const session = await createSession({
+			cwd: workspaceDir.value,
+			title: target,
+		});
+		await workspaceTasks.updateTask(task.id, { sessionId: session.id });
+		await sendMessage(session.id, { prompt: target });
+		await core.refreshSessions();
+		openSessionTab(session.id, session.title || target);
+	} catch (error) {
+		toast.error("创建协作目标失败", {
+			description: error instanceof Error ? error.message : String(error),
+		});
+	}
+}
+
+async function handleOpenGoalSession(sessionId: string) {
+	if (!sessionId) return;
+	try {
+		const payload = await getSessionHydrate(sessionId);
+		const session = core.sessions.value.find((item) => item.id === sessionId);
+		openSessionTab(sessionId, session?.title || payload.sessionId);
+	} catch {
+		toast.error("关联会话已失效", {
+			description: "该目标关联的 Pi 会话不存在或已被删除，请手动修复关联。",
+		});
+	}
+}
+
 /** 打开文件标签页到当前活跃面板 */
 function handleSelectFile(entry: FileTreeEntry) {
 	if (entry.kind === "directory") {
@@ -268,6 +319,13 @@ function handleCloseTab(paneGroupId: string, tabId: string) {
 	// 同步关闭文件预览
 	const tab = splitPanes.findTabAcrossPanes(tabId)?.tab;
 	if (tab?.kind === "file") {
+		const status = saveStatusMap.value[tabId];
+		if (status === "unsaved" || status === "saving" || status === "error") {
+			toast.error("笔记尚未保存完成", {
+				description: "请等待自动保存完成，或在保存失败时重试后再关闭。",
+			});
+			return;
+		}
 		preview.closeTab(tabId);
 	}
 	splitPanes.closeTab(paneGroupId, tabId);
@@ -586,6 +644,8 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
                 @create-inbox-note="handleCreateNote('收件箱')"
                 @open-tasks-view="handleSelectView('tasks')"
                 @open-inbox-view="handleSelectView('inbox')"
+                @create-goal="handleCreateGoal"
+                @open-goal-session="handleOpenGoalSession"
               />
             </div>
 
@@ -640,6 +700,22 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
                 @open-with-default-app="handleOpenWithDefaultApp"
                 @load-more="preview.loadMore"
                 @save-status="handleSaveStatusUpdate"
+              />
+            </div>
+
+            <!-- 会话标签页 -->
+            <div
+              v-for="tab in tabs"
+              :key="tab.id"
+              v-show="activeTabId === tab.id && tab.kind === 'session'"
+              class="h-full"
+            >
+              <SessionTabContent
+                v-if="tab.kind === 'session' && tab.sessionId"
+                :tab-id="tab.id"
+                :session-id="tab.sessionId"
+                initial-cwd=""
+                initial-parent-session-id=""
               />
             </div>
 

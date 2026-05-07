@@ -21,9 +21,10 @@ export type GridNode = PaneGroup | SplitContainer;
 export interface SplitTabItem {
 	id: string;
 	title: string;
-	kind: "view" | "file" | "home" | "terminal" | "automation" | "settings";
+	kind: "view" | "file" | "home" | "session" | "terminal" | "automation" | "settings";
 	viewId?: string;
 	filePath?: string;
+	sessionId?: string;
 	terminalId?: string;
 	status?: "idle" | "saving" | "unsaved" | "error" | "loading";
 	onClose?: (tab: SplitTabItem) => void;
@@ -39,6 +40,7 @@ export type SerializableGridNode =
 				kind: string;
 				viewId?: string;
 				filePath?: string;
+				sessionId?: string;
 				terminalId?: string;
 				title: string;
 			}[];
@@ -496,6 +498,7 @@ function serializeNode(node: GridNode): SerializableGridNode {
 				kind: t.kind,
 				viewId: t.viewId,
 				filePath: t.filePath,
+				sessionId: t.sessionId,
 				terminalId: t.terminalId,
 				title: t.title,
 			})),
@@ -524,6 +527,7 @@ function deserializeNode(node: SerializableGridNode): GridNode {
 				kind: t.kind as SplitTabItem["kind"],
 				viewId: t.viewId,
 				filePath: t.filePath,
+				sessionId: t.sessionId,
 				terminalId: t.terminalId,
 				status: "idle" as const,
 			})),

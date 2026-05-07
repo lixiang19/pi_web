@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import {
 	CheckSquare,
 	Circle,
 	CircleDot,
+	MessageSquareText,
 	FileText,
 	Lightbulb,
 	LoaderCircle,
 	Calendar,
+	Send,
 } from "lucide-vue-next";
 
 import { fileIconByExtension } from "@/composables/useFileIcons";
@@ -27,6 +29,8 @@ const emit = defineEmits<{
 	(e: "create-inbox-note"): void;
 	(e: "open-tasks-view"): void;
 	(e: "open-inbox-view"): void;
+	(e: "create-goal", goal: string): void;
+	(e: "open-goal-session", sessionId: string): void;
 }>();
 
 const {
@@ -38,7 +42,15 @@ const {
 	todayJournalPath,
 } = useDashboard(() => props.workspaceDir);
 
-const { todayTasks } = useWorkspaceTasks();
+const { todayTasks, tasks } = useWorkspaceTasks();
+const goalInput = ref("");
+
+const recentGoals = computed(() =>
+	tasks.value
+		.filter((task) => task.kind === "goal" && task.source === "dashboard")
+		.sort((a, b) => b.updatedAt - a.updatedAt)
+		.slice(0, 5),
+);
 
 const { filteredFiles: inboxFiles, count: inboxCount, formatTime: formatInboxTime } = useWorkspaceInbox(() => props.workspaceDir);
 const recentInboxNotes = computed(() => inboxFiles.value.slice(0, 3));
@@ -59,6 +71,18 @@ const handleJournalAction = () => {
 	}
 };
 
+const handleGoalSubmit = () => {
+	const goal = goalInput.value.trim();
+	if (!goal) return;
+	emit("create-goal", goal);
+	goalInput.value = "";
+};
+
+const handleOpenGoal = (sessionId?: string) => {
+	if (!sessionId) return;
+	emit("open-goal-session", sessionId);
+};
+
 const priorityDot = (p: string) =>
 	p === "high"
 		? "bg-red-500"
@@ -74,6 +98,82 @@ const priorityDot = (p: string) =>
       <div>
         <h1 class="text-2xl font-bold tracking-tight">仪表盘</h1>
         <p class="mt-1 text-sm text-muted-foreground">欢迎回到工作空间</p>
+      </div>
+
+      <!-- 开始推进 -->
+      <div class="rounded-lg border border-primary/20 bg-card p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-sm font-semibold text-foreground">开始推进</h2>
+            <p class="mt-1 text-xs text-muted-foreground">
+              输入一个目标，创建协作任务并启动带当前工作空间上下文的 Pi 会话
+            </p>
+          </div>
+          <MessageSquareText class="size-5 shrink-0 text-primary" />
+        </div>
+
+        <form
+          data-test="dashboard-goal-form"
+          class="mt-4 flex gap-2"
+          @submit.prevent="handleGoalSubmit"
+        >
+          <input
+            v-model="goalInput"
+            data-test="dashboard-goal-input"
+            type="text"
+            placeholder="今天你想让 AI 一起推进什么？"
+            class="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary"
+          />
+          <Button type="submit" size="sm" class="gap-1.5">
+            <Send class="size-3.5" />
+            创建协作任务
+          </Button>
+        </form>
+      </div>
+
+      <!-- 最近目标 -->
+      <div class="rounded-lg border border-border/50 bg-card p-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-foreground">最近目标</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-7 text-xs"
+            @click="emit('open-tasks-view')"
+          >
+            查看全部
+          </Button>
+        </div>
+        <div
+          v-if="recentGoals.length === 0"
+          data-test="dashboard-goal-list"
+          class="mt-3 text-xs text-muted-foreground"
+        >
+          暂无协作目标
+        </div>
+        <div
+          v-else
+          data-test="dashboard-goal-list"
+          class="mt-3 space-y-1"
+        >
+          <button
+            v-for="goal in recentGoals"
+            :key="goal.id"
+            type="button"
+            data-test="dashboard-goal-session"
+            class="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
+            :disabled="!goal.sessionId"
+            @click="handleOpenGoal(goal.sessionId)"
+          >
+            <MessageSquareText class="size-4 shrink-0 text-primary" />
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm text-foreground">{{ goal.title }}</p>
+              <p class="text-[11px] text-muted-foreground/70">
+                {{ goal.sessionId ? "继续 Pi 会话" : "会话待关联" }}
+              </p>
+            </div>
+          </button>
+        </div>
       </div>
 
       <!-- 今日日记 -->
