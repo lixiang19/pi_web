@@ -29,6 +29,7 @@ import {
 	createAutomationScheduler,
 	createAutomationStore,
 } from "./automations.js";
+import { createAuthRuntime } from "./auth.js";
 import { initializeRidgeDb } from "./db/index.js";
 import {
 	ensureWithinRoot,
@@ -89,6 +90,7 @@ const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
 });
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 const workspaceChatConfig = getWorkspaceChatConfig(defaultWorkspaceDir);
+export const authRuntime = createAuthRuntime({ adminPassword: "ridge-admin" });
 
 export const app = express();
 app.use(cors());
@@ -401,6 +403,10 @@ initSessionPayload({
 	automationStore,
 });
 // ===== Routes =====
+app.get("/api/auth/session", authRuntime.session);
+app.post("/api/auth/login", authRuntime.login);
+app.post("/api/auth/logout", authRuntime.logout);
+app.use(authRuntime.requireApiAuth);
 
 // ===== Notes API =====
 const notesRouter = createNotesRouter(workspaceChatConfig);
@@ -1194,6 +1200,11 @@ export async function startServer() {
 		const match = url.pathname.match(/^\/api\/terminals\/([^/]+)\/stream$/);
 
 		if (!match) {
+			socket.destroy();
+			return;
+		}
+		if (!authRuntime.isAuthenticatedCookieHeader(request.headers.cookie)) {
+			socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
 			socket.destroy();
 			return;
 		}

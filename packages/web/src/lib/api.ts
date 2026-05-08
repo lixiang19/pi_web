@@ -56,22 +56,73 @@ import type {
 	WorktreesResponse,
 } from "./types";
 
-async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+export class UnauthorizedError extends Error {
+	constructor(message = "Unauthorized") {
+		super(message);
+		this.name = "UnauthorizedError";
+	}
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+	unauthorizedHandler = handler;
+}
+
+async function request<T>(
+	input: RequestInfo,
+	init?: RequestInit,
+	options: { handleUnauthorized?: boolean } = {},
+): Promise<T> {
 	const isFormData = init?.body instanceof FormData;
 	const response = await fetch(input, {
 		headers: {
 			...(isFormData ? {} : { "Content-Type": "application/json" }),
 			...(init?.headers ?? {}),
 		},
+		credentials: "same-origin",
 		...init,
 	});
 
 	if (!response.ok) {
 		const text = await response.text();
+		if (response.status === 401) {
+			if (options.handleUnauthorized !== false) {
+				unauthorizedHandler?.();
+			}
+			throw new UnauthorizedError(text || "Unauthorized");
+		}
 		throw new Error(text || `Request failed with status ${response.status}`);
 	}
 
 	return response.json() as Promise<T>;
+}
+
+export function getAuthSession() {
+	return request<{ authenticated: boolean }>(
+		"/api/auth/session",
+		undefined,
+		{ handleUnauthorized: false },
+	);
+}
+
+export function login(password: string) {
+	return request<{ ok: true }>(
+		"/api/auth/login",
+		{
+			method: "POST",
+			body: JSON.stringify({ password }),
+		},
+		{ handleUnauthorized: false },
+	);
+}
+
+export function logout() {
+	return request<{ ok: true }>(
+		"/api/auth/logout",
+		{ method: "POST" },
+		{ handleUnauthorized: false },
+	);
 }
 
 export function getSystemInfo() {

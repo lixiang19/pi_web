@@ -3,11 +3,13 @@ import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getRidgeDb } from "../db/index.js";
 import { app } from "../index.js";
+import { createAuthenticatedAgent } from "../test/auth.js";
 
-const api = request(app);
+let api: ReturnType<typeof request.agent>;
 const WORKSPACE = process.env.PI_WORKSPACE_DIR!;
 
 beforeEach(async () => {
+	api = await createAuthenticatedAgent(app);
 	await fs.mkdir(WORKSPACE, { recursive: true });
 	const db = await getRidgeDb();
 	db.prepare("DELETE FROM workspace_tasks").run();

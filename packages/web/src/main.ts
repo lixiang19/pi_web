@@ -2,6 +2,7 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 import "./style.css";
 import App from "./App.vue";
+import { authState, ensureAuthSession, installUnauthorizedRedirect } from "./lib/auth";
 import { initializeThemeSystem } from "./lib/theme";
 import router from "./router";
 import { useSettingsStore } from "./stores/settings";
@@ -13,11 +14,15 @@ async function initialize() {
 
   app.use(pinia);
   app.use(router);
+  installUnauthorizedRedirect(router);
 
   const settingsStore = useSettingsStore();
   const favoritesStore = useFavoritesStore();
 
-  await Promise.all([settingsStore.load(), favoritesStore.load()]);
+  await ensureAuthSession();
+  if (authState.authenticated) {
+    await Promise.all([settingsStore.load(), favoritesStore.load()]);
+  }
 
   initializeThemeSystem();
 

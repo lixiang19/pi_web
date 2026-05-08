@@ -4,8 +4,9 @@ import type { FileTreeEntry } from "@pi/protocol";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { app } from "../index.js";
+import { createAuthenticatedAgent } from "../test/auth.js";
 
-const api = request(app);
+let api: ReturnType<typeof request.agent>;
 
 // defaultWorkspaceDir 由 vitest.config.ts 中的 PI_WORKSPACE_DIR 环境变量控制
 const WORKSPACE = process.env.PI_WORKSPACE_DIR!;
@@ -14,6 +15,7 @@ const WORKSPACE = process.env.PI_WORKSPACE_DIR!;
 const TEST_ROOT = path.join(WORKSPACE, "file-tree-test");
 
 beforeAll(async () => {
+	api = await createAuthenticatedAgent(app);
 	await fs.mkdir(path.join(TEST_ROOT, "子文件夹A"), { recursive: true });
 	await fs.mkdir(path.join(TEST_ROOT, "子文件夹B"), { recursive: true });
 	await fs.writeFile(path.join(TEST_ROOT, "readme.md"), "# readme");

@@ -15,6 +15,7 @@
 - [系统聊天项目] 工作区 `chat` 是独立系统项目：它要进入会话归属与新聊天默认落点，但不能混入 `/api/projects` 的用户项目列表
 - [工作区默认目录] 运行时工作区绝不能默认回落到仓库根；macOS 默认用 `~/ridge-workspace`，非 macOS 必须显式设置 `PI_WORKSPACE_DIR`
 - [chat 初始化契约] `<workspace>/chat` 只允许是目录；已存在但不是目录时必须直接失败，不能吞掉错误继续复制
+- [单用户认证] VPS 个人部署采用固定密码登录，登录成功后使用服务端内存 Session 和 `ridge_session` HttpOnly Cookie；除 `/api/auth/session|login|logout` 外，其余 `/api/*` 和终端 WebSocket 都必须鉴权。当前固定密码写在服务端，仓库或镜像泄露即视为密码泄露。
 
 ## 规范与教训
 

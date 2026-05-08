@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { MoonStar, Palette, SunMedium, Monitor, Sparkles, Bell, PanelLeftClose, Languages } from "lucide-vue-next";
+import { MoonStar, Palette, SunMedium, Monitor, Sparkles, Bell, PanelLeftClose, Languages, LogOut } from "lucide-vue-next";
 import type { AcceptableValue } from "reka-ui";
+import { useRouter } from "vue-router";
 import { themeOptions, type ThemeName } from "@/assets/registry";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -13,9 +15,11 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useThemePreferences } from "@/composables/useThemePreferences";
+import { logoutAuth } from "@/lib/auth";
 import type { ThemeMode } from "@/stores/settings";
 import { useSettingsStore } from "@/stores/settings";
 
+const router = useRouter();
 const { mode, setMode, setTheme, themeName } = useThemePreferences();
 const settingsStore = useSettingsStore();
 
@@ -43,6 +47,11 @@ const handleLanguageChange = async (value: AcceptableValue) => {
   if (typeof value === "string") {
     await settingsStore.setLanguage(value);
   }
+};
+
+const handleLogout = async () => {
+  await logoutAuth();
+  await router.replace({ name: "login" });
 };
 
 const themePreviewColors: Record<string, string> = {
@@ -136,6 +145,25 @@ const themePreviewColors: Record<string, string> = {
                 <div class="mt-0.5 text-[11px] text-muted-foreground">{{ option.desc }}</div>
               </div>
             </button>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Separator class="my-8" />
+
+      <section>
+        <div class="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          <LogOut class="size-3.5" />
+          安全
+        </div>
+
+        <Card>
+          <CardContent class="flex items-center justify-between gap-4 px-5 py-4">
+            <div>
+              <div class="text-sm font-medium">退出登录</div>
+              <div class="mt-1 text-[11px] text-muted-foreground">清除当前浏览器的登录会话。</div>
+            </div>
+            <Button variant="outline" @click="handleLogout">退出</Button>
           </CardContent>
         </Card>
       </section>
