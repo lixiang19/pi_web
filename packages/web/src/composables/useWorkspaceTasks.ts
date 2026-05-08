@@ -2,27 +2,40 @@ import { computed, type InjectionKey, inject, provide, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 
 import {
+	createWorkspaceMilestone,
 	createWorkspaceTask,
+	deleteWorkspaceMilestone,
 	deleteWorkspaceTask,
+	getWorkspaceMilestones,
 	getWorkspaceTasks,
+	updateWorkspaceMilestone,
 	updateWorkspaceTask,
+	type WorkspaceMilestone,
+	type WorkspaceTask,
+	type WorkspaceTaskPriority,
+	type WorkspaceTaskStatus,
 } from "@/lib/api";
 
-export type TaskItem = {
-	id: string;
-	title: string;
-	status: "pending" | "in_progress" | "done";
-	priority: "low" | "medium" | "high";
-	dueDate: number | null;
-	tags: string[];
-	createdAt: number;
-	updatedAt: number;
-};
+export type TaskItem = WorkspaceTask;
+export type MilestoneItem = WorkspaceMilestone;
 
-// Provide/Inject key for shared task store
 export const WORKSPACE_TASKS_KEY: InjectionKey<
 	ReturnType<typeof useWorkspaceTasksInner>
 > = Symbol("workspace-tasks");
+
+const statusOrder: WorkspaceTaskStatus[] = [
+	"pending",
+	"in_progress",
+	"blocked",
+	"reviewing",
+	"completed",
+];
+
+const priorityWeight: Record<WorkspaceTaskPriority, number> = {
+	urgent: 0,
+	important: 1,
+	normal: 2,
+};
 
 export function provideWorkspaceTasks(workspaceDir: () => string) {
 	const store = useWorkspaceTasksInner(workspaceDir);
@@ -36,9 +49,18 @@ export function useWorkspaceTasks(workspaceDir?: () => string) {
 	return useWorkspaceTasksInner(workspaceDir!);
 }
 
+function sortTasksForList(a: TaskItem, b: TaskItem) {
+	const priorityDiff = priorityWeight[a.priority] - priorityWeight[b.priority];
+	if (priorityDiff !== 0) return priorityDiff;
+	if (a.dueDate && b.dueDate) return a.dueDate - b.dueDate;
+	if (a.dueDate) return -1;
+	if (b.dueDate) return 1;
+	return a.createdAt - b.createdAt;
+}
+
 function useWorkspaceTasksInner(workspaceDir: () => string) {
 	const tasks = ref<TaskItem[]>([]);
-	const updatedAt = ref(0);
+	const milestones = ref<MilestoneItem[]>([]);
 	const isLoading = ref(false);
 	const error = ref("");
 	const showCompleted = ref(false);
@@ -50,23 +72,26 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		isLoading.value = true;
 		error.value = "";
 		try {
-			const res = await getWorkspaceTasks();
-			tasks.value = res.tasks as TaskItem[];
-			updatedAt.value = res.updatedAt;
+			const [tasksRes, milestonesRes] = await Promise.all([
+				getWorkspaceTasks(),
+				getWorkspaceMilestones(),
+			]);
+			tasks.value = tasksRes.tasks;
+			milestones.value = milestonesRes.milestones;
 		} catch (err) {
 			error.value = err instanceof Error ? err.message : String(err);
-			toast.error("加载任务失败", { description: error.value });
+			toast.error("加载任务系统失败", { description: error.value });
 		} finally {
 			isLoading.value = false;
 		}
 	};
 
 	const pendingTasks = computed(() =>
-		tasks.value.filter((t) => t.status !== "done"),
+		tasks.value.filter((task) => task.status !== "completed"),
 	);
 
 	const completedTasks = computed(() =>
-		tasks.value.filter((t) => t.status === "done"),
+		tasks.value.filter((task) => task.status === "completed"),
 	);
 
 	const todayTasks = computed(() => {
@@ -78,133 +103,174 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		).getTime();
 		const todayEnd = todayStart + 86400000;
 
-		return tasks.value.filter((t) => {
-			if (t.status === "done") return false;
-			if (t.dueDate && t.dueDate >= todayStart && t.dueDate < todayEnd)
+		return tasks.value.filter((task) => {
+			if (task.status === "completed") return false;
+			if (task.dueDate && task.dueDate >= todayStart && task.dueDate < todayEnd) {
 				return true;
-			if (t.createdAt >= todayStart && t.createdAt < todayEnd) return true;
-			return false;
+			}
+			return task.createdAt >= todayStart && task.createdAt < todayEnd;
 		});
 	});
 
-	const stats = computed(() => {
-		const all = tasks.value;
-		return {
-			pending: all.filter((t) => t.status === "pending").length,
-			inProgress: all.filter((t) => t.status === "in_progress").length,
-			done: all.filter((t) => t.status === "done").length,
-			total: all.length,
-		};
+	const stats = computed(() => ({
+		pending: tasks.value.filter((task) => task.status === "pending").length,
+		inProgress: tasks.value.filter((task) => task.status === "in_progress").length,
+		blocked: tasks.value.filter((task) => task.status === "blocked").length,
+		reviewing: tasks.value.filter((task) => task.status === "reviewing").length,
+		done: completedTasks.value.length,
+		total: tasks.value.length,
+	}));
+
+	const tasksByStatus = computed(() =>
+		Object.fromEntries(
+			statusOrder.map((status) => [
+				status,
+				tasks.value
+					.filter((task) => task.status === status)
+					.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt),
+			]),
+		) as Record<WorkspaceTaskStatus, TaskItem[]>,
+	);
+
+	const tasksByMilestone = computed(() =>
+		milestones.value.map((milestone) => ({
+			milestone,
+			tasks: tasks.value
+				.filter((task) => task.milestoneId === milestone.id)
+				.sort(sortTasksForList),
+		})),
+	);
+
+	const calendarTasks = computed(() => {
+		const byDate = new Map<string, TaskItem[]>();
+		const withoutDueDate: TaskItem[] = [];
+		for (const task of tasks.value) {
+			if (!task.dueDate) {
+				withoutDueDate.push(task);
+				continue;
+			}
+			const key = new Date(task.dueDate).toISOString().slice(0, 10);
+			byDate.set(key, [...(byDate.get(key) ?? []), task]);
+		}
+		return { byDate, withoutDueDate };
 	});
 
 	const addTask = async (data: {
 		title: string;
-		priority?: string;
-		dueDate?: number;
-		tags?: string[];
+		priority: WorkspaceTaskPriority;
+		acceptanceCriteria: string;
+		dueDate?: number | null;
+		milestoneId?: string | null;
 	}) => {
 		try {
-			const res = await createWorkspaceTask({
-				...data,
-				_expectedUpdatedAt: updatedAt.value || undefined,
-			});
-			tasks.value.unshift(res.task as TaskItem);
-			updatedAt.value = res.updatedAt;
+			const res = await createWorkspaceTask(data);
+			tasks.value.unshift(res.task);
+			await load();
 			toast.success("任务已创建");
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			if (message.includes("409")) {
-				toast.warning("任务已被修改，正在重新加载");
-				await load();
-			} else {
-				toast.error("创建任务失败", { description: message });
-			}
+			toast.error("创建任务失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
 		}
 	};
 
-	const toggleStatus = async (task: TaskItem, newStatus: string) => {
-		const prev = { ...task };
-		// Optimistic update
-		task.status = newStatus as TaskItem["status"];
-		task.updatedAt = Date.now();
+	const addMilestone = async (data: {
+		title: string;
+		goal: string;
+		acceptanceCriteria: string;
+		dueDate?: number | null;
+	}) => {
+		try {
+			const res = await createWorkspaceMilestone(data);
+			milestones.value.push(res.milestone);
+			toast.success("里程碑已创建");
+		} catch (err) {
+			toast.error("创建里程碑失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
+		}
+	};
 
+	const toggleStatus = async (task: TaskItem, newStatus: WorkspaceTaskStatus) => {
+		const previous = { ...task };
+		task.status = newStatus;
+		task.updatedAt = Date.now();
 		try {
 			const res = await updateWorkspaceTask(task.id, {
 				status: newStatus,
-				_expectedUpdatedAt: updatedAt.value,
+				actor: "user",
 			});
-			updatedAt.value = res.updatedAt;
+			Object.assign(task, res.task);
 		} catch (err) {
-			// Rollback
-			Object.assign(task, prev);
-			const message = err instanceof Error ? err.message : String(err);
-			if (message.includes("409")) {
-				toast.warning("任务已被修改，正在重新加载");
-				await load();
-			} else {
-				toast.error("切换状态失败", { description: message });
-			}
+			Object.assign(task, previous);
+			toast.error("切换状态失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
 		}
 	};
 
 	const removeTask = async (taskId: string) => {
-		const prev = [...tasks.value];
-		tasks.value = tasks.value.filter((t) => t.id !== taskId);
-
+		const previous = [...tasks.value];
+		tasks.value = tasks.value.filter((task) => task.id !== taskId);
 		try {
-			const res = await deleteWorkspaceTask(taskId, updatedAt.value);
-			updatedAt.value = res.updatedAt;
+			await deleteWorkspaceTask(taskId);
+			await load();
 			toast.success("任务已删除");
 		} catch (err) {
-			tasks.value = prev;
-			const message = err instanceof Error ? err.message : String(err);
-			if (message.includes("409")) {
-				toast.warning("任务已被修改，正在重新加载");
-				await load();
-			} else {
-				toast.error("删除任务失败", { description: message });
-			}
+			tasks.value = previous;
+			toast.error("删除任务失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
 		}
 	};
 
 	const updateTask = async (
 		taskId: string,
-		data: {
-			title?: string;
-			priority?: string;
-			dueDate?: number | null;
-			tags?: string[];
-		},
+		data: Parameters<typeof updateWorkspaceTask>[1],
 	) => {
-		const target = tasks.value.find((t) => t.id === taskId);
-		const prev = target ? { ...target } : null;
-		if (target) {
-			if (data.title !== undefined) target.title = data.title;
-			if (data.priority !== undefined)
-				target.priority = data.priority as TaskItem["priority"];
-			if (data.dueDate !== undefined) target.dueDate = data.dueDate;
-			if (data.tags !== undefined) target.tags = data.tags;
-			target.updatedAt = Date.now();
-		}
-
+		const target = tasks.value.find((task) => task.id === taskId);
+		const previous = target ? { ...target } : null;
+		if (target) Object.assign(target, data, { updatedAt: Date.now() });
 		try {
-			const res = await updateWorkspaceTask(taskId, {
-				...data,
-				_expectedUpdatedAt: updatedAt.value,
-			});
-			updatedAt.value = res.updatedAt;
+			const res = await updateWorkspaceTask(taskId, data);
+			if (target) Object.assign(target, res.task);
+			await load();
 			toast.success("任务已更新");
 		} catch (err) {
-			if (prev && target) {
-				Object.assign(target, prev);
-			}
-			const message = err instanceof Error ? err.message : String(err);
-			if (message.includes("409")) {
-				toast.warning("任务已被修改，正在重新加载");
-				await load();
-			} else {
-				toast.error("更新任务失败", { description: message });
-			}
+			if (target && previous) Object.assign(target, previous);
+			toast.error("更新任务失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
+		}
+	};
+
+	const updateMilestone = async (
+		milestoneId: string,
+		data: Parameters<typeof updateWorkspaceMilestone>[1],
+	) => {
+		try {
+			const res = await updateWorkspaceMilestone(milestoneId, data);
+			const index = milestones.value.findIndex(
+				(milestone) => milestone.id === milestoneId,
+			);
+			if (index >= 0) milestones.value[index] = res.milestone;
+			toast.success("里程碑已更新");
+		} catch (err) {
+			toast.error("更新里程碑失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
+		}
+	};
+
+	const removeMilestone = async (milestoneId: string) => {
+		try {
+			await deleteWorkspaceMilestone(milestoneId);
+			await load();
+			toast.success("里程碑已删除");
+		} catch (err) {
+			toast.error("删除里程碑失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
 		}
 	};
 
@@ -218,17 +284,24 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 
 	return {
 		tasks,
+		milestones,
 		pendingTasks,
 		completedTasks,
 		todayTasks,
 		stats,
+		tasksByStatus,
+		tasksByMilestone,
+		calendarTasks,
 		isLoading,
 		error,
 		showCompleted,
 		load,
 		addTask,
+		addMilestone,
 		toggleStatus,
 		removeTask,
 		updateTask,
+		updateMilestone,
+		removeMilestone,
 	};
 }

@@ -43,7 +43,10 @@ import { createCoreRouter } from "./routes/core.js";
 import { createGitRouter } from "./routes/git.js";
 import { createSystemRouter } from "./routes/system.js";
 import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
-import { createWorkspaceTasksRouter } from "./routes/workspace-tasks.js";
+import {
+	createWorkspaceMilestonesRouter,
+	createWorkspaceTasksRouter,
+} from "./routes/workspace-tasks.js";
 import { createWorktreeRouter } from "./routes/worktrees.js";
 import {
 	getIndexedSessionTree,
@@ -497,6 +500,9 @@ const coreRouter = createCoreRouter({
 app.use(coreRouter);
 const workspaceTasksRouter = createWorkspaceTasksRouter(defaultWorkspaceDir);
 app.use("/api/workspace/tasks", workspaceTasksRouter);
+const workspaceMilestonesRouter =
+	createWorkspaceMilestonesRouter(defaultWorkspaceDir);
+app.use("/api/workspace/milestones", workspaceMilestonesRouter);
 // ===== Workspace Data Routes =====
 // ===== Workspace Data Routes =====
 const workspaceDataRouter = createWorkspaceDataRouter({

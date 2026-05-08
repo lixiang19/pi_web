@@ -40,6 +40,7 @@
 - [类型校验] 即使 TypeScript 编译通过，也要验证运行时数据字段（如 AgentSummary 实际无 id 字段）
 - [共享列表状态] 同一份项目列表如果会被侧栏、空态、弹窗同时消费，composable 必须提升为模块级共享状态并做请求去重，否则不同区域会出现数据不同步
 - [任务store共享] useWorkspaceTasks 必须通过 provide/inject 在 WorkspacePage 层级共享，不能让 DashboardView 和 TaskView 各自实例化（会导致 checkbox scan 请求被发两次）
+- [任务系统基准] 任务系统以 `任务系统PRD-v0.1.md` 为准，旧 `.ridge/tasks.json` 和 checkbox 聚合属于废弃原型；新实现必须走 `~/.pi/ridge.db` 的任务/里程碑表，不迁移旧 JSON 数据
 - [乐观更新] 任务 toggle/create/delete 应先本地更新状态、失败再回滚，避免每次操作后 await load() 全量重新加载的延迟感
 - [Checkbox ID] checkbox 任务 ID 不能含数组下标（顺序变化会致 key 失效），只能用 (sourcePath, lineNumber) 组合
 - [Checkbox toggle] 文件行号定位 toggle 必须带 expectedText 校验，防止文件被编辑后行号偏移改错行

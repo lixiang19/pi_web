@@ -1,75 +1,81 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import express, {
 	type NextFunction,
 	type Request,
 	type Response,
 } from "express";
+import { z } from "zod";
+import {
+	TASK_PRIORITIES,
+	TASK_STATUSES,
+	createMilestone,
+	createTask,
+	deleteMilestone,
+	deleteTask,
+	getMilestone,
+	getTask,
+	listMilestones,
+	listTasks,
+	updateMilestone,
+	updateTask,
+} from "../task-system.js";
 
-import { writeJsonFile } from "../utils/fs.js";
+const actorSchema = z.enum(["user", "agent"]).default("user");
 
-type HttpError = Error & { statusCode?: number };
+const dueDateSchema = z.number().int().nonnegative().nullable().optional();
 
-interface TaskItem {
-	id: string;
-	title: string;
-	status: "pending" | "in_progress" | "done";
-	priority: "low" | "medium" | "high";
-	dueDate: number | null;
-	tags: string[];
-	createdAt: number;
-	updatedAt: number;
-}
+const createMilestoneSchema = z.object({
+	title: z.string().trim().min(1),
+	goal: z.string().trim().min(1),
+	acceptanceCriteria: z.string().trim().min(1),
+	dueDate: dueDateSchema,
+	color: z.string().trim().min(1).optional(),
+});
 
-interface TasksFile {
-	tasks: TaskItem[];
-	updatedAt: number;
-}
+const updateMilestoneSchema = z
+	.object({
+		title: z.string().trim().min(1).optional(),
+		goal: z.string().trim().min(1).optional(),
+		acceptanceCriteria: z.string().trim().min(1).optional(),
+		status: z.enum(TASK_STATUSES).optional(),
+		dueDate: dueDateSchema,
+		color: z.string().trim().min(1).optional(),
+		actor: actorSchema,
+	})
+	.refine((payload) => Object.keys(payload).some((key) => key !== "actor"), {
+		message: "至少要更新一个字段",
+	});
 
-const TASKS_FILE_NAME = "tasks.json";
+const createTaskSchema = z.object({
+	title: z.string().trim().min(1),
+	priority: z.enum(TASK_PRIORITIES),
+	acceptanceCriteria: z.string().trim().min(1),
+	dueDate: dueDateSchema,
+	milestoneId: z.string().trim().min(1).nullable().optional(),
+});
 
-const getTasksFilePath = (workspaceDir: string): string =>
-	path.join(workspaceDir, ".ridge", TASKS_FILE_NAME);
-
-const readTasksFile = async (filePath: string): Promise<TasksFile> => {
-	try {
-		const content = await fs.readFile(filePath, "utf-8");
-		return JSON.parse(content) as TasksFile;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return { tasks: [], updatedAt: 0 };
-		}
-		throw error;
-	}
-};
-
-const writeTasksFile = async (
-	filePath: string,
-	data: TasksFile,
-): Promise<void> => {
-	await fs.mkdir(path.dirname(filePath), { recursive: true });
-	await writeJsonFile(filePath, data);
-};
-
-const checkOptimisticLock = (
-	fileData: TasksFile,
-	expected: number | undefined,
-): void => {
-	if (expected !== undefined && fileData.updatedAt !== expected) {
-		const error = new Error("tasks.json 已被修改，请刷新后重试") as HttpError;
-		error.statusCode = 409;
-		throw error;
-	}
-};
+const updateTaskSchema = z
+	.object({
+		title: z.string().trim().min(1).optional(),
+		status: z.enum(TASK_STATUSES).optional(),
+		priority: z.enum(TASK_PRIORITIES).optional(),
+		acceptanceCriteria: z.string().trim().min(1).optional(),
+		dueDate: dueDateSchema,
+		milestoneId: z.string().trim().min(1).optional(),
+		blockedReason: z.string().trim().nullable().optional(),
+		processingSessionId: z.string().trim().min(1).nullable().optional(),
+		sortOrder: z.number().int().optional(),
+		actor: actorSchema,
+	})
+	.refine((payload) => Object.keys(payload).some((key) => key !== "actor"), {
+		message: "至少要更新一个字段",
+	});
 
 export function createWorkspaceTasksRouter(defaultWorkspaceDir: string) {
 	const router = express.Router();
 
 	router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
 		try {
-			const filePath = getTasksFilePath(defaultWorkspaceDir);
-			const data = await readTasksFile(filePath);
-			res.json({ tasks: data.tasks, updatedAt: data.updatedAt });
+			res.json({ tasks: await listTasks(defaultWorkspaceDir) });
 		} catch (error) {
 			next(error);
 		}
@@ -77,65 +83,32 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string) {
 
 	router.post("/", async (req: Request, res: Response, next: NextFunction) => {
 		try {
-			const { title, priority, dueDate, tags, _expectedUpdatedAt } =
-				req.body ?? {};
-			if (!title || typeof title !== "string") {
-				const error = new Error("title is required") as HttpError;
-				error.statusCode = 400;
-				throw error;
-			}
-			const filePath = getTasksFilePath(defaultWorkspaceDir);
-			const data = await readTasksFile(filePath);
-			checkOptimisticLock(data, _expectedUpdatedAt);
-
-			const now = Date.now();
-			const task: TaskItem = {
-				id: `task-${now}-${Math.random().toString(36).slice(2, 8)}`,
-				title,
-				status: "pending",
-				priority: priority || "medium",
-				dueDate: dueDate ?? null,
-				tags: Array.isArray(tags) ? tags : [],
-				createdAt: now,
-				updatedAt: now,
-			};
-			data.tasks.unshift(task);
-			data.updatedAt = now;
-			await writeTasksFile(filePath, data);
-			res.status(201).json({ task, updatedAt: data.updatedAt });
+			const payload = createTaskSchema.parse(req.body ?? {});
+			const task = await createTask(defaultWorkspaceDir, payload);
+			res.status(201).json({ task });
 		} catch (error) {
 			next(error);
 		}
 	});
 
+	router.get(
+		"/:taskId",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				res.json({ task: await getTask(defaultWorkspaceDir, req.params.taskId) });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
+
 	router.patch(
 		"/:taskId",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				const { taskId } = req.params;
-				const { status, title, priority, dueDate, tags, _expectedUpdatedAt } =
-					req.body ?? {};
-				const filePath = getTasksFilePath(defaultWorkspaceDir);
-				const data = await readTasksFile(filePath);
-				checkOptimisticLock(data, _expectedUpdatedAt);
-
-				const task = data.tasks.find((t) => t.id === taskId);
-				if (!task) {
-					const error = new Error(`Task not found: ${taskId}`) as HttpError;
-					error.statusCode = 404;
-					throw error;
-				}
-
-				const now = Date.now();
-				if (status !== undefined) task.status = status;
-				if (title !== undefined) task.title = title;
-				if (priority !== undefined) task.priority = priority;
-				if (dueDate !== undefined) task.dueDate = dueDate;
-				if (tags !== undefined) task.tags = Array.isArray(tags) ? tags : [];
-				task.updatedAt = now;
-				data.updatedAt = now;
-				await writeTasksFile(filePath, data);
-				res.json({ ok: true, updatedAt: data.updatedAt });
+				const payload = updateTaskSchema.parse(req.body ?? {});
+				const task = await updateTask(defaultWorkspaceDir, req.params.taskId, payload);
+				res.json({ task });
 			} catch (error) {
 				next(error);
 			}
@@ -146,23 +119,77 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string) {
 		"/:taskId",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				const { taskId } = req.params;
-				const { _expectedUpdatedAt } = req.body ?? {};
-				const filePath = getTasksFilePath(defaultWorkspaceDir);
-				const data = await readTasksFile(filePath);
-				checkOptimisticLock(data, _expectedUpdatedAt);
+				await deleteTask(defaultWorkspaceDir, req.params.taskId);
+				res.json({ ok: true });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
 
-				const index = data.tasks.findIndex((t) => t.id === taskId);
-				if (index === -1) {
-					const error = new Error(`Task not found: ${taskId}`) as HttpError;
-					error.statusCode = 404;
-					throw error;
-				}
+	return router;
+}
 
-				data.tasks.splice(index, 1);
-				data.updatedAt = Date.now();
-				await writeTasksFile(filePath, data);
-				res.json({ ok: true, updatedAt: data.updatedAt });
+export function createWorkspaceMilestonesRouter(defaultWorkspaceDir: string) {
+	const router = express.Router();
+
+	router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
+		try {
+			res.json({ milestones: await listMilestones(defaultWorkspaceDir) });
+		} catch (error) {
+			next(error);
+		}
+	});
+
+	router.post("/", async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const payload = createMilestoneSchema.parse(req.body ?? {});
+			const milestone = await createMilestone(defaultWorkspaceDir, payload);
+			res.status(201).json({ milestone });
+		} catch (error) {
+			next(error);
+		}
+	});
+
+	router.get(
+		"/:milestoneId",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				res.json({
+					milestone: await getMilestone(
+						defaultWorkspaceDir,
+						req.params.milestoneId,
+					),
+				});
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
+
+	router.patch(
+		"/:milestoneId",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const payload = updateMilestoneSchema.parse(req.body ?? {});
+				const milestone = await updateMilestone(
+					defaultWorkspaceDir,
+					req.params.milestoneId,
+					payload,
+				);
+				res.json({ milestone });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
+
+	router.delete(
+		"/:milestoneId",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				await deleteMilestone(defaultWorkspaceDir, req.params.milestoneId);
+				res.json({ ok: true });
 			} catch (error) {
 				next(error);
 			}
