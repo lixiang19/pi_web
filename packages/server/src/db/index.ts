@@ -1,14 +1,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { getRidgeDbPath, getRidgeSettingsPath } from '../utils/paths.js';
+import { getRidgeDbPath } from '../utils/paths.js';
 import { normalizeString } from '../utils/strings.js';
 import { RIDGE_DB_BOOTSTRAP_SQL, RIDGE_DB_SCHEMA_VERSION } from './migrations.js';
-import { SETTINGS_KEYS, type RidgeSettings, type SessionMetadataState } from '../types/index.js';
+import { type SessionMetadataState } from '../types/index.js';
 
 type RidgeDatabase = InstanceType<typeof Database>;
 
 let dbPromise: Promise<RidgeDatabase> | null = null;
+const CURRENT_WORKSPACE_META_KEY = 'current_workspace_dir';
 
 const openDatabase = async (): Promise<RidgeDatabase> => {
   const dbPath = await getRidgeDbPath();
@@ -32,84 +33,6 @@ const ensureSchemaVersion = (db: RidgeDatabase) => {
   db.prepare(
     `INSERT INTO ridge_meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
   ).run(String(RIDGE_DB_SCHEMA_VERSION));
-};
-
-const migrateLegacyRidgeSettings = async (db: RidgeDatabase) => {
-  const legacyPath = await getRidgeSettingsPath();
-  const exists = await pathExists(legacyPath);
-  if (!exists) {
-    return;
-  }
-
-  const raw = await fs.readFile(legacyPath, 'utf8');
-  const parsed = JSON.parse(raw) as Partial<RidgeSettings>;
-  const now = Date.now();
-
-  const upsertSetting = db.prepare(
-    `INSERT INTO app_settings(key, value_json, updated_at)
-     VALUES(?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       value_json = excluded.value_json,
-       updated_at = excluded.updated_at`,
-  );
-  const upsertProject = db.prepare(
-    `INSERT INTO projects(project_id, name, path, is_git, added_at)
-     VALUES(?, ?, ?, ?, ?)
-     ON CONFLICT(project_id) DO UPDATE SET
-       name = excluded.name,
-       path = excluded.path,
-       is_git = excluded.is_git,
-       added_at = excluded.added_at`,
-  );
-  const upsertFavorite = db.prepare(
-    `INSERT INTO favorites(favorite_id, name, type, data_json, created_at)
-     VALUES(?, ?, ?, ?, ?)
-     ON CONFLICT(favorite_id) DO UPDATE SET
-       name = excluded.name,
-       type = excluded.type,
-       data_json = excluded.data_json,
-       created_at = excluded.created_at`,
-  );
-
-  const migrate = db.transaction(() => {
-    for (const key of SETTINGS_KEYS) {
-      const value = parsed[key];
-      if (value !== undefined) {
-        upsertSetting.run(key, JSON.stringify(value), now);
-      }
-    }
-
-    for (const project of parsed.projects ?? []) {
-      if (!project?.id || !project.path) {
-        continue;
-      }
-
-      upsertProject.run(
-        project.id,
-        project.name || path.basename(project.path),
-        project.path,
-        project.isGit ? 1 : 0,
-        project.addedAt || now,
-      );
-    }
-
-    for (const favorite of parsed.favorites ?? []) {
-      if (!favorite?.id || !favorite.name || !favorite.type) {
-        continue;
-      }
-
-      upsertFavorite.run(
-        favorite.id,
-        favorite.name,
-        favorite.type,
-        favorite.data === undefined ? null : JSON.stringify(favorite.data),
-        favorite.createdAt || now,
-      );
-    }
-  });
-
-  migrate();
-  await fs.unlink(legacyPath);
 };
 
 const migrateLegacySessionMetadata = async (
@@ -202,7 +125,6 @@ export async function initializeRidgeDb(workspaceDir?: string): Promise<RidgeDat
   if (!dbPromise) {
     dbPromise = (async () => {
       const db = await openDatabase();
-      await migrateLegacyRidgeSettings(db);
       await migrateLegacySessionMetadata(db, workspaceDir);
       return db;
     })();
@@ -213,4 +135,21 @@ export async function initializeRidgeDb(workspaceDir?: string): Promise<RidgeDat
 
 export async function getRidgeDb(): Promise<RidgeDatabase> {
   return initializeRidgeDb();
+}
+
+export async function getStoredWorkspaceDir(): Promise<string | null> {
+  const db = await getRidgeDb();
+  const row = db
+    .prepare('SELECT value FROM ridge_meta WHERE key = ?')
+    .get(CURRENT_WORKSPACE_META_KEY) as { value: string } | undefined;
+  return row?.value || null;
+}
+
+export async function ensureStoredWorkspaceDir(workspaceDir: string): Promise<void> {
+  const db = await getRidgeDb();
+  db.prepare(
+    `INSERT INTO ridge_meta(key, value)
+     VALUES(?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(CURRENT_WORKSPACE_META_KEY, workspaceDir);
 }

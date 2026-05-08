@@ -37,7 +37,7 @@
 - 负责约束服务端拆分路由的依赖接口：`routes/*` 的 `Deps` 类型必须直接使用真实领域类型与 schema 输出类型，禁止用 `unknown` 伪装服务边界，否则 server `tsc --noEmit` 会在调用点丢失契约。
 - 负责把用户级设置、收藏和自定义项目统一持久化到 ~/.ridge/ 下的服务端 JSON 文件，而不是在 Web 层散落 localStorage。
 - 负责提供系统级隐藏聊天项目：固定绑定工作区 `chat` 目录，用于承接顶部“新聊天”和独立聊天分组。
-- 负责约束默认工作区目录策略：macOS 默认使用 `~/ridge-workspace`，非 macOS 必须显式提供 `PI_WORKSPACE_DIR`。
+- 负责约束默认工作区目录策略：当前工作空间路径存储在 `~/.pi/ridge.db`；首次启动没有记录时默认创建并使用 `~/ridge-workspace`。
 - 负责让 `文件` 一级页面稳定显示整个工作区根目录，而不是跟随当前会话 cwd 切换显示范围。
 - 负责让 `终端` 一级页面独立于聊天会话生命周期，使用服务端内存终端池承载真实 PTY，并通过 WebSocket 重附着满足刷新无损。
 - 负责把“工作区文件树浏览”和“用户 Home 目录项目选择”拆成两条独立后端边界，避免混淆安全语义。
@@ -962,7 +962,7 @@ RIDGE_PI_ISOLATED=1
 
 ### 当前链路
 ```text
-已添加项目列表 ~/.pi/ridge-settings.json
+已添加项目列表 ~/.pi/ridge.db
   -> server buildManagedProjectScopes()
   -> /api/sessions 只返回命中已添加项目作用域的 session
   -> SessionSummary.projectId/projectRoot/projectLabel 对齐已添加项目

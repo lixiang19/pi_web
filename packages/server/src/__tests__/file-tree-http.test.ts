@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { FileTreeEntry } from "@pi/protocol";
 import request from "supertest";
@@ -8,8 +9,7 @@ import { createAuthenticatedAgent } from "../test/auth.js";
 
 let api: ReturnType<typeof request.agent>;
 
-// defaultWorkspaceDir 由 vitest.config.ts 中的 PI_WORKSPACE_DIR 环境变量控制
-const WORKSPACE = process.env.PI_WORKSPACE_DIR!;
+const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
 
 // 在 workspace 内创建测试目录
 const TEST_ROOT = path.join(WORKSPACE, "file-tree-test");

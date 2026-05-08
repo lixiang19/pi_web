@@ -1,4 +1,6 @@
 import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getRidgeDb } from "../db/index.js";
@@ -6,7 +8,7 @@ import { app } from "../index.js";
 import { createAuthenticatedAgent } from "../test/auth.js";
 
 let api: ReturnType<typeof request.agent>;
-const WORKSPACE = process.env.PI_WORKSPACE_DIR!;
+const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
 
 beforeEach(async () => {
 	api = await createAuthenticatedAgent(app);

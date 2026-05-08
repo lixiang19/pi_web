@@ -238,30 +238,17 @@ export interface Project {
   isGit: ProtocolProjectItem['isGit'];
 }
 
-/**
- * Unified settings stored in ~/.pi/ridge-settings.json
- */
-export interface RidgeSettings {
-  version: number;
-  // Core UI settings
+export interface Settings {
   theme: 'system' | 'light' | 'dark';
   themeName: string;
   language: string;
   sidebarCollapsed: boolean;
   notifications: boolean;
-  // Default composer selections (persisted preferences)
   defaultModel: string;
   defaultAgent: string;
   defaultThinkingLevel: ThinkingLevel;
-  // Collections
-  projects: Project[];
-  favorites: FavoriteItem[];
 }
 
-/**
- * Legacy types kept for API backward compatibility
- */
-export type Settings = Omit<RidgeSettings, 'version' | 'projects' | 'favorites'>;
 export const SETTINGS_KEYS = [
   'theme',
   'themeName',

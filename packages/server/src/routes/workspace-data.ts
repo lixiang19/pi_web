@@ -186,7 +186,7 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 				const baseName = name.endsWith(".base") ? name : `${name}.base`;
 				const dir = folder
 					? path.join(defaultWorkspaceDir, folder)
-					: path.join(defaultWorkspaceDir, "数据库");
+					: defaultWorkspaceDir;
 				await fs.mkdir(dir, { recursive: true });
 				const fullPath = path.join(dir, baseName);
 

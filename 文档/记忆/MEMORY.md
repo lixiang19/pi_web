@@ -13,7 +13,8 @@
 - [Pi资源隔离] 临时禁全局 prompts/skills/extensions/themes/AGENTS 时，不能只换 `SettingsManager(agentDir)`；`DefaultResourceLoader` 也必须显式传同一个隔离 `agentDir`，否则会回落 `getAgentDir()` 继续扫 `~/.pi/agent`。auth/models/sessions 可继续走全局。
 - [项目真源] 已添加项目必须是真源；会话列表、文件树、worktree 归属都从项目列表收敛，禁止再从 session 或 server 启动目录反推项目边界
 - [系统聊天项目] 工作区 `chat` 是独立系统项目：它要进入会话归属与新聊天默认落点，但不能混入 `/api/projects` 的用户项目列表
-- [工作区默认目录] 运行时工作区绝不能默认回落到仓库根；macOS 默认用 `~/ridge-workspace`，非 macOS 必须显式设置 `PI_WORKSPACE_DIR`
+- [工作区默认目录] 运行时工作区绝不能默认回落到仓库根或 npm 启动目录；默认工作空间是 `~/ridge-workspace`，当前路径记录在 `~/.pi/ridge.db`
+- [配置存储] `ridge-settings.json` 已退役；设置、项目、收藏、当前工作空间路径等 ridge 运行状态统一落到 `~/.pi/ridge.db`
 - [chat 初始化契约] `<workspace>/chat` 只允许是目录；已存在但不是目录时必须直接失败，不能吞掉错误继续复制
 - [单用户认证] VPS 个人部署采用固定密码登录，登录成功后使用服务端内存 Session 和 `ridge_session` HttpOnly Cookie；除 `/api/auth/session|login|logout` 外，其余 `/api/*` 和终端 WebSocket 都必须鉴权。当前固定密码写在服务端，仓库或镜像泄露即视为密码泄露。
 
@@ -32,6 +33,8 @@
 ## 功能实现经验
 
 - [长路径展示] 弹窗里的路径、命令等长字符串不能和主操作按钮挤在同一行；应独立成可换行信息块，否则会在 dialog/grid 容器里撑坏最小宽度并裁剪操作区
+- [首页大屏布局] 工作空间首页不能把核心内容锁在窄 `max-w-lg/2xl` 且居中堆叠；AI 输入框可独占上半屏居中并保留上方留白，信息卡下移；模型/Agent/思考级别应作为 composer 工具栏默认可见。
+- [根高度链] 工作空间这种满屏应用根容器不要只用 `h-full` 依赖父级高度；页面根应使用视口高度（如 `h-screen`），同时 `html/body/#app` 保持 `height: 100%`。
 - [主题持久化] 主题名和明暗模式都必须进入服务端 settings 模型，不能只放 composable 临时状态
 - [拖放实现] 原生 HTML5 Drag and Drop API 足够满足简单拖放需求，无需引入第三方库
 - [防抖模式] 使用 dragCounter 计数器解决 dragenter/dragleave 闪烁问题
@@ -40,7 +43,7 @@
 - [事件命名] Vue defineEmits 中带有冒号的事件名必须用引号包裹（"update:modelValue"）
 - [类型校验] 即使 TypeScript 编译通过，也要验证运行时数据字段（如 AgentSummary 实际无 id 字段）
 - [共享列表状态] 同一份项目列表如果会被侧栏、空态、弹窗同时消费，composable 必须提升为模块级共享状态并做请求去重，否则不同区域会出现数据不同步
-- [任务store共享] useWorkspaceTasks 必须通过 provide/inject 在 WorkspacePage 层级共享，不能让 DashboardView 和 TaskView 各自实例化（会导致 checkbox scan 请求被发两次）
+- [任务store共享] useWorkspaceTasks 必须通过 provide/inject 在 WorkspacePage 层级共享，不能让 DashboardView 和 TaskView 各自实例化；WorkspacePage 自身要直接复用 provideWorkspaceTasks 返回值，不能在同一 setup 内靠 inject 读回自己刚 provide 的值
 - [任务系统基准] 任务系统以 `任务系统PRD-v0.1.md` 为准，旧 `.ridge/tasks.json` 和 checkbox 聚合属于废弃原型；新实现必须走 `~/.pi/ridge.db` 的任务/里程碑表，不迁移旧 JSON 数据
 - [乐观更新] 任务 toggle/create/delete 应先本地更新状态、失败再回滚，避免每次操作后 await load() 全量重新加载的延迟感
 - [Checkbox ID] checkbox 任务 ID 不能含数组下标（顺序变化会致 key 失效），只能用 (sourcePath, lineNumber) 组合

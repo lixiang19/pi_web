@@ -19,8 +19,9 @@ pnpm run dev
 
 默认启动：
 
-- Web: `http://127.0.0.1:5173`
+- Web: `http://127.0.0.1:80`
 - API: `http://127.0.0.1:3000`
+- 默认工作空间: `~/ridge-workspace`
 
 ## 桌面端开发
 
@@ -31,7 +32,6 @@ npm run dev:desktop
 ## 环境变量
 
 - `PORT`: API 服务端口，默认 `3000`
-- `PI_WORKSPACE_DIR`: Pi 会话默认工作目录，默认项目根目录
 
 ## 下一步
 

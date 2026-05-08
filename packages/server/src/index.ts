@@ -30,7 +30,11 @@ import {
 	createAutomationStore,
 } from "./automations.js";
 import { createAuthRuntime } from "./auth.js";
-import { initializeRidgeDb } from "./db/index.js";
+import {
+	ensureStoredWorkspaceDir,
+	getStoredWorkspaceDir,
+	initializeRidgeDb,
+} from "./db/index.js";
 import {
 	ensureWithinRoot,
 	normalizeFsPath,
@@ -78,16 +82,21 @@ import { atomicWriteFile } from "./utils/fs.js";
 import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
 import {
+	ensureWorkspaceTemplate,
 	getWorkspaceChatConfig,
 	resolveDefaultWorkspaceDir,
 } from "./workspace-chat.js";
 import { createWorktreeService } from "./worktree-service.js";
 
-const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
-	explicitWorkspaceDir: process.env.PI_WORKSPACE_DIR,
-	platform: process.platform,
+const fallbackWorkspaceDir = resolveDefaultWorkspaceDir({
 	homeDir: os.homedir(),
 });
+await initializeRidgeDb(fallbackWorkspaceDir);
+const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
+	homeDir: os.homedir(),
+	storedWorkspaceDir: await getStoredWorkspaceDir(),
+});
+await ensureStoredWorkspaceDir(defaultWorkspaceDir);
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 const workspaceChatConfig = getWorkspaceChatConfig(defaultWorkspaceDir);
 export const authRuntime = createAuthRuntime({ adminPassword: "ridge-admin" });
@@ -1222,6 +1231,7 @@ export async function startServer() {
 		});
 	});
 
+	await ensureWorkspaceTemplate(defaultWorkspaceDir);
 	const db = await initializeRidgeDb(defaultWorkspaceDir);
 	automationStore = createAutomationStore(db);
 	automationScheduler = createAutomationScheduler({

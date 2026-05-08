@@ -41,8 +41,8 @@ import {
 import type { SplitTabItem } from "@/composables/useSplitPanes";
 import type { DropZone } from "@/composables/useSplitDrag";
 import { NO_AGENT_VALUE } from "@/composables/useWorkbenchSessionState";
-import { provideWorkspaceTasks, useWorkspaceTasks } from "@/composables/useWorkspaceTasks";
-import { provideWorkspaceInbox, useWorkspaceInbox } from "@/composables/useInbox";
+import { provideWorkspaceTasks } from "@/composables/useWorkspaceTasks";
+import { provideWorkspaceInbox } from "@/composables/useInbox";
 import { usePiChatCore } from "@/composables/usePiChatCore";
 import { useTerminalContextOptions } from "@/composables/useTerminalContextOptions";
 import { useTerminalPool } from "@/composables/useTerminalPool";
@@ -82,10 +82,10 @@ const terminalContextOptions = useTerminalContextOptions();
 const workspaceDir = computed(() => core.info.value?.workspaceDir ?? "");
 
 // 共享任务 store
-provideWorkspaceTasks(() => workspaceDir.value);
+const tasksStore = provideWorkspaceTasks(() => workspaceDir.value);
 
 // 共享收件箱 store
-provideWorkspaceInbox(() => workspaceDir.value);
+const inboxStore = provideWorkspaceInbox(() => workspaceDir.value);
 
 // 文件树
 const {
@@ -151,11 +151,7 @@ const viewLabelMap: Record<string, string> = {
 };
 
 // 收件箱数量
-const inboxStore = useWorkspaceInbox(() => workspaceDir.value);
 const inboxCount = inboxStore.count;
-
-// 任务 store（首页最近事情需要）
-const tasksStore = useWorkspaceTasks();
 
 // 仪表盘数据（复用最近文件和日记）
 const dashboard = useDashboard(() => workspaceDir.value);
@@ -538,7 +534,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-background text-foreground">
+  <div class="flex h-screen min-h-0 flex-col bg-background text-foreground">
     <WorkspaceTopMenu
       @open-terminal="handleOpenTerminal"
       @open-automation="handleOpenAutomation"
@@ -553,7 +549,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
         <!-- 主页入口 -->
         <button
           type="button"
-          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
           @click="handleOpenHome"
         >
           <component :is="homeEntry.icon" class="size-4" />
@@ -566,7 +562,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
           v-for="view in fixedViews"
           :key="view.id"
           type="button"
-          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
           @click="handleSelectView(view.id)"
         >
           <component :is="view.icon" class="size-4" />
@@ -581,7 +577,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 
 		<!-- 新建按钮行 -->
 		<div class="shrink-0 px-3 py-2">
-		  <div class="flex items-center justify-between gap-1">
+		  <div class="flex items-center justify-between gap-2">
 			<Tooltip>
             <TooltipTrigger as-child>
               <button

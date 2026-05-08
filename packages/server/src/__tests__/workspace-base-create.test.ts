@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -7,7 +8,7 @@ import { createAuthenticatedAgent } from "../test/auth.js";
 
 let api: ReturnType<typeof request.agent>;
 
-const WORKSPACE = process.env.PI_WORKSPACE_DIR!;
+const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
 const TEST_ROOT = path.join(WORKSPACE, "base-create-test");
 
 beforeAll(async () => {

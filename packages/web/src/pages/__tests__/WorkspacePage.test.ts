@@ -14,6 +14,10 @@ const {
 	mockReplaceTab,
 	mockOpenTab,
 	mockSetActiveTab,
+	mockProvideWorkspaceTasks,
+	mockUseWorkspaceTasks,
+	mockProvideWorkspaceInbox,
+	mockUseWorkspaceInbox,
 } = vi.hoisted(() => ({
 	mockCreateFileEntry: vi.fn(),
 	mockCreateBase: vi.fn(),
@@ -25,6 +29,17 @@ const {
 	mockReplaceTab: vi.fn(),
 	mockOpenTab: vi.fn(),
 	mockSetActiveTab: vi.fn(),
+	mockProvideWorkspaceTasks: vi.fn(() => ({ todayTasks: { value: [] } })),
+	mockUseWorkspaceTasks: vi.fn(() => {
+		throw new Error("WorkspacePage must reuse provideWorkspaceTasks return value");
+	}),
+	mockProvideWorkspaceInbox: vi.fn(() => ({
+		count: { value: 0 },
+		recentItems: { value: [] },
+	})),
+	mockUseWorkspaceInbox: vi.fn(() => {
+		throw new Error("WorkspacePage must reuse provideWorkspaceInbox return value");
+	}),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -122,16 +137,13 @@ vi.mock("@/composables/useSplitPanes", () => ({
 }));
 
 vi.mock("@/composables/useWorkspaceTasks", () => ({
-	provideWorkspaceTasks: () => {},
-	useWorkspaceTasks: () => ({ todayTasks: { value: [] } }),
+	provideWorkspaceTasks: mockProvideWorkspaceTasks,
+	useWorkspaceTasks: mockUseWorkspaceTasks,
 }));
 
 vi.mock("@/composables/useInbox", () => ({
-	provideWorkspaceInbox: () => {},
-	useWorkspaceInbox: () => ({
-		count: { value: 0 },
-		recentItems: { value: [] },
-	}),
+	provideWorkspaceInbox: mockProvideWorkspaceInbox,
+	useWorkspaceInbox: mockUseWorkspaceInbox,
 }));
 
 vi.mock("@/composables/usePiChatCore", () => ({
@@ -205,6 +217,15 @@ describe("WorkspacePage - AI 启动台集成", () => {
 		const wrapper = mountWorkspace();
 		const text = wrapper.text();
 		expect(text).not.toContain("仪表盘");
+	});
+
+	it("复用当前页面 provide 返回的任务和收件箱 store", () => {
+		mountWorkspace();
+
+		expect(mockProvideWorkspaceTasks).toHaveBeenCalledOnce();
+		expect(mockUseWorkspaceTasks).not.toHaveBeenCalled();
+		expect(mockProvideWorkspaceInbox).toHaveBeenCalledOnce();
+		expect(mockUseWorkspaceInbox).not.toHaveBeenCalled();
 	});
 
 	it("左侧面板包含主页入口", () => {

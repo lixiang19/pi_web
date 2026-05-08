@@ -57,7 +57,8 @@
 
 - 品牌名：ridge
 - 数据目录：`~/.pi/`
-- 配置文件：`~/.pi/ridge-settings.json`
+- 配置与运行状态存储：`~/.pi/ridge.db`
+- 默认工作空间目录：`~/ridge-workspace`
 
 # 四愿景
 

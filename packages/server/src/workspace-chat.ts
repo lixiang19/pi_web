@@ -1,8 +1,18 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { Project } from "./types/index.js";
 
 export const WORKSPACE_CHAT_PROJECT_ID = "ridge:workspace-chat";
 export const WORKSPACE_CHAT_LABEL = "聊天";
+export const DEFAULT_WORKSPACE_DIR_NAME = "ridge-workspace";
+export const WORKSPACE_TEMPLATE_DIRS = [
+	"收件箱",
+	"日记",
+	"笔记",
+	"项目",
+	"阅读",
+	"数据库",
+] as const;
 
 export interface WorkspaceChatConfig {
 	workspaceDir: string;
@@ -34,19 +44,21 @@ export const createWorkspaceChatProject = (
 });
 
 export const resolveDefaultWorkspaceDir = (options: {
-	explicitWorkspaceDir?: string;
-	platform: NodeJS.Platform;
 	homeDir: string;
+	storedWorkspaceDir?: string | null;
 }): string => {
-	if (options.explicitWorkspaceDir?.trim()) {
-		return path.resolve(options.explicitWorkspaceDir);
+	if (options.storedWorkspaceDir?.trim()) {
+		return path.resolve(options.storedWorkspaceDir);
 	}
 
-	if (options.platform === "darwin") {
-		return path.resolve(options.homeDir, "ridge-workspace");
-	}
+	return path.resolve(options.homeDir, DEFAULT_WORKSPACE_DIR_NAME);
+};
 
-	throw new Error(
-		"非 macOS 环境必须显式设置 PI_WORKSPACE_DIR，禁止默认回落到源码目录",
+export const ensureWorkspaceTemplate = async (workspaceDir: string) => {
+	await fs.mkdir(workspaceDir, { recursive: true });
+	await Promise.all(
+		WORKSPACE_TEMPLATE_DIRS.map((directory) =>
+			fs.mkdir(path.join(workspaceDir, directory), { recursive: true }),
+		),
 	);
 };
