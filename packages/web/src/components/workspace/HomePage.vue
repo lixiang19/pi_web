@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
 	Select,
@@ -60,7 +59,7 @@ const isFocused = ref(false);
 
 // ===== 选择器状态 =====
 const selectedModel = ref(props.defaultModel);
-const selectedAgent = ref(props.defaultAgent);
+const selectedAgent = ref(props.defaultAgent || NO_AGENT_VALUE);
 const selectedThinkingLevel = ref<ThinkingLevel>(props.defaultThinkingLevel);
 
 const isExpanded = computed(() => isFocused.value || draftText.value.length > 0);
@@ -140,47 +139,43 @@ const agentOptions = computed(() => {
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-background">
     <ScrollArea class="flex-1">
-      <div class="mx-auto flex max-w-2xl flex-col items-center gap-6 px-6 pt-16 pb-8">
+      <div class="mx-auto flex w-full max-w-5xl flex-col px-6 pb-8">
 
         <!-- AI 启动输入框 -->
-        <div class="w-full max-w-lg">
-          <h1 class="mb-6 text-center text-xl font-light tracking-wide text-foreground/80">
-            开始对话
-          </h1>
-
-          <form class="w-full" @submit.prevent="handleSubmit">
+        <div data-testid="home-ai-hero" class="flex min-h-[42vh] w-full flex-col justify-center pt-8">
+          <p class="sr-only">开始对话</p>
+          <form class="mx-auto w-full max-w-2xl" @submit.prevent="handleSubmit">
             <div
-              class="rounded-lg border border-border/60 bg-card px-4 py-3 shadow-sm transition-all duration-200"
-              :class="isExpanded ? 'shadow-md' : 'shadow-sm'"
+              class="rounded-2xl border border-border/50 bg-card p-2.5 shadow-sm ring-1 ring-border/20 transition-all duration-200 focus-within:border-primary/30 focus-within:ring-primary/20"
             >
               <!-- 输入区 -->
-              <div class="flex items-start gap-3">
+              <div class="flex items-end gap-3 px-2 pt-2">
                 <Textarea
                   v-model="draftText"
                   placeholder="问我任何事…"
-                  class="min-h-[24px] max-h-[160px] min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[15px] text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/50 focus-visible:ring-0"
-                  :rows="isExpanded ? 3 : 1"
+                  class="min-h-[84px] max-h-[180px] min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[16px] leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/50 focus-visible:ring-0"
+                  :rows="isExpanded ? 4 : 3"
                   @focus="handleFocus"
                   @blur="handleBlur"
                 />
                 <Button
                   type="submit"
                   size="icon"
-                  variant="ghost"
-                  class="mt-0.5 shrink-0 text-muted-foreground hover:text-primary"
+                  class="size-8 shrink-0 rounded-full"
                   :disabled="!draftText.trim()"
                 >
                   <SendHorizontal class="size-4" />
                 </Button>
               </div>
 
-              <!-- 展开态：真实控件 -->
-              <div v-if="isExpanded" class="mt-3 flex flex-wrap items-center gap-2 border-t border-border/40 pt-2">
+              <!-- 默认展示真实控件，保持首页输入框像完整 AI 对话 composer。 -->
+              <div class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/20 px-1 pt-2">
                 <Select v-model="selectedModel">
-                  <SelectTrigger class="h-6 w-[130px] gap-1 border-0 bg-muted/60 px-2 text-[11px] shadow-none ring-0 focus:ring-0">
+                  <SelectTrigger class="h-7 w-auto min-w-[180px] max-w-[260px] gap-1.5 rounded-md border-border/40 bg-muted/35 px-2.5 text-[13px] shadow-none ring-0 hover:bg-muted/60 focus:ring-0">
+                    <Sparkles class="size-3.5 text-primary/70" />
                     <SelectValue placeholder="模型" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent class="max-h-72 min-w-[280px]">
                     <SelectItem
                       v-for="model in models"
                       :key="model.value"
@@ -193,10 +188,11 @@ const agentOptions = computed(() => {
                 </Select>
 
                 <Select v-model="selectedAgent">
-                  <SelectTrigger class="h-6 w-[130px] gap-1 border-0 bg-muted/60 px-2 text-[11px] shadow-none ring-0 focus:ring-0">
+                  <SelectTrigger class="h-7 w-auto min-w-[160px] max-w-[240px] gap-1.5 rounded-md border-border/40 bg-muted/35 px-2.5 text-[13px] shadow-none ring-0 hover:bg-muted/60 focus:ring-0">
+                    <MessageSquare class="size-3.5 text-foreground/50" />
                     <SelectValue placeholder="Agent" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent class="max-h-72">
                     <SelectItem
                       v-for="agent in agentOptions"
                       :key="agent.name"
@@ -209,10 +205,11 @@ const agentOptions = computed(() => {
                 </Select>
 
                 <Select v-model="selectedThinkingLevel">
-                  <SelectTrigger class="h-6 w-[90px] gap-1 border-0 bg-muted/60 px-2 text-[11px] shadow-none ring-0 focus:ring-0">
+                  <SelectTrigger class="h-7 w-auto min-w-[120px] max-w-[160px] gap-1.5 rounded-md border-border/40 bg-muted/35 px-2.5 text-[13px] shadow-none ring-0 hover:bg-muted/60 focus:ring-0">
+                    <Lightbulb class="size-3.5 text-foreground/50" />
                     <SelectValue placeholder="思考" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent class="max-h-72">
                     <SelectItem
                       v-for="opt in thinkingOptions"
                       :key="opt.value"
@@ -228,14 +225,12 @@ const agentOptions = computed(() => {
           </form>
         </div>
 
-        <Separator class="w-full max-w-lg" />
-
         <!-- 下方信息区：左时间线 + 右侧卡片 -->
-        <div class="grid w-full max-w-2xl grid-cols-1 gap-4 md:grid-cols-[1fr_240px]">
+        <div data-testid="home-info-grid" class="grid w-full grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_280px]">
 
           <!-- 左侧：最近事情混合时间线 -->
-          <Card class="border-0 bg-card shadow-none">
-            <CardHeader class="pb-2 pt-4 px-4">
+          <Card class="border border-border/50 bg-card shadow-sm">
+            <CardHeader class="px-4 pt-4 pb-2">
               <CardTitle class="text-sm font-semibold text-foreground">最近事情</CardTitle>
             </CardHeader>
             <CardContent class="px-4 pb-4 pt-0">
@@ -245,12 +240,12 @@ const agentOptions = computed(() => {
               <div v-else-if="visibleActivity.length === 0" class="py-4 text-xs text-muted-foreground">
                 暂无最近活动
               </div>
-              <div v-else class="space-y-0.5">
+              <div v-else class="space-y-1">
                 <button
                   v-for="item in visibleActivity"
                   :key="item.id"
                   type="button"
-                  class="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/30"
+                  class="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
                   @click="handleActivityClick(item)"
                 >
                   <component :is="kindIconMap[item.kind]" class="size-3.5 shrink-0 text-muted-foreground" />
@@ -269,20 +264,20 @@ const agentOptions = computed(() => {
           <!-- 右侧：最近文件 + AI 建议占位 -->
           <div class="flex flex-col gap-4">
             <!-- 最近文件 -->
-            <Card class="border-0 bg-card shadow-none">
-              <CardHeader class="pb-2 pt-4 px-4">
+            <Card class="border border-border/50 bg-card shadow-sm">
+              <CardHeader class="px-4 pt-4 pb-2">
                 <CardTitle class="text-sm font-semibold text-foreground">最近文件</CardTitle>
               </CardHeader>
               <CardContent class="px-4 pb-4 pt-0">
                 <div v-if="visibleRecentFiles.length === 0" class="py-2 text-xs text-muted-foreground">
                   暂无文件
                 </div>
-                <div v-else class="space-y-0.5">
+                <div v-else class="space-y-1">
                   <button
                     v-for="file in visibleRecentFiles"
                     :key="file.path"
                     type="button"
-                    class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-accent/30"
+                    class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
                     @click="emit('open-file', file.path)"
                   >
                     <component :is="fileIconByExtension(file.extension)" class="size-3.5 shrink-0 text-muted-foreground" />
@@ -293,8 +288,8 @@ const agentOptions = computed(() => {
             </Card>
 
             <!-- AI 建议占位 -->
-            <Card class="border-0 bg-muted/30 shadow-none">
-              <CardHeader class="pb-2 pt-4 px-4">
+            <Card class="border border-border/30 bg-muted/20 shadow-none">
+              <CardHeader class="px-4 pt-4 pb-2">
                 <div class="flex items-center gap-1.5">
                   <Sparkles class="size-3.5 text-primary/60" />
                   <CardTitle class="text-sm font-semibold text-foreground/70">AI 建议</CardTitle>

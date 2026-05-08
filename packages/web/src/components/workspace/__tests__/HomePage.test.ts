@@ -4,6 +4,7 @@ import HomePage from "@/components/workspace/HomePage.vue";
 import type { RecentActivityItem } from "@/composables/useRecentActivity";
 import type { RecentFileItem } from "@/lib/api";
 import type { AgentSummary, ThinkingLevel } from "@/lib/types";
+import { NO_AGENT_VALUE } from "@/composables/useWorkbenchSessionState";
 
 type HomeSubmitPayload = {
 	text: string;
@@ -114,7 +115,7 @@ function mountHomePage(overrides: Record<string, unknown> = {}) {
 					emits: ["update:modelValue"],
 				},
 				SelectTrigger: { template: "<div><slot /></div>" },
-				SelectContent: { template: "<div><slot /></div>" },
+				SelectContent: { template: '<div data-testid="select-content"><slot /></div>' },
 				SelectItem: { template: "<div><slot /></div>" },
 				SelectValue: { template: "<span><slot /></span>" },
 			},
@@ -132,19 +133,39 @@ describe("HomePage - AI 启动台", () => {
 		expect(text).toContain("AI 建议");
 	});
 
-	it("默认极简态，展开控件不显示", () => {
+	it("输入框位于独立居中区域，信息区在其下方", () => {
 		const wrapper = mountHomePage();
-		const selects = wrapper.findAll('[data-testid="select"]');
-		expect(selects.length).toBe(0);
+		const hero = wrapper.find('[data-testid="home-ai-hero"]');
+		const infoGrid = wrapper.find('[data-testid="home-info-grid"]');
+
+		expect(hero.exists()).toBe(true);
+		expect(infoGrid.exists()).toBe(true);
+		expect(hero.classes()).toEqual(expect.arrayContaining(["min-h-[42vh]", "justify-center"]));
 	});
 
-	it("聚焦后显示完整真实控件（模型/Agent/思考级别选择器）", async () => {
+	it("默认展示模型、Agent、思考级别选择器", () => {
+		const wrapper = mountHomePage();
+		const selects = wrapper.findAll('[data-testid="select"]');
+		expect(selects).toHaveLength(3);
+	});
+
+	it("下拉内容使用受控高度，模型菜单有足够宽度", async () => {
+		const wrapper = mountHomePage();
+		const contents = wrapper.findAll('[data-testid="select-content"]');
+		expect(contents).toHaveLength(3);
+		for (const content of contents) {
+			expect(content.classes()).toContain("max-h-72");
+		}
+		expect(contents[0]!.classes()).toContain("min-w-[280px]");
+	});
+
+	it("聚焦后继续保留完整真实控件（模型/Agent/思考级别选择器）", async () => {
 		const wrapper = mountHomePage();
 		const textarea = wrapper.find("textarea");
 		await textarea.trigger("focus");
 
 		const selects = wrapper.findAll('[data-testid="select"]');
-		expect(selects.length).toBeGreaterThanOrEqual(1);
+		expect(selects).toHaveLength(3);
 	});
 
 	it("提交首条消息触发 submit 事件，携带完整 payload", async () => {
@@ -157,7 +178,7 @@ describe("HomePage - AI 启动台", () => {
 		const payload = wrapper.emitted("submit")![0]![0] as HomeSubmitPayload;
 		expect(payload.text).toBe("帮我写个函数");
 		expect(payload.model).toBe("gpt-4");
-		expect(payload.agent).toBe("");
+		expect(payload.agent).toBe(NO_AGENT_VALUE);
 		expect(payload.thinkingLevel).toBe("medium");
 	});
 

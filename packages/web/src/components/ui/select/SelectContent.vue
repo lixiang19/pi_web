@@ -49,7 +49,7 @@ const forwardedProps = useDefinedObject(forwarded);
           cn(
             'p-1',
             position === 'popper' &&
-              'h-[var(--reka-select-trigger-height)] w-full min-w-[var(--reka-select-trigger-width)] scroll-my-1',
+              'w-full min-w-[var(--reka-select-trigger-width)] scroll-my-1',
           )
         "
       >
