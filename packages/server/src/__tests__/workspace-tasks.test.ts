@@ -1,333 +1,183 @@
 import fs from "node:fs/promises";
-import path from "node:path";
-import express from "express";
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createWorkspaceTasksRouter } from "../routes/workspace-tasks.js";
-import { createTempDir } from "../test/helpers.js";
+import { beforeEach, describe, expect, it } from "vitest";
+import { getRidgeDb } from "../db/index.js";
+import { app } from "../index.js";
 
-const BASE_PATH = "/api/workspace/tasks";
+const api = request(app);
+const WORKSPACE = process.env.PI_WORKSPACE_DIR!;
 
-interface TaskItem {
-	id: string;
-	title: string;
-	status: "pending" | "in_progress" | "done";
-	priority: "low" | "medium" | "high";
-	dueDate: number | null;
-	tags: string[];
-	createdAt: number;
-	updatedAt: number;
-}
+beforeEach(async () => {
+	await fs.mkdir(WORKSPACE, { recursive: true });
+	const db = await getRidgeDb();
+	db.prepare("DELETE FROM workspace_tasks").run();
+	db.prepare("DELETE FROM workspace_milestones").run();
+});
 
-describe("workspace-tasks API", () => {
-	let workspaceDir: string;
-	let cleanup: () => Promise<void>;
+describe("workspace task system", () => {
+	it("creates the default unassigned milestone on first milestone query", async () => {
+		const res = await api.get("/api/workspace/milestones");
 
-	const createApp = () => {
-		const app = express();
-		app.use(express.json());
-		app.use(BASE_PATH, createWorkspaceTasksRouter(workspaceDir));
-		return app;
-	};
-
-	beforeEach(async () => {
-		workspaceDir = await createTempDir("ridge-wt-");
-		cleanup = () => fs.rm(workspaceDir, { recursive: true, force: true });
-	});
-
-	afterEach(async () => {
-		await cleanup();
-	});
-
-	// ===== CRUD 基础 =====
-
-	it("GET / → 空列表返回空数组", async () => {
-		const app = createApp();
-		const res = await request(app).get(BASE_PATH);
 		expect(res.status).toBe(200);
-		expect(res.body.tasks).toEqual([]);
-		expect(typeof res.body.updatedAt).toBe("number");
+		expect(res.body.milestones).toHaveLength(1);
+		expect(res.body.milestones[0]).toMatchObject({
+			title: "未归属",
+			status: "pending",
+			isSystem: true,
+		});
 	});
 
-	it("POST / → 创建任务，返回完整 TaskItem", async () => {
-		const app = createApp();
-		const res = await request(app).post(BASE_PATH).send({ title: "Test task" });
+	it("creates a milestone with pending status", async () => {
+		const res = await api.post("/api/workspace/milestones").send({
+			title: "M1",
+			goal: "完成任务系统基础能力",
+			acceptanceCriteria: "任务和里程碑都可管理",
+		});
+
 		expect(res.status).toBe(201);
-		expect(res.body.task).toMatchObject({
-			title: "Test task",
+		expect(res.body.milestone).toMatchObject({
+			title: "M1",
 			status: "pending",
-			priority: "medium",
-			dueDate: null,
-			tags: [],
+			isSystem: false,
+			taskCount: 0,
 		});
-		expect(typeof res.body.task.id).toBe("string");
-		expect(res.body.task.id).toMatch(/^task-/);
-		expect(typeof res.body.task.createdAt).toBe("number");
-		expect(typeof res.body.task.updatedAt).toBe("number");
-		expect(typeof res.body.updatedAt).toBe("number");
 	});
 
-	it("POST / → 缺少 title 返回 400", async () => {
-		const app = createApp();
-		const res = await request(app).post(BASE_PATH).send({});
+	it("creates a task under the default milestone when no milestone is provided", async () => {
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "实现任务创建",
+			priority: "important",
+			acceptanceCriteria: "创建后可在列表中看到",
+		});
+
+		expect(taskRes.status).toBe(201);
+		expect(taskRes.body.task).toMatchObject({
+			title: "实现任务创建",
+			priority: "important",
+			status: "pending",
+		});
+
+		const milestoneRes = await api.get("/api/workspace/milestones");
+		const defaultMilestone = milestoneRes.body.milestones.find(
+			(milestone: { title: string }) => milestone.title === "未归属",
+		);
+		expect(taskRes.body.task.milestoneId).toBe(defaultMilestone.id);
+		expect(defaultMilestone.taskCount).toBe(1);
+	});
+
+	it("returns task and milestone details", async () => {
+		const milestoneRes = await api.post("/api/workspace/milestones").send({
+			title: "M2",
+			goal: "验证详情",
+			acceptanceCriteria: "详情字段完整",
+		});
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "详情任务",
+			priority: "normal",
+			acceptanceCriteria: "可打开详情",
+			milestoneId: milestoneRes.body.milestone.id,
+		});
+
+		const detailRes = await api.get(
+			`/api/workspace/tasks/${taskRes.body.task.id}`,
+		);
+		const milestoneDetailRes = await api.get(
+			`/api/workspace/milestones/${milestoneRes.body.milestone.id}`,
+		);
+
+		expect(detailRes.status).toBe(200);
+		expect(detailRes.body.task.title).toBe("详情任务");
+		expect(milestoneDetailRes.status).toBe(200);
+		expect(milestoneDetailRes.body.milestone.taskCount).toBe(1);
+	});
+
+	it("allows a user to complete a task", async () => {
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "人工完成任务",
+			priority: "urgent",
+			acceptanceCriteria: "用户确认完成",
+		});
+		await api
+			.patch(`/api/workspace/tasks/${taskRes.body.task.id}`)
+			.send({ status: "in_progress", actor: "user" });
+		await api
+			.patch(`/api/workspace/tasks/${taskRes.body.task.id}`)
+			.send({ status: "reviewing", actor: "user" });
+
+		const completeRes = await api
+			.patch(`/api/workspace/tasks/${taskRes.body.task.id}`)
+			.send({ status: "completed", actor: "user" });
+
+		expect(completeRes.status).toBe(200);
+		expect(completeRes.body.task.status).toBe("completed");
+	});
+
+	it("rejects invalid status transitions", async () => {
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "非法流转",
+			priority: "normal",
+			acceptanceCriteria: "不能跳过状态",
+		});
+
+		const res = await api
+			.patch(`/api/workspace/tasks/${taskRes.body.task.id}`)
+			.send({ status: "completed", actor: "user" });
+
 		expect(res.status).toBe(400);
 	});
 
-	it("PATCH /:taskId → 更新指定字段", async () => {
-		const app = createApp();
-		const createRes = await request(app)
-			.post(BASE_PATH)
-			.send({ title: "My task" });
-		const { id } = createRes.body.task;
-
-		const patchRes = await request(app).patch(`${BASE_PATH}/${id}`).send({
-			status: "done",
-			priority: "high",
-			title: "Updated task",
-			_expectedUpdatedAt: createRes.body.updatedAt,
+	it("rejects agent completion for tasks and milestones", async () => {
+		const milestoneRes = await api.post("/api/workspace/milestones").send({
+			title: "Agent 限制",
+			goal: "验证权限",
+			acceptanceCriteria: "Agent 不能完成",
 		});
-		expect(patchRes.status).toBe(200);
-		expect(patchRes.body.ok).toBe(true);
-		expect(typeof patchRes.body.updatedAt).toBe("number");
-
-		// Verify by reading back
-		const getRes = await request(app).get(BASE_PATH);
-		const updatedTask = getRes.body.tasks.find((t: TaskItem) => t.id === id);
-		expect(updatedTask).toBeDefined();
-		expect(updatedTask!.status).toBe("done");
-		expect(updatedTask!.priority).toBe("high");
-		expect(updatedTask!.title).toBe("Updated task");
-	});
-
-	it("PATCH /:taskId → 不存在的 taskId 返回 404", async () => {
-		const app = createApp();
-		const res = await request(app)
-			.patch(`${BASE_PATH}/nonexistent-id`)
-			.send({ title: "updated" });
-		expect(res.status).toBe(404);
-	});
-
-	it("DELETE /:taskId → 删除成功", async () => {
-		const app = createApp();
-		const createRes = await request(app)
-			.post(BASE_PATH)
-			.send({ title: "Delete me" });
-		const { id } = createRes.body.task;
-
-		const delRes = await request(app)
-			.delete(`${BASE_PATH}/${id}`)
-			.send({ _expectedUpdatedAt: createRes.body.updatedAt });
-		expect(delRes.status).toBe(200);
-		expect(delRes.body.ok).toBe(true);
-
-		const getRes = await request(app).get(BASE_PATH);
-		expect(
-			getRes.body.tasks.find((t: TaskItem) => t.id === id),
-		).toBeUndefined();
-	});
-
-	it("DELETE /:taskId → 不存在的 taskId 返回 404", async () => {
-		const app = createApp();
-		const res = await request(app)
-			.delete(`${BASE_PATH}/nonexistent-id`)
-			.send({});
-		expect(res.status).toBe(404);
-	});
-
-	// ===== 乐观锁 =====
-
-	it("PATCH /:taskId → updatedAt 不匹配返回 409", async () => {
-		const app = createApp();
-		const createRes = await request(app)
-			.post(BASE_PATH)
-			.send({ title: "Optimistic lock" });
-		const { id } = createRes.body.task;
-
-		const res = await request(app)
-			.patch(`${BASE_PATH}/${id}`)
-			.send({ status: "done", _expectedUpdatedAt: 0 });
-		expect(res.status).toBe(409);
-	});
-
-	it("DELETE /:taskId → updatedAt 不匹配返回 409", async () => {
-		const app = createApp();
-		const createRes = await request(app)
-			.post(BASE_PATH)
-			.send({ title: "Optimistic lock delete" });
-		const { id } = createRes.body.task;
-
-		const res = await request(app)
-			.delete(`${BASE_PATH}/${id}`)
-			.send({ _expectedUpdatedAt: 0 });
-		expect(res.status).toBe(409);
-	});
-
-	it("409 后重新 GET 能拿到最新数据", async () => {
-		const app = createApp();
-		const createRes = await request(app)
-			.post(BASE_PATH)
-			.send({ title: "Latest data" });
-		const { id } = createRes.body.task;
-
-		// First successful update
-		await request(app).patch(`${BASE_PATH}/${id}`).send({
-			status: "done",
-			_expectedUpdatedAt: createRes.body.updatedAt,
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "Agent 任务",
+			priority: "normal",
+			acceptanceCriteria: "Agent 只能到审核中",
+			milestoneId: milestoneRes.body.milestone.id,
 		});
 
-		// Try with stale updatedAt → 409
-		const staleRes = await request(app).patch(`${BASE_PATH}/${id}`).send({
-			status: "pending",
-			_expectedUpdatedAt: createRes.body.updatedAt,
-		});
-		expect(staleRes.status).toBe(409);
+		const taskCompleteRes = await api
+			.patch(`/api/workspace/tasks/${taskRes.body.task.id}`)
+			.send({ status: "completed", actor: "agent" });
+		const milestoneCompleteRes = await api
+			.patch(`/api/workspace/milestones/${milestoneRes.body.milestone.id}`)
+			.send({ status: "completed", actor: "agent" });
 
-		// GET still works and returns latest data
-		const getRes = await request(app).get(BASE_PATH);
-		expect(getRes.status).toBe(200);
-		const task = getRes.body.tasks.find((t: TaskItem) => t.id === id);
-		expect(task).toBeDefined();
-		expect(task!.status).toBe("done");
+		expect(taskCompleteRes.status).toBe(400);
+		expect(milestoneCompleteRes.status).toBe(400);
 	});
 
-	// ===== 持久化 =====
+	it("rejects completing the default unassigned milestone", async () => {
+		const milestonesRes = await api.get("/api/workspace/milestones");
+		const defaultMilestone = milestonesRes.body.milestones[0];
 
-	it("创建任务后 tasks.json 文件存在且内容正确", async () => {
-		const app = createApp();
-		await request(app).post(BASE_PATH).send({ title: "Disk task" });
+		const res = await api
+			.patch(`/api/workspace/milestones/${defaultMilestone.id}`)
+			.send({ status: "completed", actor: "user" });
 
-		const filePath = path.join(workspaceDir, ".ridge", "tasks.json");
-		const content = await fs.readFile(filePath, "utf-8");
-		const data = JSON.parse(content);
-		expect(data.tasks).toHaveLength(1);
-		expect(data.tasks[0].title).toBe("Disk task");
-		expect(typeof data.updatedAt).toBe("number");
-	});
-
-	it("重启（重新创建 router）后数据仍存在", async () => {
-		const app1 = createApp();
-		await request(app1).post(BASE_PATH).send({ title: "Persistent task" });
-
-		// New router instance (simulates server restart)
-		const app2 = createApp();
-		const res = await request(app2).get(BASE_PATH);
-		expect(res.status).toBe(200);
-		expect(res.body.tasks).toHaveLength(1);
-		expect(res.body.tasks[0].title).toBe("Persistent task");
-	});
-
-	// ===== 边界 =====
-
-	it("并发更新同一任务，先到的成功，后到的 409", async () => {
-		const app = createApp();
-		const createRes = await request(app)
-			.post(BASE_PATH)
-			.send({ title: "Concurrent" });
-		const { id } = createRes.body.task;
-		const originalUpdatedAt = createRes.body.updatedAt;
-
-		// First update (succeeds)
-		const first = await request(app)
-			.patch(`${BASE_PATH}/${id}`)
-			.send({ status: "done", _expectedUpdatedAt: originalUpdatedAt });
-		expect(first.status).toBe(200);
-
-		// Second update with stale updatedAt (409)
-		const second = await request(app)
-			.patch(`${BASE_PATH}/${id}`)
-			.send({ status: "pending", _expectedUpdatedAt: originalUpdatedAt });
-		expect(second.status).toBe(409);
-	});
-
-	it("tasks.json 不存在时 GET 返回空数据", async () => {
-		const app = createApp();
-		const res = await request(app).get(BASE_PATH);
-		expect(res.status).toBe(200);
-		expect(res.body.tasks).toEqual([]);
-		expect(typeof res.body.updatedAt).toBe("number");
-
-		// Verify no file was created
-		const filePath = path.join(workspaceDir, ".ridge", "tasks.json");
-		await expect(fs.access(filePath)).rejects.toThrow();
-	});
-
-	// ===== Reorder API =====
-
-	it("PATCH /reorder → 批量更新 order 成功", async () => {
-		const app = createApp();
-		const t1 = await request(app).post(BASE_PATH).send({ title: "Task 1" });
-		const t2 = await request(app).post(BASE_PATH).send({ title: "Task 2" });
-		const t3 = await request(app).post(BASE_PATH).send({ title: "Task 3" });
-
-		const items = [
-			{ id: t1.body.task.id, order: 2 },
-			{ id: t2.body.task.id, order: 0 },
-			{ id: t3.body.task.id, order: 1 },
-		];
-
-		const res = await request(app)
-			.patch(`${BASE_PATH}/reorder`)
-			.send({ items, _expectedUpdatedAt: t3.body.updatedAt });
-		expect(res.status).toBe(200);
-		expect(res.body.ok).toBe(true);
-		expect(typeof res.body.updatedAt).toBe("number");
-
-		// Verify order was persisted
-		const getRes = await request(app).get(BASE_PATH);
-		const tasks = getRes.body.tasks;
-		const sorted = [...tasks].sort((a: any, b: any) => a.order - b.order);
-		expect(sorted[0].title).toBe("Task 2");
-		expect(sorted[1].title).toBe("Task 3");
-		expect(sorted[2].title).toBe("Task 1");
-	});
-
-	it("PATCH /reorder → 更新 status 和 order", async () => {
-		const app = createApp();
-		const createRes = await request(app)
-			.post(BASE_PATH)
-			.send({ title: "Move me" });
-		const { id } = createRes.body.task;
-
-		const res = await request(app)
-			.patch(`${BASE_PATH}/reorder`)
-			.send({
-				items: [{ id, order: 0, status: "in_progress" }],
-				_expectedUpdatedAt: createRes.body.updatedAt,
-			});
-		expect(res.status).toBe(200);
-
-		const getRes = await request(app).get(BASE_PATH);
-		const task = getRes.body.tasks.find((t: any) => t.id === id);
-		expect(task.status).toBe("in_progress");
-		expect(task.order).toBe(0);
-	});
-
-	it("PATCH /reorder → 不存在的任务 ID 返回 404", async () => {
-		const app = createApp();
-		const res = await request(app)
-			.patch(`${BASE_PATH}/reorder`)
-			.send({ items: [{ id: "nonexistent", order: 0 }] });
-		expect(res.status).toBe(404);
-	});
-
-	it("PATCH /reorder → items 为空数组返回 400", async () => {
-		const app = createApp();
-		const res = await request(app)
-			.patch(`${BASE_PATH}/reorder`)
-			.send({ items: [] });
 		expect(res.status).toBe(400);
 	});
 
-	it("PATCH /reorder → updatedAt 不匹配返回 409", async () => {
-		const app = createApp();
-		const createRes = await request(app)
-			.post(BASE_PATH)
-			.send({ title: "Lock test" });
-		const { id } = createRes.body.task;
+	it("rejects deleting a milestone that still has tasks", async () => {
+		const milestoneRes = await api.post("/api/workspace/milestones").send({
+			title: "不可删除",
+			goal: "已有任务",
+			acceptanceCriteria: "删除被拒绝",
+		});
+		await api.post("/api/workspace/tasks").send({
+			title: "占用里程碑",
+			priority: "normal",
+			acceptanceCriteria: "存在即可",
+			milestoneId: milestoneRes.body.milestone.id,
+		});
 
-		const res = await request(app)
-			.patch(`${BASE_PATH}/reorder`)
-			.send({ items: [{ id, order: 0 }], _expectedUpdatedAt: 0 });
+		const res = await api.delete(
+			`/api/workspace/milestones/${milestoneRes.body.milestone.id}`,
+		);
+
 		expect(res.status).toBe(409);
 	});
 });

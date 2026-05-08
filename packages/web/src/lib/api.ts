@@ -773,14 +773,35 @@ export function getClips() {
 }
 
 // Workspace Tasks API
+export type WorkspaceTaskStatus =
+	| "pending"
+	| "in_progress"
+	| "blocked"
+	| "reviewing"
+	| "completed";
+
+export type WorkspaceTaskPriority =
+	| "normal"
+	| "important"
+	| "urgent"
+	| "low"
+	| "medium"
+	| "high";
+
 export interface WorkspaceTask {
 	id: string;
+	workspacePath: string;
+	milestoneId: string;
 	title: string;
-	status: "pending" | "in_progress" | "done";
-	priority: "low" | "medium" | "high";
+	status: WorkspaceTaskStatus;
+	priority: WorkspaceTaskPriority;
+	acceptanceCriteria: string;
 	dueDate: number | null;
-	tags: string[];
+	blockedReason: string | null;
+	processingSessionId: string | null;
+	sortOrder: number;
 	order?: number;
+	tags?: string[];
 	createdAt: number;
 	updatedAt: number;
 	kind?: "goal" | "task";
@@ -788,9 +809,28 @@ export interface WorkspaceTask {
 	source?: "dashboard";
 }
 
+export interface WorkspaceMilestone {
+	id: string;
+	workspacePath: string;
+	title: string;
+	goal: string;
+	acceptanceCriteria: string;
+	status: WorkspaceTaskStatus;
+	dueDate: number | null;
+	isSystem: boolean;
+	color: string;
+	sortOrder: number;
+	createdAt: number;
+	updatedAt: number;
+	taskCount: number;
+}
+
 export interface TasksListResponse {
 	tasks: WorkspaceTask[];
-	updatedAt: number;
+}
+
+export interface MilestonesListResponse {
+	milestones: WorkspaceMilestone[];
 }
 
 export function getWorkspaceTasks() {
@@ -799,16 +839,63 @@ export function getWorkspaceTasks() {
 
 export function createWorkspaceTask(data: {
 	title: string;
-	priority?: string;
-	dueDate?: number;
-	tags?: string[];
+	priority: WorkspaceTaskPriority;
+	acceptanceCriteria: string;
+	dueDate?: number | null;
+	milestoneId?: string | null;
 	kind?: "goal" | "task";
 	sessionId?: string;
 	source?: "dashboard";
-	_expectedUpdatedAt?: number;
 }) {
-	return request<{ task: WorkspaceTask; updatedAt: number }>(
-		"/api/workspace/tasks",
+	return request<{ task: WorkspaceTask }>("/api/workspace/tasks", {
+		method: "POST",
+		body: JSON.stringify(data),
+	});
+}
+
+export function updateWorkspaceTask(
+	taskId: string,
+	data: {
+		status?: WorkspaceTaskStatus;
+		title?: string;
+		priority?: WorkspaceTaskPriority;
+		acceptanceCriteria?: string;
+		dueDate?: number | null;
+		milestoneId?: string;
+		blockedReason?: string | null;
+		processingSessionId?: string | null;
+		sortOrder?: number;
+		actor?: "user" | "agent";
+		kind?: "goal" | "task";
+		sessionId?: string;
+		source?: "dashboard";
+	},
+) {
+	return request<{ task: WorkspaceTask }>(`/api/workspace/tasks/${taskId}`, {
+		method: "PATCH",
+		body: JSON.stringify(data),
+	});
+}
+
+export function deleteWorkspaceTask(taskId: string) {
+	return request<{ ok: true }>(`/api/workspace/tasks/${taskId}`, {
+		method: "DELETE",
+	});
+}
+
+export function getWorkspaceMilestones() {
+	return request<MilestonesListResponse>("/api/workspace/milestones");
+}
+
+export function createWorkspaceMilestone(data: {
+	title: string;
+	goal: string;
+	acceptanceCriteria: string;
+	dueDate?: number | null;
+	color?: string;
+}) {
+	return request<{ milestone: WorkspaceMilestone }>(
+		"/api/workspace/milestones",
 		{
 			method: "POST",
 			body: JSON.stringify(data),
@@ -816,22 +903,20 @@ export function createWorkspaceTask(data: {
 	);
 }
 
-export function updateWorkspaceTask(
-	taskId: string,
+export function updateWorkspaceMilestone(
+	milestoneId: string,
 	data: {
-		status?: string;
 		title?: string;
-		priority?: string;
+		goal?: string;
+		acceptanceCriteria?: string;
+		status?: WorkspaceTaskStatus;
 		dueDate?: number | null;
-		tags?: string[];
-		kind?: "goal" | "task";
-		sessionId?: string;
-		source?: "dashboard";
-		_expectedUpdatedAt?: number;
+		color?: string;
+		actor?: "user" | "agent";
 	},
 ) {
-	return request<{ ok: true; updatedAt: number }>(
-		`/api/workspace/tasks/${taskId}`,
+	return request<{ milestone: WorkspaceMilestone }>(
+		`/api/workspace/milestones/${milestoneId}`,
 		{
 			method: "PATCH",
 			body: JSON.stringify(data),
@@ -839,29 +924,10 @@ export function updateWorkspaceTask(
 	);
 }
 
-export function deleteWorkspaceTask(
-	taskId: string,
-	_expectedUpdatedAt?: number,
-) {
-	return request<{ ok: true; updatedAt: number }>(
-		`/api/workspace/tasks/${taskId}`,
-		{
-			method: "DELETE",
-			body: JSON.stringify({ _expectedUpdatedAt }),
-		},
-	);
-}
-
-export function reorderWorkspaceTasks(
-	items: Array<{ id: string; order?: number; status?: string }>,
-	_expectedUpdatedAt?: number,
-) {
-	return request<{ ok: true; updatedAt: number }>(
-		"/api/workspace/tasks/reorder",
-		{
-			method: "PATCH",
-			body: JSON.stringify({ items, _expectedUpdatedAt }),
-		},
+export function deleteWorkspaceMilestone(milestoneId: string) {
+	return request<{ ok: true }>(
+		`/api/workspace/milestones/${milestoneId}`,
+		{ method: "DELETE" },
 	);
 }
 

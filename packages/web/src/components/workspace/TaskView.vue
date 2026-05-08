@@ -1,26 +1,35 @@
 <script setup lang="ts">
-import { ref, watchEffect } from "vue";
-import { VueDraggableNext as Draggable } from "vue-draggable-next";
+import { computed, ref } from "vue";
 import {
-	CheckSquare,
-	Circle,
-	CircleDot,
-	CircleCheck,
-	Plus,
+	CalendarDays,
 	LoaderCircle,
+	Plus,
 	Trash2,
-	ChevronDown,
-	ChevronRight,
-	Pencil,
-	X,
-	Check,
-	Search,
-	Tag,
 } from "lucide-vue-next";
 
-import { useWorkspaceTasks, type TaskItem } from "@/composables/useWorkspaceTasks";
+import {
+	useWorkspaceTasks,
+	type MilestoneItem,
+	type TaskItem,
+} from "@/composables/useWorkspaceTasks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+	Sheet,
+	SheetContent,
+	SheetHeader,
+	SheetTitle,
+} from "@/components/ui/sheet";
 import {
 	Select,
 	SelectContent,
@@ -28,654 +37,584 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import {
-	Tabs,
-	TabsList,
-	TabsTrigger,
-	TabsContent,
-} from "@/components/ui/tabs";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@/components/ui/popover";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { WorkspaceTaskPriority, WorkspaceTaskStatus } from "@/lib/api";
 
-defineProps<{
-	workspaceDir: string;
-}>();
+defineProps<{ workspaceDir: string }>();
 
 const {
-	searchQuery,
-	filterStatus,
-	filterPriority,
-	filterTags,
-	allTags,
-	hasActiveFilters,
-	resetFilters,
-	filteredTasks,
-	completedTasks,
-	todayTasks,
+	milestones,
 	stats,
+	tasksByStatus,
+	tasksByMilestone,
 	isLoading,
 	addTask,
-	toggleStatus,
+	addMilestone,
 	removeTask,
 	updateTask,
-	reorderTasks,
-	showCompleted,
+	updateMilestone,
+	removeMilestone,
 } = useWorkspaceTasks();
 
-const viewMode = ref<"list" | "kanban" | "today">("list");
+const viewMode = ref<"kanban" | "list" | "calendar" | "milestones">("kanban");
 const newTaskTitle = ref("");
-const newTaskPriority = ref("medium");
+const newTaskAcceptanceCriteria = ref("");
+const newTaskPriority = ref<WorkspaceTaskPriority>("normal");
 const newTaskDueDate = ref("");
-const newTaskTags = ref("");
-const isAdding = ref(false);
-const isFormExpanded = ref(false);
+const newTaskMilestoneId = ref<string | undefined>();
+const newMilestoneTitle = ref("");
+const newMilestoneGoal = ref("");
+const newMilestoneAcceptanceCriteria = ref("");
+const newMilestoneDueDate = ref("");
+const selectedTask = ref<TaskItem | null>(null);
+const selectedMilestone = ref<MilestoneItem | null>(null);
+const draggedTask = ref<TaskItem | null>(null);
+const kanbanMilestoneFilter = ref("all");
+const pendingDeleteTask = ref<TaskItem | null>(null);
+const pendingDeleteMilestone = ref<MilestoneItem | null>(null);
+const currentMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
-// Inline editing state
-const editingTaskId = ref<string | null>(null);
-const editTitle = ref("");
-const editPriority = ref("");
-const editDueDate = ref("");
+const editTaskTitle = ref("");
+const editTaskAcceptanceCriteria = ref("");
+const editTaskPriority = ref<WorkspaceTaskPriority>("normal");
+const editTaskStatus = ref<WorkspaceTaskStatus>("pending");
+const editTaskDueDate = ref("");
+const editTaskMilestoneId = ref("");
+const editTaskBlockedReason = ref("");
+
+const editMilestoneTitle = ref("");
+const editMilestoneGoal = ref("");
+const editMilestoneAcceptanceCriteria = ref("");
+const editMilestoneStatus = ref<WorkspaceTaskStatus>("pending");
+const editMilestoneDueDate = ref("");
+
+const statusColumns: Array<{ key: WorkspaceTaskStatus; label: string }> = [
+	{ key: "pending", label: "待处理" },
+	{ key: "in_progress", label: "进行中" },
+	{ key: "blocked", label: "阻塞" },
+	{ key: "reviewing", label: "审核中" },
+	{ key: "completed", label: "完成" },
+];
+
+const weekLabels = ["一", "二", "三", "四", "五", "六", "日"];
+
+const priorityLabel = (priority: WorkspaceTaskPriority) =>
+	priority === "urgent" ? "紧急" : priority === "important" ? "重要" : "普通";
+
+const statusLabel = (status: WorkspaceTaskStatus) =>
+	statusColumns.find((column) => column.key === status)?.label ?? status;
+
+const formatDate = (value: number | null) => {
+	if (!value) return "无截止日期";
+	return new Intl.DateTimeFormat("zh-CN", {
+		month: "2-digit",
+		day: "2-digit",
+	}).format(value);
+};
+
+const formatInputDate = (value: number | null) =>
+	value ? new Date(value).toISOString().slice(0, 10) : "";
+
+const toTimestamp = (value: string) => (value ? new Date(value).getTime() : null);
+
+const selectedTaskMilestone = computed(() =>
+	milestones.value.find(
+		(milestone) => milestone.id === selectedTask.value?.milestoneId,
+	),
+);
+
+const detailOpen = computed(() => Boolean(selectedTask.value || selectedMilestone.value));
+
+const filteredTasksByStatus = computed(() => {
+	if (kanbanMilestoneFilter.value === "all") return tasksByStatus.value;
+	return Object.fromEntries(
+		statusColumns.map((column) => [
+			column.key,
+		tasksByStatus.value[column.key].filter(
+				(task) => task.milestoneId === kanbanMilestoneFilter.value,
+			),
+		]),
+	) as Record<WorkspaceTaskStatus, TaskItem[]>;
+});
+
+const selectedMilestoneTasks = computed(() => {
+	if (!selectedMilestone.value) return [];
+	return (
+		tasksByMilestone.value.find(
+			(group) => group.milestone.id === selectedMilestone.value?.id,
+		)?.tasks ?? []
+	);
+});
+
+const calendarCells = computed(() => {
+	const monthStart = currentMonth.value;
+	const firstDay = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
+	const offset = (firstDay.getDay() + 6) % 7;
+	const start = new Date(firstDay);
+	start.setDate(firstDay.getDate() - offset);
+
+	return Array.from({ length: 42 }, (_, index) => {
+		const date = new Date(start);
+		date.setDate(start.getDate() + index);
+		const startAt = new Date(
+			date.getFullYear(),
+			date.getMonth(),
+			date.getDate(),
+		).getTime();
+		const endAt = startAt + 86400000;
+		const tasks = tasksByMilestone.value
+			.flatMap((group) => group.tasks)
+			.filter(
+				(task) =>
+					task.dueDate !== null &&
+					task.dueDate >= startAt &&
+					task.dueDate < endAt,
+			);
+		return {
+			key: date.toISOString().slice(0, 10),
+			date,
+			isCurrentMonth: date.getMonth() === monthStart.getMonth(),
+			tasks,
+		};
+	});
+});
+
+const undatedTasks = computed(() =>
+	tasksByMilestone.value.flatMap((group) =>
+		group.tasks.filter((task) => task.dueDate === null),
+	),
+);
+
+const monthTitle = computed(() =>
+	new Intl.DateTimeFormat("zh-CN", {
+		year: "numeric",
+		month: "long",
+	}).format(currentMonth.value),
+);
+
+const allowedNextStatuses: Record<WorkspaceTaskStatus, WorkspaceTaskStatus[]> = {
+	pending: ["in_progress"],
+	in_progress: ["blocked", "reviewing"],
+	blocked: ["in_progress"],
+	reviewing: ["completed"],
+	completed: [],
+};
+
+const canSelectStatus = (
+	currentStatus: WorkspaceTaskStatus,
+	nextStatus: WorkspaceTaskStatus,
+) => currentStatus === nextStatus || allowedNextStatuses[currentStatus].includes(nextStatus);
+
+const milestoneColor = (milestoneId: string) =>
+	milestones.value.find((milestone) => milestone.id === milestoneId)?.color ??
+	"#64748b";
+
+const openTask = (task: TaskItem) => {
+	selectedTask.value = task;
+	selectedMilestone.value = null;
+	editTaskTitle.value = task.title;
+	editTaskAcceptanceCriteria.value = task.acceptanceCriteria ?? "";
+	editTaskPriority.value = task.priority;
+	editTaskStatus.value = task.status;
+	editTaskDueDate.value = formatInputDate(task.dueDate);
+	editTaskMilestoneId.value = task.milestoneId ?? "";
+	editTaskBlockedReason.value = task.blockedReason ?? "";
+};
+
+const openMilestone = (milestone: MilestoneItem) => {
+	selectedMilestone.value = milestone;
+	selectedTask.value = null;
+	editMilestoneTitle.value = milestone.title;
+	editMilestoneGoal.value = milestone.goal;
+	editMilestoneAcceptanceCriteria.value = milestone.acceptanceCriteria;
+	editMilestoneStatus.value = milestone.status;
+	editMilestoneDueDate.value = formatInputDate(milestone.dueDate);
+};
+
+const closeDetail = () => {
+	selectedTask.value = null;
+	selectedMilestone.value = null;
+};
+
+const changeMonth = (offset: number) => {
+	currentMonth.value = new Date(
+		currentMonth.value.getFullYear(),
+		currentMonth.value.getMonth() + offset,
+		1,
+	);
+};
 
 const handleAddTask = async () => {
 	const title = newTaskTitle.value.trim();
-	if (!title) return;
-	isAdding.value = true;
-	try {
-		const dueDate = newTaskDueDate.value
-			? new Date(newTaskDueDate.value).getTime()
-			: undefined;
-		const tags = newTaskTags.value.trim()
-			? newTaskTags.value.split(",").map((t) => t.trim()).filter(Boolean)
-			: undefined;
-		await addTask({
-			title,
-			priority: newTaskPriority.value,
-			dueDate,
-			tags,
-		});
-		newTaskTitle.value = "";
-		newTaskPriority.value = "medium";
-		newTaskDueDate.value = "";
-		newTaskTags.value = "";
-		isFormExpanded.value = false;
-	} finally {
-		isAdding.value = false;
-	}
-};
-
-const handleExpandForm = () => {
-	isFormExpanded.value = true;
-};
-
-const handleCollapseForm = () => {
-	isFormExpanded.value = false;
-};
-
-const startEdit = (task: TaskItem) => {
-	editingTaskId.value = task.id;
-	editTitle.value = task.title;
-	editPriority.value = task.priority;
-	editDueDate.value = task.dueDate
-		? new Date(task.dueDate).toISOString().slice(0, 10)
-		: "";
-};
-
-const cancelEdit = () => {
-	editingTaskId.value = null;
-};
-
-const saveEdit = async () => {
-	if (!editingTaskId.value) return;
-	const taskId = editingTaskId.value;
-	await updateTask(taskId, {
-		title: editTitle.value.trim() || undefined,
-		priority: editPriority.value || undefined,
-		dueDate: editDueDate.value
-			? new Date(editDueDate.value).getTime()
-			: undefined,
+	const acceptanceCriteria = newTaskAcceptanceCriteria.value.trim();
+	if (!title || !acceptanceCriteria) return;
+	await addTask({
+		title,
+		priority: newTaskPriority.value,
+		acceptanceCriteria,
+		dueDate: toTimestamp(newTaskDueDate.value),
+		milestoneId: newTaskMilestoneId.value || null,
 	});
-	editingTaskId.value = null;
+	newTaskTitle.value = "";
+	newTaskAcceptanceCriteria.value = "";
+	newTaskPriority.value = "normal";
+	newTaskDueDate.value = "";
+	newTaskMilestoneId.value = undefined;
 };
 
-const formatDueDate = (ts: number | null) => {
-	if (!ts) return "";
-	return new Intl.DateTimeFormat("zh-CN", {
-		month: "short",
-		day: "numeric",
-	}).format(ts);
+const handleAddMilestone = async () => {
+	const title = newMilestoneTitle.value.trim();
+	const goal = newMilestoneGoal.value.trim();
+	const acceptanceCriteria = newMilestoneAcceptanceCriteria.value.trim();
+	if (!title || !goal || !acceptanceCriteria) return;
+	await addMilestone({
+		title,
+		goal,
+		acceptanceCriteria,
+		dueDate: toTimestamp(newMilestoneDueDate.value),
+	});
+	newMilestoneTitle.value = "";
+	newMilestoneGoal.value = "";
+	newMilestoneAcceptanceCriteria.value = "";
+	newMilestoneDueDate.value = "";
 };
 
-const dueDateClass = (ts: number | null) => {
-	if (!ts) return "";
-	const now = Date.now();
-	if (ts < now) return "text-red-500 font-medium";
-	const today = new Date();
-	today.setHours(23, 59, 59, 999);
-	if (ts <= today.getTime()) return "text-amber-500";
-	return "text-muted-foreground";
-};
-
-const dueDateLabel = (ts: number | null) => {
-	if (!ts) return "";
-	const now = Date.now();
-	const today = new Date();
-	today.setHours(0, 0, 0, 0);
-	const todayEnd = today.getTime() + 86400000;
-	if (ts >= today.getTime() && ts < todayEnd) return "今天";
-	if (ts < now) return `${formatDueDate(ts)} (已过期)`;
-	return formatDueDate(ts);
-};
-
-const priorityLabel = (p: string) =>
-	p === "high" ? "高" : p === "low" ? "低" : "中";
-
-const priorityColor = (p: string) =>
-	p === "high"
-		? "text-red-500"
-		: p === "low"
-			? "text-green-500"
-			: "text-amber-500";
-
-const priorityBarClass = (p: string) =>
-	p === "high"
-		? "bg-red-500"
-		: p === "low"
-			? "bg-green-500"
-			: "bg-amber-500";
-
-const formatTags = (tags: string[]) => tags.join(", ");
-
-// 清单视图可修改数组（Draggable :list 需要）
-const listPendingTasks = ref<typeof filteredTasks.value>([]);
-let listDragging = false;
-
-// 看板每列的可修改数组（Draggable :list 需要）
-const kanbanPending = ref<typeof filteredTasks.value>([]);
-const kanbanInProgress = ref<typeof filteredTasks.value>([]);
-const kanbanDone = ref<typeof filteredTasks.value>([]);
-
-// 拖拽进行中时跳过同步，避免打断 Draggable 的数组操作
-let kanbanDragging = false;
-
-watchEffect(() => {
-	if (!listDragging) {
-		listPendingTasks.value = filteredTasks.value.filter((t) => t.status !== "done");
+const handleDropOnStatus = async (status: WorkspaceTaskStatus) => {
+	if (!draggedTask.value) return;
+	if (!canSelectStatus(draggedTask.value.status, status)) {
+		draggedTask.value = null;
+		return;
 	}
-	if (!kanbanDragging) {
-		kanbanPending.value = filteredTasks.value.filter((t) => t.status === "pending");
-		kanbanInProgress.value = filteredTasks.value.filter((t) => t.status === "in_progress");
-		kanbanDone.value = filteredTasks.value.filter((t) => t.status === "done");
-	}
-});
-
-const kanbanColumns = [
-	{ key: "pending" as const, label: "待做", icon: Circle, list: kanbanPending },
-	{ key: "in_progress" as const, label: "进行中", icon: CircleDot, list: kanbanInProgress },
-	{ key: "done" as const, label: "完成", icon: CircleCheck, list: kanbanDone },
-];
-
-const handleListDragStart = () => { listDragging = true };
-
-// 清单视图拖拽结束后同步 order
-const handleListDragEnd = (evt: { oldIndex: number; newIndex: number }) => {
-	if (evt.oldIndex === evt.newIndex) return;
-	listDragging = false;
-	const items = listPendingTasks.value.map((t, i) => ({ id: t.id, order: i }));
-	reorderTasks(items);
+	await updateTask(draggedTask.value.id, {
+		status,
+		sortOrder: Date.now(),
+		actor: "user",
+	});
+	draggedTask.value = null;
 };
 
-const handleKanbanDragStart = () => { kanbanDragging = true };
+const handleDropOnTask = async (targetTask: TaskItem) => {
+	if (!draggedTask.value || draggedTask.value.id === targetTask.id) return;
+	if (!canSelectStatus(draggedTask.value.status, targetTask.status)) {
+		draggedTask.value = null;
+		return;
+	}
+	const sameStatus = draggedTask.value.status === targetTask.status;
+	await updateTask(draggedTask.value.id, {
+		status: targetTask.status,
+		sortOrder: Math.max(0, (targetTask.sortOrder ?? 0) - 1),
+		actor: "user",
+	});
+	if (!sameStatus) draggedTask.value = null;
+};
 
-// 看板视图拖拽结束后同步 order + status
-const handleKanbanDragEnd = (
-	_evt: { from: HTMLElement; to: HTMLElement; oldIndex: number; newIndex: number },
-	groupKey: string,
-) => {
-	const columnRef =
-		groupKey === "pending" ? kanbanPending :
-		groupKey === "in_progress" ? kanbanInProgress :
-		kanbanDone;
-	const columnTasks = columnRef.value;
+const confirmDeleteTask = async () => {
+	if (!pendingDeleteTask.value) return;
+	await removeTask(pendingDeleteTask.value.id);
+	if (selectedTask.value?.id === pendingDeleteTask.value.id) closeDetail();
+	pendingDeleteTask.value = null;
+};
 
-	const items = columnTasks.map((t, i) => ({
-		id: t.id,
-		order: i,
-		status: groupKey,
-	}));
+const confirmDeleteMilestone = async () => {
+	if (!pendingDeleteMilestone.value) return;
+	await removeMilestone(pendingDeleteMilestone.value.id);
+	if (selectedMilestone.value?.id === pendingDeleteMilestone.value.id) closeDetail();
+	pendingDeleteMilestone.value = null;
+};
 
-	kanbanDragging = false;
-	reorderTasks(items);
+const saveSelectedTask = async () => {
+	if (!selectedTask.value) return;
+	await updateTask(selectedTask.value.id, {
+		title: editTaskTitle.value.trim(),
+		acceptanceCriteria: editTaskAcceptanceCriteria.value.trim(),
+		priority: editTaskPriority.value,
+		status: editTaskStatus.value,
+		dueDate: toTimestamp(editTaskDueDate.value),
+		milestoneId: editTaskMilestoneId.value,
+		blockedReason: editTaskBlockedReason.value.trim() || null,
+		actor: "user",
+	});
+};
+
+const saveSelectedMilestone = async () => {
+	if (!selectedMilestone.value) return;
+	await updateMilestone(selectedMilestone.value.id, {
+		title: editMilestoneTitle.value.trim(),
+		goal: editMilestoneGoal.value.trim(),
+		acceptanceCriteria: editMilestoneAcceptanceCriteria.value.trim(),
+		status: editMilestoneStatus.value,
+		dueDate: toTimestamp(editMilestoneDueDate.value),
+		actor: "user",
+	});
 };
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <!-- 标题栏 -->
-    <div class="flex items-center justify-between border-b border-border/40 px-4 py-3">
-      <div class="flex items-center gap-3">
-        <h2 class="text-sm font-semibold">待办</h2>
-        <span class="text-[11px] text-muted-foreground">
-          待做 {{ stats.pending }} · 进行中 {{ stats.inProgress }} · 完成 {{ stats.done }}
-        </span>
-      </div>
-      <div class="flex items-center gap-2">
-        <Input
-          v-model="newTaskTitle"
-          placeholder="新建任务..."
-          class="h-7 w-48 text-xs"
-          @keydown.enter="handleAddTask"
-          @focus="handleExpandForm"
-        />
-        <Button
-          size="sm"
-          class="h-7 gap-1 text-xs"
-          :disabled="!newTaskTitle.trim() || isAdding"
-          @click="handleAddTask"
-        >
-          <Plus class="size-3" />
-          添加
-        </Button>
-      </div>
-    </div>
-
-    <!-- 展开式新建表单 -->
-    <div v-if="isFormExpanded" class="shrink-0 border-b border-border/30 px-4 py-2.5">
-      <div class="flex items-center gap-3 text-xs">
-        <div class="flex items-center gap-1.5">
-          <span class="text-muted-foreground">优先级</span>
-          <div class="flex gap-1">
-            <button
-              v-for="p in ['high', 'medium', 'low']"
-              :key="p"
-              type="button"
-              class="rounded px-1.5 py-0.5 text-[11px] transition-colors"
-              :class="newTaskPriority === p
-                ? 'bg-accent text-accent-foreground font-medium'
-                : 'text-muted-foreground hover:bg-accent/40'"
-              @click="newTaskPriority = p"
-            >
-              {{ p === 'high' ? '高' : p === 'low' ? '低' : '中' }}
-            </button>
-          </div>
+  <div class="flex h-full overflow-hidden">
+    <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div class="flex shrink-0 items-center justify-between gap-4 border-b border-border/40 px-4 py-3">
+        <div>
+          <h2 class="text-sm font-semibold">任务</h2>
+          <p class="text-[11px] text-muted-foreground">
+            待处理 {{ stats.pending }} · 进行中 {{ stats.inProgress }} · 阻塞 {{ stats.blocked }} · 审核中 {{ stats.reviewing }} · 完成 {{ stats.done }}
+          </p>
         </div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-muted-foreground">截止</span>
-          <Input
-            v-model="newTaskDueDate"
-            type="date"
-            class="h-6 w-28 text-[11px]"
-          />
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-muted-foreground">标签</span>
-          <Input
-            v-model="newTaskTags"
-            placeholder="标签1,标签2"
-            class="h-6 w-28 text-[11px]"
-            @keydown.enter="handleAddTask"
-          />
-        </div>
-        <button
-          type="button"
-          class="ml-auto text-muted-foreground hover:text-foreground"
-          @click="handleCollapseForm"
-        >
-          <X class="size-3.5" />
-        </button>
-      </div>
-    </div>
-
-    <!-- 筛选工具栏 -->
-    <div class="flex shrink-0 items-center gap-2 border-b border-border/30 px-4 py-2">
-      <div class="relative max-w-56 flex-1">
-        <Search class="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          v-model="searchQuery"
-          placeholder="搜索待办..."
-          class="h-7 pl-7 text-xs"
-        />
-      </div>
-      <Select v-model="filterStatus">
-        <SelectTrigger class="h-7 w-24 text-xs">
-          <SelectValue placeholder="状态" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">全部</SelectItem>
-          <SelectItem value="pending">待做</SelectItem>
-          <SelectItem value="in_progress">进行中</SelectItem>
-          <SelectItem value="done">已完成</SelectItem>
-        </SelectContent>
-      </Select>
-      <Select v-model="filterPriority">
-        <SelectTrigger class="h-7 w-24 text-xs">
-          <SelectValue placeholder="优先级" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">全部</SelectItem>
-          <SelectItem value="high">高</SelectItem>
-          <SelectItem value="medium">中</SelectItem>
-          <SelectItem value="low">低</SelectItem>
-        </SelectContent>
-      </Select>
-      <Popover>
-        <PopoverTrigger as-child>
-          <Button variant="outline" size="sm" class="h-7 gap-1 text-xs">
-            <Tag class="size-3" />
-            <template v-if="filterTags.length === 0">标签</template>
-            <span v-else>{{ filterTags.length }}</span>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <Input v-model="newTaskTitle" class="h-8 w-40 text-xs" placeholder="任务标题" @keydown.enter="handleAddTask" />
+          <Input v-model="newTaskAcceptanceCriteria" class="h-8 w-52 text-xs" placeholder="完成标准（必填）" @keydown.enter="handleAddTask" />
+          <Select v-model="newTaskPriority">
+            <SelectTrigger class="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="normal">普通</SelectItem>
+              <SelectItem value="important">重要</SelectItem>
+              <SelectItem value="urgent">紧急</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select v-model="newTaskMilestoneId">
+            <SelectTrigger class="h-8 w-32 text-xs"><SelectValue placeholder="里程碑" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="milestone in milestones" :key="milestone.id" :value="milestone.id">
+                {{ milestone.title }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Input v-model="newTaskDueDate" type="date" class="h-8 w-32 text-xs" />
+          <Button size="sm" class="h-8 gap-1 text-xs" :disabled="!newTaskTitle.trim() || !newTaskAcceptanceCriteria.trim()" @click="handleAddTask">
+            <Plus class="size-3" />新建任务
           </Button>
-        </PopoverTrigger>
-        <PopoverContent class="w-48 p-2" align="start">
-          <div class="space-y-1">
-            <label
-              v-for="tag in allTags"
-              :key="tag"
-              class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-            >
-              <Checkbox
-                :checked="filterTags.includes(tag)"
-                @update:checked="(checked: boolean) => {
-                  if (checked) {
-                    filterTags = [...filterTags, tag]
-                  } else {
-                    filterTags = filterTags.filter(t => t !== tag)
-                  }
-                }"
-              />
-              {{ tag }}
-            </label>
-            <div v-if="allTags.length === 0" class="px-2 py-1 text-xs text-muted-foreground">
-              暂无标签
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
-      <button
-        v-if="hasActiveFilters"
-        type="button"
-        class="ml-auto text-muted-foreground transition-colors hover:text-foreground"
-        @click="resetFilters"
-      >
-        <X class="size-4" />
-      </button>
-    </div>
-
-    <!-- 视图切换 -->
-    <Tabs v-model="viewMode" class="flex flex-1 flex-col overflow-hidden">
-      <div class="shrink-0 px-4 pt-2">
-        <TabsList class="h-7 w-auto grid grid-cols-3 border border-border/50 bg-transparent p-0.5">
-          <TabsTrigger
-            value="list"
-            class="text-[11px] font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm"
-          >
-            清单
-          </TabsTrigger>
-          <TabsTrigger
-            value="kanban"
-            class="text-[11px] font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm"
-          >
-            看板
-          </TabsTrigger>
-          <TabsTrigger
-            value="today"
-            class="text-[11px] font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm"
-          >
-            今日
-          </TabsTrigger>
-        </TabsList>
+        </div>
       </div>
 
-      <!-- 清单视图 -->
-      <TabsContent value="list" class="flex-1 overflow-auto m-0 mt-0">
-        <div v-if="isLoading" class="flex items-center justify-center py-12 gap-2 text-sm text-muted-foreground">
-          <LoaderCircle class="size-4 animate-spin" />
-          加载中...
+      <Tabs v-model="viewMode" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div class="shrink-0 px-4 pt-3">
+          <TabsList class="grid h-8 w-[360px] grid-cols-4">
+            <TabsTrigger value="kanban" class="text-xs">看板</TabsTrigger>
+            <TabsTrigger value="list" class="text-xs">列表</TabsTrigger>
+            <TabsTrigger value="calendar" class="text-xs">日历</TabsTrigger>
+            <TabsTrigger value="milestones" class="text-xs">里程碑</TabsTrigger>
+          </TabsList>
         </div>
-        <div v-else-if="listPendingTasks.length === 0 && !showCompleted" class="flex flex-col items-center py-12">
-          <CheckSquare class="size-8 text-muted-foreground/30 mb-2" />
-          <p class="text-xs text-muted-foreground">没有待办任务</p>
+
+        <div v-if="isLoading" class="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle class="size-4 animate-spin" />加载中...
         </div>
-        <div v-else class="p-4">
-          <!-- 待做 + 进行中（可拖拽） -->
-          <Draggable
-            :list="listPendingTasks"
-            item-key="id"
-            :animation="150"
-            ghost-class="opacity-40"
-            @start="handleListDragStart"
-            @end="handleListDragEnd"
-          >
-            <template #item="{ element: task }">
-              <div
-                class="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors hover:bg-accent/40 cursor-grab active:cursor-grabbing"
-              >
-                <!-- 优先级色条 -->
-                <div class="mt-1.5 w-0.5 shrink-0 self-stretch rounded-full" :class="priorityBarClass(task.priority)" />
 
-                <!-- 状态切换按钮 -->
-                <button
-                  type="button"
-                  class="mt-0.5 shrink-0"
-                  @click="toggleStatus(task, task.status === 'pending' ? 'in_progress' : 'done')"
-                >
-                  <Circle v-if="task.status === 'pending'" class="size-4 text-muted-foreground" />
-                  <CircleDot v-else class="size-4 text-primary" />
-                </button>
-
-                <!-- 内容区 -->
-                <div class="min-w-0 flex-1">
-                  <!-- 编辑模式 -->
-                  <template v-if="editingTaskId === task.id">
-                    <div class="flex items-center gap-1.5">
-                      <Input
-                        v-model="editTitle"
-                        class="h-6 text-xs flex-1"
-                        @keydown.enter="saveEdit"
-                        @keydown.escape="cancelEdit"
-                      />
-                      <button type="button" class="shrink-0 text-green-600 hover:text-green-700" @click="saveEdit">
-                        <Check class="size-3.5" />
-                      </button>
-                      <button type="button" class="shrink-0 text-muted-foreground hover:text-foreground" @click="cancelEdit">
-                        <X class="size-3.5" />
-                      </button>
-                    </div>
-                    <div class="mt-1 flex items-center gap-2">
-                      <Select v-model="editPriority" class="h-5 text-[10px]">
-                        <SelectTrigger class="h-5 w-16 text-[10px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="high">高</SelectItem>
-                          <SelectItem value="medium">中</SelectItem>
-                          <SelectItem value="low">低</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        v-model="editDueDate"
-                        type="date"
-                        class="h-5 w-28 text-[10px]"
-                      />
-                    </div>
-                  </template>
-                  <!-- 普通模式 -->
-                  <template v-else>
-                    <p
-                      class="text-sm text-foreground"
-                      :class="task.status === 'in_progress' ? 'font-medium' : ''"
-                    >
-                      {{ task.title }}
-                    </p>
-                    <div class="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
-                      <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
-                      <span v-if="task.tags.length">{{ formatTags(task.tags) }}</span>
-                    </div>
-                  </template>
-                </div>
-
-                <!-- 操作按钮 -->
-                <template v-if="editingTaskId !== task.id">
-                  <button
-                    type="button"
-                    class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-foreground"
-                    @click="startEdit(task)"
-                  >
-                    <Pencil class="size-3" />
-                  </button>
-                  <button
-                    type="button"
-                    class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-destructive"
-                    @click="removeTask(task.id)"
-                  >
-                    <Trash2 class="size-3" />
-                  </button>
-                </template>
-              </div>
-            </template>
-          </Draggable>
-
-          <!-- 已完成 toggle -->
-          <div v-if="completedTasks.length > 0" class="mt-3 border-t border-border/30 pt-2">
-            <button
-              type="button"
-              class="flex items-center gap-1 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-              @click="showCompleted = !showCompleted"
-            >
-              <ChevronRight v-if="!showCompleted" class="size-3" />
-              <ChevronDown v-else class="size-3" />
-              已完成 ({{ completedTasks.length }})
-            </button>
-            <template v-if="showCompleted">
-              <div
-                v-for="task in completedTasks"
-                :key="task.id"
-                class="group flex items-start gap-1 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
-              >
-                <div class="mt-1.5 w-0.5 shrink-0 self-stretch rounded-full bg-muted-foreground/20" />
-                <button
-                  type="button"
-                  class="mt-0.5 shrink-0"
-                  @click="toggleStatus(task, 'pending')"
-                >
-                  <CircleCheck class="size-4 text-muted-foreground/50" />
-                </button>
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm text-muted-foreground line-through">{{ task.title }}</p>
-                </div>
-                <button
-                  type="button"
-                  class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-destructive"
-                  @click="removeTask(task.id)"
-                >
-                  <Trash2 class="size-3" />
-                </button>
-              </div>
-            </template>
+        <TabsContent v-else value="kanban" class="m-0 min-h-0 flex-1 overflow-auto p-4">
+          <div class="mb-3 flex items-center gap-2">
+            <span class="text-xs text-muted-foreground">里程碑筛选</span>
+            <Select v-model="kanbanMilestoneFilter">
+              <SelectTrigger class="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部里程碑</SelectItem>
+                <SelectItem v-for="milestone in milestones" :key="milestone.id" :value="milestone.id">
+                  {{ milestone.title }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </div>
-      </TabsContent>
+          <div class="flex min-w-[980px] gap-3">
+            <section
+              v-for="column in statusColumns"
+              :key="column.key"
+              class="min-h-[420px] flex-1 rounded-xl border border-border/50 bg-muted/20 p-3"
+              @dragover.prevent
+              @drop="handleDropOnStatus(column.key)"
+            >
+              <div class="mb-3 flex items-center justify-between">
+                <h3 class="text-xs font-semibold">{{ column.label }}</h3>
+                <span class="text-[11px] text-muted-foreground">{{ filteredTasksByStatus[column.key].length }}</span>
+              </div>
+              <div class="space-y-2">
+                <button
+                  v-for="task in filteredTasksByStatus[column.key]"
+                  :key="task.id"
+                  type="button"
+                  draggable="true"
+                  class="w-full cursor-grab rounded-lg border border-border/50 bg-card p-3 text-left shadow-sm hover:bg-accent/30 active:cursor-grabbing"
+                  :style="{ borderLeftColor: milestoneColor(task.milestoneId ?? ''), borderLeftWidth: '4px' }"
+                  @dragstart="draggedTask = task"
+                  @dragover.prevent
+                  @drop.stop="handleDropOnTask(task)"
+                  @click="openTask(task)"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <p class="text-xs font-medium">{{ task.title }}</p>
+                    <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{{ priorityLabel(task.priority) }}</span>
+                  </div>
+                  <p class="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{{ task.acceptanceCriteria }}</p>
+                  <p class="mt-2 text-[10px] text-muted-foreground">{{ formatDate(task.dueDate) }}</p>
+                </button>
+              </div>
+            </section>
+          </div>
+        </TabsContent>
 
-      <!-- 看板视图 -->
-      <TabsContent value="kanban" class="flex-1 overflow-hidden m-0 mt-0">
-        <div class="flex h-full gap-3 p-4">
-          <div
-            v-for="col in kanbanColumns"
-            :key="col.key"
-            class="flex min-w-0 flex-1 flex-col rounded-lg border border-border/50 bg-muted/20 p-3"
-          >
-            <div class="flex items-center gap-1.5 mb-3">
-              <component :is="col.icon" class="size-3.5 text-muted-foreground" />
-              <span class="text-xs font-semibold">{{ col.label }}</span>
-              <span class="text-[10px] text-muted-foreground ml-auto">
-                {{ col.list.value.length }}
-              </span>
+        <TabsContent value="list" class="m-0 min-h-0 flex-1 overflow-auto p-4">
+          <section v-for="group in tasksByMilestone" :key="group.milestone.id" class="mb-5">
+            <button type="button" class="mb-2 text-left text-xs font-semibold hover:text-primary" @click="openMilestone(group.milestone)">
+              {{ group.milestone.title }} · {{ group.tasks.length }}
+            </button>
+            <div class="overflow-hidden rounded-xl border border-border/50">
+              <button v-for="task in group.tasks" :key="task.id" type="button" class="flex w-full items-center gap-3 border-b border-border/30 px-3 py-2 text-left last:border-b-0 hover:bg-accent/30" @click="openTask(task)">
+                <span class="w-16 text-[11px] text-muted-foreground">{{ priorityLabel(task.priority) }}</span>
+                <span class="w-20 text-[11px] text-muted-foreground">{{ statusLabel(task.status) }}</span>
+                <span class="min-w-0 flex-1 text-sm">{{ task.title }}</span>
+                <span class="text-[11px] text-muted-foreground">{{ formatDate(task.dueDate) }}</span>
+              </button>
             </div>
-            <Draggable
-              :list="col.list.value"
-              item-key="id"
-              group="tasks"
-              :animation="150"
-              ghost-class="opacity-40"
-              class="flex-1 space-y-2 overflow-auto"
-              @start="handleKanbanDragStart"
-              @end="handleKanbanDragEnd($event, col.key)"
-            >
-              <template #item="{ element: task }">
-                <div
-                  class="rounded-md border border-border/40 bg-card p-2.5 cursor-grab active:cursor-grabbing"
-                >
-                  <div class="flex items-start gap-1">
-                    <!-- 优先级色条 -->
-                    <div class="mt-0.5 w-0.5 shrink-0 self-stretch rounded-full" :class="priorityBarClass(task.priority)" />
-                    <p class="text-xs font-medium text-foreground">{{ task.title }}</p>
-                  </div>
-                  <div class="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                    <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
-                    <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
-                    <span v-if="task.tags.length">{{ formatTags(task.tags) }}</span>
-                  </div>
-                  <div class="mt-2 flex gap-1">
-                    <Button
-                      v-if="task.status !== 'done'"
-                      variant="ghost"
-                      size="sm"
-                      class="h-5 text-[10px] px-1.5"
-                      @click="toggleStatus(task, col.key === 'pending' ? 'in_progress' : 'done')"
-                    >
-                      {{ col.key === 'pending' ? '开始' : '完成' }}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="h-5 text-[10px] px-1.5 text-destructive"
-                      @click="removeTask(task.id)"
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </div>
-              </template>
-            </Draggable>
-          </div>
-        </div>
-      </TabsContent>
+          </section>
+        </TabsContent>
 
-      <!-- 今日视图 -->
-      <TabsContent value="today" class="flex-1 overflow-auto m-0 mt-0">
-        <div v-if="todayTasks.length === 0" class="flex flex-col items-center py-12">
-          <CircleCheck class="size-8 text-green-500/50 mb-2" />
-          <p class="text-xs text-muted-foreground">今天没有待办</p>
-        </div>
-        <div v-else class="space-y-1 p-4">
-          <div
-            v-for="task in todayTasks"
-            :key="task.id"
-            class="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors hover:bg-accent/40"
-          >
-            <div class="mt-1.5 w-0.5 shrink-0 self-stretch rounded-full" :class="priorityBarClass(task.priority)" />
-            <button
-              type="button"
-              class="mt-0.5 shrink-0"
-              @click="toggleStatus(task, task.status === 'pending' ? 'in_progress' : 'done')"
-            >
-              <Circle v-if="task.status === 'pending'" class="size-4 text-muted-foreground" />
-              <CircleDot v-else class="size-4 text-primary" />
-            </button>
-            <div class="min-w-0 flex-1">
-              <p class="text-sm text-foreground" :class="task.status === 'in_progress' ? 'font-medium' : ''">{{ task.title }}</p>
-              <div class="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
-                <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
-              </div>
+        <TabsContent value="calendar" class="m-0 min-h-0 flex-1 overflow-auto p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="flex items-center gap-2 text-sm font-semibold"><CalendarDays class="size-4" />{{ monthTitle }}</h3>
+            <div class="flex gap-2">
+              <Button variant="outline" size="sm" class="h-7 text-xs" @click="changeMonth(-1)">上月</Button>
+              <Button variant="outline" size="sm" class="h-7 text-xs" @click="changeMonth(1)">下月</Button>
             </div>
           </div>
+          <div class="grid gap-3 lg:grid-cols-[1fr_260px]">
+            <div class="overflow-hidden rounded-xl border border-border/50">
+              <div class="grid grid-cols-7 border-b border-border/40 bg-muted/30">
+                <div v-for="label in weekLabels" :key="label" class="px-2 py-2 text-center text-[11px] font-medium text-muted-foreground">{{ label }}</div>
+              </div>
+              <div class="grid grid-cols-7">
+                <div v-for="cell in calendarCells" :key="cell.key" class="min-h-28 border-b border-r border-border/30 p-2 last:border-r-0" :class="cell.isCurrentMonth ? 'bg-background' : 'bg-muted/20 text-muted-foreground'">
+                  <p class="mb-1 text-[11px] font-medium">{{ cell.date.getDate() }}</p>
+                  <button v-for="task in cell.tasks" :key="task.id" type="button" class="mb-1 block w-full rounded px-1.5 py-1 text-left text-[11px] hover:opacity-80" :style="{ backgroundColor: `${milestoneColor(task.milestoneId ?? '')}22`, borderLeft: `3px solid ${milestoneColor(task.milestoneId ?? '')}` }" @click="openTask(task)">
+                    {{ task.title }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <aside class="rounded-xl border border-border/50 p-4">
+              <h3 class="mb-3 text-xs font-semibold">无截止日期</h3>
+              <button v-for="task in undatedTasks" :key="task.id" type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent/40" @click="openTask(task)">
+                {{ task.title }}
+              </button>
+            </aside>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="milestones" class="m-0 min-h-0 flex-1 overflow-auto p-4">
+          <div class="mb-4 grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-[160px_1fr_1fr_130px_auto]">
+            <Input v-model="newMilestoneTitle" class="h-8 text-xs" placeholder="里程碑标题" />
+            <Input v-model="newMilestoneGoal" class="h-8 text-xs" placeholder="目标" />
+            <Input v-model="newMilestoneAcceptanceCriteria" class="h-8 text-xs" placeholder="完成标准" />
+            <Input v-model="newMilestoneDueDate" type="date" class="h-8 text-xs" />
+            <Button size="sm" class="h-8 text-xs" :disabled="!newMilestoneTitle.trim() || !newMilestoneGoal.trim() || !newMilestoneAcceptanceCriteria.trim()" @click="handleAddMilestone">新建里程碑</Button>
+          </div>
+          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <article v-for="milestone in milestones" :key="milestone.id" class="rounded-xl border border-border/50 bg-card p-4">
+              <button type="button" class="block w-full text-left" @click="openMilestone(milestone)">
+                <h3 class="text-sm font-semibold">{{ milestone.title }}</h3>
+                <p class="mt-1 text-[11px] text-muted-foreground">{{ statusLabel(milestone.status) }} · {{ milestone.taskCount }} 个任务 · {{ formatDate(milestone.dueDate) }}</p>
+                <p class="mt-3 text-xs text-muted-foreground">目标：{{ milestone.goal }}</p>
+                <p class="mt-1 text-xs text-muted-foreground">完成标准：{{ milestone.acceptanceCriteria }}</p>
+              </button>
+            </article>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+
+    <Sheet :open="detailOpen" @update:open="(open) => { if (!open) closeDetail() }">
+      <SheetContent class="w-96 overflow-auto p-4 sm:max-w-96">
+      <div v-if="selectedTask" class="space-y-4">
+        <SheetHeader>
+          <SheetTitle class="text-base">{{ selectedTask.title }}</SheetTitle>
+        </SheetHeader>
+        <div class="space-y-3">
+          <Input v-model="editTaskTitle" class="h-8 text-xs" placeholder="标题" />
+          <Textarea v-model="editTaskAcceptanceCriteria" class="min-h-24 text-xs" placeholder="完成标准" />
+          <Select v-model="editTaskStatus">
+            <SelectTrigger class="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="column in statusColumns" :key="column.key" :value="column.key" :disabled="!canSelectStatus(selectedTask.status, column.key)">{{ column.label }}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select v-model="editTaskPriority">
+            <SelectTrigger class="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="normal">普通</SelectItem>
+              <SelectItem value="important">重要</SelectItem>
+              <SelectItem value="urgent">紧急</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select v-model="editTaskMilestoneId">
+            <SelectTrigger class="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="milestone in milestones" :key="milestone.id" :value="milestone.id">{{ milestone.title }}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input v-model="editTaskDueDate" type="date" class="h-8 text-xs" />
+          <Textarea v-model="editTaskBlockedReason" class="min-h-16 text-xs" placeholder="阻塞原因（可选）" />
         </div>
-      </TabsContent>
-    </Tabs>
+        <p class="text-[11px] text-muted-foreground">当前里程碑：{{ selectedTaskMilestone?.title ?? '未知' }}</p>
+        <div class="flex gap-2">
+          <Button size="sm" class="h-8 flex-1 text-xs" @click="saveSelectedTask">保存</Button>
+          <Button variant="destructive" size="sm" class="h-8 text-xs" @click="pendingDeleteTask = selectedTask">
+            <Trash2 class="mr-1 size-3" />删除
+          </Button>
+        </div>
+      </div>
+
+      <div v-else-if="selectedMilestone" class="space-y-4">
+        <SheetHeader>
+          <SheetTitle class="text-base">{{ selectedMilestone.title }}</SheetTitle>
+        </SheetHeader>
+        <div class="space-y-3">
+          <Input v-model="editMilestoneTitle" class="h-8 text-xs" placeholder="标题" :disabled="selectedMilestone.isSystem" />
+          <Textarea v-model="editMilestoneGoal" class="min-h-20 text-xs" placeholder="目标" />
+          <Textarea v-model="editMilestoneAcceptanceCriteria" class="min-h-20 text-xs" placeholder="完成标准" />
+          <Select v-model="editMilestoneStatus" :disabled="selectedMilestone.isSystem">
+            <SelectTrigger class="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="column in statusColumns" :key="column.key" :value="column.key" :disabled="!canSelectStatus(selectedMilestone.status, column.key)">{{ column.label }}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input v-model="editMilestoneDueDate" type="date" class="h-8 text-xs" />
+        </div>
+        <div class="flex gap-2">
+          <Button size="sm" class="h-8 flex-1 text-xs" @click="saveSelectedMilestone">保存</Button>
+          <Button v-if="!selectedMilestone.isSystem" variant="destructive" size="sm" class="h-8 text-xs" @click="pendingDeleteMilestone = selectedMilestone">删除</Button>
+        </div>
+        <div>
+          <p class="mb-2 text-xs font-medium">其下任务</p>
+          <button v-for="task in selectedMilestoneTasks" :key="task.id" type="button" class="mb-1 block w-full rounded border border-border/40 px-2 py-1.5 text-left text-xs hover:bg-accent/40" @click="openTask(task)">
+            {{ task.title }} · {{ statusLabel(task.status) }}
+          </button>
+        </div>
+      </div>
+
+      </SheetContent>
+    </Sheet>
+
+    <AlertDialog :open="Boolean(pendingDeleteTask)" @update:open="(open) => { if (!open) pendingDeleteTask = null }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除任务</AlertDialogTitle>
+          <AlertDialogDescription>确定删除“{{ pendingDeleteTask?.title }}”吗？该操作不能撤销。</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction @click="confirmDeleteTask">删除</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <AlertDialog :open="Boolean(pendingDeleteMilestone)" @update:open="(open) => { if (!open) pendingDeleteMilestone = null }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除里程碑</AlertDialogTitle>
+          <AlertDialogDescription>确定删除“{{ pendingDeleteMilestone?.title }}”吗？里程碑下存在任务时后端会拒绝删除。</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction @click="confirmDeleteMilestone">删除</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>

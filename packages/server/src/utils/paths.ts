@@ -21,6 +21,10 @@ export const getRidgeSettingsPath = async (): Promise<string> => {
 };
 
 export const getRidgeDbPath = async (): Promise<string> => {
+  if (process.env.RIDGE_DB_PATH) {
+    await fs.mkdir(path.dirname(process.env.RIDGE_DB_PATH), { recursive: true, mode: 0o700 });
+    return process.env.RIDGE_DB_PATH;
+  }
   const storageDir = await getStorageDir();
   return path.join(storageDir, 'ridge.db');
 };

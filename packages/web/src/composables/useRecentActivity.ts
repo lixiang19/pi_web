@@ -66,7 +66,7 @@ export function buildRecentActivity(
 	}
 
 	// 最近闪念
-	for (const moment of input.recentMoments.value) {
+	for (const moment of input.recentMoments?.value ?? []) {
 		items.push({
 			id: `moment-${moment.id}`,
 			kind: "moment",
@@ -89,7 +89,7 @@ export function buildRecentActivity(
 	}
 
 	// 最近会话
-	for (const session of input.sessions.value.slice(0, 5)) {
+	for (const session of input.sessions?.value.slice(0, 5) ?? []) {
 		items.push({
 			id: `session-${session.id}`,
 			kind: "session",

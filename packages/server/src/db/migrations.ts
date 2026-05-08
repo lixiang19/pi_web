@@ -88,38 +88,59 @@ CREATE TABLE IF NOT EXISTS automation_rules (
 CREATE INDEX IF NOT EXISTS idx_automation_rules_next_run_at
   ON automation_rules(enabled, next_run_at);
 
-CREATE TABLE IF NOT EXISTS fleeting_notes (
-  note_id TEXT PRIMARY KEY,
-  content TEXT NOT NULL,
-  status TEXT NOT NULL,
-  analysis_status TEXT NOT NULL,
-  recommendation_type TEXT,
-  recommendation_text TEXT,
-  draft TEXT,
-  requires_input INTEGER NOT NULL DEFAULT 0,
-  pi_session_id TEXT,
-  pi_session_file TEXT,
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  last_error TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_fleeting_notes_created_at
-  ON fleeting_notes(created_at DESC);
-
-CREATE TABLE IF NOT EXISTS clips (
-  clip_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS workspace_milestones (
+  milestone_id TEXT PRIMARY KEY,
+  workspace_path TEXT NOT NULL,
   title TEXT NOT NULL,
-  url TEXT,
-  content TEXT NOT NULL,
-  source TEXT,
+  goal TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL,
+  status TEXT NOT NULL,
+  due_date INTEGER,
+  is_system INTEGER NOT NULL DEFAULT 0,
+  color TEXT NOT NULL DEFAULT '#64748b',
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_clips_created_at
-  ON clips(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_milestones_default
+  ON workspace_milestones(workspace_path, title)
+  WHERE is_system = 1;
+
+CREATE INDEX IF NOT EXISTS idx_workspace_milestones_workspace
+  ON workspace_milestones(workspace_path, sort_order, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_milestones_status
+  ON workspace_milestones(workspace_path, status);
+
+CREATE TABLE IF NOT EXISTS workspace_tasks (
+  task_id TEXT PRIMARY KEY,
+  workspace_path TEXT NOT NULL,
+  milestone_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  priority TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL,
+  due_date INTEGER,
+  blocked_reason TEXT,
+  processing_session_id TEXT UNIQUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(milestone_id) REFERENCES workspace_milestones(milestone_id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_workspace
+  ON workspace_tasks(workspace_path, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_milestone
+  ON workspace_tasks(milestone_id, sort_order, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_status
+  ON workspace_tasks(workspace_path, status, sort_order);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_due_date
+  ON workspace_tasks(workspace_path, due_date);
 
 
 `;
