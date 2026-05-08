@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watchEffect } from "vue";
+import { VueDraggableNext as Draggable } from "vue-draggable-next";
 import {
 	CheckSquare,
 	Circle,
@@ -13,9 +14,11 @@ import {
 	Pencil,
 	X,
 	Check,
+	Search,
+	Tag,
 } from "lucide-vue-next";
 
-import { useWorkspaceTasks } from "@/composables/useWorkspaceTasks";
+import { useWorkspaceTasks, type TaskItem } from "@/composables/useWorkspaceTasks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,14 +34,26 @@ import {
 	TabsTrigger,
 	TabsContent,
 } from "@/components/ui/tabs";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 
 defineProps<{
 	workspaceDir: string;
 }>();
 
 const {
-	tasks,
-	pendingTasks,
+	searchQuery,
+	filterStatus,
+	filterPriority,
+	filterTags,
+	allTags,
+	hasActiveFilters,
+	resetFilters,
+	filteredTasks,
 	completedTasks,
 	todayTasks,
 	stats,
@@ -47,6 +62,7 @@ const {
 	toggleStatus,
 	removeTask,
 	updateTask,
+	reorderTasks,
 	showCompleted,
 } = useWorkspaceTasks();
 
@@ -99,7 +115,7 @@ const handleCollapseForm = () => {
 	isFormExpanded.value = false;
 };
 
-const startEdit = (task: typeof tasks.value[0]) => {
+const startEdit = (task: TaskItem) => {
 	editingTaskId.value = task.id;
 	editTitle.value = task.title;
 	editPriority.value = task.priority;
@@ -173,14 +189,67 @@ const priorityBarClass = (p: string) =>
 
 const formatTags = (tags: string[]) => tags.join(", ");
 
-const kanbanGroups = [
-	{ key: "pending", label: "待做", icon: Circle },
-	{ key: "in_progress", label: "进行中", icon: CircleDot },
-	{ key: "done", label: "完成", icon: CircleCheck },
-] as const;
+// 清单视图可修改数组（Draggable :list 需要）
+const listPendingTasks = ref<typeof filteredTasks.value>([]);
+let listDragging = false;
 
-const tasksByStatus = (status: string) =>
-	tasks.value.filter((t) => t.status === status);
+// 看板每列的可修改数组（Draggable :list 需要）
+const kanbanPending = ref<typeof filteredTasks.value>([]);
+const kanbanInProgress = ref<typeof filteredTasks.value>([]);
+const kanbanDone = ref<typeof filteredTasks.value>([]);
+
+// 拖拽进行中时跳过同步，避免打断 Draggable 的数组操作
+let kanbanDragging = false;
+
+watchEffect(() => {
+	if (!listDragging) {
+		listPendingTasks.value = filteredTasks.value.filter((t) => t.status !== "done");
+	}
+	if (!kanbanDragging) {
+		kanbanPending.value = filteredTasks.value.filter((t) => t.status === "pending");
+		kanbanInProgress.value = filteredTasks.value.filter((t) => t.status === "in_progress");
+		kanbanDone.value = filteredTasks.value.filter((t) => t.status === "done");
+	}
+});
+
+const kanbanColumns = [
+	{ key: "pending" as const, label: "待做", icon: Circle, list: kanbanPending },
+	{ key: "in_progress" as const, label: "进行中", icon: CircleDot, list: kanbanInProgress },
+	{ key: "done" as const, label: "完成", icon: CircleCheck, list: kanbanDone },
+];
+
+const handleListDragStart = () => { listDragging = true };
+
+// 清单视图拖拽结束后同步 order
+const handleListDragEnd = (evt: { oldIndex: number; newIndex: number }) => {
+	if (evt.oldIndex === evt.newIndex) return;
+	listDragging = false;
+	const items = listPendingTasks.value.map((t, i) => ({ id: t.id, order: i }));
+	reorderTasks(items);
+};
+
+const handleKanbanDragStart = () => { kanbanDragging = true };
+
+// 看板视图拖拽结束后同步 order + status
+const handleKanbanDragEnd = (
+	_evt: { from: HTMLElement; to: HTMLElement; oldIndex: number; newIndex: number },
+	groupKey: string,
+) => {
+	const columnRef =
+		groupKey === "pending" ? kanbanPending :
+		groupKey === "in_progress" ? kanbanInProgress :
+		kanbanDone;
+	const columnTasks = columnRef.value;
+
+	const items = columnTasks.map((t, i) => ({
+		id: t.id,
+		order: i,
+		status: groupKey,
+	}));
+
+	kanbanDragging = false;
+	reorderTasks(items);
+};
 </script>
 
 <template>
@@ -260,6 +329,81 @@ const tasksByStatus = (status: string) =>
       </div>
     </div>
 
+    <!-- 筛选工具栏 -->
+    <div class="flex shrink-0 items-center gap-2 border-b border-border/30 px-4 py-2">
+      <div class="relative max-w-56 flex-1">
+        <Search class="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          v-model="searchQuery"
+          placeholder="搜索待办..."
+          class="h-7 pl-7 text-xs"
+        />
+      </div>
+      <Select v-model="filterStatus">
+        <SelectTrigger class="h-7 w-24 text-xs">
+          <SelectValue placeholder="状态" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">全部</SelectItem>
+          <SelectItem value="pending">待做</SelectItem>
+          <SelectItem value="in_progress">进行中</SelectItem>
+          <SelectItem value="done">已完成</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select v-model="filterPriority">
+        <SelectTrigger class="h-7 w-24 text-xs">
+          <SelectValue placeholder="优先级" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">全部</SelectItem>
+          <SelectItem value="high">高</SelectItem>
+          <SelectItem value="medium">中</SelectItem>
+          <SelectItem value="low">低</SelectItem>
+        </SelectContent>
+      </Select>
+      <Popover>
+        <PopoverTrigger as-child>
+          <Button variant="outline" size="sm" class="h-7 gap-1 text-xs">
+            <Tag class="size-3" />
+            <template v-if="filterTags.length === 0">标签</template>
+            <span v-else>{{ filterTags.length }}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent class="w-48 p-2" align="start">
+          <div class="space-y-1">
+            <label
+              v-for="tag in allTags"
+              :key="tag"
+              class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+            >
+              <Checkbox
+                :checked="filterTags.includes(tag)"
+                @update:checked="(checked: boolean) => {
+                  if (checked) {
+                    filterTags = [...filterTags, tag]
+                  } else {
+                    filterTags = filterTags.filter(t => t !== tag)
+                  }
+                }"
+              />
+              {{ tag }}
+            </label>
+            <div v-if="allTags.length === 0" class="px-2 py-1 text-xs text-muted-foreground">
+              暂无标签
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <button
+        v-if="hasActiveFilters"
+        type="button"
+        class="ml-auto text-muted-foreground transition-colors hover:text-foreground"
+        @click="resetFilters"
+      >
+        <X class="size-4" />
+      </button>
+    </div>
+
     <!-- 视图切换 -->
     <Tabs v-model="viewMode" class="flex flex-1 flex-col overflow-hidden">
       <div class="shrink-0 px-4 pt-2">
@@ -291,100 +435,109 @@ const tasksByStatus = (status: string) =>
           <LoaderCircle class="size-4 animate-spin" />
           加载中...
         </div>
-        <div v-else-if="pendingTasks.length === 0 && !showCompleted" class="flex flex-col items-center py-12">
+        <div v-else-if="listPendingTasks.length === 0 && !showCompleted" class="flex flex-col items-center py-12">
           <CheckSquare class="size-8 text-muted-foreground/30 mb-2" />
           <p class="text-xs text-muted-foreground">没有待办任务</p>
         </div>
-        <div v-else class="space-y-1 p-4">
-          <!-- 待做 + 进行中 -->
-          <div
-            v-for="task in pendingTasks"
-            :key="task.id"
-            class="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors hover:bg-accent/40"
+        <div v-else class="p-4">
+          <!-- 待做 + 进行中（可拖拽） -->
+          <Draggable
+            :list="listPendingTasks"
+            item-key="id"
+            :animation="150"
+            ghost-class="opacity-40"
+            @start="handleListDragStart"
+            @end="handleListDragEnd"
           >
-            <!-- 优先级色条 -->
-            <div class="mt-1.5 w-0.5 shrink-0 self-stretch rounded-full" :class="priorityBarClass(task.priority)" />
+            <template #item="{ element: task }">
+              <div
+                class="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors hover:bg-accent/40 cursor-grab active:cursor-grabbing"
+              >
+                <!-- 优先级色条 -->
+                <div class="mt-1.5 w-0.5 shrink-0 self-stretch rounded-full" :class="priorityBarClass(task.priority)" />
 
-            <!-- 状态切换按钮 -->
-            <button
-              type="button"
-              class="mt-0.5 shrink-0"
-              @click="toggleStatus(task, task.status === 'pending' ? 'in_progress' : 'done')"
-            >
-              <Circle v-if="task.status === 'pending'" class="size-4 text-muted-foreground" />
-              <CircleDot v-else class="size-4 text-primary" />
-            </button>
-
-            <!-- 内容区 -->
-            <div class="min-w-0 flex-1">
-              <!-- 编辑模式 -->
-              <template v-if="editingTaskId === task.id">
-                <div class="flex items-center gap-1.5">
-                  <Input
-                    v-model="editTitle"
-                    class="h-6 text-xs flex-1"
-                    @keydown.enter="saveEdit"
-                    @keydown.escape="cancelEdit"
-                  />
-                  <button type="button" class="shrink-0 text-green-600 hover:text-green-700" @click="saveEdit">
-                    <Check class="size-3.5" />
-                  </button>
-                  <button type="button" class="shrink-0 text-muted-foreground hover:text-foreground" @click="cancelEdit">
-                    <X class="size-3.5" />
-                  </button>
-                </div>
-                <div class="mt-1 flex items-center gap-2">
-                  <Select v-model="editPriority" class="h-5 text-[10px]">
-                    <SelectTrigger class="h-5 w-16 text-[10px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="high">高</SelectItem>
-                      <SelectItem value="medium">中</SelectItem>
-                      <SelectItem value="low">低</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    v-model="editDueDate"
-                    type="date"
-                    class="h-5 w-28 text-[10px]"
-                  />
-                </div>
-              </template>
-              <!-- 普通模式 -->
-              <template v-else>
-                <p
-                  class="text-sm text-foreground"
-                  :class="task.status === 'in_progress' ? 'font-medium' : ''"
+                <!-- 状态切换按钮 -->
+                <button
+                  type="button"
+                  class="mt-0.5 shrink-0"
+                  @click="toggleStatus(task, task.status === 'pending' ? 'in_progress' : 'done')"
                 >
-                  {{ task.title }}
-                </p>
-                <div class="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
-                  <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
-                  <span v-if="task.tags.length">{{ formatTags(task.tags) }}</span>
-                </div>
-              </template>
-            </div>
+                  <Circle v-if="task.status === 'pending'" class="size-4 text-muted-foreground" />
+                  <CircleDot v-else class="size-4 text-primary" />
+                </button>
 
-            <!-- 操作按钮 -->
-            <template v-if="editingTaskId !== task.id">
-              <button
-                type="button"
-                class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-foreground"
-                @click="startEdit(task)"
-              >
-                <Pencil class="size-3" />
-              </button>
-              <button
-                type="button"
-                class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-destructive"
-                @click="removeTask(task.id)"
-              >
-                <Trash2 class="size-3" />
-              </button>
+                <!-- 内容区 -->
+                <div class="min-w-0 flex-1">
+                  <!-- 编辑模式 -->
+                  <template v-if="editingTaskId === task.id">
+                    <div class="flex items-center gap-1.5">
+                      <Input
+                        v-model="editTitle"
+                        class="h-6 text-xs flex-1"
+                        @keydown.enter="saveEdit"
+                        @keydown.escape="cancelEdit"
+                      />
+                      <button type="button" class="shrink-0 text-green-600 hover:text-green-700" @click="saveEdit">
+                        <Check class="size-3.5" />
+                      </button>
+                      <button type="button" class="shrink-0 text-muted-foreground hover:text-foreground" @click="cancelEdit">
+                        <X class="size-3.5" />
+                      </button>
+                    </div>
+                    <div class="mt-1 flex items-center gap-2">
+                      <Select v-model="editPriority" class="h-5 text-[10px]">
+                        <SelectTrigger class="h-5 w-16 text-[10px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="high">高</SelectItem>
+                          <SelectItem value="medium">中</SelectItem>
+                          <SelectItem value="low">低</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        v-model="editDueDate"
+                        type="date"
+                        class="h-5 w-28 text-[10px]"
+                      />
+                    </div>
+                  </template>
+                  <!-- 普通模式 -->
+                  <template v-else>
+                    <p
+                      class="text-sm text-foreground"
+                      :class="task.status === 'in_progress' ? 'font-medium' : ''"
+                    >
+                      {{ task.title }}
+                    </p>
+                    <div class="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
+                      <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
+                      <span v-if="task.tags.length">{{ formatTags(task.tags) }}</span>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- 操作按钮 -->
+                <template v-if="editingTaskId !== task.id">
+                  <button
+                    type="button"
+                    class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-foreground"
+                    @click="startEdit(task)"
+                  >
+                    <Pencil class="size-3" />
+                  </button>
+                  <button
+                    type="button"
+                    class="shrink-0 opacity-0 group-hover:opacity-50 text-muted-foreground hover:text-destructive"
+                    @click="removeTask(task.id)"
+                  >
+                    <Trash2 class="size-3" />
+                  </button>
+                </template>
+              </div>
             </template>
-          </div>
+          </Draggable>
 
           <!-- 已完成 toggle -->
           <div v-if="completedTasks.length > 0" class="mt-3 border-t border-border/30 pt-2">
@@ -431,54 +584,63 @@ const tasksByStatus = (status: string) =>
       <TabsContent value="kanban" class="flex-1 overflow-hidden m-0 mt-0">
         <div class="flex h-full gap-3 p-4">
           <div
-            v-for="group in kanbanGroups"
-            :key="group.key"
+            v-for="col in kanbanColumns"
+            :key="col.key"
             class="flex min-w-0 flex-1 flex-col rounded-lg border border-border/50 bg-muted/20 p-3"
           >
             <div class="flex items-center gap-1.5 mb-3">
-              <component :is="group.icon" class="size-3.5 text-muted-foreground" />
-              <span class="text-xs font-semibold">{{ group.label }}</span>
+              <component :is="col.icon" class="size-3.5 text-muted-foreground" />
+              <span class="text-xs font-semibold">{{ col.label }}</span>
               <span class="text-[10px] text-muted-foreground ml-auto">
-                {{ tasksByStatus(group.key).length }}
+                {{ col.list.value.length }}
               </span>
             </div>
-            <div class="flex-1 space-y-2 overflow-auto">
-              <div
-                v-for="task in tasksByStatus(group.key)"
-                :key="task.id"
-                class="rounded-md border border-border/40 bg-card p-2.5"
-              >
-                <div class="flex items-start gap-1">
-                  <!-- 优先级色条 -->
-                  <div class="mt-0.5 w-0.5 shrink-0 self-stretch rounded-full" :class="priorityBarClass(task.priority)" />
-                  <p class="text-xs font-medium text-foreground">{{ task.title }}</p>
+            <Draggable
+              :list="col.list.value"
+              item-key="id"
+              group="tasks"
+              :animation="150"
+              ghost-class="opacity-40"
+              class="flex-1 space-y-2 overflow-auto"
+              @start="handleKanbanDragStart"
+              @end="handleKanbanDragEnd($event, col.key)"
+            >
+              <template #item="{ element: task }">
+                <div
+                  class="rounded-md border border-border/40 bg-card p-2.5 cursor-grab active:cursor-grabbing"
+                >
+                  <div class="flex items-start gap-1">
+                    <!-- 优先级色条 -->
+                    <div class="mt-0.5 w-0.5 shrink-0 self-stretch rounded-full" :class="priorityBarClass(task.priority)" />
+                    <p class="text-xs font-medium text-foreground">{{ task.title }}</p>
+                  </div>
+                  <div class="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
+                    <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
+                    <span v-if="task.tags.length">{{ formatTags(task.tags) }}</span>
+                  </div>
+                  <div class="mt-2 flex gap-1">
+                    <Button
+                      v-if="task.status !== 'done'"
+                      variant="ghost"
+                      size="sm"
+                      class="h-5 text-[10px] px-1.5"
+                      @click="toggleStatus(task, col.key === 'pending' ? 'in_progress' : 'done')"
+                    >
+                      {{ col.key === 'pending' ? '开始' : '完成' }}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      class="h-5 text-[10px] px-1.5 text-destructive"
+                      @click="removeTask(task.id)"
+                    >
+                      删除
+                    </Button>
+                  </div>
                 </div>
-                <div class="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <span :class="priorityColor(task.priority)">{{ priorityLabel(task.priority) }}</span>
-                  <span v-if="task.dueDate" :class="dueDateClass(task.dueDate)">{{ dueDateLabel(task.dueDate) }}</span>
-                  <span v-if="task.tags.length">{{ formatTags(task.tags) }}</span>
-                </div>
-                <div class="mt-2 flex gap-1">
-                  <Button
-                    v-if="task.status !== 'done'"
-                    variant="ghost"
-                    size="sm"
-                    class="h-5 text-[10px] px-1.5"
-                    @click="toggleStatus(task, group.key === 'pending' ? 'in_progress' : 'done')"
-                  >
-                    {{ group.key === 'pending' ? '开始' : '完成' }}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="h-5 text-[10px] px-1.5 text-destructive"
-                    @click="removeTask(task.id)"
-                  >
-                    删除
-                  </Button>
-                </div>
-              </div>
-            </div>
+              </template>
+            </Draggable>
           </div>
         </div>
       </TabsContent>

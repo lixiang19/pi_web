@@ -701,6 +701,7 @@ export interface WorkspaceTask {
 	priority: "low" | "medium" | "high";
 	dueDate: number | null;
 	tags: string[];
+	order?: number;
 	createdAt: number;
 	updatedAt: number;
 	kind?: "goal" | "task";
@@ -768,6 +769,19 @@ export function deleteWorkspaceTask(
 		{
 			method: "DELETE",
 			body: JSON.stringify({ _expectedUpdatedAt }),
+		},
+	);
+}
+
+export function reorderWorkspaceTasks(
+	items: Array<{ id: string; order?: number; status?: string }>,
+	_expectedUpdatedAt?: number,
+) {
+	return request<{ ok: true; updatedAt: number }>(
+		"/api/workspace/tasks/reorder",
+		{
+			method: "PATCH",
+			body: JSON.stringify({ items, _expectedUpdatedAt }),
 		},
 	);
 }

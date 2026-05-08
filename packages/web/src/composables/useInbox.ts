@@ -1,23 +1,152 @@
-import { type InjectionKey, computed, inject, provide, ref, watch } from "vue";
+import { computed, type InjectionKey, inject, provide, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 
-import { createNote, deleteNote, getFileTree, getNoteContent, moveFileEntry, renameNote } from "@/lib/api";
+import {
+	createNote,
+	getFileTree,
+	getNoteContent,
+	saveNoteContent,
+} from "@/lib/api";
 import type { NoteContentResponse } from "@/lib/types";
 
-export type InboxFileItem = {
-	path: string;
-	name: string;
-	relativePath: string;
-	modifiedAt: number;
-	extension: string;
-	preview: string;
+// ── Types ──────────────────────────────────────────────────────
+
+export type InboxMomentItem = {
+	id: string; // `${date}-${time}-${index}`
+	date: string; // YYYY-MM-DD
+	time: string; // HH:mm
+	content: string; // full text content of the moment
+	preview: string; // truncated first line for display
+	relativePath: string; // 收件箱/YYYY-MM-DD.md
+	path: string; // full path for opening
+	timestamp: number; // Date.parse(`${date}T${time}`)
 };
 
-export type InboxSortKey = "modified" | "created" | "name";
+export type InboxGroup = {
+	label: "今天" | "昨天" | "更早";
+	items: InboxMomentItem[];
+};
 
 // Provide/Inject key for shared inbox store
-export const WORKSPACE_INBOX_KEY: InjectionKey<ReturnType<typeof useInboxInner>> =
-	Symbol("workspace-inbox");
+export const WORKSPACE_INBOX_KEY: InjectionKey<
+	ReturnType<typeof useInboxInner>
+> = Symbol("workspace-inbox");
+
+// ── Pure functions (exported for testing) ───────────────────────
+
+/** Parse a date file's content into moment items */
+export function parseInboxFile(
+	content: string,
+	date: string,
+	relativePath: string,
+	absolutePath: string,
+): InboxMomentItem[] {
+	const items: InboxMomentItem[] = [];
+	// Match all ## HH:mm headings and their content until next ## or end
+	const regex = /^## (\d{2}:\d{2})\s*$/gm;
+	const matches: { time: string; index: number }[] = [];
+	let match: RegExpExecArray | null;
+
+	while ((match = regex.exec(content)) !== null) {
+		const time = match[1];
+		if (time === undefined) continue;
+		matches.push({ time, index: match.index });
+	}
+
+	for (let i = 0; i < matches.length; i++) {
+		const m = matches[i]!;
+		const startIdx = m.index + `## ${m.time}`.length;
+		const endIdx =
+			i + 1 < matches.length ? matches[i + 1]!.index : content.length;
+		const body = content.slice(startIdx, endIdx).trim();
+
+		const content_text = body;
+		const preview = makePreview(body);
+		const timestamp = Date.parse(`${date}T${m.time}`);
+
+		items.push({
+			id: `${date}-${m.time}-${i}`,
+			date,
+			time: m.time,
+			content: content_text,
+			preview,
+			relativePath,
+			path: absolutePath,
+			timestamp: Number.isNaN(timestamp) ? 0 : timestamp,
+		});
+	}
+
+	return items;
+}
+
+/** Truncate to first line, max 80 chars */
+function makePreview(body: string): string {
+	const firstLine = body.split("\n")[0]?.trim() ?? "";
+	if (!firstLine) return "";
+	return firstLine.length > 80 ? firstLine.slice(0, 80) + "…" : firstLine;
+}
+
+/** Check if error message indicates a missing file/directory (ENOENT / not found) */
+export function isEnoentError(message: string): boolean {
+	const lower = message.toLowerCase();
+	return (
+		lower.includes("enoent") ||
+		lower.includes("no such file") ||
+		lower.includes("not found")
+	);
+}
+
+/** Group items into 今天 / 昨天 / 更早, sorted newest-first within each group */
+export function groupItems(items: InboxMomentItem[]): InboxGroup[] {
+	const now = new Date();
+	const todayStr = formatDateStr(now);
+	const yesterdayDate = new Date(now);
+	yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+	const yesterdayStr = formatDateStr(yesterdayDate);
+
+	const today: InboxMomentItem[] = [];
+	const yesterday: InboxMomentItem[] = [];
+	const older: InboxMomentItem[] = [];
+
+	for (const item of items) {
+		if (item.date === todayStr) {
+			today.push(item);
+		} else if (item.date === yesterdayStr) {
+			yesterday.push(item);
+		} else {
+			older.push(item);
+		}
+	}
+
+	// Sort each group newest-first
+	const sortNewestFirst = (a: InboxMomentItem, b: InboxMomentItem) =>
+		b.timestamp - a.timestamp;
+	today.sort(sortNewestFirst);
+	yesterday.sort(sortNewestFirst);
+	older.sort(sortNewestFirst);
+
+	const groups: InboxGroup[] = [];
+	if (today.length > 0) groups.push({ label: "今天", items: today });
+	if (yesterday.length > 0) groups.push({ label: "昨天", items: yesterday });
+	if (older.length > 0) groups.push({ label: "更早", items: older });
+
+	return groups;
+}
+
+function formatDateStr(d: Date): string {
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function todayDateStr(): string {
+	return formatDateStr(new Date());
+}
+
+function todayTimeStr(): string {
+	const d = new Date();
+	return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// ── Provide / Inject ───────────────────────────────────────────
 
 export function provideWorkspaceInbox(workspaceDir: () => string) {
 	const store = useInboxInner(workspaceDir);
@@ -31,61 +160,18 @@ export function useWorkspaceInbox(workspaceDir?: () => string) {
 	return useInboxInner(workspaceDir!);
 }
 
-// Relative time formatting
-function formatRelativeTime(timestamp: number): string {
-	const now = Date.now();
-	const diff = now - timestamp;
-	const seconds = Math.floor(diff / 1000);
-	const minutes = Math.floor(seconds / 60);
-	const hours = Math.floor(minutes / 60);
-	const days = Math.floor(hours / 24);
+// ── Composable ─────────────────────────────────────────────────
 
-	if (seconds < 60) return "刚刚";
-	if (minutes < 60) return `${minutes} 分钟前`;
-	if (hours < 24) return `${hours} 小时前`;
-	if (days < 7) return `${days} 天前`;
-
-	return new Intl.DateTimeFormat("zh-CN", {
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	}).format(timestamp);
-}
-
-// Extract first meaningful line from content (skip frontmatter, headings, empty lines)
-function extractPreview(content: string): string {
-	let body = content;
-
-	// Skip frontmatter
-	if (body.startsWith("---")) {
-		const fmEnd = body.indexOf("\n---", 4);
-		if (fmEnd > 0) {
-			body = body.slice(fmEnd + 4).trim();
-		}
-	}
-
-	const lines = body.split("\n").filter((l) => l.trim());
-	// Skip heading line if it's just the auto-generated title
-	for (const line of lines) {
-		const trimmed = line.trim();
-		if (trimmed.startsWith("# ")) continue;
-		if (!trimmed) continue;
-		// Return first non-heading, non-empty line, truncated
-		return trimmed.length > 80 ? trimmed.slice(0, 80) + "…" : trimmed;
-	}
-
-	return "";
-}
-
-function useInboxInner(workspaceDir: () => string) {
-	const inboxFiles = ref<InboxFileItem[]>([]);
+export function useInboxInner(workspaceDir: () => string) {
+	const inboxItems = ref<InboxMomentItem[]>([]);
 	const isLoading = ref(false);
 	const error = ref("");
 	const searchQuery = ref("");
-	const sortKey = ref<InboxSortKey>("modified");
 
 	const INBOX_DIR = "收件箱";
+
+	// Cache of file contents to support append on capture
+	const fileContentCache = ref<Map<string, string>>(new Map());
 
 	const load = async () => {
 		const dir = workspaceDir();
@@ -96,160 +182,109 @@ function useInboxInner(workspaceDir: () => string) {
 		try {
 			const res = await getFileTree(`${dir}/${INBOX_DIR}`, dir);
 			const files = res.entries
-				.filter((e) => e.kind === "file")
+				.filter((e) => e.kind === "file" && e.name.endsWith(".md"))
 				.sort((a, b) => b.modifiedAt - a.modifiedAt);
 
-			// Load previews for each file (limit to first 20 for performance)
-			const previewLimit = 20;
-			const items: InboxFileItem[] = [];
+			// Load content of all date files
+			const allItems: InboxMomentItem[] = [];
+			const cache = new Map<string, string>();
 
-			const slice = files.slice(0, previewLimit);
-			const previews = await Promise.allSettled(
-				slice.map((f) => getNoteContent(f.relativePath || f.path.replace(dir + "/", ""))),
+			const results = await Promise.allSettled(
+				files.map((f) =>
+					getNoteContent(f.relativePath || f.path.replace(dir + "/", "")),
+				),
 			);
 
-			for (let i = 0; i < slice.length; i++) {
-				const f = slice[i]!;
-				const previewResult = previews[i]!;
-				const preview =
-					previewResult.status === "fulfilled"
-						? extractPreview((previewResult as PromiseFulfilledResult<NoteContentResponse>).value.content)
-						: "";
-				items.push({
-					path: f.path,
-					name: f.name,
-					relativePath: f.relativePath,
-					modifiedAt: f.modifiedAt,
-					extension: f.extension,
-					preview,
-				});
-			}
-
-			// Add remaining files without preview
-			for (let i = previewLimit; i < files.length; i++) {
+			for (let i = 0; i < files.length; i++) {
 				const f = files[i]!;
-				items.push({
-					path: f.path,
-					name: f.name,
-					relativePath: f.relativePath,
-					modifiedAt: f.modifiedAt,
-					extension: f.extension,
-					preview: "",
-				});
+				const result = results[i]!;
+				if (result.status === "fulfilled") {
+					const content = (
+						result as PromiseFulfilledResult<NoteContentResponse>
+					).value.content;
+					cache.set(f.relativePath, content);
+
+					// Extract date from filename: YYYY-MM-DD.md
+					const dateMatch = f.name.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
+					if (!dateMatch) continue;
+
+					const date = dateMatch[1]!;
+					const relPath = f.relativePath;
+					const absPath = f.path;
+					const parsed = parseInboxFile(content, date, relPath, absPath);
+					allItems.push(...parsed);
+				}
 			}
 
-			inboxFiles.value = items;
+			fileContentCache.value = cache;
+			inboxItems.value = allItems;
 		} catch (err) {
-			error.value = err instanceof Error ? err.message : String(err);
-			inboxFiles.value = [];
+			const msg = err instanceof Error ? err.message : String(err);
+			if (isEnoentError(msg)) {
+				// Inbox directory doesn't exist yet — treat as empty inbox
+				inboxItems.value = [];
+			} else {
+				error.value = msg;
+				inboxItems.value = [];
+			}
 		} finally {
 			isLoading.value = false;
 		}
 	};
 
-	// Filtered & sorted list
-	const filteredFiles = computed(() => {
-		let list = inboxFiles.value;
-
-		// Search filter
+	// Filtered list (affected by searchQuery)
+	const filteredItems = computed(() => {
 		const q = searchQuery.value.trim().toLowerCase();
-		if (q) {
-			list = list.filter(
-				(f) =>
-					f.name.toLowerCase().includes(q) ||
-					f.preview.toLowerCase().includes(q),
-			);
-		}
+		if (!q) return inboxItems.value;
 
-		// Sort
-		const sorted = [...list];
-		switch (sortKey.value) {
-			case "modified":
-				sorted.sort((a, b) => b.modifiedAt - a.modifiedAt);
-				break;
-			case "created":
-				// Fallback: filename contains timestamp for inbox notes
-				sorted.sort((a, b) => b.name.localeCompare(a.name));
-				break;
-			case "name":
-				sorted.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
-				break;
-		}
-
-		return sorted;
+		return inboxItems.value.filter((item) =>
+			item.content.toLowerCase().includes(q),
+		);
 	});
 
-	const count = computed(() => inboxFiles.value.length);
+	// Grouped view (affected by searchQuery for InboxView)
+	const groupedItems = computed(() => groupItems(filteredItems.value));
 
-	// Capture a new fleeting note
+	// Unfiltered recent items (for Dashboard — NOT affected by searchQuery)
+	const recentItems = computed(() => {
+		const sorted = [...inboxItems.value].sort(
+			(a, b) => b.timestamp - a.timestamp,
+		);
+		return sorted.slice(0, 3);
+	});
+
+	const count = computed(() => inboxItems.value.length);
+
+	// Capture a new fleeting moment
 	const captureNote = async (text: string) => {
 		const dir = workspaceDir();
 		if (!text.trim() || !dir) return;
 
-		const now = new Date();
-		const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
-		const relPath = `${INBOX_DIR}/闪念_${timestamp}`;
+		const today = todayDateStr();
+		const time = todayTimeStr();
+		const relPath = `${INBOX_DIR}/${today}.md`;
 
-		const response = await createNote({ path: relPath, content: text });
+		const cached = fileContentCache.value.get(relPath);
+
+		if (cached !== undefined) {
+			// File exists: append
+			const newContent = `${cached}\n\n## ${time}\n\n${text.trim()}`;
+			await saveNoteContent(relPath, newContent);
+		} else {
+			// File doesn't exist: create
+			const fileContent = `# ${today} 闪念\n\n## ${time}\n\n${text.trim()}`;
+			await createNote({ path: relPath, content: fileContent });
+		}
+
 		toast.success("已捕捉到收件箱");
 		await load();
-		return response;
+		return { path: relPath };
 	};
 
-	// Delete a note
-	const deleteItem = async (relativePath: string) => {
-		const prev = [...inboxFiles.value];
-		inboxFiles.value = inboxFiles.value.filter((f) => f.relativePath !== relativePath);
-
-		try {
-			await deleteNote(relativePath);
-			toast.success("笔记已删除");
-		} catch (err) {
-			inboxFiles.value = prev;
-			toast.error("删除失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
-			throw err;
-		}
+	// Format time for display
+	const formatTime = (item: InboxMomentItem) => {
+		return item.time;
 	};
-
-	// Rename a note
-	const renameItem = async (relativePath: string, newName: string) => {
-		try {
-			await renameNote(relativePath, newName);
-			toast.success("已重命名");
-			await load();
-		} catch (err) {
-			toast.error("重命名失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
-			throw err;
-		}
-	};
-
-	// Archive (move) a note to a target directory
-	const archiveItem = async (relativePath: string, targetDir: string) => {
-		const dir = workspaceDir();
-		if (!dir) return;
-
-		try {
-			await moveFileEntry({
-				root: dir,
-				path: `${dir}/${relativePath}`,
-				targetDirectory: `${dir}/${targetDir}`,
-			});
-			toast.success(`已归档到 ${targetDir}`);
-			await load();
-		} catch (err) {
-			toast.error("归档失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
-			throw err;
-		}
-	};
-
-	// Format relative time for display
-	const formatTime = (ts: number) => formatRelativeTime(ts);
 
 	watch(
 		() => workspaceDir(),
@@ -260,18 +295,16 @@ function useInboxInner(workspaceDir: () => string) {
 	);
 
 	return {
-		inboxFiles,
-		filteredFiles,
+		inboxItems,
+		filteredItems,
+		groupedItems,
+		recentItems,
 		isLoading,
 		error,
 		searchQuery,
-		sortKey,
 		count,
 		load,
 		captureNote,
-		deleteItem,
-		renameItem,
-		archiveItem,
 		formatTime,
 	};
 }

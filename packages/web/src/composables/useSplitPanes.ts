@@ -21,11 +21,22 @@ export type GridNode = PaneGroup | SplitContainer;
 export interface SplitTabItem {
 	id: string;
 	title: string;
-	kind: "view" | "file" | "home" | "session" | "terminal" | "automation" | "settings";
+	kind:
+		| "view"
+		| "file"
+		| "home"
+		| "chat"
+		| "session"
+		| "terminal"
+		| "automation"
+		| "settings";
 	viewId?: string;
 	filePath?: string;
 	sessionId?: string;
 	terminalId?: string;
+	initialPrompt?: string;
+	initialModel?: string;
+	initialAgent?: string;
 	status?: "idle" | "saving" | "unsaved" | "error" | "loading";
 	onClose?: (tab: SplitTabItem) => void;
 }
@@ -42,6 +53,9 @@ export type SerializableGridNode =
 				filePath?: string;
 				sessionId?: string;
 				terminalId?: string;
+				initialPrompt?: string;
+				initialModel?: string;
+				initialAgent?: string;
 				title: string;
 			}[];
 			activeTabId: string;
@@ -58,14 +72,35 @@ export type SerializableGridNode =
 let idCounter = 0;
 const generateId = () => `sp-${++idCounter}-${Date.now().toString(36)}`;
 let homeCounter = 0;
+let chatCounter = 0;
 let terminalCounter = 0;
 export const generateHomeId = () => `home-${++homeCounter}`;
+export const generateChatId = () => `chat-${++chatCounter}`;
 export const generateTerminalTabId = () => `terminal-tab-${++terminalCounter}`;
 
 export const createHomeTab = (): SplitTabItem => ({
 	id: generateHomeId(),
 	title: "主页",
 	kind: "home",
+	status: "idle",
+});
+
+export const createChatTab = (
+	sessionId: string,
+	title?: string,
+	options?: {
+		initialPrompt?: string;
+		initialModel?: string;
+		initialAgent?: string;
+	},
+): SplitTabItem => ({
+	id: generateChatId(),
+	title: title ?? "新会话",
+	kind: "chat",
+	sessionId,
+	initialPrompt: options?.initialPrompt,
+	initialModel: options?.initialModel,
+	initialAgent: options?.initialAgent,
 	status: "idle",
 });
 
@@ -467,6 +502,33 @@ export function useSplitPanes() {
 		activePaneGroupId.value = panes[0]?.id ?? rootNode.value.id;
 	}
 
+	function replaceTab(tabId: string, newTab: SplitTabItem) {
+		let targetPaneId: string | null = null;
+		const root = rootNode.value;
+
+		for (const pane of flattenPaneGroups(root)) {
+			if (pane.tabs.some((tab) => tab.id === tabId)) {
+				targetPaneId = pane.id;
+				break;
+			}
+		}
+
+		if (!targetPaneId) return;
+
+		const pane = findPaneGroup(root, targetPaneId);
+		if (!pane) return;
+
+		const newTabs = pane.tabs.map((tab) => (tab.id === tabId ? newTab : tab));
+		const newPane: PaneGroup = {
+			...pane,
+			tabs: newTabs,
+			activeTabId: newTab.id,
+		};
+
+		rootNode.value = replaceNodeWith(root, targetPaneId, newPane);
+		activePaneGroupId.value = targetPaneId;
+	}
+
 	return {
 		rootNode,
 		activePaneGroupId,
@@ -481,6 +543,7 @@ export function useSplitPanes() {
 		resizeSplit,
 		closePaneGroup,
 		findTabAcrossPanes,
+		replaceTab,
 		exportSnapshot,
 		importSnapshot,
 	};
@@ -500,6 +563,9 @@ function serializeNode(node: GridNode): SerializableGridNode {
 				filePath: t.filePath,
 				sessionId: t.sessionId,
 				terminalId: t.terminalId,
+				initialPrompt: t.initialPrompt,
+				initialModel: t.initialModel,
+				initialAgent: t.initialAgent,
 				title: t.title,
 			})),
 			activeTabId: node.activeTabId,
@@ -529,6 +595,9 @@ function deserializeNode(node: SerializableGridNode): GridNode {
 				filePath: t.filePath,
 				sessionId: t.sessionId,
 				terminalId: t.terminalId,
+				initialPrompt: t.initialPrompt,
+				initialModel: t.initialModel,
+				initialAgent: t.initialAgent,
 				status: "idle" as const,
 			})),
 			activeTabId: node.activeTabId,

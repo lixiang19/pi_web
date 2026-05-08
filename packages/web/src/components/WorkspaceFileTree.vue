@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
 import { Folder } from "lucide-vue-next";
 
 import FileTreePanel from "@/components/common/FileTreePanel.vue";
 import { useFileTreeData } from "@/composables/useFileTreeData";
+import { useFileTreeActions } from "@/composables/useFileTreeActions";
 import { useFavoritesStore } from "@/stores/favorites";
 import type { FileTreeEntry } from "@/lib/types";
 
@@ -24,6 +25,11 @@ const {
 	toggleDirectory,
 	refreshTree,
 } = useFileTreeData(() => props.rootDir);
+
+const { handleDelete, handleRename, handleCreateFolderInTree } = useFileTreeActions(
+	computed(() => props.rootDir),
+	refreshTree,
+);
 
 const favoritesStore = useFavoritesStore();
 
@@ -81,5 +87,8 @@ onMounted(() => {
     @toggle-expand="handleToggleExpand"
     @toggle-favorite="handleToggleFavorite"
     @refresh="refreshTree"
+    @delete="handleDelete"
+    @rename="handleRename"
+    @create-folder="handleCreateFolderInTree"
   />
 </template>

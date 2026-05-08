@@ -10,18 +10,37 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "set-active-tab", paneGroupId: string, tabId: string): void;
-  (e: "close-tab", paneGroupId: string, tabId: string): void;
-  (e: "split-right", paneGroupId: string, tabId?: string): void;
-  (e: "new-tab", paneGroupId: string): void;
-  (e: "resize-split", splitContainerId: string, sizes: [number, number]): void;
+  (e: "set-active-tab", payload: { paneGroupId: string; tabId: string }): void;
+  (e: "close-tab", payload: { paneGroupId: string; tabId: string }): void;
+  (e: "split-right", payload: { paneGroupId: string; tabId?: string }): void;
+  (e: "new-tab", payload: { paneGroupId: string }): void;
+  (e: "resize-split", payload: { splitContainerId: string; sizes: [number, number] }): void;
   (e: "activate-pane", paneGroupId: string): void;
   (e: "drop-tab", payload: { fromPaneId: string; tabId: string; toPaneId: string; zone: DropZone }): void;
 }>();
 
 defineSlots<{
-  default(props: { tabs: SplitTabItem[]; activeTabId: string; paneGroupId: string }): unknown;
+  default(props: { tabs: SplitTabItem[]; activeTabId: string; paneGroupId: string }): void;
 }>();
+
+function handlePaneGroupSetActiveTab(paneGroupId: string, tabId: string) {
+  emit("set-active-tab", { paneGroupId, tabId });
+}
+function handlePaneGroupCloseTab(paneGroupId: string, tabId: string) {
+  emit("close-tab", { paneGroupId, tabId });
+}
+function handlePaneGroupSplitRight(paneGroupId: string, tabId?: string) {
+  emit("split-right", { paneGroupId, tabId });
+}
+function handlePaneGroupNewTab(paneGroupId: string) {
+  emit("new-tab", { paneGroupId });
+}
+function handlePaneGroupActivatePane(paneGroupId: string) {
+  emit("activate-pane", paneGroupId);
+}
+function handlePaneGroupDropTab(event: { fromPaneId: string; tabId: string; zone: DropZone }, paneGroupId: string) {
+  emit("drop-tab", { ...event, toPaneId: paneGroupId });
+}
 </script>
 
 <template>
@@ -29,16 +48,16 @@ defineSlots<{
     v-if="node.type === 'split'"
     :node="node"
     :active-pane-group-id="activePaneGroupId"
-    @set-active-tab="emit('set-active-tab', $event.paneGroupId, $event.tabId)"
-    @close-tab="emit('close-tab', $event.paneGroupId, $event.tabId)"
-    @split-right="emit('split-right', $event.paneGroupId, $event.tabId)"
-    @new-tab="emit('new-tab', $event.paneGroupId ?? $event)"
-    @resize-split="emit('resize-split', $event.splitContainerId, $event.sizes)"
+    @set-active-tab="emit('set-active-tab', $event)"
+    @close-tab="emit('close-tab', $event)"
+    @split-right="emit('split-right', $event)"
+    @new-tab="emit('new-tab', $event)"
+    @resize-split="emit('resize-split', $event)"
     @activate-pane="emit('activate-pane', $event)"
     @drop-tab="emit('drop-tab', $event)"
   >
-    <template #default="slotProps">
-      <slot v-bind="slotProps" />
+    <template #default="slotData">
+      <slot :tabs="slotData.tabs as SplitTabItem[]" :active-tab-id="slotData.activeTabId as string" :pane-group-id="slotData.paneGroupId as string" />
     </template>
   </SplitContainerComponent>
 
@@ -46,15 +65,15 @@ defineSlots<{
     v-else
     :node="node"
     :is-active="activePaneGroupId === node.id"
-    @set-active-tab="emit('set-active-tab', node.id, $event)"
-    @close-tab="emit('close-tab', node.id, $event)"
-    @split-right="emit('split-right', node.id, $event)"
-    @new-tab="emit('new-tab', node.id)"
-    @activate-pane="emit('activate-pane', node.id)"
-    @drop-tab="emit('drop-tab', { ...$event, toPaneId: node.id })"
+    @set-active-tab="handlePaneGroupSetActiveTab(node.id, $event)"
+    @close-tab="handlePaneGroupCloseTab(node.id, $event)"
+    @split-right="handlePaneGroupSplitRight(node.id, $event)"
+    @new-tab="handlePaneGroupNewTab(node.id)"
+    @activate-pane="handlePaneGroupActivatePane(node.id)"
+    @drop-tab="handlePaneGroupDropTab($event, node.id)"
   >
-    <template #default="slotProps">
-      <slot v-bind="slotProps" />
+    <template #default="slotData">
+      <slot :tabs="slotData.tabs as SplitTabItem[]" :active-tab-id="slotData.activeTabId as string" :pane-group-id="slotData.paneGroupId as string" />
     </template>
   </PaneGroupComponent>
 </template>

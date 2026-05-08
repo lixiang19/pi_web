@@ -5,6 +5,7 @@ import {
 	createWorkspaceTask,
 	deleteWorkspaceTask,
 	getWorkspaceTasks,
+	reorderWorkspaceTasks,
 	updateWorkspaceTask,
 } from "@/lib/api";
 
@@ -15,6 +16,7 @@ export type TaskItem = {
 	priority: "low" | "medium" | "high";
 	dueDate: number | null;
 	tags: string[];
+	order?: number;
 	createdAt: number;
 	updatedAt: number;
 	kind?: "goal" | "task";
@@ -45,6 +47,10 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 	const isLoading = ref(false);
 	const error = ref("");
 	const showCompleted = ref(false);
+	const searchQuery = ref("");
+	const filterStatus = ref<"all" | "pending" | "in_progress" | "done">("all");
+	const filterPriority = ref<"all" | "high" | "medium" | "low">("all");
+	const filterTags = ref<string[]>([]);
 
 	const load = async () => {
 		const dir = workspaceDir();
@@ -64,12 +70,75 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		}
 	};
 
+	const allTags = computed(() => {
+		const tags = new Set<string>();
+		for (const t of tasks.value) {
+			for (const tag of t.tags) {
+				tags.add(tag);
+			}
+		}
+		return Array.from(tags).sort();
+	});
+
+	const filteredTasks = computed(() => {
+		return tasks.value
+			.filter((task) => {
+				if (
+					searchQuery.value &&
+					!task.title.toLowerCase().includes(searchQuery.value.toLowerCase())
+				) {
+					return false;
+				}
+				if (
+					filterStatus.value !== "all" &&
+					task.status !== filterStatus.value
+				) {
+					return false;
+				}
+				if (
+					filterPriority.value !== "all" &&
+					task.priority !== filterPriority.value
+				) {
+					return false;
+				}
+				if (
+					filterTags.value.length > 0 &&
+					!filterTags.value.some((tag) => task.tags.includes(tag))
+				) {
+					return false;
+				}
+				return true;
+			})
+			.sort((a, b) => {
+				if (a.order !== undefined && b.order !== undefined)
+					return a.order - b.order;
+				if (a.order !== undefined) return -1;
+				if (b.order !== undefined) return 1;
+				return b.createdAt - a.createdAt;
+			});
+	});
+
+	const hasActiveFilters = computed(
+		() =>
+			searchQuery.value !== "" ||
+			filterStatus.value !== "all" ||
+			filterPriority.value !== "all" ||
+			filterTags.value.length > 0,
+	);
+
+	const resetFilters = () => {
+		searchQuery.value = "";
+		filterStatus.value = "all";
+		filterPriority.value = "all";
+		filterTags.value = [];
+	};
+
 	const pendingTasks = computed(() =>
-		tasks.value.filter((t) => t.status !== "done"),
+		filteredTasks.value.filter((t) => t.status !== "done"),
 	);
 
 	const completedTasks = computed(() =>
-		tasks.value.filter((t) => t.status === "done"),
+		filteredTasks.value.filter((t) => t.status === "done"),
 	);
 
 	const todayTasks = computed(() => {
@@ -81,7 +150,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		).getTime();
 		const todayEnd = todayStart + 86400000;
 
-		return tasks.value.filter((t) => {
+		return filteredTasks.value.filter((t) => {
 			if (t.status === "done") return false;
 			if (t.dueDate && t.dueDate >= todayStart && t.dueDate < todayEnd)
 				return true;
@@ -222,6 +291,36 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		}
 	};
 
+	const reorderTasks = async (
+		items: Array<{ id: string; order: number; status?: string }>,
+	) => {
+		// Optimistic update
+		const prev = tasks.value.map((t) => ({ ...t }));
+		for (const item of items) {
+			const task = tasks.value.find((t) => t.id === item.id);
+			if (task) {
+				task.order = item.order;
+				if (item.status !== undefined)
+					task.status = item.status as TaskItem["status"];
+				task.updatedAt = Date.now();
+			}
+		}
+
+		try {
+			const res = await reorderWorkspaceTasks(items, updatedAt.value);
+			updatedAt.value = res.updatedAt;
+		} catch (err) {
+			tasks.value = prev;
+			const message = err instanceof Error ? err.message : String(err);
+			if (message.includes("409")) {
+				toast.warning("任务已被修改，正在重新加载");
+				await load();
+			} else {
+				toast.error("排序失败", { description: message });
+			}
+		}
+	};
+
 	watch(
 		() => workspaceDir(),
 		(dir) => {
@@ -232,6 +331,14 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 
 	return {
 		tasks,
+		searchQuery,
+		filterStatus,
+		filterPriority,
+		filterTags,
+		allTags,
+		filteredTasks,
+		hasActiveFilters,
+		resetFilters,
 		pendingTasks,
 		completedTasks,
 		todayTasks,
@@ -244,5 +351,6 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		toggleStatus,
 		removeTask,
 		updateTask,
+		reorderTasks,
 	};
 }

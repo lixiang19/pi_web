@@ -52,8 +52,11 @@ const recentGoals = computed(() =>
 		.slice(0, 5),
 );
 
-const { filteredFiles: inboxFiles, count: inboxCount, formatTime: formatInboxTime } = useWorkspaceInbox(() => props.workspaceDir);
-const recentInboxNotes = computed(() => inboxFiles.value.slice(0, 3));
+const {
+	recentItems: recentInboxNotes,
+	count: inboxCount,
+	formatTime: formatInboxTime,
+} = useWorkspaceInbox(() => props.workspaceDir);
 
 const formatDate = (timestamp: number) =>
 	new Intl.DateTimeFormat("zh-CN", {
@@ -266,11 +269,11 @@ const priorityDot = (p: string) =>
           >
             <FileText class="size-4 shrink-0 text-muted-foreground" />
             <div class="min-w-0 flex-1">
-              <p class="text-sm text-foreground truncate">{{ note.name.replace(/\.md$/, "") }}</p>
+              <p class="text-sm text-foreground truncate">{{ note.date }}</p>
               <p v-if="note.preview" class="text-[11px] text-muted-foreground/70 truncate">{{ note.preview }}</p>
             </div>
             <span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-              {{ formatInboxTime(note.modifiedAt) }}
+              {{ formatInboxTime(note) }}
             </span>
           </button>
         </div>
