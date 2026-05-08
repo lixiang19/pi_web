@@ -693,6 +693,85 @@ export function getRecentFiles(root: string, limit = 20) {
 	);
 }
 
+// Fleeting Notes API
+export type FleetingRecommendationType = "journal" | "clip" | "task" | "delete";
+
+export interface FleetingNote {
+	id: string;
+	content: string;
+	status: "pending" | "processing";
+	analysisStatus: "unanalyzed" | "analyzing" | "suggested";
+	recommendationType: FleetingRecommendationType | null;
+	recommendationText: string | null;
+	draft: string | null;
+	requiresInput: boolean;
+	piSessionId: string | null;
+	piSessionFile: string | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface ClipRecord {
+	id: string;
+	title: string;
+	url: string | null;
+	content: string;
+	source: string | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export function getFleetingNotes() {
+	return request<{ notes: FleetingNote[] }>("/api/fleeting");
+}
+
+export function createFleetingNote(content: string) {
+	return request<{ note: FleetingNote }>("/api/fleeting", {
+		method: "POST",
+		body: JSON.stringify({ content }),
+	});
+}
+
+export function deleteFleetingNote(noteId: string) {
+	return request<{ deleted: true }>(`/api/fleeting/${noteId}`, {
+		method: "DELETE",
+	});
+}
+
+export function processFleetingToJournal(noteId: string, content: string) {
+	return request<{ deleted: true; journalPath: string }>(
+		`/api/fleeting/${noteId}/process/journal`,
+		{
+			method: "POST",
+			body: JSON.stringify({ content }),
+		},
+	);
+}
+
+export function processFleetingToClip(
+	noteId: string,
+	data: { title: string; url?: string; content: string; source?: string },
+) {
+	return request<{ deleted: true; clip: ClipRecord }>(
+		`/api/fleeting/${noteId}/process/clip`,
+		{
+			method: "POST",
+			body: JSON.stringify(data),
+		},
+	);
+}
+
+export function processFleetingToTask(noteId: string) {
+	return request<{ processed: false; message: string }>(
+		`/api/fleeting/${noteId}/process/task`,
+		{ method: "POST" },
+	);
+}
+
+export function getClips() {
+	return request<{ clips: ClipRecord[] }>("/api/fleeting/clips");
+}
+
 // Workspace Tasks API
 export interface WorkspaceTask {
 	id: string;

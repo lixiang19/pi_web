@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, watch } from "vue";
 import {
 	BookOpen,
+	Bookmark,
 	Calendar,
 	Database,
 	GitBranch,
@@ -17,6 +18,7 @@ import WorkspaceContentArea from "@/components/workspace/WorkspaceContentArea.vu
 import HomePage from "@/components/workspace/HomePage.vue";
 import TaskView from "@/components/workspace/TaskView.vue";
 import CalendarView from "@/components/workspace/CalendarView.vue";
+import ClipsView from "@/components/workspace/ClipsView.vue";
 import InboxView from "@/components/workspace/InboxView.vue";
 import GitChangesView from "@/components/workspace/GitChangesView.vue";
 import WorkspaceChatTab from "@/components/workspace/WorkspaceChatTab.vue";
@@ -133,6 +135,7 @@ const fixedViews = [
 	{ id: "tasks", label: "待办", icon: BookOpen },
 	{ id: "calendar", label: "日历", icon: Calendar },
 	{ id: "inbox", label: "收件箱", icon: Inbox },
+	{ id: "clips", label: "剪藏", icon: Bookmark },
 	{ id: "git-changes", label: "文件变更", icon: GitBranch },
 ] as const;
 
@@ -143,6 +146,7 @@ const viewLabelMap: Record<string, string> = {
 	tasks: "待办",
 	calendar: "日历",
 	inbox: "收件箱",
+	clips: "剪藏",
 	"git-changes": "文件变更",
 };
 
@@ -573,12 +577,12 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
         </button>
       </div>
 
-      <Separator class="mx-3" />
+		<Separator class="mx-3" />
 
-      <!-- 新建按钮行 -->
-      <div class="shrink-0 px-3 py-2">
-        <div class="flex items-center justify-between gap-1">
-          <Tooltip>
+		<!-- 新建按钮行 -->
+		<div class="shrink-0 px-3 py-2">
+		  <div class="flex items-center justify-between gap-1">
+			<Tooltip>
             <TooltipTrigger as-child>
               <button
                 type="button"
@@ -588,11 +592,11 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
                 <FilePlus2 class="size-3.5" />
                 新建
               </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">新建笔记</TooltipContent>
-          </Tooltip>
+			</TooltipTrigger>
+			<TooltipContent side="top">新建笔记</TooltipContent>
+		  </Tooltip>
 
-          <Tooltip>
+		  <Tooltip>
             <TooltipTrigger as-child>
               <button
                 type="button"
@@ -689,16 +693,20 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             />
           </div>
 
-          <div v-show="activeTabId === 'inbox'" class="h-full">
-            <InboxView
-              :workspace-dir="workspaceDir"
-              @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
-              @refresh-tree="refreshTree"
-            />
-          </div>
+		  <div v-show="activeTabId === 'inbox'" class="h-full">
+			<InboxView
+			  :workspace-dir="workspaceDir"
+			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
+			  @refresh-tree="refreshTree"
+			/>
+		  </div>
 
-          <div v-show="activeTabId === 'git-changes'" class="h-full">
-            <GitChangesView :workspace-dir="workspaceDir" />
+		  <div v-show="activeTabId === 'clips'" class="h-full">
+			<ClipsView />
+		  </div>
+
+		  <div v-show="activeTabId === 'git-changes'" class="h-full">
+			<GitChangesView :workspace-dir="workspaceDir" />
           </div>
 
           <!-- 主页标签页 -->

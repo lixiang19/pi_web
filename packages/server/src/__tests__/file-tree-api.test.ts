@@ -28,9 +28,9 @@ describe("file tree API logic", () => {
 		const dirs = entries.filter((e) => e.kind === "directory");
 		const files = entries.filter((e) => e.kind === "file");
 		if (dirs.length > 0 && files.length > 0) {
-			expect(
-				dirs[dirs.length - 1].name.localeCompare(files[0].name),
-			).toBeLessThanOrEqual(0);
+			expect(entries.indexOf(dirs[dirs.length - 1]!)).toBeLessThan(
+				entries.indexOf(files[0]!),
+			);
 		}
 	});
 

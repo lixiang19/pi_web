@@ -47,9 +47,9 @@ describe("GET /api/files/tree", () => {
 		const dirs = entries.filter((entry) => entry.kind === "directory");
 		const files = entries.filter((entry) => entry.kind === "file");
 		if (dirs.length > 0 && files.length > 0) {
-			expect(
-				dirs[dirs.length - 1].name.localeCompare(files[0].name),
-			).toBeLessThanOrEqual(0);
+			expect(entries.indexOf(dirs[dirs.length - 1]!)).toBeLessThan(
+				entries.indexOf(files[0]!),
+			);
 		}
 	});
 

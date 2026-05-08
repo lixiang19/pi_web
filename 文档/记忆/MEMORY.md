@@ -107,6 +107,8 @@
 - [编辑器保存状态] WorkspaceMarkdownEditor 自管 saveStatus，通过 @update:save-status 事件上报到 WorkspacePage 的 saveStatusMap，TabBar 的 tabBarItems computed 读取 map 值反映圆点状态
 - [路径规范] 工作空间内部统一用绝对路径（workspaceDir 为前缀），只在调后端 API 时转为相对路径（strip workspaceDir 前缀）。CalendarView/DashboardView emit 的 open-file 路径必须也是绝对路径
 - [createNote 必须支持路径] 后端 createNote API 必须增强支持指定子目录路径，否则日记（日记/YYYY/MM/）、闪念（收件箱/）都无法正确创建
+- [闪念队列边界] 闪念 PRD 语义是 DB 临时队列，不是 `收件箱/*.md` 文件列表；处理成功即删除原闪念，日记/剪藏必须由目标系统确认成功后再清队列，任务未接入时只能提示且保留闪念
+- [闪念刷新链路] 全局闪念入口保存后必须广播前端事件或走实时通道通知收件箱 store；否则 DB 已写入但当前页面 badge/list 不会更新。后台分析建议完成前 store 需要轮询或 SSE 刷新。
 - [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
 - [反思先行] 每个里程碑完成后必须做功能反思，确认每个子功能真的可端到端跑通，而非"调 API 了就当完成"。见 `文档/功能开发/2026-04-28_工作空间功能反思.md`
 

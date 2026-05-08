@@ -262,21 +262,21 @@ const priorityDot = (p: string) =>
         <div class="mt-3 space-y-1">
           <button
             v-for="note in recentInboxNotes"
-            :key="note.path"
+            :key="note.id"
             type="button"
             class="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
-            @click="emit('open-file', note.path)"
+            @click="emit('open-inbox-view')"
           >
-            <FileText class="size-4 shrink-0 text-muted-foreground" />
-            <div class="min-w-0 flex-1">
-              <p class="text-sm text-foreground truncate">{{ note.date }}</p>
-              <p v-if="note.preview" class="text-[11px] text-muted-foreground/70 truncate">{{ note.preview }}</p>
-            </div>
-            <span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-              {{ formatInboxTime(note) }}
-            </span>
-          </button>
-        </div>
+			<FileText class="size-4 shrink-0 text-muted-foreground" />
+			<div class="min-w-0 flex-1">
+			  <p class="text-sm text-foreground truncate">{{ note.content }}</p>
+			  <p v-if="note.recommendationText" class="text-[11px] text-muted-foreground/70 truncate">{{ note.recommendationText }}</p>
+			</div>
+			<span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+			  {{ formatInboxTime(note.createdAt) }}
+			</span>
+		  </button>
+		</div>
       </div>
 
       <!-- 最近编辑 -->

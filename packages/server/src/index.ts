@@ -29,7 +29,8 @@ import {
 	createAutomationScheduler,
 	createAutomationStore,
 } from "./automations.js";
-import { initializeRidgeDb } from "./db/index.js";
+import { getRidgeDb, initializeRidgeDb } from "./db/index.js";
+import { createFleetingAnalysisQueue } from "./fleeting-analysis.js";
 import {
 	ensureWithinRoot,
 	normalizeFsPath,
@@ -40,6 +41,7 @@ import { createIsoGitService } from "./iso-git-service.js";
 import { createNotesRouter } from "./notes.js";
 import { createProjectContextResolver } from "./project-context.js";
 import { createCoreRouter } from "./routes/core.js";
+import { createFleetingRouter } from "./routes/fleeting.js";
 import { createGitRouter } from "./routes/git.js";
 import { createSystemRouter } from "./routes/system.js";
 import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
@@ -497,6 +499,110 @@ const coreRouter = createCoreRouter({
 app.use(coreRouter);
 const workspaceTasksRouter = createWorkspaceTasksRouter(defaultWorkspaceDir);
 app.use("/api/workspace/tasks", workspaceTasksRouter);
+
+const extractAssistantText = (message: unknown): string => {
+	if (!message || typeof message !== "object") return "";
+	const record = message as Record<string, unknown>;
+	const content = record.content;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.map((block) => {
+			if (!block || typeof block !== "object") return "";
+			const blockRecord = block as Record<string, unknown>;
+			return typeof blockRecord.text === "string" ? blockRecord.text : "";
+		})
+		.join("\n");
+};
+
+const parseFleetingAnalysis = (text: string) => {
+	const match = text.match(/\{[\s\S]*\}/);
+	if (!match) return null;
+	try {
+		const parsed = JSON.parse(match[0]) as Record<string, unknown>;
+		const recommendationType = parsed.recommendationType;
+		if (!["journal", "clip", "task", "delete"].includes(String(recommendationType))) {
+			return null;
+		}
+		return {
+			recommendationType: String(recommendationType),
+			recommendationText:
+				typeof parsed.recommendationText === "string"
+					? parsed.recommendationText
+					: "建议稍后处理",
+			draft: typeof parsed.draft === "string" ? parsed.draft : "",
+			requiresInput: parsed.requiresInput === true,
+		};
+	} catch {
+		return null;
+	}
+};
+
+const fleetingDb = await getRidgeDb();
+const fleetingAnalysisQueue = createFleetingAnalysisQueue({
+	runAnalysis: async (noteId: string) => {
+			const row = fleetingDb
+				.prepare("SELECT content FROM fleeting_notes WHERE note_id = ?")
+				.get(noteId) as { content?: string } | undefined;
+			if (!row?.content) return;
+			fleetingDb
+				.prepare(
+					"UPDATE fleeting_notes SET analysis_status = 'analyzing', updated_at = ? WHERE note_id = ?",
+				)
+				.run(Date.now(), noteId);
+			try {
+				const { session } = await createTransientCatalogSession(defaultWorkspaceDir);
+				const prompt = `你是 ridge 闪念 Agent。只输出 JSON，不要输出解释。\n\n可用推荐类型：journal、clip、task、delete。\n约束：任务系统当前暂未接入；日记只能写入今天；剪藏支持链接和纯文本摘录；AI 只能建议，不能处理。\n推荐规则：明确行动项优先 task；个人记录/感受/复盘优先 journal；外部资料/链接/摘录优先 clip；无法判断给保守建议。\n\n输出格式：{"recommendationType":"journal|clip|task|delete","recommendationText":"面向用户的一句话","draft":"处理草稿","requiresInput":false}\n\n闪念内容：\n${row.content}`;
+				await session.prompt(prompt);
+				const messages = Array.isArray(session.messages) ? session.messages : [];
+				const assistantText = [...messages]
+					.reverse()
+					.find((message) => {
+						return (
+							message &&
+							typeof message === "object" &&
+							(message as unknown as Record<string, unknown>).role === "assistant"
+						);
+					});
+				const analysis = parseFleetingAnalysis(extractAssistantText(assistantText));
+				if (!analysis) throw new Error("闪念 Agent 未返回有效 JSON");
+				fleetingDb
+					.prepare(
+						`UPDATE fleeting_notes SET
+						  analysis_status = 'suggested',
+						  recommendation_type = ?,
+						  recommendation_text = ?,
+						  draft = ?,
+						  requires_input = ?,
+						  updated_at = ?
+						 WHERE note_id = ?`,
+					)
+					.run(
+						analysis.recommendationType,
+						analysis.recommendationText,
+						analysis.draft,
+						analysis.requiresInput ? 1 : 0,
+						Date.now(),
+						noteId,
+					);
+			} catch (error) {
+				fleetingDb
+					.prepare(
+						"UPDATE fleeting_notes SET analysis_status = 'unanalyzed', retry_count = retry_count + 1, last_error = ?, updated_at = ? WHERE note_id = ?",
+					)
+					.run(error instanceof Error ? error.message : String(error), Date.now(), noteId);
+				throw error;
+			}
+	},
+});
+const fleetingRouter = createFleetingRouter({
+	db: fleetingDb,
+	workspaceDir: defaultWorkspaceDir,
+	analysisRunner: {
+		run: (noteId: string) => fleetingAnalysisQueue.enqueue(noteId),
+	},
+});
+app.use("/api/fleeting", fleetingRouter);
 // ===== Workspace Data Routes =====
 // ===== Workspace Data Routes =====
 const workspaceDataRouter = createWorkspaceDataRouter({
