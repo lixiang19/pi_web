@@ -1,5 +1,5 @@
 import { computed, type Ref } from "vue";
-import type { InboxMomentItem } from "@/composables/useInbox";
+import type { InboxItem } from "@/composables/useInbox";
 import type { TaskItem } from "@/composables/useWorkspaceTasks";
 import type { RecentFileItem } from "@/lib/api";
 import type { SessionSummary } from "@/lib/types";
@@ -25,13 +25,13 @@ export interface RecentActivityItem {
 	/** 任务 ID（kind=task 时有值） */
 	taskId?: string;
 	/** 闪念条目（kind=moment 时有值） */
-	momentItem?: InboxMomentItem;
+	momentItem?: InboxItem;
 }
 
 export interface RecentActivityInput {
 	recentFiles: Ref<RecentFileItem[]>;
 	todayTasks: Ref<TaskItem[]>;
-	recentMoments: Ref<InboxMomentItem[]>;
+	recentMoments: Ref<InboxItem[]>;
 	sessions: Ref<SessionSummary[]>;
 	todayJournalPath: Ref<string>;
 	hasTodayJournal: Ref<boolean>;
@@ -70,10 +70,9 @@ export function buildRecentActivity(
 		items.push({
 			id: `moment-${moment.id}`,
 			kind: "moment",
-			title: moment.preview || moment.content.split("\n")[0] || "闪念",
-			timestamp: moment.timestamp,
+			title: moment.content.split("\n")[0] || "闪念",
+			timestamp: moment.createdAt,
 			momentItem: moment,
-			filePath: moment.path,
 		});
 	}
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ref } from "vue";
-import type { InboxMomentItem } from "@/composables/useInbox";
+import type { InboxItem } from "@/composables/useInbox";
 import {
 	buildRecentActivity,
 	useRecentActivity,
@@ -36,17 +36,21 @@ function makeTaskItem(overrides: Partial<TaskItem> = {}): TaskItem {
 }
 
 function makeMomentItem(
-	overrides: Partial<InboxMomentItem> = {},
-): InboxMomentItem {
+	overrides: Partial<InboxItem> = {},
+): InboxItem {
 	return {
 		id: "moment-1",
-		date: "2026-04-30",
-		time: "10:00",
 		content: "一条闪念",
-		preview: "一条闪念",
-		relativePath: "收件箱/2026-04-30.md",
-		path: "/ws/收件箱/2026-04-30.md",
-		timestamp: 3000,
+		status: "pending",
+		analysisStatus: "suggested",
+		recommendationType: "journal",
+		recommendationText: "建议写入日记",
+		draft: "一条闪念",
+		requiresInput: false,
+		piSessionId: null,
+		piSessionFile: null,
+		createdAt: 3000,
+		updatedAt: 3000,
 		...overrides,
 	};
 }
@@ -70,7 +74,7 @@ describe("buildRecentActivity", () => {
 		const result = buildRecentActivity({
 			recentFiles: ref([makeFileItem({ modifiedAt: 5000 })]),
 			todayTasks: ref([makeTaskItem({ updatedAt: 3000, createdAt: 3000 })]),
-			recentMoments: ref([makeMomentItem({ timestamp: 4000 })]),
+			recentMoments: ref([makeMomentItem({ createdAt: 4000 })]),
 			sessions: ref([makeSessionSummary({ updatedAt: 6000 })]),
 			todayJournalPath: ref(""),
 			hasTodayJournal: ref(false),
