@@ -182,6 +182,25 @@ describe("HomePage - AI 启动台", () => {
 		expect(payload.thinkingLevel).toBe("medium");
 	});
 
+	it("异步加载默认模型后同步首页选择值", async () => {
+		const wrapper = mountHomePage({
+			models: [],
+			defaultModel: "",
+		});
+
+		await wrapper.setProps({
+			models: defaultModels,
+			defaultModel: "claude-3",
+		});
+
+		const textarea = wrapper.find("textarea");
+		await textarea.setValue("用加载后的模型");
+		await wrapper.find("form").trigger("submit.prevent");
+
+		const payload = wrapper.emitted("submit")![0]![0] as HomeSubmitPayload;
+		expect(payload.model).toBe("claude-3");
+	});
+
 	it("空输入不触发 submit", async () => {
 		const wrapper = mountHomePage();
 		await wrapper.find("form").trigger("submit.prevent");

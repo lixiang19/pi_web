@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import {
 	CheckSquare,
 	FileText,
@@ -61,6 +61,17 @@ const isFocused = ref(false);
 const selectedModel = ref(props.defaultModel);
 const selectedAgent = ref(props.defaultAgent || NO_AGENT_VALUE);
 const selectedThinkingLevel = ref<ThinkingLevel>(props.defaultThinkingLevel);
+
+watch(
+	() => [props.defaultModel, props.models] as const,
+	([defaultModel, models]) => {
+		if (!defaultModel) return;
+		const modelValues = new Set(models.map((model) => model.value));
+		if (!selectedModel.value || !modelValues.has(selectedModel.value)) {
+			selectedModel.value = defaultModel;
+		}
+	},
+);
 
 const isExpanded = computed(() => isFocused.value || draftText.value.length > 0);
 

@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1244,12 +1244,41 @@ export async function startServer() {
 	automationScheduler.start();
 	await refreshSessionCatalogIndex();
 
-	return new Promise<void>((resolve) => {
-		httpServer.listen(port, () => {
-			console.warn(`Pi server listening on http://127.0.0.1:${port}`);
+	await listenHttpServer(httpServer, port);
+	console.warn(`Pi server listening on http://127.0.0.1:${port}`);
+}
+
+type ListenError = Error & { code?: string; port?: number };
+
+export const listenHttpServer = (
+	server: Server,
+	listenPort: number,
+): Promise<void> =>
+	new Promise((resolve, reject) => {
+		const handleError = (error: ListenError) => {
+			server.off("listening", handleListening);
+			reject(error);
+		};
+		const handleListening = () => {
+			server.off("error", handleError);
 			resolve();
-		});
+		};
+
+		server.once("error", handleError);
+		server.once("listening", handleListening);
+		server.listen(listenPort);
 	});
+
+const logStartupError = (error: unknown) => {
+	const listenError = error as ListenError;
+	if (listenError?.code === "EADDRINUSE") {
+		console.error(
+			`Failed to start Pi server: port ${port} is already in use. Stop the existing server process or start this one with another PORT, for example PORT=3001 npm run dev.`,
+		);
+		return;
+	}
+
+	console.error("Failed to start Pi server", error);
 }
 
 const isMainModule =
@@ -1259,7 +1288,7 @@ const isMainModule =
 
 if (isMainModule) {
 	startServer().catch((error) => {
-		console.error("Failed to initialize ridge.db", error);
+		logStartupError(error);
 		process.exit(1);
 	});
 }
