@@ -38,6 +38,7 @@ vi.mock("@/composables/usePiChatCore", () => ({
 	usePiChatCore: () => ({
 		info: ref({ workspaceDir: "/workspace" }),
 		sessions: ref([]),
+		sessionContexts: { value: {} },
 		refreshSessions: vi.fn(),
 	}),
 }));
@@ -61,6 +62,15 @@ vi.mock("@/composables/useFileTreeData", () => ({
 		isDirectoryLoading: vi.fn().mockReturnValue(false),
 		toggleDirectory: vi.fn(),
 		refreshTree: vi.fn(),
+	}),
+}));
+
+vi.mock("@/composables/useProjects", () => ({
+	useProjects: () => ({
+		projects: ref([]),
+		load: vi.fn(),
+		isLoading: { value: false },
+		error: { value: "" },
 	}),
 }));
 

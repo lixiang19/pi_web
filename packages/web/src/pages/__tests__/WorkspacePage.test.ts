@@ -62,8 +62,8 @@ const {
 			},
 		],
 	},
-	mockSessions: { value: [] as Array<{ id: string; title: string; updatedAt?: number; archived?: boolean; projectId?: string }> },
-	mockProjects: { value: [] as Array<{ id: string; name: string; path: string; isOnline: boolean; archivedAt?: number }> },
+	mockSessions: { value: [] as Array<{ id: string; title: string; updatedAt?: number; archived?: boolean; projectId?: string; contextId?: string }> },
+	mockProjects: { value: [] as Array<{ id: string; name: string; path: string; isOnline: boolean; archivedAt?: number; source?: string; projectType?: string; isGit?: boolean; deviceName?: string }> },
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -128,11 +128,13 @@ vi.mock("@/composables/useSplitPanes", () => ({
 		dropTabToEdge: vi.fn(),
 		replaceTab: mockReplaceTab,
 	}),
-	createHomeTab: () => ({
+	createHomeTab: (options?: { cwd?: string; contextLabel?: string }) => ({
 		id: "home-1",
 		title: "主页",
 		kind: "home",
 		status: "idle",
+		cwd: options?.cwd,
+		contextLabel: options?.contextLabel,
 	}),
 	createChatTab: (
 		sessionId: string,
@@ -178,8 +180,9 @@ vi.mock("@/composables/useInbox", () => ({
 
 vi.mock("@/composables/usePiChatCore", () => ({
 	usePiChatCore: () => ({
-		info: { value: { workspaceDir: "/ws" } },
+		info: { value: { workspaceDir: "/ws", chatProjectId: "ridge:workspace-chat", chatProjectPath: "/ws", chatProjectLabel: "聊天" } },
 		sessions: mockSessions,
+		sessionContexts: { value: {} },
 		models: { value: [{ label: "GPT-4", value: "gpt-4" }] },
 		agents: { value: [] },
 		defaultModel: { value: "gpt-4" },
@@ -379,7 +382,16 @@ describe("WorkspacePage - 会话列表", () => {
 			{ id: "s-ws", title: "工作空间会话", updatedAt: 3000, archived: false, projectId: "" },
 			{ id: "s-project", title: "项目会话", updatedAt: 3000, archived: false, projectId: "proj-1" },
 		];
-		mockProjects.value = [{ id: "proj-1", name: "proj", path: "/p", isOnline: true }];
+		mockProjects.value = [			{
+				id: "proj-1",
+				name: "proj",
+				path: "/p",
+				isOnline: true,
+				source: "server-folder",
+				projectType: "external",
+				isGit: false,
+			},
+		];
 		const wrapper = mountWorkspace();
 		const text = wrapper.text();
 		expect(text).toContain("工作空间会话");
@@ -525,5 +537,129 @@ describe("WorkspacePage - 项目相关", () => {
 
 		expect(mockCloseTab).toHaveBeenCalledWith("pane-1", "home-1");
 		expect(mockCreateSession).not.toHaveBeenCalled();
+	});
+
+	it("项目元信息可见（路径、设备、内部/外部、来源、Git）", () => {
+		mockProjects.value = [
+			{
+				id: "proj-1",
+				name: "MyProject",
+				path: "/home/user/MyProject",
+				isOnline: true,
+				projectType: "internal",
+				source: "github",
+				isGit: true,
+				deviceName: "server-1",
+			},
+		];
+		const wrapper = mountWorkspace();
+		const projectItem = wrapper.find('[data-test="project-item-proj-1"]');
+		expect(projectItem.exists()).toBe(true);
+		expect(projectItem.text()).toContain("MyProject");
+		expect(projectItem.text()).toContain("内部");
+		expect(projectItem.text()).toContain("GitHub");
+		expect(projectItem.text()).toContain("Git");
+		expect(projectItem.text()).toContain("server-1");
+	});
+
+	it("项目默认最多显示 3 个会话，点击展开更多显示剩余", async () => {
+		mockProjects.value = [
+			{
+				id: "proj-1",
+				name: "proj",
+				path: "/p",
+				isOnline: true,
+			},
+		];
+		mockSessions.value = [
+			{ id: "s1", title: "会话1", updatedAt: 1000, archived: false, projectId: "proj-1", contextId: "ctx1" },
+			{ id: "s2", title: "会话2", updatedAt: 2000, archived: false, projectId: "proj-1", contextId: "ctx2" },
+			{ id: "s3", title: "会话3", updatedAt: 3000, archived: false, projectId: "proj-1", contextId: "ctx3" },
+			{ id: "s4", title: "会话4", updatedAt: 4000, archived: false, projectId: "proj-1", contextId: "ctx4" },
+		];
+
+		const wrapper = mountWorkspace();
+		const projectItem = wrapper.find('[data-test="project-item-proj-1"]');
+		await projectItem.find('button').trigger("click"); // expand
+
+		const text = wrapper.text();
+		expect(text).toContain("会话4");
+		expect(text).toContain("会话3");
+		expect(text).toContain("会话2");
+		expect(text).not.toContain("会话1"); // 默认隐藏第4个
+
+		// 点击展开更多
+		const moreBtn = wrapper.find('[data-test="project-toggle-more"]');
+		expect(moreBtn.exists()).toBe(true);
+		await moreBtn.trigger("click");
+
+		const textAfter = wrapper.text();
+		expect(textAfter).toContain("会话1");
+	});
+
+	it("离线项目不显示历史会话，不能新建会话", async () => {
+		mockProjects.value = [
+			{
+				id: "proj-offline",
+				name: "offline-proj",
+				path: "/p",
+				isOnline: false,
+			},
+		];
+		mockSessions.value = [
+			{ id: "s-offline", title: "离线会话", updatedAt: 1000, archived: false, projectId: "proj-offline", contextId: "ctx1" },
+		];
+
+		const wrapper = mountWorkspace();
+		const projectItem = wrapper.find('[data-test="project-item-proj-offline"]');
+		expect(projectItem.exists()).toBe(true);
+		expect(projectItem.text()).toContain("离线");
+
+		// 展开项目
+		await projectItem.find('button').trigger("click");
+		expect(wrapper.text()).not.toContain("离线会话");
+
+		// 新建会话按钮不存在
+		expect(projectItem.find('[data-test="project-new-session"]').exists()).toBe(false);
+	});
+
+	it("项目新建会话的 home tab 携带项目 cwd", () => {
+		mockProjects.value = [
+			{
+				id: "proj-1",
+				name: "proj",
+				path: "/project/foo",
+				isOnline: true,
+			},
+		];
+		const wrapper = mountWorkspace();
+		const newBtn = wrapper.find('[data-test="project-new-session"]');
+		expect(newBtn.exists()).toBe(true);
+		newBtn.trigger("click");
+
+		expect(mockOpenTab).toHaveBeenCalledWith(
+			"pane-1",
+			expect.objectContaining({
+				kind: "home",
+				cwd: "/project/foo",
+				contextLabel: "proj",
+			}),
+		);
+	});
+
+	it("归档入口打开 feature:archived 单例标签", async () => {
+		const wrapper = mountWorkspace();
+		const archivedBtn = wrapper.find('[data-test="workspace-archived-entry"]');
+		expect(archivedBtn.exists()).toBe(true);
+		await archivedBtn.trigger("click");
+
+		expect(mockOpenTab).toHaveBeenCalledWith(
+			"pane-1",
+			expect.objectContaining({
+				id: "feature:archived",
+				kind: "singleton_feature",
+				featureId: "archived",
+			}),
+		);
 	});
 });

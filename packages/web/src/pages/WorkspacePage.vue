@@ -14,6 +14,10 @@ import {
 	Search,
 	Settings2,
 	TerminalSquare,
+	Plus,
+	ChevronDown,
+	ChevronRight,
+	Archive,
 } from "lucide-vue-next";
 
 import FileTreePanel from "@/components/common/FileTreePanel.vue";
@@ -49,6 +53,14 @@ import { useDashboard } from "@/composables/useDashboard";
 import { useRecentActivity } from "@/composables/useRecentActivity";
 import { useFavoritesStore } from "@/stores/favorites";
 import { useSettingsStore } from "@/stores/settings";
+import { useProjects } from "@/composables/useProjects";
+import {
+	buildSidebarProjects,
+	getRecentProjectSessions,
+	isProjectOffline,
+	isProjectArchived,
+} from "@/lib/session-sidebar";
+import type { SessionProjectView } from "@/lib/session-sidebar";
 import { createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem } from "@/lib/api";
 import { createSession as createSessionApi } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
@@ -152,11 +164,98 @@ const featureLabelMap: Record<SingletonFeatureId, string> = Object.fromEntries(
 	singletonFeatureEntries.map((entry) => [entry.id, entry.label]),
 ) as Record<SingletonFeatureId, string>;
 
-const sortedWorkspaceSessions = computed(() =>
-	[...core.sessions.value]
-		.filter((session) => !session.archived && !session.projectId)
-		.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0)),
+const sortedWorkspaceSessions = computed(() => {
+	const storedProjectIds = new Set(projectsStore.projects.value.map((p) => p.id));
+	return [...core.sessions.value]
+		.filter((session) => {
+			if (session.archived) return false;
+			const ctx = core.sessionContexts.value[session.contextId ?? ""];
+			const projectId = session.projectId || ctx?.projectId;
+			if (!projectId) return true;
+			return !storedProjectIds.has(projectId);
+		})
+		.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+});
+
+// ===== 项目列表 =====
+const projectsStore = useProjects();
+
+onMounted(() => {
+	void projectsStore.load();
+});
+
+const sidebarProjects = computed(() =>
+	buildSidebarProjects({
+		sessions: core.sessions.value,
+		sessionContexts: core.sessionContexts.value,
+		storedProjects: projectsStore.projects.value,
+		workspaceDir: workspaceDir.value,
+		workspaceChat: {
+			id: core.info.value?.chatProjectId ?? "ridge:workspace-chat",
+			path: core.info.value?.chatProjectPath ?? workspaceDir.value,
+			label: core.info.value?.chatProjectLabel ?? "聊天",
+		},
+	}).projects,
 );
+
+const expandedProjectIds = ref<Set<string>>(new Set());
+const showAllProjectSessionIds = ref<Set<string>>(new Set());
+
+function toggleProjectExpand(projectId: string) {
+	const next = new Set(expandedProjectIds.value);
+	if (next.has(projectId)) {
+		next.delete(projectId);
+		// 收起时同时重置 showAll
+		const nextAll = new Set(showAllProjectSessionIds.value);
+		nextAll.delete(projectId);
+		showAllProjectSessionIds.value = nextAll;
+	} else {
+		next.add(projectId);
+	}
+	expandedProjectIds.value = next;
+}
+
+function toggleShowAllSessions(projectId: string) {
+	const next = new Set(showAllProjectSessionIds.value);
+	if (next.has(projectId)) {
+		next.delete(projectId);
+	} else {
+		next.add(projectId);
+	}
+	showAllProjectSessionIds.value = next;
+}
+
+function handleOpenProjectSession(sessionId: string) {
+	const existing = splitPanes.allPaneGroups.value
+		.flatMap((pane) => pane.tabs.map((tab) => ({ pane, tab })))
+		.find(({ tab }) => (tab.kind === "conversation" || tab.kind === "chat") && tab.sessionId === sessionId);
+	if (existing) {
+		splitPanes.setActiveTab(existing.pane.id, existing.tab.id);
+		return;
+	}
+
+	const sessionSummary = core.sessions.value.find((s) => s.id === sessionId);
+	const title = sessionSummary?.title || "新会话";
+	const chatTab = createChatTab(sessionId, title);
+	splitPanes.openTab(splitPanes.activePaneGroupId.value, chatTab);
+}
+
+/** 打开项目的新主页标签（cwd 设为项目路径） */
+function handleOpenProjectHome(project: SessionProjectView) {
+	if (isProjectOffline(project) || isProjectArchived(project)) {
+		return;
+	}
+	const tab = createHomeTab({ cwd: project.projectRoot, contextLabel: project.label });
+	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
+}
+
+/** 归档入口 */
+function handleOpenArchived() {
+	splitPanes.openTab(
+		splitPanes.activePaneGroupId.value,
+		createSingletonFeatureTab("archived", "归档"),
+	);
+}
 
 // 收件箱数量
 const inboxCount = inboxStore.count;
@@ -430,14 +529,22 @@ async function handleCreateBase() {
 
 /** 首页提交首条消息后，原地将 home tab 替换为 chat tab，并自动发送首条消息 */
 async function handleHomeSubmit(homeTabId: string, payload: { text: string; model: string; agent: string; thinkingLevel: string }) {
-	const dir = workspaceDir.value;
-	if (!dir) return;
+	// 查找对应 home tab，以获取其 cwd（项目主页时 cwd 为项目路径）
+	let cwd = workspaceDir.value;
+	for (const pane of splitPanes.allPaneGroups.value) {
+		const tab = pane.tabs.find((t) => t.id === homeTabId && t.kind === "home");
+		if (tab?.cwd) {
+			cwd = tab.cwd;
+			break;
+		}
+	}
+	if (!cwd) return;
 
 	const agentValue = payload.agent === NO_AGENT_VALUE ? null : payload.agent;
 
 	// 创建服务端会话（带模型/Agent/思考级别）
 	const snapshot = await createSessionApi({
-		cwd: dir,
+		cwd,
 		title: payload.text.slice(0, 24),
 		model: payload.model || undefined,
 		agent: agentValue,
@@ -530,6 +637,105 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 
 		<Separator class="mx-3" />
 
+		<!-- 项目列表 -->
+		<div v-if="sidebarProjects.length" class="shrink-0 px-2 py-2">
+			<div class="px-2.5 pb-1 text-[11px] font-medium text-muted-foreground">项目</div>
+			<div
+				v-for="project in sidebarProjects"
+				:key="project.id"
+				class="mb-1"
+				:data-test="'project-item-' + project.id"
+			>
+				<div class="flex w-full items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground">
+					<button
+						type="button"
+						class="flex flex-1 items-center gap-1 text-left min-w-0"
+						@click="toggleProjectExpand(project.id)"
+					>
+						<component
+							:is="expandedProjectIds.has(project.id) ? ChevronDown : ChevronRight"
+							class="size-3.5 shrink-0"
+						/>
+						<span class="truncate" data-test="project-label">{{ project.label }}</span>
+						<span class="truncate text-[10px] text-muted-foreground/70" data-test="project-path">{{ project.pathLabel || project.projectRoot }}</span>
+						<span
+							v-if="project.deviceName"
+							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
+							data-test="project-device"
+						>
+							{{ project.deviceName }}
+						</span>
+						<span
+							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
+							data-test="project-type"
+						>
+							{{ project.projectType === 'internal' ? '内部' : '外部' }}
+						</span>
+						<span
+							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
+							data-test="project-source"
+						>
+							{{ project.origin === 'github' ? 'GitHub' : project.origin === 'internal' ? '内部' : '服务器文件夹' }}
+						</span>
+						<span
+							v-if="project.isGit"
+							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
+							data-test="project-git"
+						>
+							Git
+						</span>
+						<span
+							v-if="!project.isOnline"
+							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
+							data-test="project-offline"
+						>
+							离线
+						</span>
+						<span
+							v-else-if="project.archivedAt"
+							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
+							data-test="project-archived"
+						>
+							归档
+						</span>
+					</button>
+					<button
+						v-if="project.isOnline && !project.archivedAt"
+						type="button"
+						class="shrink-0 rounded p-0.5 hover:bg-accent/60"
+						data-test="project-new-session"
+						@click="handleOpenProjectHome(project)"
+					>
+						<Plus class="size-3.5" />
+					</button>
+				</div>
+				<!-- 项目会话 -->
+				<div v-if="expandedProjectIds.has(project.id) && !isProjectOffline(project) && !isProjectArchived(project)" class="ml-4 space-y-0.5">
+					<button
+						v-for="session in (showAllProjectSessionIds.has(project.id) ? project.sessions.filter(s => !s.archived).sort((a,b) => b.updatedAt - a.updatedAt) : getRecentProjectSessions(project, 3))"
+						:key="session.id"
+						type="button"
+						class="flex w-full min-w-0 items-center rounded-md px-2.5 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+						@click="handleOpenProjectSession(session.id)"
+					>
+						<span class="truncate">{{ session.title || '未命名会话' }}</span>
+					</button>
+					<button
+						v-if="project.sessions.filter(s => !s.archived).length > 3"
+						type="button"
+						class="flex w-full items-center rounded-md px-2.5 py-1 text-left text-[11px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+						data-test="project-toggle-more"
+						@click="toggleShowAllSessions(project.id)"
+					>
+						<span class="truncate">{{ showAllProjectSessionIds.has(project.id) ? '收起' : '展开更多' }}</span>
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<Separator v-if="sidebarProjects.length" class="mx-3" />
+
+		<!-- 工作空间会话 -->
 		<div v-if="sortedWorkspaceSessions.length" class="shrink-0 px-2 py-2">
 		  <div class="px-2.5 pb-1 text-[11px] font-medium text-muted-foreground">工作空间会话</div>
 		  <button
@@ -625,6 +831,19 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
           @delete="handleDelete"
           @create-folder="handleCreateFolderInTree"
         />
+      </div>
+
+      <!-- 归档入口 -->
+      <div class="shrink-0 px-2 py-2">
+        <button
+          type="button"
+          data-test="workspace-archived-entry"
+          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+          @click="handleOpenArchived"
+        >
+          <Archive class="size-4" />
+          <span class="flex-1">归档</span>
+        </button>
       </div>
     </aside>
 

@@ -33,6 +33,7 @@ export type SessionProjectView = {
   groups: SessionGroupView[];
   isGit: boolean;
   source: SessionProjectSource;
+  origin: 'github' | 'server-folder' | 'internal';
   isOnline: boolean;
   archivedAt?: number;
   projectType: 'internal' | 'external';
@@ -67,10 +68,11 @@ type SessionProjectConfig = {
   archivedAt?: number;
   projectType: 'internal' | 'external';
   deviceName?: string;
+  origin: 'github' | 'server-folder' | 'internal';
 };
 
 const normalizePath = (value: string) =>
-  value.replace(/\\/g, "/").replace(/\/+$/, "");
+  (value || "").replace(/\\/g, "/").replace(/\/+$/, "");
 
 const relativeLabel = (value: string, workspaceDir?: string) => {
   const normalizedValue = normalizePath(value);
@@ -310,6 +312,7 @@ const buildProjectView = (options: {
     groups,
     isGit,
     source: project.source,
+    origin: project.origin,
     isOnline: project.isOnline,
     archivedAt: project.archivedAt,
     projectType: project.projectType,
@@ -388,6 +391,7 @@ export const buildSidebarProjects = (options: BuildSidebarOptions) => {
           archivedAt: project.archivedAt,
           projectType: project.projectType,
           deviceName: project.deviceName,
+          origin: project.source,
         },
         sessions: sessionsByProjectId.get(project.id) ?? [],
         availableWorktreesByProject: options.availableWorktreesByProject,
@@ -410,6 +414,7 @@ export const buildSidebarProjects = (options: BuildSidebarOptions) => {
           source: "workspace-chat",
           isOnline: true,
           projectType: 'internal',
+          origin: 'internal',
         },
         sessions: workspaceChatSessions,
         normalizedQuery,

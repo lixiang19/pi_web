@@ -43,6 +43,18 @@ describe("useSplitPanes - 工作台标签类型", () => {
 		expect(tab.id).toMatch(/^home-/);
 	});
 
+	it("createHomeTab 支持传入 cwd 和 contextLabel", () => {
+		const tab = createHomeTab({ cwd: "/project/foo", contextLabel: "foo" });
+		expect(tab.cwd).toBe("/project/foo");
+		expect(tab.contextLabel).toBe("foo");
+	});
+
+	it("createHomeTab 不传参数时 cwd 和 contextLabel 为 undefined", () => {
+		const tab = createHomeTab();
+		expect(tab.cwd).toBeUndefined();
+		expect(tab.contextLabel).toBeUndefined();
+	});
+
 	it("初始网格默认包含一个 home 标签", () => {
 		const grid = createInitialGrid();
 		expect(grid.type).toBe("pane");
