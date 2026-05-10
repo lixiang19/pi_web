@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ridge 开发进展</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --panel-soft: #f1f5f9;
+        --text: #172033;
+        --muted: #667085;
+        --line: #d8dee8;
+        --blue: #2563eb;
+        --green: #138a63;
+        --amber: #b7791f;
+        --red: #c2413b;
+        --ink: #111827;
+        --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+      }
+
+      aside {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        padding: 24px 18px;
+        border-right: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .brand {
+        display: grid;
+        gap: 4px;
+        margin-bottom: 28px;
+      }
+
+      .brand strong {
+        font-size: 20px;
+        letter-spacing: 0;
+      }
+
+      .brand span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      nav {
+        display: grid;
+        gap: 6px;
+      }
+
+      nav a {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 10px;
+        border-radius: 8px;
+        text-decoration: none;
+        color: #344054;
+        font-size: 14px;
+      }
+
+      nav a:hover {
+        background: var(--panel-soft);
+      }
+
+      nav a::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--blue);
+      }
+
+      main {
+        padding: 32px;
+        display: grid;
+        gap: 22px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 18px;
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .hero-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        font-size: 34px;
+        line-height: 1.12;
+      }
+
+      h2 {
+        font-size: 20px;
+      }
+
+      h3 {
+        font-size: 15px;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid #b7c7ef;
+        border-radius: 999px;
+        color: #1e3a8a;
+        background: #eff6ff;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .grid.cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .grid.cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .grid.cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .panel {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .metric {
+        display: grid;
+        gap: 8px;
+      }
+
+      .metric .value {
+        font-size: 30px;
+        line-height: 1;
+        font-weight: 700;
+        color: var(--ink);
+      }
+
+      .metric .label {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .bar {
+        height: 9px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e5e7eb;
+      }
+
+      .bar > span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--green), var(--blue));
+      }
+
+      .section {
+        display: grid;
+        gap: 12px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 10px;
+      }
+
+      .dependency-board {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(190px, 1fr));
+        gap: 10px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .batch {
+        min-width: 190px;
+        display: grid;
+        gap: 10px;
+        align-content: start;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .batch .order {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ink);
+        font-weight: 700;
+      }
+
+      .batch ul,
+      .lane ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .lane-board {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(210px, 1fr));
+        gap: 12px;
+      }
+
+      .lane {
+        display: grid;
+        gap: 10px;
+        align-content: start;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .lane.foundation {
+        border-top: 4px solid var(--ink);
+      }
+
+      .lane.product {
+        border-top: 4px solid var(--blue);
+      }
+
+      .lane.knowledge {
+        border-top: 4px solid var(--green);
+      }
+
+      .lane.desktop {
+        border-top: 4px solid var(--amber);
+      }
+
+      .lane .range {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .parallel-note {
+        display: grid;
+        gap: 8px;
+        padding: 14px;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background: #eff6ff;
+      }
+
+      .milestone {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .phase {
+        font-weight: 700;
+        color: var(--blue);
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 74px;
+        height: 26px;
+        padding: 0 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        border: 1px solid var(--line);
+        background: var(--panel-soft);
+        color: #475467;
+      }
+
+      .status.done {
+        color: #05603a;
+        background: #ecfdf3;
+        border-color: #abefc6;
+      }
+
+      .status.next {
+        color: #1e3a8a;
+        background: #eff6ff;
+        border-color: #bfdbfe;
+      }
+
+      .status.planned {
+        color: #92400e;
+        background: #fffbeb;
+        border-color: #fde68a;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      button.active {
+        border-color: var(--blue);
+        background: #eff6ff;
+        color: #1e3a8a;
+      }
+
+      .task-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .task {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1fr) 110px 98px;
+        gap: 12px;
+        align-items: center;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .task .id {
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .task .name {
+        font-weight: 600;
+      }
+
+      .task .meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .stack-item {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .stack-item strong {
+        display: block;
+        margin-bottom: 3px;
+      }
+
+      .findings {
+        display: grid;
+        gap: 10px;
+      }
+
+      .finding {
+        padding: 12px 14px;
+        border-left: 4px solid var(--amber);
+        border-radius: 8px;
+        background: #fffaf0;
+      }
+
+      .finding strong {
+        display: block;
+        color: #7c2d12;
+      }
+
+      .links {
+        display: grid;
+        gap: 8px;
+      }
+
+      .links a {
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        text-decoration: none;
+      }
+
+      .links a:hover {
+        border-color: #93c5fd;
+      }
+
+      footer {
+        padding: 18px 0 4px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 980px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        aside {
+          position: static;
+          height: auto;
+        }
+
+        nav {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        main {
+          padding: 20px;
+        }
+
+        .grid.cols-4,
+        .grid.cols-3,
+        .grid.cols-2,
+        .lane-board {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-top,
+        .section-head {
+          display: grid;
+        }
+
+        .milestone,
+        .task {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside>
+        <div class="brand">
+          <strong>ridge 进展</strong>
+          <span>项目设计到开发任务的可视化看板</span>
+        </div>
+        <nav>
+          <a href="#overview">总览</a>
+          <a href="#flow">开发流程</a>
+          <a href="#parallel">依赖并行</a>
+          <a href="#tasks">功能任务</a>
+          <a href="#findings">最近发现</a>
+          <a href="#stack">技术选型</a>
+          <a href="#docs">文档入口</a>
+        </nav>
+      </aside>
+
+      <main>
+        <section class="hero" id="overview">
+          <div class="hero-top">
+            <div>
+              <h1>ridge 第一版开发进展</h1>
+              <p>当前阶段：产品闭环、项目设计、任务级功能文档和内嵌 spec 草案已经完成，下一步进入按任务生成更细 TDD spec 和实现。</p>
+            </div>
+            <span class="badge">更新时间：2026-05-10</span>
+          </div>
+
+          <div class="grid cols-4">
+            <div class="panel metric">
+              <span class="value">27</span>
+              <span class="label">项目设计文档</span>
+            </div>
+            <div class="panel metric">
+              <span class="value">38</span>
+              <span class="label">功能开发任务</span>
+            </div>
+            <div class="panel metric">
+              <span class="value">38</span>
+              <span class="label">已写入 spec 草案</span>
+            </div>
+            <div class="panel metric">
+              <span class="value">4</span>
+              <span class="label">可并行开发泳道</span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="section-head">
+              <h2>第一版闭环</h2>
+              <span class="status done">设计完成</span>
+            </div>
+            <p>输入 → 会话 / 闪念 / 文件 / 任务 → 处理和确认 → Markdown / 任务 / 项目 / 空间 / 记忆 → RAG / 图谱 / Wiki → 下一次会话可继续使用。</p>
+            <div class="bar" style="margin-top: 14px"><span style="width: 34%"></span></div>
+            <p style="margin-top: 8px">整体进度估算：设计与任务拆解完成，工程实现尚未启动。</p>
+          </div>
+        </section>
+
+        <section class="section" id="flow">
+          <div class="section-head">
+            <h2>开发流程</h2>
+            <span class="status next">按顺序推进</span>
+          </div>
+          <div class="timeline" id="milestones"></div>
+        </section>
+
+        <section class="section" id="parallel">
+          <div class="section-head">
+            <h2>依赖批次与并行泳道</h2>
+            <span class="status next">可拆分并行</span>
+          </div>
+          <div class="parallel-note">
+            <h3>判断原则</h3>
+            <p>00-02、25 是全局前置；03-11 是产品主路径；17-29、33 可以在基础完成后并行推进；12-16、32、34-36 可与知识线并行，但依赖项目、设备和后台队列。</p>
+          </div>
+          <div class="dependency-board" id="dependencyBatches"></div>
+          <div class="lane-board" id="parallelLanes"></div>
+        </section>
+
+        <section class="section" id="tasks">
+          <div class="section-head">
+            <h2>功能任务列表</h2>
+            <div class="toolbar" id="filters"></div>
+          </div>
+          <div class="task-list" id="taskList"></div>
+        </section>
+
+        <section class="section" id="findings">
+          <div class="section-head">
+            <h2>最近发现与关键决策</h2>
+            <span class="status done">已同步到设计</span>
+          </div>
+          <div class="findings">
+            <div class="finding">
+              <strong>本机 Pi 不能靠纯内存注入 Skill</strong>
+              <p>Pi 读取 Skill 时需要真实文件系统路径，因此桌面项目运行前必须由服务器下发完整 runtime bundle，并物化到桌面 ridge 管理目录。</p>
+            </div>
+            <div class="finding">
+              <strong>长期知识优先是 Markdown</strong>
+              <p>记忆、daily、Wiki、空间作品、笔记、日记、剪藏都应落成可见文件；DB 只保存任务、索引、状态、通知、设备等结构化对象。</p>
+            </div>
+            <div class="finding">
+              <strong>私有 HTML 预览不是公开链接</strong>
+              <p>空间私有作品第一版只在主站内部用 iframe srcdoc 预览，不生成可复制 URL；公开发布后续再设计。</p>
+            </div>
+            <div class="finding">
+              <strong>文件处理本身不是后台 Agent</strong>
+              <p>PDF、Word、音频、图片先标准化成 Markdown、assets 和 metadata；需要 AI 判断时再交给对应后台 Agent。</p>
+            </div>
+            <div class="finding">
+              <strong>桌面本机项目不能离线运行</strong>
+              <p>桌面本机 Agent 需要服务器下发 runtime bundle、记忆、Wiki 和 workspace MCP，服务器不可达时禁止启动。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="stack">
+          <div class="section-head">
+            <h2>技术栈与机制选型</h2>
+            <span class="status planned">待实现验证</span>
+          </div>
+          <div class="grid cols-3">
+            <div class="stack">
+              <div class="stack-item">
+                <strong>结构化真源</strong>
+                <p>SQLite `~/.pi/ridge.db`，保存设备、项目、任务、会话索引、后台任务、通知、搜索状态和设置。</p>
+              </div>
+              <div class="stack-item">
+                <strong>文件真源</strong>
+                <p>`~/ridge-workspace`，包含项目、笔记、日记、剪藏、附件、记忆、Wiki、空间八个一级目录。</p>
+              </div>
+              <div class="stack-item">
+                <strong>隐藏系统区</strong>
+                <p>`.ridge/` 保存临时附件、RAG 缓存、Kuzu 图谱、runtime 缓存和系统中间产物。</p>
+              </div>
+            </div>
+            <div class="stack">
+              <div class="stack-item">
+                <strong>文件解析</strong>
+                <p>Docling 或同类解析能力，把 PDF、Word、音频和图片转为 Markdown、assets、metadata。</p>
+              </div>
+              <div class="stack-item">
+                <strong>检索</strong>
+                <p>RAG 只索引标准产物，chunk 保留路径、标题、序号、hash 和文件类型。</p>
+              </div>
+              <div class="stack-item">
+                <strong>图谱</strong>
+                <p>Kuzu 存储结构化理解资产，夜间从标准产物和 daily 抽取实体关系。</p>
+              </div>
+            </div>
+            <div class="stack">
+              <div class="stack-item">
+                <strong>Agent 运行</strong>
+                <p>Pi 会话仍是运行核心；桌面本机项目通过服务器下发 runtime bundle 获得一致环境。</p>
+              </div>
+              <div class="stack-item">
+                <strong>工作空间 MCP</strong>
+                <p>提供 `rag_search`、`graph_search`、`file_search`、`read_workspace_file`，只查读不写。</p>
+              </div>
+              <div class="stack-item">
+                <strong>前端</strong>
+                <p>Vue、shadcn-vue、主题文件和明暗模式；Tauri 只负责打包，不做业务功能。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="docs">
+          <div class="section-head">
+            <h2>关键文档入口</h2>
+            <span class="status done">本地文档</span>
+          </div>
+          <div class="links">
+            <a href="../项目设计/index.md">项目设计总索引</a>
+            <a href="../项目设计/开发计划与里程碑.md">开发计划与里程碑</a>
+            <a href="../功能开发/index.md">功能开发任务索引</a>
+            <a href="../项目设计/记忆Wiki图谱与工作空间MCP.md">记忆、Wiki、图谱与工作空间 MCP</a>
+            <a href="../项目设计/文件处理流程.md">文件处理流程</a>
+            <a href="../项目设计/后台Agent系统.md">后台 Agent 系统</a>
+          </div>
+        </section>
+
+        <footer>这个页面是静态开发进展看板，可直接打开，也可后续接入自动更新脚本。</footer>
+      </main>
+    </div>
+
+    <script>
+      const milestones = [
+        ["M0", "设计冻结与数据基座", "done", "工作空间、ridge.db、目录、迁移框架"],
+        ["M1", "工作台 Shell 与会话基础", "planned", "标签、主页、会话索引、消息流"],
+        ["M2", "任务、里程碑与任务 Agent", "planned", "任务模型、任务处理会话、规划工具"],
+        ["M3", "闪念与采集", "planned", "Web/桌面采集、临时附件、fleeting agent"],
+        ["M4", "文件、附件与空间", "planned", "文件页、PDF/Word、空间 HTML 私有预览"],
+        ["M5", "RAG 与全局搜索", "planned", "chunk、embedding、搜索资产导航器"],
+        ["M6", "记忆、daily 与后台会话链路", "planned", "summary agent、memory agent、启动注入"],
+        ["M7", "图谱与 Wiki 夜间维护", "planned", "Kuzu、graph agent、wiki agent"],
+        ["M8", "项目注册与设备运行", "planned", "设备、桌面调度、runtime bundle、MCP"],
+        ["M9", "通知、任务回顾与自动化", "planned", "通知中心、task review agent、自动化"],
+        ["M10", "备份、恢复与收尾", "planned", "全量备份、整包恢复、设置主题"],
+      ];
+
+      const tasks = [
+        ["00", "工作空间初始化与目录结构", "M0", "spec"],
+        ["01", "ridge DB 基础表与迁移框架", "M0", "spec"],
+        ["02", "隐藏 ridge 目录与路径边界", "M0", "spec"],
+        ["03", "工作台 Shell 与标签系统", "M1", "spec"],
+        ["04", "左侧导航固定入口与会话列表", "M1", "spec"],
+        ["05", "工作空间主页与会话创建", "M1", "spec"],
+        ["06", "会话索引归档与只读状态", "M1", "spec"],
+        ["07", "会话界面与右侧工作侧栏", "M1", "spec"],
+        ["08", "任务里程碑数据模型", "M2", "spec"],
+        ["09", "任务列表详情与状态流转", "M2", "spec"],
+        ["10", "任务处理会话与任务 Agent", "M2", "spec"],
+        ["11", "规划工具与完成确认边界", "M2", "spec"],
+        ["12", "闪念数据模型与 Web 入口", "M3", "spec"],
+        ["13", "闪念临时附件生命周期", "M3", "spec"],
+        ["14", "桌面采集入口", "M3", "spec"],
+        ["15", "fleeting agent 分析建议", "M3", "spec"],
+        ["16", "闪念处理为正式对象", "M3", "spec"],
+        ["17", "文件页与正式附件目录", "M4", "spec"],
+        ["18", "文件处理状态与临时文件边界", "M4", "spec"],
+        ["19", "PDF Word 标准化转换", "M4", "spec"],
+        ["20", "音频图片 Markdown 处理", "M4", "spec"],
+        ["21", "空间 HTML 作品私有预览", "M4", "spec"],
+        ["22", "RAG 标准产物索引与 chunk", "M5", "spec"],
+        ["23", "RAG 更新删除移动规则", "M5", "spec"],
+        ["24", "全局搜索资产导航器", "M5", "spec"],
+        ["25", "后台任务队列与重试", "M6", "spec"],
+        ["26", "summary agent daily 会话记忆", "M6", "spec"],
+        ["27", "memory agent MEMORY 维护与注入", "M6", "spec"],
+        ["28", "Kuzu 图谱存储与抽取", "M7", "spec"],
+        ["29", "Wiki 夜间维护与 index 注入", "M7", "spec"],
+        ["30", "项目注册与内部外部项目", "M8", "spec"],
+        ["31", "设备注册在线状态与调度", "M8", "spec"],
+        ["32", "runtime bundle 与设备专属 Skill", "M8", "spec"],
+        ["33", "workspace MCP 查读工具", "M8", "spec"],
+        ["34", "通知与建议中心", "M9", "spec"],
+        ["35", "task review agent 任务回顾", "M9", "spec"],
+        ["36", "自动化规则运行与跳过", "M9", "spec"],
+        ["37", "备份恢复设置主题收尾", "M10", "spec"],
+      ];
+
+      const dependencyBatches = [
+        {
+          order: "1",
+          title: "全局基座",
+          range: "00-02, 25",
+          desc: "没有这批，后续任务缺少目录、DB、隐藏边界和后台队列。",
+          items: ["00 工作空间目录", "01 DB 与迁移", "02 .ridge 边界", "25 队列与重试"],
+        },
+        {
+          order: "2",
+          title: "产品主路径",
+          range: "03-11, 30-31",
+          desc: "形成用户真正能进入的工作台、项目、会话、任务和设备主流程。",
+          items: ["03-07 工作台和会话", "08-11 任务和规划", "30 项目注册", "31 设备状态"],
+        },
+        {
+          order: "3",
+          title: "采集闭环",
+          range: "12-16, 34",
+          desc: "闪念、附件、分析建议和通知中心可以在主路径稳定后并行做。",
+          items: ["12-14 Web/桌面采集", "15 fleeting agent", "16 正式化处理", "34 通知中心"],
+        },
+        {
+          order: "4",
+          title: "知识闭环",
+          range: "17-29, 33",
+          desc: "文件标准化、RAG、记忆、图谱、Wiki 和 MCP 组成长期知识系统。",
+          items: ["17-21 文件与空间", "22-24 RAG 和搜索", "26-29 记忆图谱 Wiki", "33 workspace MCP"],
+        },
+        {
+          order: "5",
+          title: "运行与收尾",
+          range: "32, 35-37",
+          desc: "桌面 runtime、回顾、自动化、备份恢复和设置主题做最终闭环。",
+          items: ["32 runtime bundle", "35 任务回顾", "36 自动化", "37 备份设置"],
+        },
+      ];
+
+      const parallelLanes = [
+        {
+          className: "foundation",
+          title: "基础线",
+          range: "00-02, 25, 37",
+          desc: "先做，负责让所有功能有稳定的目录、DB、后台任务和恢复边界。",
+          items: ["00-02 必须第一批完成", "25 要早做，供后台 Agent 和文件处理复用", "37 可先设计接口，最后验收"],
+        },
+        {
+          className: "product",
+          title: "产品主线",
+          range: "03-11, 30-31",
+          desc: "决定用户每天看到的工作台、会话、项目、任务和设备关系。",
+          items: ["03-07 连成主页与会话", "08-11 连成任务处理会话", "30-31 支撑项目和设备选择"],
+        },
+        {
+          className: "knowledge",
+          title: "知识线",
+          range: "17-29, 33",
+          desc: "基础线完成后即可并行；文件处理、RAG、记忆、图谱、Wiki 可以拆给多个 agent。",
+          items: ["17-21 先做标准产物", "22-24 做索引和搜索", "26-29 做长期知识", "33 提供查读工具"],
+        },
+        {
+          className: "desktop",
+          title: "采集与桌面线",
+          range: "12-16, 32, 34-36",
+          desc: "与知识线并行，但依赖项目、设备、后台队列和通知中心。",
+          items: ["12-16 做闪念闭环", "32 做桌面 runtime", "34-36 做通知、回顾和自动化"],
+        },
+      ];
+
+      const milestoneEl = document.querySelector("#milestones");
+      milestoneEl.innerHTML = milestones
+        .map(([id, name, state, desc]) => {
+          const label = state === "done" ? "设计完成" : "待开发";
+          return `
+            <article class="milestone">
+              <div class="phase">${id}</div>
+              <div>
+                <h3>${name}</h3>
+                <p>${desc}</p>
+              </div>
+              <span class="status ${state === "done" ? "done" : "planned"}">${label}</span>
+            </article>
+          `;
+        })
+        .join("");
+
+      const dependencyEl = document.querySelector("#dependencyBatches");
+      dependencyEl.innerHTML = dependencyBatches
+        .map(
+          (batch) => `
+            <article class="batch">
+              <span class="order">${batch.order}</span>
+              <div>
+                <h3>${batch.title}</h3>
+                <p>${batch.range}</p>
+              </div>
+              <p>${batch.desc}</p>
+              <ul>${batch.items.map((item) => `<li>${item}</li>`).join("")}</ul>
+            </article>
+          `,
+        )
+        .join("");
+
+      const laneEl = document.querySelector("#parallelLanes");
+      laneEl.innerHTML = parallelLanes
+        .map(
+          (lane) => `
+            <article class="lane ${lane.className}">
+              <div>
+                <h3>${lane.title}</h3>
+                <div class="range">${lane.range}</div>
+              </div>
+              <p>${lane.desc}</p>
+              <ul>${lane.items.map((item) => `<li>${item}</li>`).join("")}</ul>
+            </article>
+          `,
+        )
+        .join("");
+
+      const filters = ["全部", ...new Set(tasks.map((task) => task[2]))];
+      let activeFilter = "全部";
+
+      const filtersEl = document.querySelector("#filters");
+      const taskListEl = document.querySelector("#taskList");
+
+      function renderFilters() {
+        filtersEl.innerHTML = filters
+          .map((filter) => `<button class="${filter === activeFilter ? "active" : ""}" data-filter="${filter}">${filter}</button>`)
+          .join("");
+      }
+
+      function renderTasks() {
+        const visible = activeFilter === "全部" ? tasks : tasks.filter((task) => task[2] === activeFilter);
+        taskListEl.innerHTML = visible
+          .map(([id, name, milestone, state]) => {
+            const statusText = state === "spec" ? "Spec 草案" : "待开发";
+            return `
+              <article class="task">
+                <div class="id">${id}</div>
+                <div>
+                  <div class="name">${name}</div>
+                  <div class="meta">${milestone}</div>
+                </div>
+                <span class="status next">${statusText}</span>
+                <span class="status planned">未实现</span>
+              </article>
+            `;
+          })
+          .join("");
+      }
+
+      filtersEl.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-filter]");
+        if (!button) return;
+        activeFilter = button.dataset.filter;
+        renderFilters();
+        renderTasks();
+      });
+
+      renderFilters();
+      renderTasks();
+    </script>
+  </body>
+</html>
