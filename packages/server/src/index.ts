@@ -672,12 +672,7 @@ app.get(
 		try {
 			const state = await getProjects();
 			res.json({
-				projects: state.projects
-					.map(serializeProject)
-					.sort(
-						(left, right) =>
-							(right.addedAt as number) - (left.addedAt as number),
-					),
+				projects: state.projects.map(serializeProject),
 			});
 		} catch (error) {
 			next(error);

@@ -33,6 +33,10 @@ export type SessionProjectView = {
   groups: SessionGroupView[];
   isGit: boolean;
   source: SessionProjectSource;
+  isOnline: boolean;
+  archivedAt?: number;
+  projectType: 'internal' | 'external';
+  deviceName?: string;
 };
 
 type WorkspaceChatViewOptions = {
@@ -59,6 +63,10 @@ type SessionProjectConfig = {
   addedAt: number;
   isGit: boolean;
   source: SessionProjectSource;
+  isOnline: boolean;
+  archivedAt?: number;
+  projectType: 'internal' | 'external';
+  deviceName?: string;
 };
 
 const normalizePath = (value: string) =>
@@ -128,6 +136,9 @@ const buildProjectView = (options: {
     !normalizedQuery ||
     `${project.label} ${projectRoot}`.toLowerCase().includes(normalizedQuery);
 
+  // 离线或已归档项目不展开会话列表
+  const isExpandable = project.isOnline && !project.archivedAt;
+
   const activeSessions = sessions.filter((session) => !session.archived);
   const archivedSessions = sessions.filter((session) => session.archived);
   const projectWorktrees =
@@ -136,75 +147,15 @@ const buildProjectView = (options: {
       : [];
   const groups: SessionGroupView[] = [];
 
-  const rootSessions = activeSessions.filter(
-    (session) => normalizePath(getCtx(session).worktreeRoot) === projectRoot,
-  );
-  if (rootSessions.length > 0) {
-    const sortedSessions = [...rootSessions].sort(compareSessionsByTime);
-    const groupMatchesQuery =
-      !normalizedQuery ||
-      `project root ${projectRoot}`.toLowerCase().includes(normalizedQuery);
-
-    const filteredSessions = sortedSessions.filter((session) => {
-      if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
-        return true;
-      }
-      const haystack = `${session.title} ${getCtx(session).cwd}`.toLowerCase();
-      return haystack.includes(normalizedQuery);
-    });
-
-    if (filteredSessions.length > 0) {
-      groups.push({
-        key: `${project.id}:project-root:${projectRoot}`,
-        kind: "project-root",
-        label: "project root",
-        worktreeRoot: projectRoot,
-        sessions: rootSessions,
-        tree: createTree(filteredSessions),
-        lastUpdatedAt: Math.max(
-          ...rootSessions.map((session) => session.updatedAt),
-        ),
-      });
-    }
-  }
-
-  const worktreeMap = new Map<
-    string,
-    { info?: WorktreeApiInfo; sessions: SessionSummary[] }
-  >();
-
-  for (const wt of projectWorktrees) {
-    const normalizedWtPath = normalizePath(wt.path);
-    if (normalizedWtPath === projectRoot) continue;
-    worktreeMap.set(normalizedWtPath, { info: wt, sessions: [] });
-  }
-
-  for (const session of activeSessions) {
-    const normalizedWt = normalizePath(getCtx(session).worktreeRoot);
-    if (normalizedWt === projectRoot) continue;
-
-    const existing = worktreeMap.get(normalizedWt);
-    if (existing) {
-      existing.sessions.push(session);
-    } else {
-      worktreeMap.set(normalizedWt, { sessions: [session] });
-    }
-  }
-
-  const worktreeGroups = [...worktreeMap.entries()]
-    .map<SessionGroupView | null>(([worktreeRoot, { info, sessions: groupSessions }]) => {
-      const sortedSessions = [...groupSessions].sort(compareSessionsByTime);
-      const firstCtx = groupSessions[0] ? getCtx(groupSessions[0]) : null;
-      const label =
-        info?.label ||
-        firstCtx?.worktreeLabel ||
-        relativeLabel(worktreeRoot, workspaceDir);
-      const branch = info?.branch || firstCtx?.branch;
+  if (isExpandable) {
+    const rootSessions = activeSessions.filter(
+      (session) => normalizePath(getCtx(session).worktreeRoot) === projectRoot,
+    );
+    if (rootSessions.length > 0) {
+      const sortedSessions = [...rootSessions].sort(compareSessionsByTime);
       const groupMatchesQuery =
         !normalizedQuery ||
-        `${label} ${branch || ""} ${worktreeRoot}`
-          .toLowerCase()
-          .includes(normalizedQuery);
+        `project root ${projectRoot}`.toLowerCase().includes(normalizedQuery);
 
       const filteredSessions = sortedSessions.filter((session) => {
         if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
@@ -214,50 +165,110 @@ const buildProjectView = (options: {
         return haystack.includes(normalizedQuery);
       });
 
-      if (filteredSessions.length === 0 && !info) return null;
-      if (
-        filteredSessions.length === 0 &&
-        normalizedQuery &&
-        !groupMatchesQuery &&
-        !projectMatchesQuery
-      ) {
-        return null;
+      if (filteredSessions.length > 0) {
+        groups.push({
+          key: `${project.id}:project-root:${projectRoot}`,
+          kind: "project-root",
+          label: "project root",
+          worktreeRoot: projectRoot,
+          sessions: rootSessions,
+          tree: createTree(filteredSessions),
+          lastUpdatedAt: Math.max(
+            ...rootSessions.map((session) => session.updatedAt),
+          ),
+        });
       }
+    }
 
-      return {
-        key: `${project.id}:worktree:${worktreeRoot}`,
-        kind: "worktree",
-        label,
-        worktreeRoot,
-        sessions: groupSessions,
-        tree: createTree(filteredSessions),
-        lastUpdatedAt:
-          groupSessions.length > 0
-            ? Math.max(...groupSessions.map((session) => session.updatedAt))
-            : 0,
-        ...(branch ? { branch } : {}),
-      };
-    })
-    .filter((group): group is SessionGroupView => group !== null)
-    .sort((left, right) => {
-      const leftActive = left.sessions.length > 0;
-      const rightActive = right.sessions.length > 0;
-      if (leftActive !== rightActive) return leftActive ? -1 : 1;
-      if (leftActive && rightActive) {
-        return right.lastUpdatedAt - left.lastUpdatedAt;
+    const worktreeMap = new Map<
+      string,
+      { info?: WorktreeApiInfo; sessions: SessionSummary[] }
+    >();
+
+    for (const wt of projectWorktrees) {
+      const normalizedWtPath = normalizePath(wt.path);
+      if (normalizedWtPath === projectRoot) continue;
+      worktreeMap.set(normalizedWtPath, { info: wt, sessions: [] });
+    }
+
+    for (const session of activeSessions) {
+      const normalizedWt = normalizePath(getCtx(session).worktreeRoot);
+      if (normalizedWt === projectRoot) continue;
+
+      const existing = worktreeMap.get(normalizedWt);
+      if (existing) {
+        existing.sessions.push(session);
+      } else {
+        worktreeMap.set(normalizedWt, { sessions: [session] });
       }
-      return left.label.localeCompare(right.label);
-    });
+    }
 
-  groups.push(...worktreeGroups);
+    const worktreeGroups = [...worktreeMap.entries()]
+      .map<SessionGroupView | null>(([worktreeRoot, { info, sessions: groupSessions }]) => {
+        const sortedSessions = [...groupSessions].sort(compareSessionsByTime);
+        const firstCtx = groupSessions[0] ? getCtx(groupSessions[0]) : null;
+        const label =
+          info?.label ||
+          firstCtx?.worktreeLabel ||
+          relativeLabel(worktreeRoot, workspaceDir);
+        const branch = info?.branch || firstCtx?.branch;
+        const groupMatchesQuery =
+          !normalizedQuery ||
+          `${label} ${branch || ""} ${worktreeRoot}`
+            .toLowerCase()
+            .includes(normalizedQuery);
 
-  if (archivedSessions.length > 0) {
+        const filteredSessions = sortedSessions.filter((session) => {
+          if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
+            return true;
+          }
+          const haystack = `${session.title} ${getCtx(session).cwd}`.toLowerCase();
+          return haystack.includes(normalizedQuery);
+        });
+
+        if (filteredSessions.length === 0 && !info) return null;
+        if (
+          filteredSessions.length === 0 &&
+          normalizedQuery &&
+          !groupMatchesQuery &&
+          !projectMatchesQuery
+        ) {
+          return null;
+        }
+
+        return {
+          key: `${project.id}:worktree:${worktreeRoot}`,
+          kind: "worktree",
+          label,
+          worktreeRoot,
+          sessions: groupSessions,
+          tree: createTree(filteredSessions),
+          lastUpdatedAt:
+            groupSessions.length > 0
+              ? Math.max(...groupSessions.map((session) => session.updatedAt))
+              : 0,
+          ...(branch ? { branch } : {}),
+        };
+      })
+      .filter((group): group is SessionGroupView => group !== null)
+      .sort((left, right) => {
+        const leftActive = left.sessions.length > 0;
+        const rightActive = right.sessions.length > 0;
+        if (leftActive !== rightActive) return leftActive ? -1 : 1;
+        if (leftActive && rightActive) {
+          return right.lastUpdatedAt - left.lastUpdatedAt;
+        }
+        return left.label.localeCompare(right.label);
+      });
+
+    groups.push(...worktreeGroups);
+  }
+
+  // 归档会话不在普通列表展示，仅在归档入口或查询时展示
+  if (archivedSessions.length > 0 && normalizedQuery && "archived".includes(normalizedQuery)) {
     const sortedSessions = [...archivedSessions].sort(compareSessionsByTime);
-    const groupMatchesQuery =
-      !normalizedQuery || "archived".includes(normalizedQuery);
-
     const filteredSessions = sortedSessions.filter((session) => {
-      if (!normalizedQuery || projectMatchesQuery || groupMatchesQuery) {
+      if (!normalizedQuery || projectMatchesQuery) {
         return true;
       }
       const haystack = `${session.title} ${getCtx(session).cwd}`.toLowerCase();
@@ -289,7 +300,7 @@ const buildProjectView = (options: {
     projectWorktrees.length > 0 ||
     sessions.some((session) => getCtx(session).isGit);
 
-  const view = {
+  const view: SessionProjectView = {
     id: project.id,
     label: project.label,
     projectRoot,
@@ -299,7 +310,11 @@ const buildProjectView = (options: {
     groups,
     isGit,
     source: project.source,
-  } satisfies SessionProjectView;
+    isOnline: project.isOnline,
+    archivedAt: project.archivedAt,
+    projectType: project.projectType,
+    deviceName: project.deviceName,
+  };
 
   if (!normalizedQuery) {
     return view;
@@ -369,6 +384,10 @@ export const buildSidebarProjects = (options: BuildSidebarOptions) => {
           addedAt: project.addedAt,
           isGit: project.isGit,
           source: "stored-project",
+          isOnline: project.isOnline,
+          archivedAt: project.archivedAt,
+          projectType: project.projectType,
+          deviceName: project.deviceName,
         },
         sessions: sessionsByProjectId.get(project.id) ?? [],
         availableWorktreesByProject: options.availableWorktreesByProject,
@@ -389,6 +408,8 @@ export const buildSidebarProjects = (options: BuildSidebarOptions) => {
           addedAt: 0,
           isGit: false,
           source: "workspace-chat",
+          isOnline: true,
+          projectType: 'internal',
         },
         sessions: workspaceChatSessions,
         normalizedQuery,
@@ -407,3 +428,18 @@ export const buildSessionProjects = (options: BuildSidebarOptions) =>
   buildSidebarProjects(options).projects;
 
 export const formatRelativeProjectPath = relativeLabel;
+
+// 工具：从项目视图中取最近 N 个非归档会话
+export const getRecentProjectSessions = (
+  view: SessionProjectView,
+  limit = 3,
+): SessionSummary[] => {
+  const activeSessions = view.sessions.filter((session) => !session.archived);
+  return [...activeSessions].sort(compareSessionsByTime).slice(0, limit);
+};
+
+// 工具：判断项目是否离线
+export const isProjectOffline = (view: SessionProjectView): boolean => !view.isOnline;
+
+// 工具：判断项目是否归档
+export const isProjectArchived = (view: SessionProjectView): boolean => Boolean(view.archivedAt);

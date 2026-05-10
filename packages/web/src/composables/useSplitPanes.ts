@@ -41,6 +41,9 @@ export interface SplitTabItem {
 	initialPrompt?: string;
 	initialModel?: string;
 	initialAgent?: string;
+	// 项目草稿标签使用项目路径作为 cwd
+	cwd?: string;
+	contextLabel?: string;
 	status?: "idle" | "saving" | "unsaved" | "error" | "loading";
 	onClose?: (tab: SplitTabItem) => void;
 }
@@ -83,11 +86,16 @@ export const generateHomeId = () => `home-${++homeCounter}`;
 export const generateChatId = () => `chat-${++chatCounter}`;
 export const generateTerminalTabId = () => `terminal-tab-${++terminalCounter}`;
 
-export const createHomeTab = (): SplitTabItem => ({
+export const createHomeTab = (options?: {
+	cwd?: string;
+	contextLabel?: string;
+}): SplitTabItem => ({
 	id: generateHomeId(),
 	title: "主页",
 	kind: "home",
 	status: "idle",
+	cwd: options?.cwd,
+	contextLabel: options?.contextLabel,
 });
 
 export const createChatTab = (

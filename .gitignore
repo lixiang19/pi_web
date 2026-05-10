@@ -14,3 +14,4 @@ packages/server/node_modules
 packages/desktop/node_modules
 packages/desktop/src-tauri/target
 packages/desktop/src-tauri/gen
+.playwright-cli

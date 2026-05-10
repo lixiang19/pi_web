@@ -435,6 +435,13 @@ export interface ProjectItem {
 	path: string;
 	addedAt: number;
 	isGit: boolean;
+	projectType: 'internal' | 'external';
+	source: 'github' | 'server-folder' | 'internal';
+	deviceId?: string;
+	deviceName?: string;
+	isOnline: boolean;
+	archivedAt?: number;
+	updatedAt: number;
 }
 
 export interface ProjectsResponse {

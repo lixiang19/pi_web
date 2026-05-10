@@ -154,7 +154,7 @@ const featureLabelMap: Record<SingletonFeatureId, string> = Object.fromEntries(
 
 const sortedWorkspaceSessions = computed(() =>
 	[...core.sessions.value]
-		.filter((session) => !session.archived)
+		.filter((session) => !session.archived && !session.projectId)
 		.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0)),
 );
 

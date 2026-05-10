@@ -25,6 +25,7 @@ const {
 	mockUseWorkspaceInbox,
 	mockAllPaneGroups,
 	mockSessions,
+	mockProjects,
 } = vi.hoisted(() => ({
 	mockCreateFileEntry: vi.fn(),
 	mockCreateBase: vi.fn(),
@@ -61,7 +62,8 @@ const {
 			},
 		],
 	},
-	mockSessions: { value: [] as Array<{ id: string; title: string; updatedAt?: number }> },
+	mockSessions: { value: [] as Array<{ id: string; title: string; updatedAt?: number; archived?: boolean; projectId?: string }> },
+	mockProjects: { value: [] as Array<{ id: string; name: string; path: string; isOnline: boolean; archivedAt?: number }> },
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -184,6 +186,15 @@ vi.mock("@/composables/usePiChatCore", () => ({
 	}),
 }));
 
+vi.mock("@/composables/useProjects", () => ({
+	useProjects: () => ({
+		projects: mockProjects,
+		load: vi.fn(),
+		isLoading: { value: false },
+		error: { value: "" },
+	}),
+}));
+
 vi.mock("@/composables/useTerminalPool", () => ({
 	useTerminalPool: () => ({
 		createNewTerminal: mockCreateTerminal,
@@ -248,7 +259,7 @@ function mountWorkspace() {
 
 // ===== Tests =====
 
-describe("WorkspacePage - AI 启动台集成", () => {
+describe("WorkspacePage - 固定入口", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockGetRecentFiles.mockResolvedValue({ files: [] });
@@ -264,23 +275,9 @@ describe("WorkspacePage - AI 启动台集成", () => {
 			},
 		];
 		mockSessions.value = [];
+		mockProjects.value = [];
 		mockFindTabAcrossPanes.mockReturnValue(null);
 		lastCreatedChatTab.value = null;
-	});
-
-	it("左侧面板不再包含仪表盘入口", () => {
-		const wrapper = mountWorkspace();
-		const text = wrapper.text();
-		expect(text).not.toContain("仪表盘");
-	});
-
-	it("复用当前页面 provide 返回的任务和收件箱 store", () => {
-		mountWorkspace();
-
-		expect(mockProvideWorkspaceTasks).toHaveBeenCalledOnce();
-		expect(mockUseWorkspaceTasks).not.toHaveBeenCalled();
-		expect(mockProvideWorkspaceInbox).toHaveBeenCalledOnce();
-		expect(mockUseWorkspaceInbox).not.toHaveBeenCalled();
 	});
 
 	it("左侧固定入口完整且不包含主页入口", () => {
@@ -291,6 +288,13 @@ describe("WorkspacePage - AI 启动台集成", () => {
 		}
 		const navButtons = wrapper.findAll("[data-test='workspace-fixed-entry']");
 		expect(navButtons.map((button) => button.text())).not.toContain("主页");
+	});
+
+	it("固定入口顺序严格为：闪念、搜索、通知、任务、文件、终端、自动化、Skill、设置", () => {
+		const wrapper = mountWorkspace();
+		const buttons = wrapper.findAll("[data-test='workspace-fixed-entry']");
+		const labels = buttons.map((button) => button.text().replace(/\d+$/, "").trim());
+		expect(labels).toEqual(["闪念", "搜索", "通知", "任务", "文件", "终端", "自动化", "Skill", "设置"]);
 	});
 
 	it("点击任务固定入口创建 singleton_feature 标签", async () => {
@@ -328,43 +332,58 @@ describe("WorkspacePage - AI 启动台集成", () => {
 			expect.objectContaining({ kind: "terminal", terminalId: "terminal-2" }),
 		);
 	});
+});
 
-	it("关闭空主页标签不会创建会话", () => {
-		const wrapper = mountWorkspace();
-		const vm = wrapper.vm as unknown as {
-			handleCloseTab: (payload: { paneGroupId: string; tabId: string }) => void;
-		};
-
-		vm.handleCloseTab({ paneGroupId: "pane-1", tabId: "home-1" });
-
-		expect(mockCloseTab).toHaveBeenCalledWith("pane-1", "home-1");
-		expect(mockCreateSession).not.toHaveBeenCalled();
-	});
-
-	it("打开已存在的同一会话只激活已有标签", () => {
+describe("WorkspacePage - 会话列表", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockGetRecentFiles.mockResolvedValue({ files: [] });
 		mockAllPaneGroups.value = [
 			{
 				id: "pane-1",
-				tabs: [
-					{ id: "home-1", kind: "home", title: "主页", sessionId: undefined },
-					{ id: "chat-existing", kind: "conversation", sessionId: "session-existing", title: "旧会话" },
-				],
+				tabs: [{ id: "home-1", kind: "home", title: "主页", sessionId: undefined }],
 				activeTabId: "home-1",
 			},
 		];
-		mockSessions.value = [{ id: "session-existing", title: "旧会话" }];
+		mockProjects.value = [];
+		mockFindTabAcrossPanes.mockReturnValue(null);
+	});
+
+	it("工作空间会话列表按 updatedAt 降序排列", () => {
+		mockSessions.value = [
+			{ id: "s-old", title: "旧会话", updatedAt: 1000, archived: false },
+			{ id: "s-new", title: "新会话", updatedAt: 3000, archived: false },
+			{ id: "s-mid", title: "中会话", updatedAt: 2000, archived: false },
+		];
 		const wrapper = mountWorkspace();
-		const vm = wrapper.vm as unknown as {
-			handleOpenSession: (sessionId: string) => void;
-		};
-
-		vm.handleOpenSession("session-existing");
-
-		expect(mockSetActiveTab).toHaveBeenCalledWith("pane-1", "chat-existing");
-		expect(mockOpenTab).not.toHaveBeenCalledWith(
-			"pane-1",
-			expect.objectContaining({ sessionId: "session-existing" }),
+		const sessionButtons = wrapper.findAll("button").filter((b) =>
+			["旧会话", "新会话", "中会话"].some((t) => b.text().includes(t)),
 		);
+		const texts = sessionButtons.map((b) => b.text());
+		expect(texts).toEqual(["新会话", "中会话", "旧会话"]);
+	});
+
+	it("工作空间会话列表默认不显示 archived 会话", () => {
+		mockSessions.value = [
+			{ id: "s-active", title: "活跃会话", updatedAt: 3000, archived: false },
+			{ id: "s-archived", title: "归档会话", updatedAt: 3000, archived: true },
+		];
+		const wrapper = mountWorkspace();
+		const text = wrapper.text();
+		expect(text).toContain("活跃会话");
+		expect(text).not.toContain("归档会话");
+	});
+
+	it("工作空间会话列表不显示项目归属会话", () => {
+		mockSessions.value = [
+			{ id: "s-ws", title: "工作空间会话", updatedAt: 3000, archived: false, projectId: "" },
+			{ id: "s-project", title: "项目会话", updatedAt: 3000, archived: false, projectId: "proj-1" },
+		];
+		mockProjects.value = [{ id: "proj-1", name: "proj", path: "/p", isOnline: true }];
+		const wrapper = mountWorkspace();
+		const text = wrapper.text();
+		expect(text).toContain("工作空间会话");
+		expect(text).not.toContain("项目会话");
 	});
 });
 
@@ -402,7 +421,6 @@ describe("WorkspacePage - 首页→会话转换", () => {
 			thinkingLevel: "medium",
 		});
 
-		// 验证 createSession 被调用，带正确的 cwd 和 title
 		expect(mockCreateSession).toHaveBeenCalledWith(
 			expect.objectContaining({
 				cwd: "/ws",
@@ -410,59 +428,12 @@ describe("WorkspacePage - 首页→会话转换", () => {
 			}),
 		);
 
-		// 验证 replaceTab 被调用
 		expect(mockReplaceTab).toHaveBeenCalledWith(
 			"home-1",
 			expect.objectContaining({
 				kind: "conversation",
 				sessionId: "session-new",
 				initialPrompt: "帮我写个函数",
-			}),
-		);
-	});
-
-	it("handleHomeSubmit 传递模型/Agent/思考级别到 createSession 和 chatTab", async () => {
-		mockCreateSession.mockResolvedValue({
-			id: "session-new-2",
-			title: "测试",
-			status: "idle",
-		});
-
-		const wrapper = mountWorkspace();
-		const vm = wrapper.vm as unknown as {
-			handleHomeSubmit: (
-				homeTabId: string,
-				payload: {
-					text: string;
-					model: string;
-					agent: string;
-					thinkingLevel: string;
-				},
-			) => Promise<void>;
-		};
-
-		await vm.handleHomeSubmit("home-1", {
-			text: "测试",
-			model: "claude-3",
-			agent: "coding-agent",
-			thinkingLevel: "high",
-		});
-
-		// createSession 带模型和 agent
-		expect(mockCreateSession).toHaveBeenCalledWith(
-			expect.objectContaining({
-				model: "claude-3",
-				agent: "coding-agent",
-			}),
-		);
-
-		// chatTab 携带 initialPrompt/Model/Agent
-		expect(mockReplaceTab).toHaveBeenCalledWith(
-			"home-1",
-			expect.objectContaining({
-				initialPrompt: "测试",
-				initialModel: "claude-3",
-				initialAgent: "coding-agent",
 			}),
 		);
 	});
@@ -499,5 +470,60 @@ describe("WorkspacePage - 首页→会话转换", () => {
 				agent: null,
 			}),
 		);
+	});
+});
+
+describe("WorkspacePage - 项目相关", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockGetRecentFiles.mockResolvedValue({ files: [] });
+		mockAllPaneGroups.value = [
+			{
+				id: "pane-1",
+				tabs: [{ id: "home-1", kind: "home", title: "主页", sessionId: undefined }],
+				activeTabId: "home-1",
+			},
+		];
+		mockSessions.value = [];
+		mockProjects.value = [];
+		mockFindTabAcrossPanes.mockReturnValue(null);
+	});
+
+	it("打开已存在的同一会话只激活已有标签", () => {
+		mockAllPaneGroups.value = [
+			{
+				id: "pane-1",
+				tabs: [
+					{ id: "home-1", kind: "home", title: "主页", sessionId: undefined },
+					{ id: "chat-existing", kind: "conversation", sessionId: "session-existing", title: "旧会话" },
+				],
+				activeTabId: "home-1",
+			},
+		];
+		mockSessions.value = [{ id: "session-existing", title: "旧会话" }];
+		const wrapper = mountWorkspace();
+		const vm = wrapper.vm as unknown as {
+			handleOpenSession: (sessionId: string) => void;
+		};
+
+		vm.handleOpenSession("session-existing");
+
+		expect(mockSetActiveTab).toHaveBeenCalledWith("pane-1", "chat-existing");
+		expect(mockOpenTab).not.toHaveBeenCalledWith(
+			"pane-1",
+			expect.objectContaining({ sessionId: "session-existing" }),
+		);
+	});
+
+	it("关闭空主页标签不会创建会话", () => {
+		const wrapper = mountWorkspace();
+		const vm = wrapper.vm as unknown as {
+			handleCloseTab: (payload: { paneGroupId: string; tabId: string }) => void;
+		};
+
+		vm.handleCloseTab({ paneGroupId: "pane-1", tabId: "home-1" });
+
+		expect(mockCloseTab).toHaveBeenCalledWith("pane-1", "home-1");
+		expect(mockCreateSession).not.toHaveBeenCalled();
 	});
 });

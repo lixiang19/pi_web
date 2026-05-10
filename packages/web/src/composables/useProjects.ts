@@ -8,7 +8,7 @@ import {
 import type { ProjectItem } from "@/lib/types";
 
 const sortProjects = (projects: ProjectItem[]) =>
-  [...projects].sort((left, right) => right.addedAt - left.addedAt);
+  [...projects].sort((left, right) => right.updatedAt - left.updatedAt);
 
 const projects = ref<ProjectItem[]>([]);
 const isLoading = ref(false);

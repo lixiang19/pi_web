@@ -236,6 +236,13 @@ export interface Project {
   path: ProtocolProjectItem['path'];
   addedAt: ProtocolProjectItem['addedAt'];
   isGit: ProtocolProjectItem['isGit'];
+  projectType: ProtocolProjectItem['projectType'];
+  source: ProtocolProjectItem['source'];
+  deviceId?: ProtocolProjectItem['deviceId'];
+  deviceName?: ProtocolProjectItem['deviceName'];
+  isOnline: ProtocolProjectItem['isOnline'];
+  archivedAt?: ProtocolProjectItem['archivedAt'];
+  updatedAt: ProtocolProjectItem['updatedAt'];
 }
 
 export interface Settings {
