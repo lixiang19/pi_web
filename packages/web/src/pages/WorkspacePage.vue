@@ -2,30 +2,30 @@
 import { computed, ref, onMounted, watch } from "vue";
 import {
 	BookOpen,
-	Bookmark,
-	Calendar,
+	Bell,
+	Bot,
 	Database,
-	GitBranch,
-	Home,
+	Files,
 	Inbox,
 	FilePlus2,
 	FolderPlus,
 	LayoutGrid,
+	ListTodo,
+	Search,
+	Settings2,
+	TerminalSquare,
 } from "lucide-vue-next";
 
 import FileTreePanel from "@/components/common/FileTreePanel.vue";
 import WorkspaceContentArea from "@/components/workspace/WorkspaceContentArea.vue";
 import HomePage from "@/components/workspace/HomePage.vue";
 import TaskView from "@/components/workspace/TaskView.vue";
-import CalendarView from "@/components/workspace/CalendarView.vue";
-import ClipsView from "@/components/workspace/ClipsView.vue";
 import InboxView from "@/components/workspace/InboxView.vue";
-import GitChangesView from "@/components/workspace/GitChangesView.vue";
 import WorkspaceChatTab from "@/components/workspace/WorkspaceChatTab.vue";
 import TerminalTabContent from "@/components/workspace/TerminalTabContent.vue";
 import AutomationTabContent from "@/components/workspace/AutomationTabContent.vue";
 import SettingsTabContent from "@/components/workspace/SettingsTabContent.vue";
-import WorkspaceTopMenu from "@/components/workspace/WorkspaceTopMenu.vue";
+import WorkspaceFeaturePlaceholder from "@/components/workspace/WorkspaceFeaturePlaceholder.vue";
 import SplitGrid from "@/components/workspace/split/SplitGrid.vue";
 import { useFileTreeData } from "@/composables/useFileTreeData";
 import { useFileTreeActions } from "@/composables/useFileTreeActions";
@@ -35,8 +35,7 @@ import {
 	createHomeTab,
 	createChatTab,
 	createTerminalTab,
-	createAutomationTab,
-	createSettingsTab,
+	createSingletonFeatureTab,
 } from "@/composables/useSplitPanes";
 import type { SplitTabItem } from "@/composables/useSplitPanes";
 import type { DropZone } from "@/composables/useSplitDrag";
@@ -50,7 +49,7 @@ import { useDashboard } from "@/composables/useDashboard";
 import { useRecentActivity } from "@/composables/useRecentActivity";
 import { useFavoritesStore } from "@/stores/favorites";
 import { useSettingsStore } from "@/stores/settings";
-import { createNote, createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem } from "@/lib/api";
+import { createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem } from "@/lib/api";
 import { createSession as createSessionApi } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -130,25 +129,34 @@ onMounted(() => {
 	loadRecentFiles();
 });
 
-// 固定视图入口（已移除仪表盘，内容并入首页）
-const fixedViews = [
-	{ id: "tasks", label: "待办", icon: BookOpen },
-	{ id: "calendar", label: "日历", icon: Calendar },
-	{ id: "inbox", label: "收件箱", icon: Inbox },
-	{ id: "clips", label: "剪藏", icon: Bookmark },
-	{ id: "git-changes", label: "文件变更", icon: GitBranch },
+const singletonFeatureEntries = [
+	{ id: "moments", label: "闪念", icon: Inbox },
+	{ id: "search", label: "搜索", icon: Search },
+	{ id: "notifications", label: "通知", icon: Bell },
+	{ id: "tasks", label: "任务", icon: ListTodo },
+	{ id: "files", label: "文件", icon: Files },
+	{ id: "automation", label: "自动化", icon: Bot },
+	{ id: "skills", label: "Skill", icon: BookOpen },
+	{ id: "settings", label: "设置", icon: Settings2 },
 ] as const;
 
-// 主页入口（独立于视图，可创建多个）
-const homeEntry = { id: "home", label: "主页", icon: Home };
+type SingletonFeatureId = (typeof singletonFeatureEntries)[number]["id"];
 
-const viewLabelMap: Record<string, string> = {
-	tasks: "待办",
-	calendar: "日历",
-	inbox: "收件箱",
-	clips: "剪藏",
-	"git-changes": "文件变更",
-};
+const fixedEntries = [
+	...singletonFeatureEntries.slice(0, 5).map((entry) => ({ ...entry, type: "singleton" as const })),
+	{ id: "terminal", label: "终端", icon: TerminalSquare, type: "terminal" as const },
+	...singletonFeatureEntries.slice(5).map((entry) => ({ ...entry, type: "singleton" as const })),
+] as const;
+
+const featureLabelMap: Record<SingletonFeatureId, string> = Object.fromEntries(
+	singletonFeatureEntries.map((entry) => [entry.id, entry.label]),
+) as Record<SingletonFeatureId, string>;
+
+const sortedWorkspaceSessions = computed(() =>
+	[...core.sessions.value]
+		.filter((session) => !session.archived)
+		.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0)),
+);
 
 // 收件箱数量
 const inboxCount = inboxStore.count;
@@ -175,26 +183,25 @@ const handleSaveStatusUpdate = (tabId: string, status: string) => {
 
 // ===== 左侧面板 → 分屏面板 交互 =====
 
-/** 左侧面板点击：创建新主页标签页 */
-function handleOpenHome() {
-	splitPanes.openTab(splitPanes.activePaneGroupId.value, createHomeTab());
-}
-
 /** 标签栏 + 按钮点击：创建新主页 */
 function handleNewTab(payload: { paneGroupId: string }) {
 	splitPanes.openTab(payload.paneGroupId, createHomeTab());
 }
 
-/** 打开视图标签页到当前活跃面板 */
-function handleSelectView(viewId: string) {
-	const tab: SplitTabItem = {
-		id: viewId,
-		title: viewLabelMap[viewId] ?? viewId,
-		kind: "view",
-		viewId,
-		status: "idle",
-	};
-	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
+/** 打开单例功能标签页到当前活跃面板 */
+function handleOpenSingletonFeature(featureId: SingletonFeatureId) {
+	splitPanes.openTab(
+		splitPanes.activePaneGroupId.value,
+		createSingletonFeatureTab(featureId, featureLabelMap[featureId]),
+	);
+}
+
+function handleFixedEntry(entry: (typeof fixedEntries)[number]) {
+	if (entry.type === "terminal") {
+		void handleOpenTerminal();
+		return;
+	}
+	handleOpenSingletonFeature(entry.id);
 }
 
 /** 打开文件标签页到当前活跃面板 */
@@ -272,24 +279,6 @@ async function handleOpenTerminal() {
 	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
 }
 
-function handleOpenAutomation() {
-	const existing = splitPanes.findTabAcrossPanes("automation");
-	if (existing) {
-		splitPanes.setActiveTab(existing.pane.id, "automation");
-		return;
-	}
-	splitPanes.openTab(splitPanes.activePaneGroupId.value, createAutomationTab());
-}
-
-function handleOpenSettings() {
-	const existing = splitPanes.findTabAcrossPanes("settings");
-	if (existing) {
-		splitPanes.setActiveTab(existing.pane.id, "settings");
-		return;
-	}
-	splitPanes.openTab(splitPanes.activePaneGroupId.value, createSettingsTab());
-}
-
 // ===== SplitGrid 事件处理 =====
 
 function handleSetActiveTab(payload: { paneGroupId: string; tabId: string }) {
@@ -362,23 +351,6 @@ async function handleCreateNote() {
 		refreshTree();
 	} catch (err) {
 		console.error("Failed to create note", err);
-	}
-};
-
-// 新建今日日记
-async function handleCreateJournal(dateOverride?: string) {
-	const now = new Date();
-	const year = dateOverride ? Number(dateOverride.slice(0, 4)) : now.getFullYear();
-	const month = dateOverride ? dateOverride.slice(5, 7) : String(now.getMonth() + 1).padStart(2, "0");
-	const dateStr = dateOverride || `${year}-${month}-${String(now.getDate()).padStart(2, "0")}`;
-	const journalRelPath = `日记/${year}/${month}/${dateStr}.md`;
-
-	try {
-		const response = await createNote({ path: journalRelPath });
-		refreshTree();
-		handleSelectFile(createFileTreeEntryFromPath(response.path));
-	} catch (err) {
-		console.error("Failed to create journal", err);
 	}
 };
 
@@ -486,7 +458,7 @@ async function handleHomeSubmit(homeTabId: string, payload: { text: string; mode
 function handleOpenSession(sessionId: string) {
 	const existing = splitPanes.allPaneGroups.value
 		.flatMap((pane) => pane.tabs.map((tab) => ({ pane, tab })))
-		.find(({ tab }) => tab.kind === "chat" && tab.sessionId === sessionId);
+		.find(({ tab }) => (tab.kind === "conversation" || tab.kind === "chat") && tab.sessionId === sessionId);
 	if (existing) {
 		splitPanes.setActiveTab(existing.pane.id, existing.tab.id);
 		return;
@@ -501,7 +473,7 @@ function handleOpenSession(sessionId: string) {
 
 /** 首页点击打开待办视图 */
 function handleOpenTasks() {
-	handleSelectView("tasks");
+	handleOpenSingletonFeature("tasks");
 }
 
 // ===== 同步文件预览状态到分屏标签页 =====
@@ -535,45 +507,43 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 
 <template>
   <div class="flex h-screen min-h-0 flex-col bg-background text-foreground">
-    <WorkspaceTopMenu
-      @open-terminal="handleOpenTerminal"
-      @open-automation="handleOpenAutomation"
-      @open-settings="handleOpenSettings"
-    />
-
     <div class="flex min-h-0 flex-1">
     <!-- 左侧面板 -->
     <aside class="flex w-[260px] shrink-0 flex-col border-r border-border/50 bg-background">
       <!-- 固定视图入口 -->
       <div class="shrink-0 space-y-0.5 px-2 pt-3 pb-2">
-        <!-- 主页入口 -->
         <button
+          v-for="entry in fixedEntries"
+          :key="entry.id"
+          data-test="workspace-fixed-entry"
           type="button"
           class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-          @click="handleOpenHome"
+          @click="handleFixedEntry(entry)"
         >
-          <component :is="homeEntry.icon" class="size-4" />
-          <span class="flex-1">{{ homeEntry.label }}</span>
-        </button>
-
-        <Separator class="my-1" />
-
-        <button
-          v-for="view in fixedViews"
-          :key="view.id"
-          type="button"
-          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-          @click="handleSelectView(view.id)"
-        >
-          <component :is="view.icon" class="size-4" />
-          <span class="flex-1">{{ view.label }}</span>
-          <Badge v-if="view.id === 'inbox' && inboxCount > 0" variant="secondary" class="h-4 min-w-4 px-1 text-[10px]">
+          <component :is="entry.icon" class="size-4" />
+          <span class="flex-1">{{ entry.label }}</span>
+          <Badge v-if="entry.id === 'moments' && inboxCount > 0" variant="secondary" class="h-4 min-w-4 px-1 text-[10px]">
             {{ inboxCount }}
           </Badge>
         </button>
       </div>
 
 		<Separator class="mx-3" />
+
+		<div v-if="sortedWorkspaceSessions.length" class="shrink-0 px-2 py-2">
+		  <div class="px-2.5 pb-1 text-[11px] font-medium text-muted-foreground">工作空间会话</div>
+		  <button
+		    v-for="session in sortedWorkspaceSessions"
+		    :key="session.id"
+		    type="button"
+		    class="flex w-full min-w-0 items-center rounded-md px-2.5 py-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+		    @click="handleOpenSession(session.id)"
+		  >
+		    <span class="truncate">{{ session.title || '未命名会话' }}</span>
+		  </button>
+		</div>
+
+		<Separator v-if="sortedWorkspaceSessions.length" class="mx-3" />
 
 		<!-- 新建按钮行 -->
 		<div class="shrink-0 px-3 py-2">
@@ -673,36 +643,27 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
       >
         <!-- 每个 PaneGroup 的内容区通过 slot 渲染 -->
         <template #default="{ tabs, activeTabId }">
-          <!-- 视图标签页 -->
-          <div v-show="activeTabId === 'tasks'" class="h-full">
-            <TaskView
-              :workspace-dir="workspaceDir"
-              @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
-            />
-          </div>
-
-          <div v-show="activeTabId === 'calendar'" class="h-full">
-            <CalendarView
-              :workspace-dir="workspaceDir"
-              @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
-              @create-journal="handleCreateJournal($event)"
-            />
-          </div>
-
-		  <div v-show="activeTabId === 'inbox'" class="h-full">
+          <!-- 单例功能标签页 -->
+		  <div
+		    v-for="tab in tabs"
+		    :key="tab.id"
+		    v-show="activeTabId === tab.id && tab.kind === 'singleton_feature'"
+		    class="h-full"
+		  >
+			<TaskView
+			  v-if="tab.featureId === 'tasks'"
+			  :workspace-dir="workspaceDir"
+			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
+			/>
 			<InboxView
+			  v-else-if="tab.featureId === 'moments'"
 			  :workspace-dir="workspaceDir"
 			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
 			  @refresh-tree="refreshTree"
 			/>
-		  </div>
-
-		  <div v-show="activeTabId === 'clips'" class="h-full">
-			<ClipsView />
-		  </div>
-
-		  <div v-show="activeTabId === 'git-changes'" class="h-full">
-			<GitChangesView :workspace-dir="workspaceDir" />
+			<AutomationTabContent v-else-if="tab.featureId === 'automation'" />
+			<SettingsTabContent v-else-if="tab.featureId === 'settings'" />
+			<WorkspaceFeaturePlaceholder v-else :title="tab.title" />
           </div>
 
           <!-- 主页标签页 -->
@@ -734,11 +695,11 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
           <div
             v-for="tab in tabs"
             :key="tab.id"
-            v-show="activeTabId === tab.id && tab.kind === 'chat'"
+            v-show="activeTabId === tab.id && (tab.kind === 'conversation' || tab.kind === 'chat')"
             class="h-full"
           >
             <WorkspaceChatTab
-              v-if="tab.kind === 'chat'"
+              v-if="tab.kind === 'conversation' || tab.kind === 'chat'"
               :session-id="tab.sessionId ?? ''"
               :workspace-dir="workspaceDir"
               :initial-prompt="tab.initialPrompt"
@@ -776,12 +737,13 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             />
           </div>
 
-          <div v-show="activeTabId === 'automation'" class="h-full">
-            <AutomationTabContent />
-          </div>
-
-          <div v-show="activeTabId === 'settings'" class="h-full">
-            <SettingsTabContent />
+          <div
+            v-for="tab in tabs"
+            :key="tab.id"
+            v-show="activeTabId === tab.id && tab.kind === 'space_preview'"
+            class="h-full"
+          >
+            <WorkspaceFeaturePlaceholder v-if="tab.kind === 'space_preview'" :title="tab.title" />
           </div>
         </template>
       </SplitGrid>

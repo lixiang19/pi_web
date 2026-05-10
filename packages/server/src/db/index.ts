@@ -3,11 +3,10 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { getRidgeDbPath } from '../utils/paths.js';
 import { normalizeString } from '../utils/strings.js';
-import { RIDGE_DB_BOOTSTRAP_SQL, RIDGE_DB_SCHEMA_VERSION } from './migrations.js';
+import { RIDGE_DB_MIGRATIONS, RIDGE_DB_SCHEMA_VERSION } from './migrations.js';
 import { type SessionMetadataState } from '../types/index.js';
 
 type RidgeDatabase = InstanceType<typeof Database>;
-type WorkspaceTableName = 'workspace_milestones' | 'workspace_tasks';
 type ColumnDefinition = {
   name: string;
   definition: string;
@@ -45,16 +44,180 @@ const WORKSPACE_TASK_COLUMNS: ColumnDefinition[] = [
   { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
 ];
+const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
+  devices: [
+    { name: 'device_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'name', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'device_type', definition: "TEXT NOT NULL DEFAULT 'server'" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'offline'" },
+    { name: 'capabilities_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
+    { name: 'last_seen_at', definition: 'INTEGER' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  projects: [
+    { name: 'project_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'name', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'path', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'is_git', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'added_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'project_type', definition: "TEXT NOT NULL DEFAULT 'external'" },
+    { name: 'source', definition: "TEXT NOT NULL DEFAULT 'server-folder'" },
+    { name: 'workspace_path', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'device_id', definition: 'TEXT' },
+    { name: 'archived_at', definition: 'INTEGER' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  session_index: [
+    { name: 'session_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'title', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'session_type', definition: "TEXT NOT NULL DEFAULT 'workspace'" },
+    { name: 'context_type', definition: "TEXT NOT NULL DEFAULT 'workspace'" },
+    { name: 'workspace_path', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'project_id', definition: 'TEXT' },
+    { name: 'task_id', definition: 'TEXT' },
+    { name: 'device_id', definition: 'TEXT' },
+    { name: 'run_location', definition: "TEXT NOT NULL DEFAULT 'server'" },
+    { name: 'archived', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'readonly', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  workspace_milestones: WORKSPACE_MILESTONE_COLUMNS,
+  workspace_tasks: WORKSPACE_TASK_COLUMNS,
+  fleeting_notes: [
+    { name: 'note_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'content', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'active'" },
+    { name: 'analysis_status', definition: "TEXT NOT NULL DEFAULT 'pending'" },
+    { name: 'recommendation_type', definition: 'TEXT' },
+    { name: 'recommendation_text', definition: 'TEXT' },
+    { name: 'draft', definition: 'TEXT' },
+    { name: 'requires_input', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'pi_session_id', definition: 'TEXT' },
+    { name: 'pi_session_file', definition: 'TEXT' },
+    { name: 'retry_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'last_error', definition: 'TEXT' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  automations: [
+    { name: 'automation_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'name', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'active'" },
+    { name: 'scope_type', definition: "TEXT NOT NULL DEFAULT 'workspace'" },
+    { name: 'project_id', definition: 'TEXT' },
+    { name: 'schedule_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
+    { name: 'prompt', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'next_run_at', definition: 'INTEGER' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  automation_runs: [
+    { name: 'run_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'automation_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'pending'" },
+    { name: 'started_at', definition: 'INTEGER' },
+    { name: 'finished_at', definition: 'INTEGER' },
+    { name: 'summary', definition: 'TEXT' },
+    { name: 'error', definition: 'TEXT' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  background_jobs: [
+    { name: 'job_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'job_type', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'related_type', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'related_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'pending'" },
+    { name: 'payload_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
+    { name: 'result_json', definition: 'TEXT' },
+    { name: 'attempt_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'retry_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'max_attempts', definition: 'INTEGER NOT NULL DEFAULT 3' },
+    { name: 'last_error', definition: 'TEXT' },
+    { name: 'run_after', definition: 'INTEGER' },
+    { name: 'next_retry_at', definition: 'INTEGER' },
+    { name: 'locked_at', definition: 'INTEGER' },
+    { name: 'locked_by', definition: 'TEXT' },
+    { name: 'completed_at', definition: 'INTEGER' },
+    { name: 'notify_on_failure', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  search_index_status: [
+    { name: 'target_path', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'target_type', definition: "TEXT NOT NULL DEFAULT 'file'" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'pending'" },
+    { name: 'content_hash', definition: 'TEXT' },
+    { name: 'indexed_at', definition: 'INTEGER' },
+    { name: 'error', definition: 'TEXT' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  notification_events: [
+    { name: 'event_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'event_type', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'severity', definition: "TEXT NOT NULL DEFAULT 'info'" },
+    { name: 'title', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'body', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'payload_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'unread'" },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'read_at', definition: 'INTEGER' },
+  ],
+};
 
 const openDatabase = async (workspaceDir?: string): Promise<RidgeDatabase> => {
   const dbPath = await getRidgeDbPath();
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
   db.pragma('foreign_keys = ON');
-  runPreBootstrapMigrations(db, workspaceDir);
-  db.exec(RIDGE_DB_BOOTSTRAP_SQL);
-  ensureSchemaVersion(db);
+  const migrate = db.transaction(() => {
+    ensureMigrationBookkeeping(db);
+    runPreBootstrapMigrations(db, workspaceDir);
+    applyMigrations(db);
+    repairKnownTableColumns(db);
+    ensureSchemaVersion(db);
+  });
+  migrate();
   return db;
+};
+
+const ensureMigrationBookkeeping = (db: RidgeDatabase) => {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS ridge_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ridge_schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at INTEGER NOT NULL
+);
+`);
+};
+
+const applyMigrations = (db: RidgeDatabase) => {
+  const appliedVersions = new Set(
+    (
+      db
+        .prepare('SELECT version FROM ridge_schema_migrations')
+        .all() as { version: number }[]
+    ).map((row) => row.version),
+  );
+
+  for (const migration of [...RIDGE_DB_MIGRATIONS].sort((left, right) => left.version - right.version)) {
+    if (appliedVersions.has(migration.version)) {
+      continue;
+    }
+    if (migration.sql.trim()) {
+      db.exec(migration.sql);
+    }
+    db.prepare(
+      `INSERT INTO ridge_schema_migrations(version, name, applied_at)
+       VALUES(?, ?, ?)`,
+    ).run(migration.version, migration.name, Date.now());
+  }
 };
 
 const runPreBootstrapMigrations = (
@@ -63,16 +226,21 @@ const runPreBootstrapMigrations = (
 ) => {
   const workspacePath = workspaceDir ? path.resolve(workspaceDir) : null;
 
-  ensureColumns(db, 'workspace_milestones', WORKSPACE_MILESTONE_COLUMNS);
-  ensureColumns(db, 'workspace_tasks', WORKSPACE_TASK_COLUMNS);
+  repairKnownTableColumns(db);
   ensureLegacyWorkspacePath(db, 'workspace_milestones', workspacePath);
   ensureLegacyWorkspacePath(db, 'workspace_tasks', workspacePath);
   ensureLegacyTaskMilestone(db, workspacePath);
 };
 
+const repairKnownTableColumns = (db: RidgeDatabase) => {
+  for (const [tableName, definitions] of Object.entries(CORE_TABLE_COLUMNS)) {
+    ensureColumns(db, tableName, definitions);
+  }
+};
+
 const ensureColumns = (
   db: RidgeDatabase,
-  tableName: WorkspaceTableName,
+  tableName: string,
   definitions: ColumnDefinition[],
 ) => {
   const columns = getColumnNames(db, tableName);
@@ -91,10 +259,17 @@ const ensureColumns = (
 
 const ensureLegacyWorkspacePath = (
   db: RidgeDatabase,
-  tableName: WorkspaceTableName,
+  tableName: string,
   workspacePath: string | null,
 ) => {
   if (!workspacePath || !hasColumn(db, tableName, 'workspace_path')) {
+    return;
+  }
+
+  const missingWorkspacePath = db
+    .prepare(`SELECT COUNT(*) AS count FROM ${tableName} WHERE workspace_path = ''`)
+    .get() as { count: number };
+  if (missingWorkspacePath.count === 0) {
     return;
   }
 
@@ -156,7 +331,7 @@ const ensureLegacyDefaultMilestone = (
 
 const getColumnNames = (
   db: RidgeDatabase,
-  tableName: WorkspaceTableName,
+  tableName: string,
 ): string[] =>
   (db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]).map(
     (column) => column.name,
@@ -164,7 +339,7 @@ const getColumnNames = (
 
 const hasColumn = (
   db: RidgeDatabase,
-  tableName: WorkspaceTableName,
+  tableName: string,
   columnName: string,
 ): boolean => getColumnNames(db, tableName).includes(columnName);
 

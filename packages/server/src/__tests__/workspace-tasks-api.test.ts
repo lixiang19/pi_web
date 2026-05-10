@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createWorkspaceTasksRouter } from "../routes/workspace-tasks.js";
 import { createTempDir } from "../test/helpers.js";
+import { getRidgeDb } from "../db/index.js";
 
 const createApp = (workspaceDir: string) => {
 	const app = express();
@@ -32,6 +33,9 @@ describe("workspace tasks api", () => {
 
 	beforeEach(async () => {
 		workspaceDir = await createTempDir("ridge-workspace-tasks-");
+		const db = await getRidgeDb();
+		db.prepare("DELETE FROM workspace_tasks").run();
+		db.prepare("DELETE FROM workspace_milestones").run();
 		cleanup = () => fs.rm(workspaceDir, { recursive: true, force: true });
 	});
 
@@ -39,39 +43,36 @@ describe("workspace tasks api", () => {
 		await cleanup();
 	});
 
-	it("persists optional goal metadata on create and update through workspace DB", async () => {
+	it("persists task data on create and update through the workspace task API", async () => {
 		const app = createApp(workspaceDir);
 
 		const createResponse = await request(app)
 			.post("/api/workspace/tasks")
 			.send({
 				title: "整理 pi_web MVP",
-				kind: "goal",
-				source: "dashboard",
+				priority: "important",
+				acceptanceCriteria: "任务可以创建和更新",
 			})
 			.expect(201);
 
 		expect(createResponse.body.task).toMatchObject({
 			title: "整理 pi_web MVP",
-			kind: "goal",
-			source: "dashboard",
+			priority: "important",
+			acceptanceCriteria: "任务可以创建和更新",
 		});
-		await expect(pathExists(path.join(workspaceDir, ".ridge", "ridge.db"))).resolves.toBe(true);
 		await expect(pathExists(path.join(workspaceDir, ".ridge", "tasks.json"))).resolves.toBe(false);
 
 		await request(app)
 			.patch(`/api/workspace/tasks/${createResponse.body.task.id}`)
 			.send({
-				sessionId: "session-123",
-				_expectedUpdatedAt: createResponse.body.updatedAt,
+				processingSessionId: "session-123",
 			})
 			.expect(200);
 
 		const listResponse = await request(app).get("/api/workspace/tasks").expect(200);
 		expect(listResponse.body.tasks[0]).toMatchObject({
-			kind: "goal",
-			source: "dashboard",
-			sessionId: "session-123",
+			title: "整理 pi_web MVP",
+			processingSessionId: "session-123",
 		});
 	});
 
@@ -102,7 +103,7 @@ describe("workspace tasks api", () => {
 			.get("/api/workspace/tasks")
 			.expect(200);
 
-		expect(listResponse.body).toEqual({ tasks: [], updatedAt: 0 });
+		expect(listResponse.body).toEqual({ tasks: [] });
 		await expect(pathExists(filePath)).resolves.toBe(true);
 	});
 
@@ -111,11 +112,19 @@ describe("workspace tasks api", () => {
 		try {
 			await request(createApp(workspaceDir))
 				.post("/api/workspace/tasks")
-				.send({ title: "工作区 A" })
+				.send({
+					title: "工作区 A",
+					priority: "normal",
+					acceptanceCriteria: "只属于工作区 A",
+				})
 				.expect(201);
 			await request(createApp(otherWorkspaceDir))
 				.post("/api/workspace/tasks")
-				.send({ title: "工作区 B" })
+				.send({
+					title: "工作区 B",
+					priority: "normal",
+					acceptanceCriteria: "只属于工作区 B",
+				})
 				.expect(201);
 
 			const first = await request(createApp(workspaceDir)).get("/api/workspace/tasks").expect(200);
@@ -130,15 +139,15 @@ describe("workspace tasks api", () => {
 		}
 	});
 
-	it("returns an error response when workspace DB is corrupted", async () => {
+	it("ignores a corrupted legacy workspace DB file", async () => {
 		const dbPath = path.join(workspaceDir, ".ridge", "ridge.db");
 		await fs.mkdir(path.dirname(dbPath), { recursive: true });
 		await fs.writeFile(dbPath, "not a sqlite database", "utf-8");
 
 		const response = await request(createApp(workspaceDir))
 			.get("/api/workspace/tasks")
-			.expect(500);
+			.expect(200);
 
-		expect(response.body.error).toBeTruthy();
+		expect(response.body.tasks).toEqual([]);
 	});
 });

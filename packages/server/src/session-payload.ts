@@ -171,7 +171,7 @@ export const resolveTerminalCwd = async (value: unknown): Promise<string> => {
 };
 
 export const terminalManager = createTerminalManager({
-	defaultCwd: deps.defaultWorkspaceDir,
+	defaultCwd: () => deps.defaultWorkspaceDir,
 	resolveCwd: resolveTerminalCwd,
 });
 

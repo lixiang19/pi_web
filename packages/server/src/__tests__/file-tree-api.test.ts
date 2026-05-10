@@ -67,13 +67,28 @@ describe("file tree API logic", () => {
 		).rejects.toThrow(/outside the allowed/);
 	});
 
-	it("ignores .git and node_modules", async () => {
+	it("ignores .git, .ridge and node_modules", async () => {
 		await setupTestDir();
 		await fs.mkdir(path.join(ctx.root, ".git"), { recursive: true });
+		await fs.mkdir(path.join(ctx.root, ".ridge"), { recursive: true });
 		await fs.mkdir(path.join(ctx.root, "node_modules"), { recursive: true });
 		const entries = await ctx.manager.listDirectoryEntries(ctx.root, ctx.root);
 		expect(entries.find((e) => e.name === ".git")).toBeUndefined();
+		expect(entries.find((e) => e.name === ".ridge")).toBeUndefined();
 		expect(entries.find((e) => e.name === "node_modules")).toBeUndefined();
+	});
+
+	it("rejects direct access to .ridge system paths", async () => {
+		await setupTestDir();
+		await fs.mkdir(path.join(ctx.root, ".ridge"), { recursive: true });
+		await fs.writeFile(path.join(ctx.root, ".ridge", "secret.md"), "hidden");
+
+		await expect(
+			ctx.manager.resolveManagedFileLocation({
+				root: ctx.root,
+				path: path.join(ctx.root, ".ridge", "secret.md"),
+			}),
+		).rejects.toThrow(/hidden ridge system directory/);
 	});
 
 	it("fallbackToRoot returns root when path is empty", async () => {
@@ -83,6 +98,73 @@ describe("file tree API logic", () => {
 			fallbackToRoot: true,
 		});
 		expect(targetPath).toBe(ctx.root);
+	});
+
+	it("rejects .ridge as managed root path", async () => {
+		await setupTestDir();
+		await fs.mkdir(path.join(ctx.root, ".ridge"), { recursive: true });
+
+		await expect(
+			ctx.manager.resolveManagedFileLocation({
+				root: path.join(ctx.root, ".ridge"),
+				fallbackToRoot: true,
+			}),
+		).rejects.toThrow(/hidden ridge system directory/);
+	});
+
+	it("rejects nested .ridge as managed root path", async () => {
+		await setupTestDir();
+		await fs.mkdir(path.join(ctx.root, ".ridge", "secret"), { recursive: true });
+
+		await expect(
+			ctx.manager.resolveManagedFileLocation({
+				root: path.join(ctx.root, ".ridge", "secret"),
+				fallbackToRoot: true,
+			}),
+		).rejects.toThrow(/hidden ridge system directory/);
+	});
+
+	it("rejects creating a hidden ridge system entry", async () => {
+		await setupTestDir();
+
+		await expect(
+			ctx.manager.createEntry({
+				root: ctx.root,
+				directory: ctx.root,
+				name: ".ridge",
+				kind: "directory",
+			}),
+		).rejects.toThrow(/hidden ridge system directory/);
+	});
+
+	it("rejects moving an entry into a hidden ridge system path", async () => {
+		await setupTestDir();
+		await fs.mkdir(path.join(ctx.root, ".ridge"), { recursive: true });
+
+		await expect(
+			ctx.manager.moveEntry({
+				root: ctx.root,
+				path: path.join(ctx.root, "readme.md"),
+				name: ".ridge",
+			}),
+		).rejects.toThrow(/hidden ridge system directory/);
+	});
+
+	it("rejects uploading a hidden ridge system entry", async () => {
+		await setupTestDir();
+
+		await expect(
+			ctx.manager.uploadFiles({
+				root: ctx.root,
+				directory: ctx.root,
+				files: [
+					{
+						originalname: ".ridge",
+						buffer: Buffer.from("hidden"),
+					} as Express.Multer.File,
+				],
+			}),
+		).rejects.toThrow(/hidden ridge system directory/);
 	});
 
 	it("resolves subdirectory entries", async () => {

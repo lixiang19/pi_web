@@ -24,17 +24,17 @@ const replaceTerminal = (
   return sortTerminals([...nextItems, terminal]);
 };
 
+const terminals = ref<TerminalSnapshot[]>([]);
+const activeTerminalId = ref("");
+const isLoading = ref(false);
+const isMutating = ref(false);
+const error = ref("");
+
+const activeTerminal = computed(
+  () => terminals.value.find((item) => item.id === activeTerminalId.value) ?? null,
+);
+
 export function useTerminalPool() {
-  const terminals = ref<TerminalSnapshot[]>([]);
-  const activeTerminalId = ref("");
-  const isLoading = ref(false);
-  const isMutating = ref(false);
-  const error = ref("");
-
-  const activeTerminal = computed(
-    () => terminals.value.find((item) => item.id === activeTerminalId.value) ?? null,
-  );
-
   const syncSelection = () => {
     if (!terminals.value.some((item) => item.id === activeTerminalId.value)) {
       activeTerminalId.value = terminals.value[0]?.id || "";

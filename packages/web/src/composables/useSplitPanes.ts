@@ -25,12 +25,16 @@ export interface SplitTabItem {
 		| "view"
 		| "file"
 		| "home"
+		| "conversation"
+		| "singleton_feature"
+		| "space_preview"
 		| "chat"
 		| "session"
 		| "terminal"
 		| "automation"
 		| "settings";
 	viewId?: string;
+	featureId?: string;
 	filePath?: string;
 	sessionId?: string;
 	terminalId?: string;
@@ -50,6 +54,7 @@ export type SerializableGridNode =
 				id: string;
 				kind: string;
 				viewId?: string;
+				featureId?: string;
 				filePath?: string;
 				sessionId?: string;
 				terminalId?: string;
@@ -96,11 +101,22 @@ export const createChatTab = (
 ): SplitTabItem => ({
 	id: generateChatId(),
 	title: title ?? "新会话",
-	kind: "chat",
+	kind: "conversation",
 	sessionId,
 	initialPrompt: options?.initialPrompt,
 	initialModel: options?.initialModel,
 	initialAgent: options?.initialAgent,
+	status: "idle",
+});
+
+export const createSingletonFeatureTab = (
+	featureId: string,
+	title: string,
+): SplitTabItem => ({
+	id: `feature:${featureId}`,
+	title,
+	kind: "singleton_feature",
+	featureId,
 	status: "idle",
 });
 
@@ -115,19 +131,22 @@ export const createTerminalTab = (
 	status: "idle",
 });
 
-export const createAutomationTab = (): SplitTabItem => ({
-	id: "automation",
-	title: "自动化",
-	kind: "automation",
+export const createSpacePreviewTab = (
+	filePath: string,
+	title?: string,
+): SplitTabItem => ({
+	id: `space:${filePath}`,
+	title: title ?? "空间",
+	kind: "space_preview",
+	filePath,
 	status: "idle",
 });
 
-export const createSettingsTab = (): SplitTabItem => ({
-	id: "settings",
-	title: "设置",
-	kind: "settings",
-	status: "idle",
-});
+export const createAutomationTab = (): SplitTabItem =>
+	createSingletonFeatureTab("automation", "自动化");
+
+export const createSettingsTab = (): SplitTabItem =>
+	createSingletonFeatureTab("settings", "设置");
 
 // ===== 初始布局 =====
 
@@ -560,6 +579,7 @@ function serializeNode(node: GridNode): SerializableGridNode {
 				id: t.id,
 				kind: t.kind,
 				viewId: t.viewId,
+				featureId: t.featureId,
 				filePath: t.filePath,
 				sessionId: t.sessionId,
 				terminalId: t.terminalId,
@@ -592,6 +612,7 @@ function deserializeNode(node: SerializableGridNode): GridNode {
 				title: t.title,
 				kind: t.kind as SplitTabItem["kind"],
 				viewId: t.viewId,
+				featureId: t.featureId,
 				filePath: t.filePath,
 				sessionId: t.sessionId,
 				terminalId: t.terminalId,

@@ -3,13 +3,16 @@ import {
 	createChatTab,
 	createHomeTab,
 	createInitialGrid,
+	createSingletonFeatureTab,
+	createSpacePreviewTab,
+	createTerminalTab,
 	useSplitPanes,
 } from "@/composables/useSplitPanes";
 
-describe("useSplitPanes - chat 类型支持", () => {
-	it("createChatTab 返回 kind=chat 标签", () => {
+describe("useSplitPanes - 工作台标签类型", () => {
+	it("createChatTab 返回 conversation 标签", () => {
 		const tab = createChatTab("session-1", "测试会话");
-		expect(tab.kind).toBe("chat");
+		expect(tab.kind).toBe("conversation");
 		expect(tab.sessionId).toBe("session-1");
 		expect(tab.title).toBe("测试会话");
 		expect(tab.id).toMatch(/^chat-/);
@@ -56,7 +59,7 @@ describe("useSplitPanes - chat 类型支持", () => {
 
 		const found = sp.findTabAcrossPanes(chatTab.id);
 		expect(found).toBeTruthy();
-		expect(found!.tab.kind).toBe("chat");
+		expect(found!.tab.kind).toBe("conversation");
 		expect(found!.tab.sessionId).toBe("session-abc");
 	});
 
@@ -74,7 +77,7 @@ describe("useSplitPanes - chat 类型支持", () => {
 
 		const found = sp.findTabAcrossPanes(chatTab.id);
 		expect(found).toBeTruthy();
-		expect(found!.tab.kind).toBe("chat");
+		expect(found!.tab.kind).toBe("conversation");
 		expect(found!.tab.initialPrompt).toBe("首条消息");
 		expect(found!.tab.initialModel).toBe("gpt-4");
 		expect(found!.tab.initialAgent).toBe("agent-x");
@@ -106,5 +109,39 @@ describe("useSplitPanes - chat 类型支持", () => {
 		const allTabs = sp.allPaneGroups.value.flatMap((p) => p.tabs);
 		const homeCount = allTabs.filter((t) => t.kind === "home").length;
 		expect(homeCount).toBeGreaterThanOrEqual(2);
+	});
+
+	it("createSingletonFeatureTab 使用稳定 id 支持单例激活", () => {
+		const sp = useSplitPanes();
+		const paneId = sp.activePaneGroupId.value;
+		sp.openTab(paneId, createSingletonFeatureTab("tasks", "任务"));
+		sp.openTab(paneId, createSingletonFeatureTab("tasks", "任务"));
+
+		const allTabs = sp.allPaneGroups.value.flatMap((p) => p.tabs);
+		expect(allTabs.filter((tab) => tab.id === "feature:tasks")).toHaveLength(1);
+		expect(sp.findTabAcrossPanes("feature:tasks")?.tab).toMatchObject({
+			kind: "singleton_feature",
+			featureId: "tasks",
+		});
+	});
+
+	it("终端标签使用独立 id，允许同一入口多开", () => {
+		const sp = useSplitPanes();
+		const paneId = sp.activePaneGroupId.value;
+		sp.openTab(paneId, createTerminalTab("terminal-1", "终端"));
+		sp.openTab(paneId, createTerminalTab("terminal-2", "终端"));
+
+		const terminals = sp.allPaneGroups.value
+			.flatMap((p) => p.tabs)
+			.filter((tab) => tab.kind === "terminal");
+		expect(terminals).toHaveLength(2);
+		expect(new Set(terminals.map((tab) => tab.id)).size).toBe(2);
+	});
+
+	it("createSpacePreviewTab 返回 space_preview 标签", () => {
+		const tab = createSpacePreviewTab("/ws/空间/demo/index.html", "demo");
+		expect(tab.kind).toBe("space_preview");
+		expect(tab.filePath).toBe("/ws/空间/demo/index.html");
+		expect(tab.id).toBe("space:/ws/空间/demo/index.html");
 	});
 });

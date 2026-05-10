@@ -125,8 +125,12 @@ describe("WorkspacePage note close protection", () => {
 			expect(wrapper.find('[data-test="content-area"]').exists()).toBe(true);
 		});
 		const contentArea = wrapper.findComponent({ name: "WorkspaceContentArea" });
-		await contentArea.vm.$emit("save-status", "/workspace/笔记/test.md", "unsaved");
-		await wrapper.findComponent({ name: "SplitGrid" }).vm.$emit("close-tab", "sp-1", "/workspace/笔记/test.md");
+		const fileTab = contentArea.props("tab") as { id: string };
+		await contentArea.vm.$emit("save-status", fileTab.id, "unsaved");
+		await wrapper.findComponent({ name: "SplitGrid" }).vm.$emit("close-tab", {
+			paneGroupId: "sp-1",
+			tabId: fileTab.id,
+		});
 
 		expect(toast.error).toHaveBeenCalledWith(
 			"笔记尚未保存完成",

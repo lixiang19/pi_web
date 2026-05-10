@@ -53,7 +53,25 @@ const ignoredDirectoryNames = new Set([
   '.turbo',
   'coverage',
   '.pi-web',
+  '.ridge',
 ]);
+
+export const isRidgeSystemPath = (
+  candidatePath: string,
+  _rootPath: string,
+): boolean => path
+  .normalize(candidatePath)
+  .split(path.sep)
+  .some((segment) => segment === '.ridge');
+
+export const assertNotRidgeSystemPath = (
+  candidatePath: string,
+  rootPath: string,
+): void => {
+  if (isRidgeSystemPath(candidatePath, rootPath)) {
+    throw toHttpError('Requested path is inside the hidden ridge system directory', 400);
+  }
+};
 
 export const normalizeFsPath = (value: unknown): string =>
   path.resolve(normalizeString(value));
@@ -186,6 +204,10 @@ export const createFileManager = (options: FileManagerOptions) => {
       await options.ensureManagedProjectScope(resolvedRootPath);
     }
 
+    if (isRidgeSystemPath(resolvedRootPath, resolvedRootPath)) {
+      assertNotRidgeSystemPath(resolvedRootPath, resolvedRootPath);
+    }
+
     return rootPath;
   };
 
@@ -201,6 +223,7 @@ export const createFileManager = (options: FileManagerOptions) => {
 
     const targetPath = requestedPath || rootPath;
     ensureWithinRoot(targetPath, rootPath);
+    assertNotRidgeSystemPath(targetPath, rootPath);
     await ensureResolvedPathWithinRoot(targetPath, rootPath);
 
     return {
@@ -231,6 +254,7 @@ export const createFileManager = (options: FileManagerOptions) => {
     directoryPath: string,
     rootPath: string,
   ): Promise<FileTreeEntry[]> => {
+    assertNotRidgeSystemPath(directoryPath, rootPath);
     const dirents = await fs.readdir(directoryPath, { withFileTypes: true });
     const entries = await Promise.all(
       dirents
@@ -259,6 +283,7 @@ export const createFileManager = (options: FileManagerOptions) => {
     const targetPath = path.join(directory.targetPath, name);
 
     ensureWithinRoot(targetPath, directory.rootPath);
+    assertNotRidgeSystemPath(targetPath, directory.rootPath);
     await assertTargetAbsent(targetPath);
 
     if (input.kind === 'directory') {
@@ -287,6 +312,7 @@ export const createFileManager = (options: FileManagerOptions) => {
     const targetPath = path.join(targetDirectory.targetPath, targetName);
 
     ensureWithinRoot(targetPath, source.rootPath);
+    assertNotRidgeSystemPath(targetPath, source.rootPath);
 
     if (source.targetPath === targetPath) {
       throw toHttpError('Target path must be different from source path', 400);
@@ -340,6 +366,7 @@ export const createFileManager = (options: FileManagerOptions) => {
 
       const targetPath = path.join(directory.targetPath, name);
       ensureWithinRoot(targetPath, directory.rootPath);
+      assertNotRidgeSystemPath(targetPath, directory.rootPath);
       return {
         file,
         targetPath,

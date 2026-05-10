@@ -24,7 +24,7 @@ interface TerminalRuntimeRecord {
 }
 
 interface CreateTerminalManagerOptions {
-  defaultCwd: string;
+  defaultCwd: () => string;
   resolveCwd: (cwd?: string) => Promise<string>;
 }
 
@@ -148,12 +148,13 @@ const createSpawnOptions = (
 
 export function createTerminalManager(options: CreateTerminalManagerOptions) {
   const terminals = new Map<string, TerminalRuntimeRecord>();
+  const getDefaultCwd = (): string => options.defaultCwd();
 
   const spawnTerminal = async (
     record: TerminalRuntimeRecord,
     payload?: Pick<TerminalCreateRequest, 'cwd' | 'cols' | 'rows'>,
   ): Promise<void> => {
-    const cwd = await options.resolveCwd(payload?.cwd || options.defaultCwd);
+    const cwd = await options.resolveCwd(payload?.cwd || getDefaultCwd());
     const cols = Math.max(40, payload?.cols || record.snapshot.cols || DEFAULT_COLS);
     const rows = Math.max(12, payload?.rows || record.snapshot.rows || DEFAULT_ROWS);
     const shell = resolveShell();
@@ -216,7 +217,7 @@ export function createTerminalManager(options: CreateTerminalManagerOptions) {
     const shell = resolveShell();
     const snapshot = createTerminalSnapshot(
       id,
-      options.defaultCwd,
+      getDefaultCwd(),
       shell,
       payload.cols || DEFAULT_COLS,
       payload.rows || DEFAULT_ROWS,

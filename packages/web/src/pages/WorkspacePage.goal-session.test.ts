@@ -4,18 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia } from "pinia";
 
 import WorkspacePage from "./WorkspacePage.vue";
-import {
-	createSession,
-	createWorkspaceTask,
-	getSessionHydrate,
-	sendMessage,
-	updateWorkspaceTask,
-} from "@/lib/api";
-import { toast } from "vue-sonner";
+import { createSession } from "@/lib/api";
+import { NO_AGENT_VALUE } from "@/composables/useWorkbenchSessionState";
 
 const sessions = ref<Array<{ id: string; title: string }>>([]);
 const tasks = ref<unknown[]>([]);
-const updateTask = vi.fn();
 const refreshSessions = vi.fn();
 
 vi.mock("@/lib/api", async () => {
@@ -24,14 +17,7 @@ vi.mock("@/lib/api", async () => {
 		...actual,
 		getRecentFiles: vi.fn().mockResolvedValue({ files: [] }),
 		getFileTree: vi.fn().mockResolvedValue({ root: "/workspace", entries: [] }),
-		createWorkspaceTask: vi.fn().mockResolvedValue({
-			task: { id: "task-goal", title: "推进 MVP" },
-			updatedAt: 1,
-		}),
-		updateWorkspaceTask: vi.fn().mockResolvedValue({ ok: true, updatedAt: 2 }),
 		createSession: vi.fn().mockResolvedValue({ id: "session-1", title: "推进 MVP" }),
-		sendMessage: vi.fn().mockResolvedValue({ ok: true }),
-		getSessionHydrate: vi.fn().mockResolvedValue({ sessionId: "session-1", messages: [] }),
 	};
 });
 
@@ -64,11 +50,8 @@ vi.mock("@/composables/useWorkspaceTasks", () => ({
 		tasks,
 		todayTasks: computed(() => []),
 		count: computed(() => 0),
-		addTask: vi.fn(async (payload) => {
-			const response = await createWorkspaceTask(payload);
-			return response.task;
-		}),
-		updateTask,
+		addTask: vi.fn(),
+		updateTask: vi.fn(),
 	}),
 	useWorkspaceTasks: () => ({
 		tasks,
@@ -121,9 +104,10 @@ vi.mock("@/composables/useWorkspaceFilePreview", () => ({
 	}),
 }));
 
-const DashboardStub = defineComponent({
-	template: `<div data-test="dashboard-stub" />`,
-	emits: ["create-goal", "open-goal-session"],
+const HomePageStub = defineComponent({
+	name: "HomePage",
+	template: `<div data-test="home-page-stub" />`,
+	emits: ["submit", "open-session"],
 });
 
 const mountWorkspace = () =>
@@ -131,10 +115,9 @@ const mountWorkspace = () =>
 		global: {
 			plugins: [createPinia()],
 			stubs: {
-				DashboardView: DashboardStub,
 				FileTreePanel: true,
 				WorkspaceContentArea: true,
-				HomePage: true,
+				HomePage: HomePageStub,
 				TaskView: true,
 				CalendarView: true,
 				InboxView: true,
@@ -142,7 +125,10 @@ const mountWorkspace = () =>
 				TerminalTabContent: true,
 				AutomationTabContent: true,
 				SettingsTabContent: true,
-				SessionTabContent: { template: `<div data-test="session-tab-content" />` },
+				WorkspaceChatTab: {
+					props: ["sessionId", "workspaceDir", "initialPrompt", "initialModel", "initialAgent"],
+					template: `<div data-test="workspace-chat-tab">{{ sessionId }} {{ initialPrompt }}</div>`,
+				},
 				WorkspaceTopMenu: true,
 				Separator: true,
 				Badge: true,
@@ -160,44 +146,37 @@ describe("WorkspacePage goal to session orchestration", () => {
 		vi.clearAllMocks();
 	});
 
-	it("creates a dashboard goal task, linked session, first prompt, and session tab", async () => {
+	it("replaces a home tab with a chat session after first prompt submit", async () => {
 		const wrapper = mountWorkspace();
 
-		await wrapper.getComponent(DashboardStub).vm.$emit("create-goal", "推进 MVP");
+		await wrapper.getComponent(HomePageStub).vm.$emit("submit", {
+			text: "推进 MVP",
+			model: "gpt-test",
+			agent: NO_AGENT_VALUE,
+			thinkingLevel: "medium",
+		});
 		await vi.waitFor(() => {
-			expect(sendMessage).toHaveBeenCalledWith("session-1", { prompt: "推进 MVP" });
+			expect(createSession).toHaveBeenCalledWith({
+				cwd: "/workspace",
+				title: "推进 MVP",
+				model: "gpt-test",
+				agent: null,
+				thinkingLevel: "medium",
+			});
 		});
 
-		expect(createWorkspaceTask).toHaveBeenCalledWith({
-			title: "推进 MVP",
-			kind: "goal",
-			source: "dashboard",
-			_expectedUpdatedAt: undefined,
-		});
-		expect(createSession).toHaveBeenCalledWith({
-			cwd: "/workspace",
-			title: "推进 MVP",
-		});
-		expect(updateTask).toHaveBeenCalledWith("task-goal", { sessionId: "session-1" });
-		expect(refreshSessions).toHaveBeenCalled();
+		expect(wrapper.get('[data-test="workspace-chat-tab"]').text()).toContain("session-1");
 		expect(wrapper.text()).toContain("推进 MVP");
 	});
 
-	it("does not create or overwrite when opening a stale goal session", async () => {
-		vi.mocked(getSessionHydrate).mockRejectedValueOnce(new Error("not found"));
+	it("opens an existing chat session from home activity", async () => {
+		sessions.value = [{ id: "session-existing", title: "旧会话" }];
 		const wrapper = mountWorkspace();
 
-		await wrapper.getComponent(DashboardStub).vm.$emit("open-goal-session", "missing-session");
-		await vi.waitFor(() => {
-			expect(toast.error).toHaveBeenCalledWith(
-				"关联会话已失效",
-				expect.objectContaining({ description: expect.any(String) }),
-			);
-		});
+		await wrapper.getComponent(HomePageStub).vm.$emit("open-session", "session-existing");
 
 		expect(createSession).not.toHaveBeenCalled();
-		expect(updateWorkspaceTask).not.toHaveBeenCalled();
-		expect(updateTask).not.toHaveBeenCalled();
-		expect(sendMessage).not.toHaveBeenCalled();
+		expect(wrapper.get('[data-test="workspace-chat-tab"]').text()).toContain("session-existing");
+		expect(wrapper.text()).toContain("旧会话");
 	});
 });

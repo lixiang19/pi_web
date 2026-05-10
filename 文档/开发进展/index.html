@@ -535,7 +535,7 @@
           <div class="hero-top">
             <div>
               <h1>ridge 第一版开发进展</h1>
-              <p>当前阶段：产品闭环、项目设计、任务级功能文档和内嵌 spec 草案已经完成，下一步进入按任务生成更细 TDD spec 和实现。</p>
+              <p>当前阶段：产品闭环、项目设计、任务级功能文档和内嵌 spec 草案已经完成，全局基座已完成。</p>
             </div>
             <span class="badge">更新时间：2026-05-10</span>
           </div>
@@ -554,8 +554,8 @@
               <span class="label">已写入 spec 草案</span>
             </div>
             <div class="panel metric">
-              <span class="value">4</span>
-              <span class="label">可并行开发泳道</span>
+              <span class="value">5</span>
+              <span class="label">实现任务已完成</span>
             </div>
           </div>
 
@@ -565,8 +565,8 @@
               <span class="status done">设计完成</span>
             </div>
             <p>输入 → 会话 / 闪念 / 文件 / 任务 → 处理和确认 → Markdown / 任务 / 项目 / 空间 / 记忆 → RAG / 图谱 / Wiki → 下一次会话可继续使用。</p>
-            <div class="bar" style="margin-top: 14px"><span style="width: 34%"></span></div>
-            <p style="margin-top: 8px">整体进度估算：设计与任务拆解完成，工程实现尚未启动。</p>
+            <div class="bar" style="margin-top: 14px"><span style="width: 37%"></span></div>
+            <p style="margin-top: 8px">整体进度估算：设计与任务拆解完成，00、01、02、03、25 已完成；03 已按完整 Shell 与标签边界实现。</p>
           </div>
         </section>
 
@@ -714,10 +714,10 @@
       ];
 
       const tasks = [
-        ["00", "工作空间初始化与目录结构", "M0", "spec"],
-        ["01", "ridge DB 基础表与迁移框架", "M0", "spec"],
-        ["02", "隐藏 ridge 目录与路径边界", "M0", "spec"],
-        ["03", "工作台 Shell 与标签系统", "M1", "spec"],
+        ["00", "工作空间初始化与目录结构", "M0", "done"],
+        ["01", "ridge DB 基础表与迁移框架", "M0", "done"],
+        ["02", "隐藏 ridge 目录与路径边界", "M0", "done"],
+        ["03", "工作台 Shell 与标签系统", "M1", "done"],
         ["04", "左侧导航固定入口与会话列表", "M1", "spec"],
         ["05", "工作空间主页与会话创建", "M1", "spec"],
         ["06", "会话索引归档与只读状态", "M1", "spec"],
@@ -739,7 +739,7 @@
         ["22", "RAG 标准产物索引与 chunk", "M5", "spec"],
         ["23", "RAG 更新删除移动规则", "M5", "spec"],
         ["24", "全局搜索资产导航器", "M5", "spec"],
-        ["25", "后台任务队列与重试", "M6", "spec"],
+        ["25", "后台任务队列与重试", "M6", "done"],
         ["26", "summary agent daily 会话记忆", "M6", "spec"],
         ["27", "memory agent MEMORY 维护与注入", "M6", "spec"],
         ["28", "Kuzu 图谱存储与抽取", "M7", "spec"],
@@ -889,7 +889,8 @@
         const visible = activeFilter === "全部" ? tasks : tasks.filter((task) => task[2] === activeFilter);
         taskListEl.innerHTML = visible
           .map(([id, name, milestone, state]) => {
-            const statusText = state === "spec" ? "Spec 草案" : "待开发";
+            const statusText = state === "done" ? "已实现" : state === "spec" ? "Spec 草案" : "待开发";
+            const statusClass = state === "done" ? "done" : state === "spec" ? "next" : "planned";
             return `
               <article class="task">
                 <div class="id">${id}</div>
@@ -897,8 +898,8 @@
                   <div class="name">${name}</div>
                   <div class="meta">${milestone}</div>
                 </div>
-                <span class="status next">${statusText}</span>
-                <span class="status planned">未实现</span>
+                <span class="status ${statusClass}">${statusText}</span>
+                <span class="status ${state === "done" ? "done" : "planned"}">${state === "done" ? "完成" : "未实现"}</span>
               </article>
             `;
           })
