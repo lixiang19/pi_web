@@ -165,6 +165,189 @@ describe("workspace task system", () => {
 		expect(res.status).toBe(400);
 	});
 
+	it("returns 404 when creating a task with non-existent milestoneId", async () => {
+		const res = await api.post("/api/workspace/tasks").send({
+			title: "未知里程碑任务",
+			priority: "normal",
+			acceptanceCriteria: "应该失败",
+			milestoneId: "milestone-nonexistent",
+		});
+
+		expect(res.status).toBe(404);
+	});
+
+	it("rejects deleting the system default milestone", async () => {
+		const milestonesRes = await api.get("/api/workspace/milestones");
+		const defaultMilestone = milestonesRes.body.milestones[0];
+
+		const res = await api.delete(`/api/workspace/milestones/${defaultMilestone.id}`);
+
+		expect(res.status).toBe(400);
+	});
+
+	it("allows task projectId to override milestone projectId explicitly", async () => {
+		const app = api;
+
+		// Create milestone with projectId
+		const milestoneRes = await app
+			.post("/api/workspace/milestones")
+			.send({
+				title: "里程碑 B",
+				goal: "目标",
+				acceptanceCriteria: "标准",
+				projectId: "project-beta",
+			});
+		const milestoneId = milestoneRes.body.milestone.id;
+
+		// Create task with explicit different projectId
+		const taskRes = await app
+			.post("/api/workspace/tasks")
+			.send({
+				title: "覆盖项目任务",
+				priority: "normal",
+				acceptanceCriteria: "标准",
+				milestoneId,
+				projectId: "project-gamma",
+			});
+
+		expect(taskRes.status).toBe(201);
+		expect(taskRes.body.task.projectId).toBe("project-gamma");
+	});
+
+	it("allows task explicit projectId null to not inherit from milestone", async () => {
+		const app = api;
+
+		// Create milestone with projectId
+		const milestoneRes = await app
+			.post("/api/workspace/milestones")
+			.send({
+				title: "里程碑 C",
+				goal: "目标",
+				acceptanceCriteria: "标准",
+				projectId: "project-delta",
+			});
+		const milestoneId = milestoneRes.body.milestone.id;
+
+		// Create task with explicit null projectId (should not inherit)
+		const taskRes = await app
+			.post("/api/workspace/tasks")
+			.send({
+				title: "显式无项目任务",
+				priority: "normal",
+				acceptanceCriteria: "标准",
+				milestoneId,
+				projectId: null,
+			});
+
+		expect(taskRes.status).toBe(201);
+		expect(taskRes.body.task.projectId).toBeNull();
+	});
+
+	it("rejects invalid priority values", async () => {
+		const res = await api.post("/api/workspace/tasks").send({
+			title: "错误优先级",
+			priority: "high",
+			acceptanceCriteria: "应该失败",
+		});
+
+		expect(res.status).toBe(400);
+	});
+
+	it("rejects invalid status values on update", async () => {
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "错误状态",
+			priority: "normal",
+			acceptanceCriteria: "应该失败",
+		});
+
+		const res = await api
+			.patch(`/api/workspace/tasks/${taskRes.body.task.id}`)
+			.send({ status: "archived", actor: "user" });
+
+		expect(res.status).toBe(400);
+	});
+
+	it("allows a user to complete a milestone through valid status transitions", async () => {
+		const milestoneRes = await api.post("/api/workspace/milestones").send({
+			title: "可完成里程碑",
+			goal: "验证流转",
+			acceptanceCriteria: "用户可完成",
+		});
+		const id = milestoneRes.body.milestone.id;
+
+		await api.patch(`/api/workspace/milestones/${id}`).send({ status: "in_progress", actor: "user" });
+		await api.patch(`/api/workspace/milestones/${id}`).send({ status: "reviewing", actor: "user" });
+
+		const completeRes = await api
+			.patch(`/api/workspace/milestones/${id}`)
+			.send({ status: "completed", actor: "user" });
+
+		expect(completeRes.status).toBe(200);
+		expect(completeRes.body.milestone.status).toBe("completed");
+	});
+
+	it("inherits updated milestone projectId when creating a task without explicit projectId", async () => {
+		const milestoneRes = await api.post("/api/workspace/milestones").send({
+			title: "里程碑 D",
+			goal: "目标",
+			acceptanceCriteria: "标准",
+			projectId: "project-initial",
+		});
+		const milestoneId = milestoneRes.body.milestone.id;
+
+		// Update milestone projectId
+		await api
+			.patch(`/api/workspace/milestones/${milestoneId}`)
+			.send({ projectId: "project-updated", actor: "user" });
+
+		// Create task without explicit projectId should inherit updated project
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "继承更新后项目任务",
+			priority: "normal",
+			acceptanceCriteria: "标准",
+			milestoneId,
+		});
+
+		expect(taskRes.status).toBe(201);
+		expect(taskRes.body.task.projectId).toBe("project-updated");
+	});
+
+	it("presists blockedReason, dueDate, acceptanceCriteria and sortOrder on create and update", async () => {
+		const milestoneRes = await api.post("/api/workspace/milestones").send({
+			title: "字段验证里程碑",
+			goal: "目标",
+			acceptanceCriteria: "标准",
+		});
+		const milestoneId = milestoneRes.body.milestone.id;
+
+		const createRes = await api.post("/api/workspace/tasks").send({
+			title: "字段完整任务",
+			priority: "urgent",
+			acceptanceCriteria: "必须有完成标准",
+			dueDate: new Date("2026-06-01").getTime(),
+			milestoneId,
+			projectId: null,
+		});
+
+		expect(createRes.status).toBe(201);
+		expect(createRes.body.task.acceptanceCriteria).toBe("必须有完成标准");
+		expect(createRes.body.task.dueDate).toBe(new Date("2026-06-01").getTime());
+		expect(createRes.body.task.blockedReason).toBeNull();
+		expect(createRes.body.task.sortOrder).toBeGreaterThan(0);
+
+		const updateRes = await api
+			.patch(`/api/workspace/tasks/${createRes.body.task.id}`)
+			.send({
+				blockedReason: "等待 API 文档",
+				sortOrder: 42,
+				actor: "user",
+			});
+
+		expect(updateRes.status).toBe(200);
+		expect(updateRes.body.task.blockedReason).toBe("等待 API 文档");
+		expect(updateRes.body.task.sortOrder).toBe(42);
+	});
+
 	it("rejects deleting a milestone that still has tasks", async () => {
 		const milestoneRes = await api.post("/api/workspace/milestones").send({
 			title: "不可删除",
@@ -183,5 +366,24 @@ describe("workspace task system", () => {
 		);
 
 		expect(res.status).toBe(409);
+	});
+
+	it("creates and updates milestone with projectId", async () => {
+		const createRes = await api.post("/api/workspace/milestones").send({
+			title: "项目里程碑",
+			goal: "目标",
+			acceptanceCriteria: "标准",
+			projectId: "project-milestone",
+		});
+
+		expect(createRes.status).toBe(201);
+		expect(createRes.body.milestone.projectId).toBe("project-milestone");
+
+		const updateRes = await api
+			.patch(`/api/workspace/milestones/${createRes.body.milestone.id}`)
+			.send({ projectId: null, actor: "user" });
+
+		expect(updateRes.status).toBe(200);
+		expect(updateRes.body.milestone.projectId).toBeNull();
 	});
 });

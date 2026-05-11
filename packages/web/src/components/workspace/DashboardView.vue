@@ -87,11 +87,11 @@ const handleOpenGoal = (sessionId?: string) => {
 };
 
 const priorityDot = (p: string) =>
-	p === "high"
+	p === "urgent"
 		? "bg-red-500"
-		: p === "low"
-			? "bg-green-500"
-			: "bg-amber-500";
+		: p === "important"
+			? "bg-amber-500"
+			: "bg-green-500";
 </script>
 
 <template>

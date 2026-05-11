@@ -97,6 +97,7 @@
 - [DB migration 原子性] 新列不能同时在 migration SQL 和 repair columns 中 `ALTER TABLE ADD`，否则旧库会 duplicate column；应只在 bootstrap/migration 建表时带全列，repair columns 负责补缺失列，顺序是：bookkeeping → repair → apply migrations → repair again → version write。
 - [项目绑定] 任务/里程碑的 `project_id` 通过 migration 版本 7 引入；repair columns 自动补旧表列；创建任务时未传 projectId 应继承里程碑 projectId。
 - [前端类型同步] 新增 DB 列后，前端 `WorkspaceTask` / `WorkspaceMilestone` 接口必须同步更新，否则 `vue-tsc` 会在测试和组件中报 missing property。
+- [前端类型收敛] 当后端 enum（如 priority `normal/important/urgent`）与前端遗留类型（含 `low/medium/high`）不一致时，必须同步清理前端类型声明和所有引用该类型的测试/组件/composable；只改后端 schema 不改前端类型会在运行时/类型检查时留下隐患。
 - [原生依赖安装契约] 仓库使用 `pnpm 10` 时，`better-sqlite3`、`node-pty` 这类原生包不能只写进 dependencies；必须在根 `package.json` 的 `pnpm.onlyBuiltDependencies` 中显式放行，否则 install 后会出现“包存在但 `.node` 绑定缺失”，server 在运行原生模块时直接失败
 - [包管理器一致性] 既然仓库已经锁定 `pnpm` 并依赖 `pnpm.onlyBuiltDependencies` 管原生包，README/开发文档里的安装命令也必须统一写成 `pnpm install`；继续写 `npm install` 会把“依赖声明正确但本地缺包/缺绑定”的问题伪装成代码故障。
 - [终端重启竞态] PTY restart 不能让旧进程的 `onData/onExit` 继续写回共享 record；事件处理必须校验“当前活跃 PTY 实例”，否则旧进程退出会把新终端覆盖成 exited
@@ -127,7 +128,34 @@
 - [首页选择器异步默认值] 首页这类长驻标签页不要只在 setup 时拷贝异步 props；模型/Agent/thinking 默认值从 core/settings 异步到达后，需要在“不覆盖用户有效选择”的前提下同步本地选择状态
 - [反思先行] 每个里程碑完成后必须做功能反思，确认每个子功能真的可端到端跑通，而非"调 API 了就当完成"。见 `文档/功能开发/2026-04-28_工作空间功能反思.md`
 
-## 2026-04-29 文件树修复与功能完善
+## 2026-05-11 任务 09 任务列表详情与状态流转
+
+### 实现要点
+
+- 服务端：状态流转校验 `assertStatusAllowed` 已覆盖任务和里程碑；Agent 不能完成；系统里程碑不能完成。
+- 前端 `TaskView`：看板/列表/日历/里程碑四视图均可打开详情；详情可编辑标题、完成标准、优先级、状态、里程碑、项目、截止日期、阻塞原因；删除走确认弹窗。
+- 看板拖拽只允许合法状态流转，非法拖拽不调用更新；拖拽时写入 `sortOrder`。
+- 项目筛选 UI 包含全部/无项目/具体项目，联动 `projectFilter` 触发重新加载。
+- 新任务默认 `projectId: undefined` 让后端继承里程碑；用户可选 `null` 无项目或具体项目覆盖。
+
+### 关键修复
+
+- **详情状态同步**：`saveSelectedTask` 和 `saveSelectedMilestone` 成功后必须将 `selectedTask`/`selectedMilestone` 替换为后端返回结果，否则用户保存 reviewing→completed 后详情状态仍停留在 reviewing，无法继续操作。
+- **错误不吞并返回结果**：`useWorkspaceTasks.ts` 中 `addTask/addMilestone/updateTask/updateMilestone/removeTask/removeMilestone` 全部改为返回 `{ success, task?/milestone?/error }`，调用方可判断成功/失败；失败时 toast 报错并回滚本地状态。
+- **失败不清空表单**：`handleAddTask` 和 `handleAddMilestone` 仅在 `result.success` 时清空表单字段，避免用户因网络/API 错误丢失已填写内容。
+
+### 测试覆盖
+
+- 后端 `workspace-tasks.test.ts` 新增：里程碑完成流转、更新里程碑后任务继承、阻塞原因/截止日期/排序字段完整、删除仍有任务的里程碑 409。
+- 前端 `TaskView.test.ts` 新增：非法拖拽不调用更新、成功创建清空表单、列表/日历/里程碑视图可打开详情。
+- 前端 `useWorkspaceTasks.test.ts` 新增：updateTask 成功更新本地并返回结果、失败回滚、addTask 失败返回错误、removeTask 失败恢复列表。
+
+### 教训
+
+- **composable 不能吞错误**：返回 void 会让调用方完全无法判断操作是否成功，导致表单清空、状态同步等边界全部失控。必须返回显式结果对象。
+- **详情状态要有单一真源**：`selectedTask` 不能只靠打开时复制一次字段；保存后必须替换为后端返回的完整对象，否则后续操作会基于旧状态判断。
+- **mock 状态突变需谨慎**：vitest 中 `vi.mock` 是模块级缓存，`mockImplementationOnce` 在多测试文件并行时行为不可靠；应优先用 `mockImplementation` + `beforeEach` 重置，或在单个测试内通过模块重新 mock 隔离。
+- **先写测试再改代码**：补测试时发现 `saveSelectedTask` 未同步返回结果、composable 吞错误等问题，比上线后用户反馈更早暴露。
 
 ### 成功点
 

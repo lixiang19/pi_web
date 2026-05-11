@@ -52,7 +52,7 @@ describe("POST /api/files/create security", () => {
 	it("rejects realpath symlink traversal outside workspace", async () => {
 		// Create a symlink in workspace pointing outside
 		const symlinkPath = path.join(WORKSPACE, "symlink-outside");
-		try { await fs.unlink(symlinkPath); } catch {}
+		await fs.rm(symlinkPath, { recursive: true, force: true });
 		await fs.symlink(os.homedir(), symlinkPath);
 		const res = await api
 			.post("/api/files/create")
@@ -62,7 +62,7 @@ describe("POST /api/files/create security", () => {
 		const outsideFile = path.join(os.homedir(), "pwned.txt");
 		await expect(fs.access(outsideFile)).rejects.toThrow();
 		// cleanup
-		try { await fs.unlink(symlinkPath); } catch {}
+		await fs.rm(symlinkPath, { recursive: true, force: true });
 	});
 });
 

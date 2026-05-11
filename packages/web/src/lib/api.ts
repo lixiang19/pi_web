@@ -850,10 +850,7 @@ export type WorkspaceTaskStatus =
 export type WorkspaceTaskPriority =
 	| "normal"
 	| "important"
-	| "urgent"
-	| "low"
-	| "medium"
-	| "high";
+	| "urgent";
 
 export interface WorkspaceTask {
 	id: string;

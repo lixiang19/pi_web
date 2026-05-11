@@ -1,0 +1,185 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e13]:
+      - complementary [ref=e14]:
+        - generic [ref=e15]:
+          - button [ref=e339]:
+            - img [ref=e17]
+            - generic [ref=e20]: 闪念
+          - button [ref=e340]:
+            - img [ref=e22]
+            - generic [ref=e25]: 搜索
+          - button [ref=e341]:
+            - img [ref=e27]
+            - generic [ref=e30]: 通知
+          - button [ref=e342]:
+            - img [ref=e32]
+            - generic [ref=e35]: 任务
+          - button [ref=e343]:
+            - img [ref=e37]
+            - generic [ref=e41]: 文件
+          - button [ref=e344]:
+            - img [ref=e43]
+            - generic [ref=e46]: 终端
+          - button [ref=e345]:
+            - img [ref=e48]
+            - generic [ref=e51]: 自动化
+          - button [ref=e346]:
+            - img [ref=e53]
+            - generic [ref=e55]: Skill
+          - button [ref=e347]:
+            - img [ref=e57]
+            - generic [ref=e60]: 设置
+        - generic [ref=e61]:
+          - generic [ref=e62]: 项目
+          - button [ref=e348]:
+            - img [ref=e66]
+            - generic [ref=e68]: AuroraPlatformWeb
+            - generic [ref=e69]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+            - generic [ref=e70]: 外部
+            - generic [ref=e71]: 服务器文件夹
+            - generic [ref=e72]: 离线
+          - button [ref=e349]:
+            - img [ref=e76]
+            - generic [ref=e78]: openchamber
+            - generic [ref=e79]: /Users/lixiang/Documents/myCode/openchamber
+            - generic [ref=e80]: 外部
+            - generic [ref=e81]: 服务器文件夹
+            - generic [ref=e82]: 离线
+        - generic [ref=e84]:
+          - button [ref=e350]:
+            - img [ref=e86]
+            - text: 新建
+          - button [ref=e351]:
+            - img [ref=e90]
+            - text: 文件夹
+          - button [ref=e352]:
+            - img [ref=e93]
+            - text: Canvas
+          - button [ref=e353]:
+            - img [ref=e99]
+            - text: Base
+        - generic [ref=e105]:
+          - tablist [ref=e106]:
+            - tab [selected] [ref=e107]:
+              - img
+            - tab [ref=e108]:
+              - img
+            - tab [ref=e109]:
+              - img
+            - tab [ref=e110]:
+              - img
+          - button [ref=e112]:
+            - img [ref=e113]
+        - button [ref=e354]:
+          - img [ref=e122]
+          - generic [ref=e125]: 归档
+      - main [ref=e126]:
+        - generic [ref=e127]:
+          - generic [ref=e129]:
+            - generic [ref=e130]:
+              - generic [ref=e131] [cursor=pointer]:
+                - generic [ref=e133]: 主页
+                - button [ref=e134]:
+                  - img [ref=e135]
+              - generic [ref=e194] [cursor=pointer]:
+                - generic [ref=e196]: 任务
+                - button [ref=e197]:
+                  - img [ref=e198]
+            - button [ref=e138]:
+              - img [ref=e139]
+          - generic [ref=e203]:
+            - generic [ref=e204]:
+              - generic [ref=e205]:
+                - heading [level=2] [ref=e355]: 任务
+                - paragraph [ref=e207]: 待处理 1 · 进行中 0 · 阻塞 0 · 审核中 0 · 完成 0
+              - generic [ref=e208]:
+                - generic [ref=e209]: 项目筛选
+                - combobox [ref=e210]:
+                  - generic: 全部项目
+                  - img
+                - textbox [ref=e356]:
+                  - /placeholder: 任务标题
+                - textbox [ref=e357]:
+                  - /placeholder: 完成标准（必填）
+                - combobox [ref=e213]:
+                  - generic: 普通
+                  - img
+                - combobox [ref=e214]:
+                  - generic: 里程碑
+                  - img
+                - combobox [ref=e215]:
+                  - generic: 继承里程碑
+                  - img
+                - textbox [ref=e216]
+                - button [disabled]:
+                  - img
+                  - text: 新建任务
+            - generic [ref=e217]:
+              - tablist [ref=e219]:
+                - tab [selected] [ref=e358]: 看板
+                - tab [ref=e359]: 列表
+                - tab [ref=e360]: 日历
+                - tab [ref=e361]: 里程碑
+              - tabpanel [ref=e362]:
+                - generic [ref=e276]:
+                  - generic [ref=e277]: 里程碑筛选
+                  - combobox [ref=e278]:
+                    - generic: 全部里程碑
+                    - img
+                - generic [ref=e279]:
+                  - generic [ref=e280]:
+                    - generic [ref=e281]:
+                      - heading [level=3] [ref=e363]: 待处理
+                      - generic [ref=e283]: "1"
+                    - button [ref=e364]:
+                      - generic [ref=e286]:
+                        - paragraph [ref=e287]: 测试任务-09验收
+                        - generic [ref=e288]: 普通
+                      - paragraph [ref=e289]: 完成09任务列表详情与状态流转的UI验收
+                      - paragraph [ref=e290]: 无项目
+                      - paragraph [ref=e291]: 无截止日期
+                  - generic [ref=e293]:
+                    - heading [level=3] [ref=e365]: 进行中
+                    - generic [ref=e295]: "0"
+                  - generic [ref=e297]:
+                    - heading [level=3] [ref=e366]: 阻塞
+                    - generic [ref=e299]: "0"
+                  - generic [ref=e301]:
+                    - heading [level=3] [ref=e367]: 审核中
+                    - generic [ref=e303]: "0"
+                  - generic [ref=e305]:
+                    - heading [level=3] [ref=e368]: 完成
+                    - generic [ref=e307]: "0"
+    - button [ref=e369]:
+      - img
+    - region "Notifications alt+T":
+      - list
+  - dialog "测试任务-09验收" [ref=e309]:
+    - generic [ref=e310]:
+      - heading "测试任务-09验收" [level=2] [ref=e312]
+      - generic [ref=e313]:
+        - textbox "标题" [ref=e314]: 测试任务-09验收
+        - textbox "完成标准" [ref=e315]: 完成09任务列表详情与状态流转的UI验收
+        - combobox [active] [ref=e316]:
+          - generic: 进行中
+          - img
+        - combobox [ref=e317]:
+          - generic: 普通
+          - img
+        - combobox [ref=e318]:
+          - img
+        - combobox [ref=e319]:
+          - generic: 无项目
+          - img
+        - textbox [ref=e320]
+        - textbox "阻塞原因（可选）" [ref=e321]
+      - paragraph [ref=e322]: 当前里程碑：未知 · 项目：无项目
+      - generic [ref=e323]:
+        - button "保存" [ref=e324]
+        - button "删除" [ref=e325]:
+          - img
+          - text: 删除
+    - button "Close" [ref=e326]:
+      - img [ref=e327]
+      - generic [ref=e330]: Close
