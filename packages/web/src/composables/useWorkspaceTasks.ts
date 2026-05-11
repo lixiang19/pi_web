@@ -71,21 +71,13 @@ export function useWorkspaceTasks(workspaceDir?: () => string) {
 	return useWorkspaceTasksInner(workspaceDir!);
 }
 
-function sortTasksForList(a: TaskItem, b: TaskItem) {
-	const priorityDiff = priorityWeight[a.priority] - priorityWeight[b.priority];
-	if (priorityDiff !== 0) return priorityDiff;
-	if (a.dueDate && b.dueDate) return a.dueDate - b.dueDate;
-	if (a.dueDate) return -1;
-	if (b.dueDate) return 1;
-	return a.createdAt - b.createdAt;
-}
-
 function useWorkspaceTasksInner(workspaceDir: () => string) {
 	const tasks = ref<TaskItem[]>([]);
 	const milestones = ref<MilestoneItem[]>([]);
 	const isLoading = ref(false);
 	const error = ref("");
 	const showCompleted = ref(false);
+	const projectFilter = ref<string | null | undefined>(undefined);
 
 	const load = async () => {
 		const dir = workspaceDir();
@@ -95,7 +87,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		error.value = "";
 		try {
 			const [tasksRes, milestonesRes] = await Promise.all([
-				getWorkspaceTasks(),
+				getWorkspaceTasks(projectFilter.value),
 				getWorkspaceMilestones(),
 			]);
 			tasks.value = tasksRes.tasks;
@@ -147,7 +139,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		Object.fromEntries(
 			statusOrder.map((status) => [
 				status,
-			tasks.value
+				tasks.value
 					.filter((task) => task.status === status)
 					.sort(
 						(a, b) =>
@@ -187,6 +179,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		acceptanceCriteria: string;
 		dueDate?: number | null;
 		milestoneId?: string | null;
+		projectId?: string | null;
 	}) => {
 		try {
 			const res = await createWorkspaceTask(data);
@@ -205,6 +198,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		goal: string;
 		acceptanceCriteria: string;
 		dueDate?: number | null;
+		projectId?: string | null;
 	}) => {
 		try {
 			const res = await createWorkspaceMilestone(data);
@@ -308,6 +302,11 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		{ immediate: true },
 	);
 
+	watch(
+		projectFilter,
+		() => load(),
+	);
+
 	return {
 		tasks,
 		milestones,
@@ -321,6 +320,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		isLoading,
 		error,
 		showCompleted,
+		projectFilter,
 		load,
 		addTask,
 		addMilestone,
@@ -330,4 +330,13 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		updateMilestone,
 		removeMilestone,
 	};
+}
+
+function sortTasksForList(a: TaskItem, b: TaskItem) {
+	const priorityDiff = priorityWeight[a.priority] - priorityWeight[b.priority];
+	if (priorityDiff !== 0) return priorityDiff;
+	if (a.dueDate && b.dueDate) return a.dueDate - b.dueDate;
+	if (a.dueDate) return -1;
+	if (b.dueDate) return 1;
+	return a.createdAt - b.createdAt;
 }

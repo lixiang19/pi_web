@@ -42,6 +42,7 @@ const mountStore = () => {
 const milestone = {
 	id: "milestone-1",
 	workspacePath: "/workspace",
+	projectId: null,
 	title: "M1",
 	goal: "目标",
 	acceptanceCriteria: "验收",
@@ -67,6 +68,7 @@ describe("useWorkspaceTasks", () => {
 				{
 					id: "task-1",
 					workspacePath: "/workspace",
+					projectId: null,
 					milestoneId: "milestone-1",
 					title: "普通任务",
 					status: "pending",
@@ -92,46 +94,19 @@ describe("useWorkspaceTasks", () => {
 		expect(store.tasksByMilestone.value[0]!.tasks[0]!.title).toBe("普通任务");
 	});
 
-	it("sorts list tasks by priority before due date", async () => {
-		mockGetWorkspaceTasks.mockResolvedValue({
-			tasks: [
-				{
-					id: "task-normal",
-					workspacePath: "/workspace",
-					milestoneId: "milestone-1",
-					title: "普通",
-					status: "pending",
-					priority: "normal",
-					acceptanceCriteria: "完成标准",
-					dueDate: Date.now(),
-					blockedReason: null,
-					processingSessionId: null,
-					sortOrder: 0,
-					createdAt: 1,
-					updatedAt: 1,
-				},
-				{
-					id: "task-urgent",
-					workspacePath: "/workspace",
-					milestoneId: "milestone-1",
-					title: "紧急",
-					status: "pending",
-					priority: "urgent",
-					acceptanceCriteria: "完成标准",
-					dueDate: null,
-					blockedReason: null,
-					processingSessionId: null,
-					sortOrder: 0,
-					createdAt: 2,
-					updatedAt: 2,
-				},
-			],
-		});
+	it("passes projectFilter to getWorkspaceTasks on load", async () => {
+		mockGetWorkspaceTasks.mockResolvedValue({ tasks: [] });
 
 		const store = mountStore();
 
 		await vi.waitFor(() => {
-			expect(store.tasksByMilestone.value[0]!.tasks[0]!.title).toBe("紧急");
+			expect(mockGetWorkspaceTasks).toHaveBeenCalledWith(undefined);
+		});
+
+		store.projectFilter.value = "project-1";
+
+		await vi.waitFor(() => {
+			expect(mockGetWorkspaceTasks).toHaveBeenLastCalledWith("project-1");
 		});
 	});
 });

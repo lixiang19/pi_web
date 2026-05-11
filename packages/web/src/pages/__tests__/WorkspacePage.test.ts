@@ -26,6 +26,9 @@ const {
 	mockAllPaneGroups,
 	mockSessions,
 	mockProjects,
+	mockRefreshSessions,
+	mockRefreshSessionContexts,
+	mockUploadSessionAttachments,
 } = vi.hoisted(() => ({
 	mockCreateFileEntry: vi.fn(),
 	mockCreateBase: vi.fn(),
@@ -64,6 +67,9 @@ const {
 	},
 	mockSessions: { value: [] as Array<{ id: string; title: string; updatedAt?: number; archived?: boolean; projectId?: string; contextId?: string }> },
 	mockProjects: { value: [] as Array<{ id: string; name: string; path: string; isOnline: boolean; archivedAt?: number; source?: string; projectType?: string; isGit?: boolean; deviceName?: string }> },
+	mockRefreshSessions: vi.fn(),
+	mockRefreshSessionContexts: vi.fn(),
+	mockUploadSessionAttachments: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -73,6 +79,7 @@ vi.mock("@/lib/api", () => ({
 	createNote: vi.fn(),
 	getRecentFiles: mockGetRecentFiles,
 	createSession: mockCreateSession,
+	uploadSessionAttachments: mockUploadSessionAttachments,
 }));
 
 vi.mock("@/composables/useFileTreeData", () => ({
@@ -186,6 +193,8 @@ vi.mock("@/composables/usePiChatCore", () => ({
 		models: { value: [{ label: "GPT-4", value: "gpt-4" }] },
 		agents: { value: [] },
 		defaultModel: { value: "gpt-4" },
+		refreshSessions: mockRefreshSessions,
+		refreshSessionContexts: mockRefreshSessionContexts,
 	}),
 }));
 
@@ -404,9 +413,12 @@ describe("WorkspacePage - 首页→会话转换", () => {
 		vi.clearAllMocks();
 		mockGetRecentFiles.mockResolvedValue({ files: [] });
 		lastCreatedChatTab.value = null;
+		mockSessions.value = [];
+		mockProjects.value = [];
+		mockFindTabAcrossPanes.mockReturnValue(null);
 	});
 
-	it("handleHomeSubmit 创建带 initialPrompt 的 chat 标签", async () => {
+	it("handleHomeSubmit 创建带 initialPrompt 和 initialThinkingLevel 的 chat 标签", async () => {
 		mockCreateSession.mockResolvedValue({
 			id: "session-new",
 			title: "帮我写个函数",
@@ -422,6 +434,7 @@ describe("WorkspacePage - 首页→会话转换", () => {
 					model: string;
 					agent: string;
 					thinkingLevel: string;
+					attachments?: File[];
 				},
 			) => Promise<void>;
 		};
@@ -437,6 +450,9 @@ describe("WorkspacePage - 首页→会话转换", () => {
 			expect.objectContaining({
 				cwd: "/ws",
 				title: "帮我写个函数",
+				model: "gpt-4",
+				agent: null,
+				thinkingLevel: "medium",
 			}),
 		);
 
@@ -446,14 +462,99 @@ describe("WorkspacePage - 首页→会话转换", () => {
 				kind: "conversation",
 				sessionId: "session-new",
 				initialPrompt: "帮我写个函数",
+				initialModel: "gpt-4",
+				initialAgent: "__pi-no-agent__",
+				initialThinkingLevel: "medium",
+				initialAttachmentIds: undefined,
 			}),
 		);
 	});
 
-	it("handleHomeSubmit 对 NO_AGENT_VALUE 传 null 给 createSession", async () => {
+	it("handleHomeSubmit 有附件时先上传附件再 replaceTab 并带 initialAttachmentIds", async () => {
 		mockCreateSession.mockResolvedValue({
-			id: "session-no-agent",
-			title: "无 Agent",
+			id: "session-with-attachments",
+			title: "附件测试",
+			status: "idle",
+		});
+		mockUploadSessionAttachments.mockResolvedValue({
+			attachments: [
+				{ id: "att-1", originalName: "note.txt", mimeType: "text/plain", size: 12, sha256: "abc", createdAt: Date.now() },
+			],
+		});
+
+		const wrapper = mountWorkspace();
+		const vm = wrapper.vm as unknown as {
+			handleHomeSubmit: (
+				homeTabId: string,
+				payload: {
+					text: string;
+					model: string;
+					agent: string;
+					thinkingLevel: string;
+					attachments?: File[];
+				},
+			) => Promise<void>;
+		};
+
+		const file = new File(["hello world"], "note.txt", { type: "text/plain" });
+		await vm.handleHomeSubmit("home-1", {
+			text: "附件测试",
+			model: "gpt-4",
+			agent: "__pi-no-agent__",
+			thinkingLevel: "medium",
+			attachments: [file],
+		});
+
+		expect(mockUploadSessionAttachments).toHaveBeenCalledWith("session-with-attachments", [file]);
+		expect(mockReplaceTab).toHaveBeenCalledWith(
+			"home-1",
+			expect.objectContaining({
+				kind: "conversation",
+				sessionId: "session-with-attachments",
+				initialAttachmentIds: ["att-1"],
+			}),
+		);
+	});
+
+	it("handleHomeSubmit 附件上传失败时不 replaceTab 并 toast 报错", async () => {
+		mockCreateSession.mockResolvedValue({
+			id: "session-upload-fail",
+			title: "上传失败",
+			status: "idle",
+		});
+		mockUploadSessionAttachments.mockRejectedValue(new Error("上传超时"));
+
+		const wrapper = mountWorkspace();
+		const vm = wrapper.vm as unknown as {
+			handleHomeSubmit: (
+				homeTabId: string,
+				payload: {
+					text: string;
+					model: string;
+					agent: string;
+					thinkingLevel: string;
+					attachments?: File[];
+				},
+			) => Promise<void>;
+		};
+
+		const file = new File(["x"], "x.txt", { type: "text/plain" });
+		await vm.handleHomeSubmit("home-1", {
+			text: "上传失败",
+			model: "gpt-4",
+			agent: "__pi-no-agent__",
+			thinkingLevel: "medium",
+			attachments: [file],
+		});
+
+		expect(mockUploadSessionAttachments).toHaveBeenCalledWith("session-upload-fail", [file]);
+		expect(mockReplaceTab).not.toHaveBeenCalled();
+	});
+
+	it("handleHomeSubmit 成功后会调用 refreshSessions 和 refreshSessionContexts", async () => {
+		mockCreateSession.mockResolvedValue({
+			id: "session-sync",
+			title: "同步测试",
 			status: "idle",
 		});
 
@@ -471,17 +572,89 @@ describe("WorkspacePage - 首页→会话转换", () => {
 		};
 
 		await vm.handleHomeSubmit("home-1", {
-			text: "直接对话",
+			text: "同步测试",
+			model: "gpt-4",
+			agent: "coding-agent",
+			thinkingLevel: "high",
+		});
+
+		expect(mockRefreshSessions).toHaveBeenCalled();
+		expect(mockRefreshSessionContexts).toHaveBeenCalled();
+	});
+
+	it("handleHomeSubmit 失败时不 replaceTab 且显示错误", async () => {
+		mockCreateSession.mockRejectedValue(new Error("网络错误"));
+
+		const wrapper = mountWorkspace();
+		const vm = wrapper.vm as unknown as {
+			handleHomeSubmit: (
+				homeTabId: string,
+				payload: {
+					text: string;
+					model: string;
+					agent: string;
+					thinkingLevel: string;
+				},
+			) => Promise<void>;
+		};
+
+		await vm.handleHomeSubmit("home-1", {
+			text: "失败测试",
 			model: "gpt-4",
 			agent: "__pi-no-agent__",
 			thinkingLevel: "medium",
 		});
 
-		expect(mockCreateSession).toHaveBeenCalledWith(
+		expect(mockReplaceTab).not.toHaveBeenCalled();
+	});
+
+	it("handleHomeSubmit 失败后仍可再次提交并成功", async () => {
+		mockCreateSession.mockRejectedValueOnce(new Error("网络错误"));
+		mockCreateSession.mockResolvedValueOnce({
+			id: "session-retry",
+			title: "重试成功",
+			status: "idle",
+		});
+
+		const wrapper = mountWorkspace();
+		const vm = wrapper.vm as unknown as {
+			handleHomeSubmit: (
+				homeTabId: string,
+				payload: {
+					text: string;
+					model: string;
+					agent: string;
+					thinkingLevel: string;
+				},
+			) => Promise<void>;
+		};
+
+		await vm.handleHomeSubmit("home-1", {
+			text: "失败测试",
+			model: "gpt-4",
+			agent: "__pi-no-agent__",
+			thinkingLevel: "medium",
+		});
+		expect(mockReplaceTab).not.toHaveBeenCalled();
+
+		await vm.handleHomeSubmit("home-1", {
+			text: "重试成功",
+			model: "gpt-4",
+			agent: "__pi-no-agent__",
+			thinkingLevel: "medium",
+		});
+		expect(mockReplaceTab).toHaveBeenCalledWith(
+			"home-1",
 			expect.objectContaining({
-				agent: null,
+				kind: "conversation",
+				sessionId: "session-retry",
 			}),
 		);
+	});
+
+	it("打开主页时不调用 createSession", () => {
+		mountWorkspace();
+		expect(mockCreateSession).not.toHaveBeenCalled();
 	});
 });
 

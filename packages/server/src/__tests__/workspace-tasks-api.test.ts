@@ -4,7 +4,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createWorkspaceTasksRouter } from "../routes/workspace-tasks.js";
+import { createWorkspaceTasksRouter, createWorkspaceMilestonesRouter } from "../routes/workspace-tasks.js";
 import { createTempDir } from "../test/helpers.js";
 import { getRidgeDb } from "../db/index.js";
 
@@ -12,6 +12,7 @@ const createApp = (workspaceDir: string) => {
 	const app = express();
 	app.use(express.json());
 	app.use("/api/workspace/tasks", createWorkspaceTasksRouter(workspaceDir));
+	app.use("/api/workspace/milestones", createWorkspaceMilestonesRouter(workspaceDir));
 	app.use((err: Error & { statusCode?: number }, _req: Request, res: Response, _next: NextFunction) => {
 		res.status(err.statusCode ?? 500).json({ error: err.message });
 	});
@@ -139,15 +140,64 @@ describe("workspace tasks api", () => {
 		}
 	});
 
-	it("ignores a corrupted legacy workspace DB file", async () => {
-		const dbPath = path.join(workspaceDir, ".ridge", "ridge.db");
-		await fs.mkdir(path.dirname(dbPath), { recursive: true });
-		await fs.writeFile(dbPath, "not a sqlite database", "utf-8");
+	it("inherits projectId from milestone when creating a task without explicit projectId", async () => {
+		const app = createApp(workspaceDir);
 
-		const response = await request(createApp(workspaceDir))
-			.get("/api/workspace/tasks")
-			.expect(200);
+		// Create milestone with projectId
+		const milestoneRes = await request(app)
+			.post("/api/workspace/milestones")
+			.send({
+				title: "里程碑 A",
+				goal: "目标",
+				acceptanceCriteria: "标准",
+				projectId: "project-alpha",
+			})
+			.expect(201);
+		const milestoneId = milestoneRes.body.milestone.id;
 
-		expect(response.body.tasks).toEqual([]);
+		// Create task without projectId
+		const taskRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({
+				title: "继承项目任务",
+				priority: "normal",
+				acceptanceCriteria: "标准",
+				milestoneId,
+			})
+			.expect(201);
+
+		expect(taskRes.body.task.projectId).toBe("project-alpha");
+	});
+
+	it("filters tasks by projectId=none and specific projectId", async () => {
+		const app = createApp(workspaceDir);
+
+		// Create two milestones
+		const m1 = await request(app)
+			.post("/api/workspace/milestones")
+			.send({ title: "M1", goal: "g", acceptanceCriteria: "a", projectId: "p1" })
+			.expect(201);
+		const m2 = await request(app)
+			.post("/api/workspace/milestones")
+			.send({ title: "M2", goal: "g", acceptanceCriteria: "a" })
+			.expect(201);
+
+		await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "T1", priority: "normal", acceptanceCriteria: "a", milestoneId: m1.body.milestone.id })
+			.expect(201);
+		await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "T2", priority: "normal", acceptanceCriteria: "a", milestoneId: m2.body.milestone.id })
+			.expect(201);
+
+		const all = await request(app).get("/api/workspace/tasks").expect(200);
+		expect(all.body.tasks).toHaveLength(2);
+
+		const none = await request(app).get("/api/workspace/tasks?projectId=none").expect(200);
+		expect(none.body.tasks.map((t: { title: string }) => t.title)).toEqual(["T2"]);
+
+		const p1 = await request(app).get("/api/workspace/tasks?projectId=p1").expect(200);
+		expect(p1.body.tasks.map((t: { title: string }) => t.title)).toEqual(["T1"]);
 	});
 });

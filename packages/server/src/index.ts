@@ -36,6 +36,8 @@ import {
 	initializeRidgeDb,
 } from "./db/index.js";
 import {
+	assertNotRidgeSystemPath,
+	ensureResolvedPathWithinRoot,
 	ensureWithinRoot,
 	normalizeFsPath,
 	normalizeOptionalFsPath,
@@ -53,6 +55,8 @@ import {
 	createWorkspaceTasksRouter,
 } from "./routes/workspace-tasks.js";
 import { createWorktreeRouter } from "./routes/worktrees.js";
+import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
+import { createFleetingRouter } from "./routes/fleeting.js";
 import {
 	getIndexedSessionTree,
 	invalidateManagedProjectScopes,
@@ -99,7 +103,20 @@ const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
 await ensureStoredWorkspaceDir(defaultWorkspaceDir);
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 const workspaceChatConfig = getWorkspaceChatConfig(defaultWorkspaceDir);
-export const authRuntime = createAuthRuntime({ adminPassword: "ridge-admin" });
+
+function resolveAdminPassword(): string {
+	const envPassword = process.env.RIDGE_ADMIN_PASSWORD;
+	if (envPassword) {
+		return envPassword;
+	}
+	if (process.env.NODE_ENV === "production") {
+		console.error("RIDGE_ADMIN_PASSWORD environment variable is required in production");
+		process.exit(1);
+	}
+	return "ridge-admin";
+}
+
+export const authRuntime = createAuthRuntime({ adminPassword: resolveAdminPassword() });
 
 export const app = express();
 app.use(cors());
@@ -122,9 +139,22 @@ const sessionMetadataStore = createSessionMetadataStore();
 const gitService = createGitService();
 const isoGitService = createIsoGitService();
 const worktreeService = createWorktreeService(gitService);
-let automationStore: AutomationStore | null = null;
-let automationScheduler: ReturnType<typeof createAutomationScheduler> | null =
-	null;
+
+let automationStore: AutomationStore | undefined;
+let automationScheduler: ReturnType<typeof createAutomationScheduler> | undefined;
+
+export const getAutomationStore = (): AutomationStore => {
+	if (!automationStore) {
+		const error = new Error("自动化服务尚未初始化") as HttpError;
+		error.statusCode = 503;
+		throw error;
+	}
+	return automationStore;
+};
+
+export const getAutomationScheduler = (): ReturnType<typeof createAutomationScheduler> | null => {
+	return automationScheduler ?? null;
+};
 const refreshSessionCatalogIndex = async () =>
 	refreshSessionCatalog({
 		projectContextResolver,
@@ -147,6 +177,7 @@ const messageSchema = z.object({
 	model: z.string().optional(),
 	thinkingLevel: z.enum(THINKING_LEVELS).optional(),
 	agent: z.string().nullable().optional(),
+	attachmentIds: z.array(z.string().min(1)).optional(),
 });
 
 const automationScheduleSchema = z.discriminatedUnion("type", [
@@ -376,7 +407,6 @@ import {
 	createTransientCatalogSession,
 	dispatchAutomationRule,
 	ensureSessionRecord,
-	getAutomationStore,
 	getFileManager,
 	getIndexedSessionLookupOrThrow,
 	getStoredSessionMessagesPayload,
@@ -409,13 +439,18 @@ initSessionPayload({
 	openingSessionRecords,
 	projectContextResolver,
 	DEFAULT_SESSION_ROUND_WINDOW,
-	automationStore,
+	getAutomationStore,
 });
 // ===== Routes =====
 app.get("/api/auth/session", authRuntime.session);
 app.post("/api/auth/login", authRuntime.login);
 app.post("/api/auth/logout", authRuntime.logout);
 app.use(authRuntime.requireApiAuth);
+
+app.use("/api/fleeting", createFleetingRouter({
+	db: await initializeRidgeDb(defaultWorkspaceDir),
+	workspaceDir: defaultWorkspaceDir,
+}));
 
 // ===== Notes API =====
 const notesRouter = createNotesRouter(workspaceChatConfig);
@@ -440,21 +475,28 @@ app.post(
 				throw error;
 			}
 			const trimmed = relPath.trim();
-			const targetPath = path.resolve(defaultWorkspaceDir, trimmed);
-			const rootReal = await fs.realpath(
-				await fs.access(defaultWorkspaceDir).then(
-					() => defaultWorkspaceDir,
-					() => defaultWorkspaceDir,
-				),
-			);
-			const parentDir = path.dirname(targetPath);
-			await fs.mkdir(parentDir, { recursive: true });
-			const parentReal = await fs.realpath(parentDir);
-			if (!parentReal.startsWith(rootReal)) {
-				const error = new Error("Path escapes workspace") as HttpError;
-				error.statusCode = 403;
+			if (path.isAbsolute(trimmed)) {
+				const error = new Error("Absolute paths are not allowed") as HttpError;
+				error.statusCode = 400;
 				throw error;
 			}
+			// Reject explicit parent directory references
+			if (trimmed.split(/[\\/]/).some((segment) => segment === "..")) {
+				const error = new Error("Path traversal is not allowed") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			const targetPath = path.resolve(defaultWorkspaceDir, trimmed);
+			// Lexical boundary check
+			ensureWithinRoot(targetPath, defaultWorkspaceDir);
+			assertNotRidgeSystemPath(targetPath, defaultWorkspaceDir);
+			const parentDir = path.dirname(targetPath);
+			ensureWithinRoot(parentDir, defaultWorkspaceDir);
+			assertNotRidgeSystemPath(parentDir, defaultWorkspaceDir);
+			// Realpath boundary check before any IO
+			await ensureResolvedPathWithinRoot(targetPath, defaultWorkspaceDir);
+			await ensureResolvedPathWithinRoot(parentDir, defaultWorkspaceDir);
+			await fs.mkdir(parentDir, { recursive: true });
 			await fs.writeFile(targetPath, content ?? "", "utf-8");
 			const stats = await fs.stat(targetPath);
 			res.status(201).json({
@@ -495,7 +537,7 @@ const coreRouter = createCoreRouter({
 	saveAgent,
 	deleteAgent,
 	getAutomationStore,
-	automationScheduler,
+	getAutomationScheduler,
 	dispatchAutomationRule,
 	ensureManagedProjectScope,
 	ensureSessionRecord,
@@ -531,6 +573,7 @@ const workspaceDataRouter = createWorkspaceDataRouter({
 	fileOpenSchema,
 });
 app.use(workspaceDataRouter);
+app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(ensureSessionRecord));
 app.get(
 	"/api/files/content",
 	async (req: Request, res: Response, next: NextFunction) => {
@@ -1003,7 +1046,14 @@ app.post(
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const payload = messageSchema.parse(req.body ?? {});
-			const record = await ensureSessionRecord(String(req.params.sessionId));
+			const sessionId = String(req.params.sessionId);
+			const metadata = await sessionMetadataStore.getSessionMetadata(sessionId);
+			if (metadata.archived) {
+				const error = new Error("归档会话不可发送消息") as HttpError;
+				error.statusCode = 403;
+				throw error;
+			}
+			const record = await ensureSessionRecord(sessionId);
 
 			if (record.turnBudget.exhausted) {
 				const error = new Error(
@@ -1024,8 +1074,20 @@ app.post(
 
 			updateStatus(record, "streaming");
 
+			let finalPrompt = payload.prompt;
+			if (payload.attachmentIds && payload.attachmentIds.length > 0) {
+				const valid = await validateAttachmentIds(record.id, payload.attachmentIds);
+				if (!valid) {
+					const error = new Error("附件 ID 中存在不属于当前会话的附件") as HttpError;
+					error.statusCode = 400;
+					throw error;
+				}
+				const attachmentContext = await buildAttachmentContext(payload.attachmentIds);
+				finalPrompt = finalPrompt + attachmentContext;
+			}
+
 			void record.session
-				.prompt(payload.prompt, { source: "interactive" })
+				.prompt(finalPrompt, { source: "interactive" })
 				.catch((error: unknown) => {
 					record.status = "error";
 					emit(record, {

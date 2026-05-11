@@ -13,6 +13,10 @@ const props = defineProps<{
 	initialModel?: string;
 	/** 首页→会话转换时传入的 Agent 选择 */
 	initialAgent?: string;
+	/** 首页→会话转换时传入的思考强度选择 */
+	initialThinkingLevel?: string;
+	/** 首页→会话转换时传入的附件 ID 列表 */
+	initialAttachmentIds?: string[];
 }>();
 
 const sessionIdRef = toRef(props, "sessionId");
@@ -36,12 +40,16 @@ onMounted(async () => {
 		if (props.initialModel) {
 			chat.composer.selectedModel = props.initialModel;
 		}
-		if (props.initialAgent) {
+		if (props.initialThinkingLevel) {
+			chat.composer.selectedThinkingLevel = props.initialThinkingLevel as import("@/lib/types").ThinkingLevel;
+		}
+		// NO_AGENT_VALUE 不应作为真实 agent 写入 composer；空字符串即无 agent
+		if (props.initialAgent && props.initialAgent !== NO_AGENT_VALUE) {
 			chat.composer.selectedAgent = props.initialAgent;
 		}
 
-		// 等 nextTick 让 composer 状态生效后再提交
-		await chat.submit();
+		// 等 nextTick 让 composer 状态生效后再提交，带附件
+		await chat.submit(props.initialAttachmentIds);
 	}
 });
 </script>

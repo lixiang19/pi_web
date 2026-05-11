@@ -88,7 +88,15 @@
 - [索引字段最小化] 会话目录索引只保留有明确消费方的字段；没有 UI 或接口消费的 `last_message_preview`、`message_count` 这类字段应直接删除，不能先入库再等以后再说
 - [SSE 零写库] 发送消息前和 `turn_end` 都不能顺手写 SQLite；SSE 链路只负责内存态和 session 文件，目录索引由启动重建和显式用户动作维护
 - [运行时态不入目录索引] 列表 `status` 这类运行时字段只允许由内存 active session 覆盖，不应作为数据库持久化列存在
-- [SQLite 字面量] 写 SQLite 语句时，字符串字面量必须用单引号；`""` 在 SQLite 中会按标识符解析，像 `context_id != ""` 这种写法会在启动建索引时直接触发 `no such column: ""`
+- [闪念路由边界] 闪念路由必须在主 app 中以真实 DB 和 workspaceDir 挂载；隐式建表必须收敛到版本化迁移，避免测试通过但生产 404。
+- [自动化初始化] `automationStore` 不能先捕获 null 再注入；用 lazy getter（`getAutomationStore()`）保证首次调用时已初始化，避免 503。
+- [文件创建安全] `/api/files/create` 必须先做 lexical + realpath + `.ridge` 边界校验再 `mkdir`；复用 `file-manager.ts` 的 `ensureWithinRoot` / `assertNotRidgeSystemPath`，禁止路由层自行 `path.resolve` + `fs.mkdir`。
+- [归档只读真源] 归档后发送消息必须在 `POST /api/sessions/:id/messages` 层拦截（403），不能只隐藏列表；`session_index.readonly` 若未业务消费应在文档中明确标注未落地。
+- [附件失败回滚] 首页附件上传失败时，必须调用 `deleteSession` 清理刚创建的会话，避免无首条消息的孤儿会话。
+- [密码配置化] 生产环境必须读取 `RIDGE_ADMIN_PASSWORD`；非 production/test 允许默认 `ridge-admin`；缺少密码时应明确拒绝启动。
+- [DB migration 原子性] 新列不能同时在 migration SQL 和 repair columns 中 `ALTER TABLE ADD`，否则旧库会 duplicate column；应只在 bootstrap/migration 建表时带全列，repair columns 负责补缺失列，顺序是：bookkeeping → repair → apply migrations → repair again → version write。
+- [项目绑定] 任务/里程碑的 `project_id` 通过 migration 版本 7 引入；repair columns 自动补旧表列；创建任务时未传 projectId 应继承里程碑 projectId。
+- [前端类型同步] 新增 DB 列后，前端 `WorkspaceTask` / `WorkspaceMilestone` 接口必须同步更新，否则 `vue-tsc` 会在测试和组件中报 missing property。
 - [原生依赖安装契约] 仓库使用 `pnpm 10` 时，`better-sqlite3`、`node-pty` 这类原生包不能只写进 dependencies；必须在根 `package.json` 的 `pnpm.onlyBuiltDependencies` 中显式放行，否则 install 后会出现“包存在但 `.node` 绑定缺失”，server 在运行原生模块时直接失败
 - [包管理器一致性] 既然仓库已经锁定 `pnpm` 并依赖 `pnpm.onlyBuiltDependencies` 管原生包，README/开发文档里的安装命令也必须统一写成 `pnpm install`；继续写 `npm install` 会把“依赖声明正确但本地缺包/缺绑定”的问题伪装成代码故障。
 - [终端重启竞态] PTY restart 不能让旧进程的 `onData/onExit` 继续写回共享 record；事件处理必须校验“当前活跃 PTY 实例”，否则旧进程退出会把新终端覆盖成 exited
@@ -139,6 +147,45 @@
 
 - core.ts 使用 fs.stat/path.resolve 但未 import（与 session-context 同源问题：从 index.ts 拆出时未携带 import）
 - index.ts 大量预存未使用 import，eslint 报错但属于历史代码
+
+## 2026-05-11 任务 05 工作空间主页与会话创建
+
+### 实现要点
+
+- 主页初始不绑定 Pi 会话；提交后才调用 `createSessionApi`。
+- 提交非空文本才创建会话，payload 包含 cwd、首句标题、model、agent(null when NO_AGENT_VALUE)、thinkingLevel。
+- 创建成功后原地 replaceTab(home → chat)，并携带 initialPrompt / initialModel / initialAgent / initialThinkingLevel。
+- 成功后立即 `core.refreshSessions()` + `core.refreshSessionContexts()`，使左侧工作空间会话列表出现新会话并保持当前 tab 选中。
+- 失败时不 replaceTab，主页输入保留，发送按钮恢复可用，toast.error 显示错误。
+- 临时模型/思考强度/Agent 只更新当前 composer 和会话元数据，不写回 `useSettingsStore` 全局默认；`usePerSessionChat` 的 setter 已删除 `settingsStore.setDefaultModel/Agent/ThinkingLevel` 调用。
+- 快捷动作（处理闪念、规划任务、总结最近文件）点击只填入输入框，不直接发送。
+- 附件入口第一版提供真实文件选择，显示“待随首条消息附加”的 UI 状态；暂不调用上传 API（后端消息协议待支持）。
+- `HomePage` 内部提交后不再立即清空 `draftText`，失败保留输入；发送中通过 `isSending` 禁用按钮。
+
+### 阻塞修复：失败时发送按钮恢复可用
+
+- 原实现 `HomePage.vue` 使用内部 `isSending` ref，在 `handleSubmit()` 后置 true，但父级 `WorkspacePage.handleHomeSubmit()` 失败时没有任何机制把 `isSending` 重置。
+- 修复方案：
+  - `HomePage` 改为接收 prop `isSending?: boolean`，内部不再维护不可恢复的 ref；按钮禁用和提交拦截全部基于 prop。
+  - `WorkspacePage` 维护 `homeSubmittingTabIds: Set<string>` ref，传给对应 HomePage `isSending` prop。
+  - `handleHomeSubmit` 在 finally 块中从 Set 移除 tabId；失败时 HomePage 自动恢复可发送。
+- 测试覆盖：
+  - HomePage：`isSending=true` 禁用按钮，`isSending=false` 恢复可用，submit 不立即清空 draft。
+  - WorkspacePage：失败后 `mockReplaceTab` 未被调用，再次提交可成功创建会话。
+
+### 测试覆盖
+
+- HomePage：快捷动作只填入不提交；附件入口选择文件后显示待附加文件；提交 payload 完整；发送中时禁用；不因 submit 立即清空 draft。
+- WorkspacePage：打开主页不 createSession；submit 成功 payload 正确、refreshSessions/Contexts 被调用、replaceTab 参数含 initialThinkingLevel；失败不 replaceTab 且 HomePage 保留输入/错误提示；NO_AGENT_VALUE 转 null。
+- usePerSessionChat：临时 setter 不调用 settingsStore 全局默认。
+
+### 教训
+
+- 先写测试确认失败再实现代码，能在需求边界处提前发现遗漏（如 `initialThinkingLevel` 未透传、NO_AGENT_VALUE 被当成真实 agent 导致 send 失败）。
+- `usePerSessionChat` 的 setter 写回全局默认是之前遗留的副作用；本任务范围内明确删除，避免“临时选择污染全局设置”。
+- HomePage 的 `draftText` 在 submit 后不能立即清空，因为 handleHomeSubmit 是 async，失败时用户需要看到原文。
+- **父组件异步操作失败时必须提供可靠的状态复位机制**：HomePage 内部 `isSending` ref 在失败场景下会变成死锁（永远 true），导致按钮永久禁用。推荐把发送中状态提升为父组件维护的 `tabId → boolean` 映射，并通过 props 下发；父组件在 finally 中清除，保证无论成功/失败都能复位。
+- 文件附件在测试里要用 `Object.defineProperty(inputEl, "files", { value: [file] })` 才能让 change 事件拿到 files，直接 trigger 传参会被忽略。
 
 ## 2026-05-01 task #13 任务 SQLite 真源最小实现
 

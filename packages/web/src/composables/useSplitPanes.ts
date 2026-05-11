@@ -38,11 +38,13 @@ export interface SplitTabItem {
 	filePath?: string;
 	sessionId?: string;
 	terminalId?: string;
-	initialPrompt?: string;
-	initialModel?: string;
-	initialAgent?: string;
-	// 项目草稿标签使用项目路径作为 cwd
-	cwd?: string;
+  initialPrompt?: string;
+  initialModel?: string;
+  initialAgent?: string;
+  initialThinkingLevel?: string;
+  initialAttachmentIds?: string[];
+  // 项目草稿标签使用项目路径作为 cwd
+  cwd?: string;
 	contextLabel?: string;
 	status?: "idle" | "saving" | "unsaved" | "error" | "loading";
 	onClose?: (tab: SplitTabItem) => void;
@@ -64,6 +66,8 @@ export type SerializableGridNode =
 				initialPrompt?: string;
 				initialModel?: string;
 				initialAgent?: string;
+				initialThinkingLevel?: string;
+				initialAttachmentIds?: string[];
 				title: string;
 			}[];
 			activeTabId: string;
@@ -99,22 +103,26 @@ export const createHomeTab = (options?: {
 });
 
 export const createChatTab = (
-	sessionId: string,
-	title?: string,
-	options?: {
-		initialPrompt?: string;
-		initialModel?: string;
-		initialAgent?: string;
-	},
+  sessionId: string,
+  title?: string,
+  options?: {
+    initialPrompt?: string;
+    initialModel?: string;
+    initialAgent?: string;
+    initialThinkingLevel?: string;
+    initialAttachmentIds?: string[];
+  },
 ): SplitTabItem => ({
-	id: generateChatId(),
-	title: title ?? "新会话",
-	kind: "conversation",
-	sessionId,
-	initialPrompt: options?.initialPrompt,
-	initialModel: options?.initialModel,
-	initialAgent: options?.initialAgent,
-	status: "idle",
+  id: generateChatId(),
+  title: title ?? "新会话",
+  kind: "conversation",
+  sessionId,
+  initialPrompt: options?.initialPrompt,
+  initialModel: options?.initialModel,
+  initialAgent: options?.initialAgent,
+  initialThinkingLevel: options?.initialThinkingLevel,
+  initialAttachmentIds: options?.initialAttachmentIds,
+  status: "idle",
 });
 
 export const createSingletonFeatureTab = (
@@ -594,6 +602,8 @@ function serializeNode(node: GridNode): SerializableGridNode {
 				initialPrompt: t.initialPrompt,
 				initialModel: t.initialModel,
 				initialAgent: t.initialAgent,
+				initialThinkingLevel: t.initialThinkingLevel,
+				initialAttachmentIds: t.initialAttachmentIds,
 				title: t.title,
 			})),
 			activeTabId: node.activeTabId,
@@ -627,6 +637,8 @@ function deserializeNode(node: SerializableGridNode): GridNode {
 				initialPrompt: t.initialPrompt,
 				initialModel: t.initialModel,
 				initialAgent: t.initialAgent,
+				initialThinkingLevel: t.initialThinkingLevel,
+				initialAttachmentIds: t.initialAttachmentIds,
 				status: "idle" as const,
 			})),
 			activeTabId: node.activeTabId,

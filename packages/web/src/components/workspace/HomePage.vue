@@ -8,6 +8,11 @@ import {
 	SendHorizontal,
 	Sparkles,
 	Calendar,
+	Zap,
+	ListChecks,
+	FolderOpen,
+	Paperclip,
+	X,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -32,6 +37,7 @@ export type HomeSubmitPayload = {
 	model: string;
 	agent: string;
 	thinkingLevel: ThinkingLevel;
+	attachments?: File[];
 };
 
 const props = defineProps<{
@@ -44,6 +50,7 @@ const props = defineProps<{
 	defaultModel: string;
 	defaultAgent: string;
 	defaultThinkingLevel: ThinkingLevel;
+	isSending?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -56,6 +63,7 @@ const emit = defineEmits<{
 // ===== AI 输入框状态 =====
 const draftText = ref("");
 const isFocused = ref(false);
+const isSending = computed(() => props.isSending ?? false);
 
 // ===== 选择器状态 =====
 const selectedModel = ref(props.defaultModel);
@@ -77,14 +85,15 @@ const isExpanded = computed(() => isFocused.value || draftText.value.length > 0)
 
 function handleSubmit() {
 	const text = draftText.value.trim();
-	if (!text) return;
+	if (!text || isSending.value) return;
 	emit("submit", {
 		text,
 		model: selectedModel.value,
 		agent: selectedAgent.value,
 		thinkingLevel: selectedThinkingLevel.value,
+		attachments: pendingAttachments.value.length > 0 ? [...pendingAttachments.value] : undefined,
 	});
-	draftText.value = "";
+	// 不在 submit 时清空 draft：成功时标签会被替换，失败时保留输入
 }
 
 function handleFocus() {
@@ -95,6 +104,40 @@ function handleBlur() {
 	if (!draftText.value.trim()) {
 		isFocused.value = false;
 	}
+}
+
+// ===== 快捷动作 =====
+const quickActions = [
+	{ label: "处理闪念", icon: Zap, draft: "帮我处理最新的闪念" },
+	{ label: "规划任务", icon: ListChecks, draft: "帮我规划今天的任务" },
+	{ label: "总结最近文件", icon: FolderOpen, draft: "总结我最近的工作文件" },
+];
+
+function handleQuickAction(draft: string) {
+	draftText.value = draft;
+	isFocused.value = true;
+}
+
+// ===== 附件上传 =====
+const pendingAttachments = ref<File[]>([]);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+function handleAttachmentClick() {
+	fileInputRef.value?.click();
+}
+
+function handleFileChange(event: Event) {
+	const target = event.target as HTMLInputElement;
+	const files = target.files;
+	if (!files) return;
+	for (const file of files) {
+		pendingAttachments.value.push(file);
+	}
+	target.value = "";
+}
+
+function removeAttachment(index: number) {
+	pendingAttachments.value.splice(index, 1);
 }
 
 // ===== 最近事情图标映射 =====
@@ -159,6 +202,21 @@ const agentOptions = computed(() => {
             <div
               class="rounded-2xl border border-border/50 bg-card p-2.5 shadow-sm ring-1 ring-border/20 transition-all duration-200 focus-within:border-primary/30 focus-within:ring-primary/20"
             >
+              <!-- 快捷动作 -->
+              <div class="mb-2 flex flex-wrap gap-2 px-2 pt-1">
+                <button
+                  v-for="action in quickActions"
+                  :key="action.label"
+                  type="button"
+                  data-testid="home-quick-action"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                  @click="handleQuickAction(action.draft)"
+                >
+                  <component :is="action.icon" class="size-3.5" />
+                  {{ action.label }}
+                </button>
+              </div>
+
               <!-- 输入区 -->
               <div class="flex items-end gap-3 px-2 pt-2">
                 <Textarea
@@ -173,14 +231,52 @@ const agentOptions = computed(() => {
                   type="submit"
                   size="icon"
                   class="size-8 shrink-0 rounded-full"
-                  :disabled="!draftText.trim()"
+                  :disabled="!draftText.trim() || isSending"
+                  data-testid="home-send-btn"
                 >
                   <SendHorizontal class="size-4" />
                 </Button>
               </div>
 
-              <!-- 默认展示真实控件，保持首页输入框像完整 AI 对话 composer。 -->
+              <!-- 待附加文件列表 -->
+              <div v-if="pendingAttachments.length > 0" class="mt-2 space-y-1 px-2">
+                <div
+                  v-for="(file, index) in pendingAttachments"
+                  :key="`${file.name}-${index}`"
+                  class="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-[12px] text-muted-foreground"
+                  data-testid="home-pending-attachment"
+                >
+                  <Paperclip class="size-3" />
+                  <span class="min-w-0 flex-1 truncate">{{ file.name }}</span>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded p-0.5 hover:bg-accent/60"
+                    @click="removeAttachment(index)"
+                  >
+                    <X class="size-3" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- 底栏控件：附件 + 选择器 -->
               <div class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/20 px-1 pt-2">
+                <button
+                  type="button"
+                  data-testid="home-attachment-btn"
+                  class="inline-flex h-7 items-center gap-1 rounded-md border border-border/40 bg-muted/35 px-2 text-[12px] text-muted-foreground shadow-none hover:bg-muted/60"
+                  @click="handleAttachmentClick"
+                >
+                  <Paperclip class="size-3.5" />
+                  附件
+                </button>
+                <input
+                  ref="fileInputRef"
+                  type="file"
+                  multiple
+                  class="hidden"
+                  @change="handleFileChange"
+                />
+
                 <Select v-model="selectedModel">
                   <SelectTrigger class="h-7 w-auto min-w-[180px] max-w-[260px] gap-1.5 rounded-md border-border/40 bg-muted/35 px-2.5 text-[13px] shadow-none ring-0 hover:bg-muted/60 focus:ring-0">
                     <Sparkles class="size-3.5 text-primary/70" />

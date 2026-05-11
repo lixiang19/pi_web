@@ -51,6 +51,8 @@ export type {
 	ResourceCatalogResponse,
 	ResourceSourceInfo,
 	SendMessagePayload,
+	SessionAttachment,
+	SessionAttachmentsResponse,
 	SessionContextSummary,
 	SessionHistoryMeta,
 	SessionHydratePayload,

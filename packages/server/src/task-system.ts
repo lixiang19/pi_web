@@ -22,6 +22,7 @@ export type TaskActor = "user" | "agent";
 export interface WorkspaceMilestone {
 	id: string;
 	workspacePath: string;
+	projectId: string | null;
 	title: string;
 	goal: string;
 	acceptanceCriteria: string;
@@ -38,6 +39,7 @@ export interface WorkspaceMilestone {
 export interface WorkspaceTask {
 	id: string;
 	workspacePath: string;
+	projectId: string | null;
 	milestoneId: string;
 	title: string;
 	status: TaskStatus;
@@ -54,6 +56,7 @@ export interface WorkspaceTask {
 type MilestoneRow = {
 	milestone_id: string;
 	workspace_path: string;
+	project_id: string | null;
 	title: string;
 	goal: string;
 	acceptance_criteria: string;
@@ -70,6 +73,7 @@ type MilestoneRow = {
 type TaskRow = {
 	task_id: string;
 	workspace_path: string;
+	project_id: string | null;
 	milestone_id: string;
 	title: string;
 	status: TaskStatus;
@@ -139,6 +143,7 @@ const assertStatusAllowed = ({
 const mapMilestone = (row: MilestoneRow): WorkspaceMilestone => ({
 	id: row.milestone_id,
 	workspacePath: row.workspace_path,
+	projectId: row.project_id || null,
 	title: row.title,
 	goal: row.goal,
 	acceptanceCriteria: row.acceptance_criteria,
@@ -155,6 +160,7 @@ const mapMilestone = (row: MilestoneRow): WorkspaceMilestone => ({
 const mapTask = (row: TaskRow): WorkspaceTask => ({
 	id: row.task_id,
 	workspacePath: row.workspace_path,
+	projectId: row.project_id || null,
 	milestoneId: row.milestone_id,
 	title: row.title,
 	status: row.status,
@@ -256,6 +262,7 @@ export const createMilestone = async (
 		acceptanceCriteria: string;
 		dueDate?: number | null;
 		color?: string;
+		projectId?: string | null;
 	},
 ): Promise<WorkspaceMilestone> => {
 	const db = await getRidgeDb();
@@ -264,12 +271,13 @@ export const createMilestone = async (
 	const id = createId("milestone");
 	db.prepare(
 		`INSERT INTO workspace_milestones(
-      milestone_id, workspace_path, title, goal, acceptance_criteria, status,
+      milestone_id, workspace_path, project_id, title, goal, acceptance_criteria, status,
       due_date, is_system, color, sort_order, created_at, updated_at
-    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	).run(
 		id,
 		workspacePath,
+		input.projectId ?? null,
 		input.title,
 		input.goal,
 		input.acceptanceCriteria,
@@ -310,6 +318,7 @@ export const updateMilestone = async (
 		status: TaskStatus;
 		dueDate: number | null;
 		color: string;
+		projectId: string | null;
 		actor: TaskActor;
 	}>,
 ): Promise<WorkspaceMilestone> => {
@@ -331,7 +340,7 @@ export const updateMilestone = async (
 	db.prepare(
 		`UPDATE workspace_milestones SET
        title = ?, goal = ?, acceptance_criteria = ?, status = ?, due_date = ?,
-       color = ?, updated_at = ?
+       color = ?, project_id = ?, updated_at = ?
      WHERE workspace_path = ? AND milestone_id = ?`,
 	).run(
 		input.title ?? current.title,
@@ -340,6 +349,7 @@ export const updateMilestone = async (
 		input.status ?? current.status,
 		input.dueDate !== undefined ? input.dueDate : current.dueDate,
 		input.color ?? current.color,
+		input.projectId !== undefined ? input.projectId : current.projectId,
 		Date.now(),
 		workspacePath,
 		milestoneId,
@@ -373,17 +383,28 @@ export const deleteMilestone = async (
 	).run(workspacePath, milestoneId);
 };
 
-export const listTasks = async (workspaceDir: string): Promise<WorkspaceTask[]> => {
+export const listTasks = async (
+	workspaceDir: string,
+	options?: { projectId?: string | null },
+): Promise<WorkspaceTask[]> => {
 	await ensureDefaultMilestone(workspaceDir);
 	const db = await getRidgeDb();
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
-	const rows = db
-		.prepare(
-			`SELECT * FROM workspace_tasks
-       WHERE workspace_path = ?
-       ORDER BY created_at DESC`,
-		)
-		.all(workspacePath) as TaskRow[];
+	const { projectId } = options ?? {};
+
+	let sql = `SELECT * FROM workspace_tasks WHERE workspace_path = ?`;
+	const params: (string | null)[] = [workspacePath];
+	if (projectId !== undefined) {
+		if (projectId === null) {
+			sql += ` AND project_id IS NULL`;
+		} else {
+			sql += ` AND project_id = ?`;
+			params.push(projectId);
+		}
+	}
+	sql += ` ORDER BY created_at DESC`;
+
+	const rows = db.prepare(sql).all(...params) as TaskRow[];
 	return rows.map(mapTask);
 };
 
@@ -410,6 +431,7 @@ export const createTask = async (
 		acceptanceCriteria: string;
 		dueDate?: number | null;
 		milestoneId?: string | null;
+		projectId?: string | null;
 	},
 ): Promise<WorkspaceTask> => {
 	const defaultMilestone = await ensureDefaultMilestone(workspaceDir);
@@ -420,17 +442,19 @@ export const createTask = async (
 	if (!milestone) {
 		throw createHttpError(`Milestone not found: ${milestoneId}`, 404);
 	}
+	const projectId = input.projectId !== undefined ? input.projectId : milestone.projectId;
 	const now = Date.now();
 	const id = createId("task");
 	db.prepare(
 		`INSERT INTO workspace_tasks(
-      task_id, workspace_path, milestone_id, title, status, priority,
+      task_id, workspace_path, project_id, milestone_id, title, status, priority,
       acceptance_criteria, due_date, blocked_reason, processing_session_id,
       sort_order, created_at, updated_at
-    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	).run(
 		id,
 		workspacePath,
+		projectId,
 		milestoneId,
 		input.title,
 		"pending",
@@ -456,6 +480,7 @@ export const updateTask = async (
 		acceptanceCriteria: string;
 		dueDate: number | null;
 		milestoneId: string;
+		projectId: string | null;
 		blockedReason: string | null;
 		processingSessionId: string | null;
 		sortOrder: number;
@@ -480,11 +505,12 @@ export const updateTask = async (
 	}
 	db.prepare(
 		`UPDATE workspace_tasks SET
-       milestone_id = ?, title = ?, status = ?, priority = ?, acceptance_criteria = ?,
+       milestone_id = ?, project_id = ?, title = ?, status = ?, priority = ?, acceptance_criteria = ?,
        due_date = ?, blocked_reason = ?, processing_session_id = ?, sort_order = ?, updated_at = ?
      WHERE workspace_path = ? AND task_id = ?`,
 	).run(
 		input.milestoneId ?? current.milestoneId,
+		input.projectId !== undefined ? input.projectId : current.projectId,
 		input.title ?? current.title,
 		input.status ?? current.status,
 		input.priority ?? current.priority,

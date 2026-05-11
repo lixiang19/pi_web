@@ -32,7 +32,6 @@ import {
   wrapUiConversationMessages,
   wrapUiSessionSnapshot,
 } from "@/lib/conversation";
-import { useSettingsStore } from "@/stores/settings";
 import { usePiChatCore } from "@/composables/usePiChatCore";
 import { applyStreamSnapshotEvent } from "@/composables/session-snapshot";
 
@@ -471,7 +470,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     return snapshot;
   };
 
-  const submit = async () => {
+  const submit = async (attachmentIds?: string[]) => {
     const prompt = composer.draftText.trim();
     if (!prompt || composer.isSending) {
       return;
@@ -545,6 +544,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
           model: composer.selectedModel || undefined,
           thinkingLevel: composer.selectedThinkingLevel || undefined,
           agent: effectiveAgentName,
+          attachmentIds: attachmentIds && attachmentIds.length > 0 ? attachmentIds : undefined,
         }),
       );
 
@@ -771,10 +771,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     const previousAgent = composer.selectedAgent;
     composer.selectedAgent = nextAgent;
 
-    // useSettingsStore already imported
-    const settingsStore = useSettingsStore();
-    void settingsStore.setDefaultAgent(nextAgent);
-
     if (!resolvedSessionId.value) {
       return;
     }
@@ -798,10 +794,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     const previousModel = composer.selectedModel;
     composer.selectedModel = nextModel;
 
-    // useSettingsStore already imported
-    const settingsStore = useSettingsStore();
-    void settingsStore.setDefaultModel(nextModel);
-
     if (!resolvedSessionId.value) {
       return;
     }
@@ -823,10 +815,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   const setSelectedThinkingLevel = async (thinkingLevel: ThinkingLevel) => {
     const previousThinkingLevel = composer.selectedThinkingLevel;
     composer.selectedThinkingLevel = thinkingLevel;
-
-    // useSettingsStore already imported
-    const settingsStore = useSettingsStore();
-    void settingsStore.setDefaultThinkingLevel(thinkingLevel);
 
     if (!resolvedSessionId.value) {
       return;
@@ -885,13 +873,11 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     disconnectStream();
 
     if (parentSession) {
-      // useSettingsStore already imported
-      const settingsStore = useSettingsStore();
-      composer.selectedAgent = parentSession.agent || settingsStore.defaultAgent || "";
+      composer.selectedAgent = parentSession.agent || "";
       composer.selectedModel =
-        parentSession.model || settingsStore.defaultModel || core.defaultModel.value;
+        parentSession.model || core.defaultModel.value;
       composer.selectedThinkingLevel =
-        (parentSession.thinkingLevel as ThinkingLevel) || settingsStore.defaultThinkingLevel || "medium";
+        (parentSession.thinkingLevel as ThinkingLevel) || "medium";
     }
 
     const nextCwd = activeDraftContext.value?.cwd || "";

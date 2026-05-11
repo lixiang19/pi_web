@@ -32,8 +32,10 @@ npm run dev:desktop
 ## 环境变量
 
 - `PORT`: API 服务端口，默认 `3000`
-
-## 下一步
+- `RIDGE_ADMIN_PASSWORD`: 管理员登录密码
+  - **生产环境（`NODE_ENV=production`）必须配置**，未配置时服务拒绝启动
+  - 非 production/test 环境若未配置，默认使用 `ridge-admin`（仅用于本地开发）
+  - 测试环境通过 `vi.stubEnv` 或进程环境变量设置，避免与开发/生产冲突
 
 - 接入更多 Pi 会话能力，例如历史会话恢复、工具执行面板、计划模式和多代理流程
 - 把桌面端从“复用 Web API”升级为真正的内嵌运行时/sidecar 模式

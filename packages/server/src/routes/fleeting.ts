@@ -55,43 +55,6 @@ const clipSchema = z.object({
 	source: z.string().trim().optional().default(""),
 });
 
-const ensureFleetingSchema = (db: RidgeDatabase) => {
-	db.exec(`
-CREATE TABLE IF NOT EXISTS fleeting_notes (
-  note_id TEXT PRIMARY KEY,
-  content TEXT NOT NULL,
-  status TEXT NOT NULL,
-  analysis_status TEXT NOT NULL,
-  recommendation_type TEXT,
-  recommendation_text TEXT,
-  draft TEXT,
-  requires_input INTEGER NOT NULL DEFAULT 0,
-  pi_session_id TEXT,
-  pi_session_file TEXT,
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  last_error TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_fleeting_notes_created_at
-  ON fleeting_notes(created_at DESC);
-
-CREATE TABLE IF NOT EXISTS clips (
-  clip_id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  url TEXT,
-  content TEXT NOT NULL,
-  source TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_clips_created_at
-  ON clips(created_at DESC);
-`);
-};
-
 const toPublicNote = (row: Record<string, unknown>) => ({
 	id: row.note_id,
 	content: row.content,
@@ -167,7 +130,6 @@ const appendToTodayJournal = async (workspaceDir: string, content: string) => {
 export function createFleetingRouter(deps: FleetingRouterDeps) {
 	const router = express.Router();
 	const { db, workspaceDir, analysisRunner } = deps;
-	ensureFleetingSchema(db);
 
 	router.get("/", (_req: Request, res: Response, next: NextFunction) => {
 		try {

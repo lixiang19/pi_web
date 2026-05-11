@@ -12,6 +12,7 @@ import {
 	type MilestoneItem,
 	type TaskItem,
 } from "@/composables/useWorkspaceTasks";
+import { useProjects } from "@/composables/useProjects";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -55,7 +56,10 @@ const {
 	updateTask,
 	updateMilestone,
 	removeMilestone,
+	projectFilter,
 } = useWorkspaceTasks();
+
+const { projects, load: loadProjects } = useProjects();
 
 const viewMode = ref<"kanban" | "list" | "calendar" | "milestones">("kanban");
 const newTaskTitle = ref("");
@@ -63,10 +67,12 @@ const newTaskAcceptanceCriteria = ref("");
 const newTaskPriority = ref<WorkspaceTaskPriority>("normal");
 const newTaskDueDate = ref("");
 const newTaskMilestoneId = ref<string | undefined>();
+const newTaskProjectId = ref<string | undefined>("__inherit__");
 const newMilestoneTitle = ref("");
 const newMilestoneGoal = ref("");
 const newMilestoneAcceptanceCriteria = ref("");
 const newMilestoneDueDate = ref("");
+const newMilestoneProjectId = ref<string | undefined>("__none__");
 const selectedTask = ref<TaskItem | null>(null);
 const selectedMilestone = ref<MilestoneItem | null>(null);
 const draggedTask = ref<TaskItem | null>(null);
@@ -82,12 +88,17 @@ const editTaskStatus = ref<WorkspaceTaskStatus>("pending");
 const editTaskDueDate = ref("");
 const editTaskMilestoneId = ref("");
 const editTaskBlockedReason = ref("");
+const editTaskProjectId = ref<string | undefined>("__inherit__");
 
 const editMilestoneTitle = ref("");
 const editMilestoneGoal = ref("");
 const editMilestoneAcceptanceCriteria = ref("");
 const editMilestoneStatus = ref<WorkspaceTaskStatus>("pending");
 const editMilestoneDueDate = ref("");
+const editMilestoneProjectId = ref<string | undefined>("__none__");
+
+// Load projects once when component mounts
+loadProjects();
 
 const statusColumns: Array<{ key: WorkspaceTaskStatus; label: string }> = [
 	{ key: "pending", label: "待处理" },
@@ -98,6 +109,31 @@ const statusColumns: Array<{ key: WorkspaceTaskStatus; label: string }> = [
 ];
 
 const weekLabels = ["一", "二", "三", "四", "五", "六", "日"];
+
+// For project filter: all, none, specific projects
+const filterProjectOptions = computed(() => [
+	{ id: "__all__", name: "全部项目" },
+	{ id: "__none__", name: "无项目" },
+	...projects.value.map((p) => ({ id: p.id, name: p.name })),
+]);
+
+// For task assignment: inherit from milestone (default), none, specific projects
+const taskProjectOptions = computed(() => [
+	{ id: "__inherit__", name: "继承里程碑" },
+	{ id: "__none__", name: "无项目" },
+	...projects.value.map((p) => ({ id: p.id, name: p.name })),
+]);
+
+// For milestone assignment: none, specific projects (no "all", no "inherit")
+const milestoneProjectOptions = computed(() => [
+	{ id: "__none__", name: "无项目" },
+	...projects.value.map((p) => ({ id: p.id, name: p.name })),
+]);
+
+const projectName = (projectId: string | null | undefined) => {
+	if (!projectId) return "无项目";
+	return projects.value.find((p) => p.id === projectId)?.name ?? projectId;
+};
 
 const priorityLabel = (priority: WorkspaceTaskPriority) =>
 	priority === "urgent" ? "紧急" : priority === "important" ? "重要" : "普通";
@@ -131,7 +167,7 @@ const filteredTasksByStatus = computed(() => {
 	return Object.fromEntries(
 		statusColumns.map((column) => [
 			column.key,
-		tasksByStatus.value[column.key].filter(
+			tasksByStatus.value[column.key].filter(
 				(task) => task.milestoneId === kanbanMilestoneFilter.value,
 			),
 		]),
@@ -220,6 +256,8 @@ const openTask = (task: TaskItem) => {
 	editTaskDueDate.value = formatInputDate(task.dueDate);
 	editTaskMilestoneId.value = task.milestoneId ?? "";
 	editTaskBlockedReason.value = task.blockedReason ?? "";
+	// Editing: no "inherit" option, default to current or none
+	editTaskProjectId.value = task.projectId ?? "__none__";
 };
 
 const openMilestone = (milestone: MilestoneItem) => {
@@ -230,6 +268,7 @@ const openMilestone = (milestone: MilestoneItem) => {
 	editMilestoneAcceptanceCriteria.value = milestone.acceptanceCriteria;
 	editMilestoneStatus.value = milestone.status;
 	editMilestoneDueDate.value = formatInputDate(milestone.dueDate);
+	editMilestoneProjectId.value = milestone.projectId ?? "__none__";
 };
 
 const closeDetail = () => {
@@ -241,8 +280,37 @@ const changeMonth = (offset: number) => {
 	currentMonth.value = new Date(
 		currentMonth.value.getFullYear(),
 		currentMonth.value.getMonth() + offset,
-		1,
-	);
+		1);
+};
+
+const resolveNewTaskProjectId = (value: string | undefined): string | null | undefined => {
+	if (value === "__inherit__") return undefined; // let backend inherit from milestone
+	if (value === "__none__") return null;
+	if (value === undefined || value === "") return undefined;
+	return value;
+};
+
+const resolveEditTaskProjectId = (value: string | undefined): string | null => {
+	if (value === "__none__") return null;
+	if (value === undefined || value === "") return null;
+	return value;
+};
+
+const resolveMilestoneProjectId = (value: string | undefined): string | null => {
+	if (value === "__none__") return null;
+	if (value === undefined || value === "") return null;
+	return value;
+};
+
+const handleProjectFilterChange = (value: unknown) => {
+	const str = String(value);
+	if (str === "__all__") {
+		projectFilter.value = undefined;
+	} else if (str === "__none__") {
+		projectFilter.value = null;
+	} else {
+		projectFilter.value = str;
+	}
 };
 
 const handleAddTask = async () => {
@@ -255,12 +323,14 @@ const handleAddTask = async () => {
 		acceptanceCriteria,
 		dueDate: toTimestamp(newTaskDueDate.value),
 		milestoneId: newTaskMilestoneId.value || null,
+		projectId: resolveNewTaskProjectId(newTaskProjectId.value),
 	});
 	newTaskTitle.value = "";
 	newTaskAcceptanceCriteria.value = "";
 	newTaskPriority.value = "normal";
 	newTaskDueDate.value = "";
 	newTaskMilestoneId.value = undefined;
+	newTaskProjectId.value = "__inherit__";
 };
 
 const handleAddMilestone = async () => {
@@ -273,11 +343,13 @@ const handleAddMilestone = async () => {
 		goal,
 		acceptanceCriteria,
 		dueDate: toTimestamp(newMilestoneDueDate.value),
+		projectId: resolveMilestoneProjectId(newMilestoneProjectId.value),
 	});
 	newMilestoneTitle.value = "";
 	newMilestoneGoal.value = "";
 	newMilestoneAcceptanceCriteria.value = "";
 	newMilestoneDueDate.value = "";
+	newMilestoneProjectId.value = "__none__";
 };
 
 const handleDropOnStatus = async (status: WorkspaceTaskStatus) => {
@@ -333,6 +405,7 @@ const saveSelectedTask = async () => {
 		dueDate: toTimestamp(editTaskDueDate.value),
 		milestoneId: editTaskMilestoneId.value,
 		blockedReason: editTaskBlockedReason.value.trim() || null,
+		projectId: resolveEditTaskProjectId(editTaskProjectId.value),
 		actor: "user",
 	});
 };
@@ -345,6 +418,7 @@ const saveSelectedMilestone = async () => {
 		acceptanceCriteria: editMilestoneAcceptanceCriteria.value.trim(),
 		status: editMilestoneStatus.value,
 		dueDate: toTimestamp(editMilestoneDueDate.value),
+		projectId: resolveMilestoneProjectId(editMilestoneProjectId.value),
 		actor: "user",
 	});
 };
@@ -361,6 +435,13 @@ const saveSelectedMilestone = async () => {
           </p>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2">
+          <span class="text-xs text-muted-foreground">项目筛选</span>
+          <Select :model-value="projectFilter === undefined ? '__all__' : projectFilter === null ? '__none__' : projectFilter" @update:model-value="handleProjectFilterChange">
+            <SelectTrigger class="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in filterProjectOptions" :key="opt.id" :value="opt.id">{{ opt.name }}</SelectItem>
+            </SelectContent>
+          </Select>
           <Input v-model="newTaskTitle" class="h-8 w-40 text-xs" placeholder="任务标题" @keydown.enter="handleAddTask" />
           <Input v-model="newTaskAcceptanceCriteria" class="h-8 w-52 text-xs" placeholder="完成标准（必填）" @keydown.enter="handleAddTask" />
           <Select v-model="newTaskPriority">
@@ -377,6 +458,12 @@ const saveSelectedMilestone = async () => {
               <SelectItem v-for="milestone in milestones" :key="milestone.id" :value="milestone.id">
                 {{ milestone.title }}
               </SelectItem>
+            </SelectContent>
+          </Select>
+          <Select v-model="newTaskProjectId">
+            <SelectTrigger class="h-8 w-32 text-xs"><SelectValue placeholder="项目" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in taskProjectOptions" :key="opt.id" :value="opt.id">{{ opt.name }}</SelectItem>
             </SelectContent>
           </Select>
           <Input v-model="newTaskDueDate" type="date" class="h-8 w-32 text-xs" />
@@ -443,6 +530,7 @@ const saveSelectedMilestone = async () => {
                     <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{{ priorityLabel(task.priority) }}</span>
                   </div>
                   <p class="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{{ task.acceptanceCriteria }}</p>
+                  <p class="mt-1 text-[10px] text-muted-foreground">{{ projectName(task.projectId) }}</p>
                   <p class="mt-2 text-[10px] text-muted-foreground">{{ formatDate(task.dueDate) }}</p>
                 </button>
               </div>
@@ -460,6 +548,7 @@ const saveSelectedMilestone = async () => {
                 <span class="w-16 text-[11px] text-muted-foreground">{{ priorityLabel(task.priority) }}</span>
                 <span class="w-20 text-[11px] text-muted-foreground">{{ statusLabel(task.status) }}</span>
                 <span class="min-w-0 flex-1 text-sm">{{ task.title }}</span>
+                <span class="w-24 text-[11px] text-muted-foreground">{{ projectName(task.projectId) }}</span>
                 <span class="text-[11px] text-muted-foreground">{{ formatDate(task.dueDate) }}</span>
               </button>
             </div>
@@ -498,11 +587,17 @@ const saveSelectedMilestone = async () => {
         </TabsContent>
 
         <TabsContent value="milestones" class="m-0 min-h-0 flex-1 overflow-auto p-4">
-          <div class="mb-4 grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-[160px_1fr_1fr_130px_auto]">
+          <div class="mb-4 grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-[160px_1fr_1fr_130px_140px_auto]">
             <Input v-model="newMilestoneTitle" class="h-8 text-xs" placeholder="里程碑标题" />
             <Input v-model="newMilestoneGoal" class="h-8 text-xs" placeholder="目标" />
             <Input v-model="newMilestoneAcceptanceCriteria" class="h-8 text-xs" placeholder="完成标准" />
             <Input v-model="newMilestoneDueDate" type="date" class="h-8 text-xs" />
+            <Select v-model="newMilestoneProjectId">
+              <SelectTrigger class="h-8 text-xs"><SelectValue placeholder="项目" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="opt in milestoneProjectOptions" :key="opt.id" :value="opt.id">{{ opt.name }}</SelectItem>
+              </SelectContent>
+            </Select>
             <Button size="sm" class="h-8 text-xs" :disabled="!newMilestoneTitle.trim() || !newMilestoneGoal.trim() || !newMilestoneAcceptanceCriteria.trim()" @click="handleAddMilestone">新建里程碑</Button>
           </div>
           <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -510,6 +605,7 @@ const saveSelectedMilestone = async () => {
               <button type="button" class="block w-full text-left" @click="openMilestone(milestone)">
                 <h3 class="text-sm font-semibold">{{ milestone.title }}</h3>
                 <p class="mt-1 text-[11px] text-muted-foreground">{{ statusLabel(milestone.status) }} · {{ milestone.taskCount }} 个任务 · {{ formatDate(milestone.dueDate) }}</p>
+                <p class="mt-1 text-[10px] text-muted-foreground">{{ projectName(milestone.projectId) }}</p>
                 <p class="mt-3 text-xs text-muted-foreground">目标：{{ milestone.goal }}</p>
                 <p class="mt-1 text-xs text-muted-foreground">完成标准：{{ milestone.acceptanceCriteria }}</p>
               </button>
@@ -548,10 +644,16 @@ const saveSelectedMilestone = async () => {
               <SelectItem v-for="milestone in milestones" :key="milestone.id" :value="milestone.id">{{ milestone.title }}</SelectItem>
             </SelectContent>
           </Select>
+          <Select v-model="editTaskProjectId">
+            <SelectTrigger class="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in taskProjectOptions.filter(o => o.id !== '__inherit__')" :key="opt.id" :value="opt.id">{{ opt.name }}</SelectItem>
+            </SelectContent>
+          </Select>
           <Input v-model="editTaskDueDate" type="date" class="h-8 text-xs" />
           <Textarea v-model="editTaskBlockedReason" class="min-h-16 text-xs" placeholder="阻塞原因（可选）" />
         </div>
-        <p class="text-[11px] text-muted-foreground">当前里程碑：{{ selectedTaskMilestone?.title ?? '未知' }}</p>
+        <p class="text-[11px] text-muted-foreground">当前里程碑：{{ selectedTaskMilestone?.title ?? '未知' }} · 项目：{{ projectName(selectedTask.projectId) }}</p>
         <div class="flex gap-2">
           <Button size="sm" class="h-8 flex-1 text-xs" @click="saveSelectedTask">保存</Button>
           <Button variant="destructive" size="sm" class="h-8 text-xs" @click="pendingDeleteTask = selectedTask">
@@ -575,6 +677,12 @@ const saveSelectedMilestone = async () => {
             </SelectContent>
           </Select>
           <Input v-model="editMilestoneDueDate" type="date" class="h-8 text-xs" />
+          <Select v-model="editMilestoneProjectId">
+            <SelectTrigger class="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in milestoneProjectOptions" :key="opt.id" :value="opt.id">{{ opt.name }}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div class="flex gap-2">
           <Button size="sm" class="h-8 flex-1 text-xs" @click="saveSelectedMilestone">保存</Button>

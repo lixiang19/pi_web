@@ -175,7 +175,7 @@ describe("ridge db migrations", () => {
 			db
 				.prepare("SELECT value FROM ridge_meta WHERE key = 'schema_version'")
 				.get(),
-		).toEqual({ value: "5" });
+		).toEqual({ value: String(RIDGE_DB_SCHEMA_VERSION) });
 
 		db.close();
 	});

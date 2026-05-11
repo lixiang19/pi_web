@@ -5,11 +5,15 @@ import TaskView from "@/components/workspace/TaskView.vue";
 import type { MilestoneItem, TaskItem } from "@/composables/useWorkspaceTasks";
 
 const updateTask = vi.fn();
+const mockAddTask = vi.fn();
+const mockAddMilestone = vi.fn();
+const mockLoadProjects = vi.fn();
 
 const milestones = ref<MilestoneItem[]>([
 	{
 		id: "milestone-1",
 		workspacePath: "/workspace",
+		projectId: "project-1",
 		title: "M1",
 		goal: "目标",
 		acceptanceCriteria: "验收",
@@ -28,6 +32,7 @@ const tasks = ref<TaskItem[]>([
 	{
 		id: "task-1",
 		workspacePath: "/workspace",
+		projectId: "project-1",
 		milestoneId: "milestone-1",
 		title: "任务一",
 		status: "pending",
@@ -40,18 +45,34 @@ const tasks = ref<TaskItem[]>([
 		createdAt: 1,
 		updatedAt: 1,
 	},
+	{
+		id: "task-2",
+		workspacePath: "/workspace",
+		projectId: null,
+		milestoneId: "milestone-1",
+		title: "任务二无项目",
+		status: "pending",
+		priority: "normal",
+		acceptanceCriteria: "完成标准2",
+		dueDate: null,
+		blockedReason: null,
+		processingSessionId: null,
+		sortOrder: 11,
+		createdAt: 2,
+		updatedAt: 2,
+	},
 ]);
 
 vi.mock("@/composables/useWorkspaceTasks", () => ({
 	useWorkspaceTasks: () => ({
 		milestones,
 		stats: computed(() => ({
-			pending: 1,
+			pending: 2,
 			inProgress: 0,
 			blocked: 0,
 			reviewing: 0,
 			done: 0,
-			total: 1,
+			total: 2,
 		})),
 		tasksByStatus: computed(() => ({
 			pending: tasks.value.filter((task) => task.status === "pending"),
@@ -64,12 +85,24 @@ vi.mock("@/composables/useWorkspaceTasks", () => ({
 			{ milestone: milestones.value[0], tasks: tasks.value },
 		]),
 		isLoading: ref(false),
-		addTask: vi.fn(),
-		addMilestone: vi.fn(),
+		addTask: mockAddTask,
+		addMilestone: mockAddMilestone,
 		removeTask: vi.fn(),
 		updateTask,
 		updateMilestone: vi.fn(),
 		removeMilestone: vi.fn(),
+		projectFilter: ref<string | null | undefined>(undefined),
+	}),
+}));
+
+vi.mock("@/composables/useProjects", () => ({
+	useProjects: () => ({
+		projects: ref([
+			{ id: "project-1", name: "Project A", path: "/p/a", isGit: true, updatedAt: 1, projectType: "git", source: "local" },
+		]),
+		load: mockLoadProjects,
+		isLoading: ref(false),
+		error: ref(""),
 	}),
 }));
 
@@ -78,7 +111,7 @@ const mountTaskView = () =>
 		props: { workspaceDir: "/workspace" },
 		global: {
 			stubs: {
-				Button: { template: "<button v-bind='$attrs'><slot /></button>" },
+				Button: { template: "<button v-bind='$attrs' @click='$emit(\"click\", $event)'><slot /></button>" },
 				Input: { template: "<input v-bind='$attrs' />" },
 				Textarea: { template: "<textarea v-bind='$attrs' />" },
 				Select: { template: "<div><slot /></div>" },
@@ -109,6 +142,9 @@ const mountTaskView = () =>
 describe("TaskView", () => {
 	beforeEach(() => {
 		updateTask.mockClear();
+		mockAddTask.mockClear();
+		mockAddMilestone.mockClear();
+		mockLoadProjects.mockClear();
 	});
 
 	it("renders milestone filter and hides Agent entry", () => {
@@ -131,5 +167,91 @@ describe("TaskView", () => {
 			"task-1",
 			expect.objectContaining({ status: "in_progress", actor: "user" }),
 		);
+	});
+
+	it("loads projects on mount", () => {
+		mountTaskView();
+		expect(mockLoadProjects).toHaveBeenCalled();
+	});
+
+	it("displays project filter control with '全部项目'", () => {
+		const wrapper = mountTaskView();
+		expect(wrapper.text()).toContain("项目筛选");
+		expect(wrapper.text()).toContain("全部项目");
+	});
+
+	it("shows project name in kanban cards", () => {
+		const wrapper = mountTaskView();
+		const text = wrapper.text();
+		expect(text).toContain("Project A");
+		expect(text).toContain("无项目");
+	});
+
+	it("new task defaults to inherit milestone (projectId undefined)", async () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+		vm["newTaskTitle"] = "新任务";
+		vm["newTaskAcceptanceCriteria"] = "标准";
+		await wrapper.vm.$nextTick();
+
+		const buttons = wrapper.findAll("button");
+		const addBtn = buttons.find((b) => b.text().includes("新建任务"));
+		expect(addBtn).toBeDefined();
+		await addBtn!.trigger("click");
+
+		expect(mockAddTask).toHaveBeenCalledWith(
+			expect.objectContaining({
+				title: "新任务",
+				acceptanceCriteria: "标准",
+				projectId: undefined,
+			}),
+		);
+	});
+
+	it("new task can select no project (projectId null)", async () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+		vm["newTaskTitle"] = "新任务";
+		vm["newTaskAcceptanceCriteria"] = "标准";
+		vm["newTaskProjectId"] = "__none__";
+		await wrapper.vm.$nextTick();
+
+		const buttons = wrapper.findAll("button");
+		const addBtn = buttons.find((b) => b.text().includes("新建任务"));
+		await addBtn!.trigger("click");
+
+		expect(mockAddTask).toHaveBeenCalledWith(
+			expect.objectContaining({
+				projectId: null,
+			}),
+		);
+	});
+
+	it("new task can select a specific project", async () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+		vm["newTaskTitle"] = "新任务";
+		vm["newTaskAcceptanceCriteria"] = "标准";
+		vm["newTaskProjectId"] = "project-1";
+		await wrapper.vm.$nextTick();
+
+		const buttons = wrapper.findAll("button");
+		const addBtn = buttons.find((b) => b.text().includes("新建任务"));
+		await addBtn!.trigger("click");
+
+		expect(mockAddTask).toHaveBeenCalledWith(
+			expect.objectContaining({
+				projectId: "project-1",
+			}),
+		);
+	});
+
+	it("new milestone options do not include '全部项目'", () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+		const options = (vm as Record<string, Array<{ id: string; name: string }>>)["milestoneProjectOptions"];
+		expect(Array.isArray(options)).toBe(true);
+		expect(options!.some((o) => o.id === "__all__")).toBe(false);
+		expect(options!.some((o) => o.name === "全部项目")).toBe(false);
 	});
 });

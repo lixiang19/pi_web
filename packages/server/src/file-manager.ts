@@ -119,16 +119,39 @@ export const isPathInsideRoot = (
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 };
 
-const ensureResolvedPathWithinRoot = async (
+export const ensureResolvedPathWithinRoot = async (
   candidatePath: string,
   rootPath: string,
 ): Promise<void> => {
-  const [resolvedRootPath, resolvedCandidatePath] = await Promise.all([
-    fs.realpath(rootPath),
-    fs.realpath(candidatePath),
-  ]);
+  const resolvedRootPath = await fs.realpath(rootPath);
 
-  ensureWithinRoot(resolvedCandidatePath, resolvedRootPath);
+  let currentPath = candidatePath;
+  while (currentPath !== path.dirname(currentPath)) {
+    try {
+      const resolvedCandidatePath = await fs.realpath(currentPath);
+      ensureWithinRoot(resolvedCandidatePath, resolvedRootPath);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        currentPath = path.dirname(currentPath);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  // Reached filesystem root
+  try {
+    const resolvedCandidatePath = await fs.realpath(currentPath);
+    ensureWithinRoot(resolvedCandidatePath, resolvedRootPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      const err = new Error('Path is outside the allowed workspace root') as HttpError;
+      err.statusCode = 400;
+      throw err;
+    }
+    throw error;
+  }
 };
 
 const toHttpError = (message: string, statusCode: number): HttpError => {

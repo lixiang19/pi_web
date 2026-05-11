@@ -34,6 +34,7 @@ import type {
 	ProjectsResponse,
 	ProvidersResponse,
 	ResourceCatalogResponse,
+	SessionAttachmentsResponse,
 	SendMessagePayload,
 	SessionContextSummary,
 	SessionHydratePayload,
@@ -299,6 +300,21 @@ export function sendMessage(sessionId: string, payload: SendMessagePayload) {
 		method: "POST",
 		body: JSON.stringify(payload),
 	});
+}
+
+export function uploadSessionAttachments(sessionId: string, files: File[]) {
+	const formData = new FormData();
+	for (const file of files) {
+		formData.append("files", file, file.name);
+	}
+	return request<SessionAttachmentsResponse>(`/api/sessions/${sessionId}/attachments`, {
+		method: "POST",
+		body: formData,
+	});
+}
+
+export function getSessionAttachments(sessionId: string) {
+	return request<SessionAttachmentsResponse>(`/api/sessions/${sessionId}/attachments`);
 }
 
 export function abortSession(sessionId: string) {
@@ -842,6 +858,7 @@ export type WorkspaceTaskPriority =
 export interface WorkspaceTask {
 	id: string;
 	workspacePath: string;
+	projectId: string | null;
 	milestoneId: string;
 	title: string;
 	status: WorkspaceTaskStatus;
@@ -863,6 +880,7 @@ export interface WorkspaceTask {
 export interface WorkspaceMilestone {
 	id: string;
 	workspacePath: string;
+	projectId: string | null;
 	title: string;
 	goal: string;
 	acceptanceCriteria: string;
@@ -884,8 +902,12 @@ export interface MilestonesListResponse {
 	milestones: WorkspaceMilestone[];
 }
 
-export function getWorkspaceTasks() {
-	return request<TasksListResponse>("/api/workspace/tasks");
+export function getWorkspaceTasks(projectId?: string | null) {
+	let url = "/api/workspace/tasks";
+	if (projectId !== undefined) {
+		url += `?projectId=${projectId === null ? "none" : encodeURIComponent(projectId)}`;
+	}
+	return request<TasksListResponse>(url);
 }
 
 export function createWorkspaceTask(data: {
@@ -894,6 +916,7 @@ export function createWorkspaceTask(data: {
 	acceptanceCriteria: string;
 	dueDate?: number | null;
 	milestoneId?: string | null;
+	projectId?: string | null;
 	kind?: "goal" | "task";
 	sessionId?: string;
 	source?: "dashboard";
@@ -913,6 +936,7 @@ export function updateWorkspaceTask(
 		acceptanceCriteria?: string;
 		dueDate?: number | null;
 		milestoneId?: string;
+		projectId?: string | null;
 		blockedReason?: string | null;
 		processingSessionId?: string | null;
 		sortOrder?: number;
@@ -944,6 +968,7 @@ export function createWorkspaceMilestone(data: {
 	acceptanceCriteria: string;
 	dueDate?: number | null;
 	color?: string;
+	projectId?: string | null;
 }) {
 	return request<{ milestone: WorkspaceMilestone }>(
 		"/api/workspace/milestones",
@@ -963,6 +988,7 @@ export function updateWorkspaceMilestone(
 		status?: WorkspaceTaskStatus;
 		dueDate?: number | null;
 		color?: string;
+		projectId?: string | null;
 		actor?: "user" | "agent";
 	},
 ) {

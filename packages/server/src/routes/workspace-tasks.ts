@@ -29,6 +29,7 @@ const createMilestoneSchema = z.object({
 	acceptanceCriteria: z.string().trim().min(1),
 	dueDate: dueDateSchema,
 	color: z.string().trim().min(1).optional(),
+	projectId: z.string().trim().min(1).nullable().optional(),
 });
 
 const updateMilestoneSchema = z
@@ -39,6 +40,7 @@ const updateMilestoneSchema = z
 		status: z.enum(TASK_STATUSES).optional(),
 		dueDate: dueDateSchema,
 		color: z.string().trim().min(1).optional(),
+		projectId: z.string().trim().min(1).nullable().optional(),
 		actor: actorSchema,
 	})
 	.refine((payload) => Object.keys(payload).some((key) => key !== "actor"), {
@@ -51,6 +53,7 @@ const createTaskSchema = z.object({
 	acceptanceCriteria: z.string().trim().min(1),
 	dueDate: dueDateSchema,
 	milestoneId: z.string().trim().min(1).nullable().optional(),
+	projectId: z.string().trim().min(1).nullable().optional(),
 });
 
 const updateTaskSchema = z
@@ -61,6 +64,7 @@ const updateTaskSchema = z
 		acceptanceCriteria: z.string().trim().min(1).optional(),
 		dueDate: dueDateSchema,
 		milestoneId: z.string().trim().min(1).optional(),
+		projectId: z.string().trim().min(1).nullable().optional(),
 		blockedReason: z.string().trim().nullable().optional(),
 		processingSessionId: z.string().trim().min(1).nullable().optional(),
 		sortOrder: z.number().int().optional(),
@@ -73,9 +77,11 @@ const updateTaskSchema = z
 export function createWorkspaceTasksRouter(defaultWorkspaceDir: string) {
 	const router = express.Router();
 
-	router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
+	router.get("/", async (req: Request, res: Response, next: NextFunction) => {
 		try {
-			res.json({ tasks: await listTasks(defaultWorkspaceDir) });
+			const raw = req.query.projectId;
+			const projectId = raw === 'none' ? null : (typeof raw === 'string' ? raw : undefined);
+			res.json({ tasks: await listTasks(defaultWorkspaceDir, { projectId }) });
 		} catch (error) {
 			next(error);
 		}

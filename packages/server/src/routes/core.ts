@@ -54,7 +54,7 @@ export interface CoreDeps {
 		scope: AgentScope,
 	) => Promise<string>;
 	getAutomationStore: () => AutomationStore;
-	automationScheduler: { reschedule: () => void } | null;
+	getAutomationScheduler: () => { reschedule: () => void } | null;
 	dispatchAutomationRule: (
 		rule: AutomationRule,
 	) => Promise<{ sessionId: string }>;
@@ -102,7 +102,7 @@ export function createCoreRouter(deps: CoreDeps) {
 		saveAgent,
 		deleteAgent,
 		getAutomationStore,
-		automationScheduler,
+		getAutomationScheduler,
 		dispatchAutomationRule,
 		ensureManagedProjectScope,
 		ensureSessionRecord,
@@ -163,7 +163,7 @@ export function createCoreRouter(deps: CoreDeps) {
 					model: payload.model || undefined,
 					thinkingLevel: payload.thinkingLevel || undefined,
 				});
-				automationScheduler?.reschedule();
+				getAutomationScheduler()?.reschedule();
 				res.status(201).json(rule);
 			} catch (error) {
 				next(error);
@@ -194,7 +194,7 @@ export function createCoreRouter(deps: CoreDeps) {
 					throw error;
 				}
 
-				automationScheduler?.reschedule();
+				getAutomationScheduler()?.reschedule();
 				res.json(rule);
 			} catch (error) {
 				next(error);
@@ -219,7 +219,7 @@ export function createCoreRouter(deps: CoreDeps) {
 					throw error;
 				}
 
-				automationScheduler?.reschedule();
+				getAutomationScheduler()?.reschedule();
 				res.json(rule);
 			} catch (error) {
 				next(error);
@@ -260,7 +260,7 @@ export function createCoreRouter(deps: CoreDeps) {
 					throw error;
 				}
 
-				automationScheduler?.reschedule();
+				getAutomationScheduler()?.reschedule();
 				res.json({ ok: true });
 			} catch (error) {
 				next(error);

@@ -29,6 +29,7 @@ const WORKSPACE_MILESTONE_COLUMNS: ColumnDefinition[] = [
   { name: 'sort_order', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { name: 'project_id', definition: 'TEXT' },
 ];
 const WORKSPACE_TASK_COLUMNS: ColumnDefinition[] = [
   { name: 'workspace_path', definition: "TEXT NOT NULL DEFAULT ''" },
@@ -43,6 +44,7 @@ const WORKSPACE_TASK_COLUMNS: ColumnDefinition[] = [
   { name: 'sort_order', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { name: 'project_id', definition: 'TEXT' },
 ];
 const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
   devices: [
@@ -98,6 +100,15 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'pi_session_file', definition: 'TEXT' },
     { name: 'retry_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'last_error', definition: 'TEXT' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  clips: [
+    { name: 'clip_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'title', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'url', definition: 'TEXT' },
+    { name: 'content', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'source', definition: 'TEXT' },
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ],

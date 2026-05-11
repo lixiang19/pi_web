@@ -491,6 +491,22 @@ export interface SendMessagePayload {
 	model?: string;
 	agent?: string | null;
 	thinkingLevel?: ThinkingLevel;
+	attachmentIds?: string[];
+}
+
+export interface SessionAttachment {
+	id: string;
+	sessionId: string;
+	originalName: string;
+	storedName: string;
+	mimeType: string;
+	size: number;
+	sha256: string;
+	createdAt: number;
+}
+
+export interface SessionAttachmentsResponse {
+	attachments: SessionAttachment[];
 }
 
 export interface WorktreeApiInfo {

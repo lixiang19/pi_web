@@ -263,6 +263,54 @@ describe("HomePage - AI 启动台", () => {
 	});
 });
 
+describe("HomePage - 快捷动作", () => {
+	it("点击快捷动作只填入输入框，不直接发送", async () => {
+		const wrapper = mountHomePage();
+		const quickBtns = wrapper.findAll('[data-testid="home-quick-action"]');
+		expect(quickBtns.length).toBe(3);
+
+		await quickBtns[0]!.trigger("click");
+		expect(wrapper.emitted("submit")).toBeFalsy();
+		const textarea = wrapper.find("textarea");
+		expect((textarea.element as HTMLTextAreaElement).value).toBe("帮我处理最新的闪念");
+	});
+});
+
+describe("HomePage - 附件上传入口", () => {
+	it("选择文件后显示待附加文件列表", async () => {
+		const wrapper = mountHomePage();
+		const fileInput = wrapper.find('input[type="file"]');
+		expect(fileInput.exists()).toBe(true);
+
+		const file = new File(["content"], "notes.md", { type: "text/markdown" });
+		const inputEl = fileInput.element as HTMLInputElement;
+		Object.defineProperty(inputEl, "files", { value: [file], writable: false });
+		await fileInput.trigger("change");
+
+		const pending = wrapper.findAll('[data-testid="home-pending-attachment"]');
+		expect(pending.length).toBe(1);
+		expect(pending[0]!.text()).toContain("notes.md");
+	});
+
+	it("submit payload 包含 attachments 字段", async () => {
+		const wrapper = mountHomePage();
+		const textarea = wrapper.find("textarea");
+		await textarea.setValue("带附件的提问");
+
+		const fileInput = wrapper.find('input[type="file"]');
+		const file = new File(["c"], "doc.md", { type: "text/markdown" });
+		const inputEl = fileInput.element as HTMLInputElement;
+		Object.defineProperty(inputEl, "files", { value: [file], writable: false });
+		await fileInput.trigger("change");
+
+		await wrapper.find("form").trigger("submit.prevent");
+		const payload = wrapper.emitted("submit")![0]![0] as HomeSubmitPayload & { attachments?: File[] };
+		expect(payload.text).toBe("带附件的提问");
+		expect(payload.attachments).toHaveLength(1);
+		expect(payload.attachments![0]?.name).toBe("doc.md");
+	});
+});
+
 describe("HomePage - 提交 payload 完整性", () => {
 	it("submit payload 包含 text、model、agent、thinkingLevel 四个字段", async () => {
 		const wrapper = mountHomePage({
@@ -281,5 +329,37 @@ describe("HomePage - 提交 payload 完整性", () => {
 			agent: "coding-agent",
 			thinkingLevel: "high",
 		});
+	});
+});
+
+describe("HomePage - 发送状态与失败保留", () => {
+	it("isSending prop 为 true 时提交按钮禁用", () => {
+		const wrapper = mountHomePage({ isSending: true });
+		const btn = wrapper.find('[data-testid="home-send-btn"]');
+		expect((btn.element as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it("isSending prop 变为 false 后按钮恢复可用", async () => {
+		const wrapper = mountHomePage({ isSending: true });
+		const textarea = wrapper.find("textarea");
+		await textarea.setValue("有内容");
+		const btn = wrapper.find('[data-testid="home-send-btn"]');
+		expect((btn.element as HTMLButtonElement).disabled).toBe(true);
+
+		await wrapper.setProps({ isSending: false });
+		const btnAfter = wrapper.find('[data-testid="home-send-btn"]');
+		expect((btnAfter.element as HTMLButtonElement).disabled).toBe(false);
+	});
+
+	it("submit 不立即清空 draft，失败时保留输入", async () => {
+		const wrapper = mountHomePage();
+		const textarea = wrapper.find("textarea");
+		await textarea.setValue("保留输入测试");
+		await wrapper.find("form").trigger("submit.prevent");
+
+		const emitted = wrapper.emitted("submit");
+		expect(emitted).toBeTruthy();
+		// draftText 不应被清空
+		expect((textarea.element as HTMLTextAreaElement).value).toBe("保留输入测试");
 	});
 });

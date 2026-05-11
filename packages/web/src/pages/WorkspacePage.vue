@@ -61,7 +61,7 @@ import {
 	isProjectArchived,
 } from "@/lib/session-sidebar";
 import type { SessionProjectView } from "@/lib/session-sidebar";
-import { createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem } from "@/lib/api";
+import { createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem, uploadSessionAttachments, deleteSession } from "@/lib/api";
 import { createSession as createSessionApi } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -116,6 +116,9 @@ const preview = useWorkspaceFilePreview(workspaceDir);
 
 // 分屏管理
 const splitPanes = useSplitPanes();
+
+// 主页发送中状态（按 tabId）
+const homeSubmittingTabIds = ref<Set<string>>(new Set());
 
 // 最近文件
 const recentFiles = ref<RecentFileItem[]>([]);
@@ -528,7 +531,7 @@ async function handleCreateBase() {
 // ===== 首页 → 会话转换 =====
 
 /** 首页提交首条消息后，原地将 home tab 替换为 chat tab，并自动发送首条消息 */
-async function handleHomeSubmit(homeTabId: string, payload: { text: string; model: string; agent: string; thinkingLevel: string }) {
+async function handleHomeSubmit(homeTabId: string, payload: { text: string; model: string; agent: string; thinkingLevel: string; attachments?: File[] }) {
 	// 查找对应 home tab，以获取其 cwd（项目主页时 cwd 为项目路径）
 	let cwd = workspaceDir.value;
 	for (const pane of splitPanes.allPaneGroups.value) {
@@ -542,23 +545,64 @@ async function handleHomeSubmit(homeTabId: string, payload: { text: string; mode
 
 	const agentValue = payload.agent === NO_AGENT_VALUE ? null : payload.agent;
 
-	// 创建服务端会话（带模型/Agent/思考级别）
-	const snapshot = await createSessionApi({
-		cwd,
-		title: payload.text.slice(0, 24),
-		model: payload.model || undefined,
-		agent: agentValue,
-		thinkingLevel: (payload.thinkingLevel || undefined) as ThinkingLevel | null | undefined,
-	});
-	const sessionId = snapshot.id;
+	homeSubmittingTabIds.value = new Set(homeSubmittingTabIds.value).add(homeTabId);
+	try {
+		// 创建服务端会话（带模型/Agent/思考级别）
+		const snapshot = await createSessionApi({
+			cwd,
+			title: payload.text.slice(0, 24),
+			model: payload.model || undefined,
+			agent: agentValue,
+			thinkingLevel: (payload.thinkingLevel || undefined) as ThinkingLevel | null | undefined,
+		});
+		const sessionId = snapshot.id;
 
-	// 原地替换 tab: home → chat，携带首条消息
-	const chatTab = createChatTab(sessionId, payload.text.slice(0, 24) || "新会话", {
-		initialPrompt: payload.text,
-		initialModel: payload.model,
-		initialAgent: payload.agent,
-	});
-	splitPanes.replaceTab(homeTabId, chatTab);
+		// 上传附件（如有）
+		let attachmentIds: string[] | undefined;
+		if (payload.attachments && payload.attachments.length > 0) {
+			try {
+				const uploadRes = await uploadSessionAttachments(sessionId, payload.attachments);
+				attachmentIds = uploadRes.attachments.map((a) => a.id);
+			} catch (uploadErr) {
+				toast.error("附件上传失败", {
+					description: uploadErr instanceof Error ? uploadErr.message : String(uploadErr),
+				});
+				// 清理刚创建的会话，避免孤儿会话
+				try {
+					await deleteSession(sessionId);
+				} catch (cleanupErr) {
+					// 忽略清理失败，但记录日志以便排查
+					console.warn("清理上传失败会话时出错:", cleanupErr);
+				}
+				return;
+			}
+		}
+
+		// 原地替换 tab: home → chat，携带首条消息与附件
+		const chatTab = createChatTab(sessionId, payload.text.slice(0, 24) || "新会话", {
+			initialPrompt: payload.text,
+			initialModel: payload.model,
+			initialAgent: payload.agent,
+			initialThinkingLevel: payload.thinkingLevel,
+			initialAttachmentIds: attachmentIds,
+		});
+		splitPanes.replaceTab(homeTabId, chatTab);
+
+		// 立即刷新左侧会话列表，使新会话出现并保持当前标签选中
+		await Promise.all([
+			core.refreshSessions(),
+			core.refreshSessionContexts(),
+		]);
+	} catch (err) {
+		toast.error("创建会话失败", {
+			description: err instanceof Error ? err.message : String(err),
+		});
+		// 失败时：不替换 home tab，保留输入（HomePage 内部不清空 draft），发送按钮恢复可用
+	} finally {
+		const next = new Set(homeSubmittingTabIds.value);
+		next.delete(homeTabId);
+		homeSubmittingTabIds.value = next;
+	}
 }
 
 /** 首页点击打开会话（最近活动里点击会话条目） */
@@ -903,6 +947,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
               :default-model="settingsStore.defaultModel || core.defaultModel?.value || ''"
               :default-agent="settingsStore.defaultAgent"
               :default-thinking-level="settingsStore.defaultThinkingLevel"
+              :is-sending="homeSubmittingTabIds.has(tab.id)"
               @submit="handleHomeSubmit(tab.id, $event)"
               @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
               @open-session="handleOpenSession($event)"
@@ -924,6 +969,8 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
               :initial-prompt="tab.initialPrompt"
               :initial-model="tab.initialModel"
               :initial-agent="tab.initialAgent"
+              :initial-thinking-level="tab.initialThinkingLevel"
+              :initial-attachment-ids="tab.initialAttachmentIds"
             />
           </div>
 

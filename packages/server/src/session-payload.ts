@@ -74,13 +74,19 @@ export interface SessionPayloadDeps {
 	openingSessionRecords: Map<string, Promise<SessionRecord>>;
 	projectContextResolver: ReturnType<typeof createProjectContextResolver>;
 	DEFAULT_SESSION_ROUND_WINDOW: number;
-	automationStore: AutomationStore | null;
+	getAutomationStore: () => AutomationStore;
 }
 
 const deps = {} as SessionPayloadDeps;
 
 export const initSessionPayload = (d: SessionPayloadDeps): void => {
 	Object.assign(deps, d);
+};
+
+/** Test-only helper to snapshot/restore deps without polluting globals */
+export const _testOnlySessionPayload = {
+	snapshotDeps: (): SessionPayloadDeps => ({ ...deps }),
+	restoreDeps: (snapshot: SessionPayloadDeps) => Object.assign(deps, snapshot),
 };
 
 let fileManagerInstance: ReturnType<typeof createFileManager> | null = null;
@@ -98,13 +104,12 @@ export const getFileManager = () => {
 };
 
 export const getAutomationStore = (): AutomationStore => {
-	const store = deps.automationStore as AutomationStore | null;
+	const store = deps.getAutomationStore();
 	if (!store) {
 		const error = new Error("自动化服务尚未初始化") as HttpError;
 		error.statusCode = 503;
 		throw error;
 	}
-
 	return store;
 };
 

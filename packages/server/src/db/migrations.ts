@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 5;
+export const RIDGE_DB_SCHEMA_VERSION = 7;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -209,6 +209,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_background_jobs_active_related
 CREATE TABLE IF NOT EXISTS workspace_milestones (
   milestone_id TEXT PRIMARY KEY,
   workspace_path TEXT NOT NULL,
+  project_id TEXT,
   title TEXT NOT NULL,
   goal TEXT NOT NULL,
   acceptance_criteria TEXT NOT NULL,
@@ -234,6 +235,7 @@ CREATE INDEX IF NOT EXISTS idx_workspace_milestones_status
 CREATE TABLE IF NOT EXISTS workspace_tasks (
   task_id TEXT PRIMARY KEY,
   workspace_path TEXT NOT NULL,
+  project_id TEXT,
   milestone_id TEXT NOT NULL,
   title TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -307,6 +309,23 @@ CREATE TABLE IF NOT EXISTS notification_events (
 
 CREATE INDEX IF NOT EXISTS idx_notification_events_status
   ON notification_events(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS session_attachments (
+  attachment_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  original_name TEXT NOT NULL DEFAULT '',
+  stored_name TEXT NOT NULL DEFAULT '',
+  stored_path TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size INTEGER NOT NULL DEFAULT 0,
+  sha256 TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_attachments_session
+  ON session_attachments(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_session_attachments_sha256
+  ON session_attachments(sha256);
 
 `;
 
@@ -506,6 +525,49 @@ CREATE TABLE IF NOT EXISTS notification_events (
 );
 CREATE INDEX IF NOT EXISTS idx_notification_events_status
   ON notification_events(status, created_at DESC);
+`,
+  },
+  {
+    version: 6,
+    name: 'session attachments',
+    sql: `
+CREATE TABLE IF NOT EXISTS session_attachments (
+  attachment_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  original_name TEXT NOT NULL DEFAULT '',
+  stored_name TEXT NOT NULL DEFAULT '',
+  stored_path TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size INTEGER NOT NULL DEFAULT 0,
+  sha256 TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_session_attachments_session
+  ON session_attachments(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_session_attachments_sha256
+  ON session_attachments(sha256);
+`,
+  },
+  {
+    version: 7,
+    name: 'clips and project_id for tasks/milestones',
+    sql: `
+CREATE TABLE IF NOT EXISTS clips (
+  clip_id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  url TEXT,
+  content TEXT NOT NULL,
+  source TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_clips_created_at
+  ON clips(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_milestones_project
+  ON workspace_milestones(workspace_path, project_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_project
+  ON workspace_tasks(workspace_path, project_id);
 `,
   },
 ];

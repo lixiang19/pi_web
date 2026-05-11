@@ -24,6 +24,7 @@ function makeFileItem(overrides: Partial<RecentFileItem> = {}): RecentFileItem {
 function makeTaskItem(overrides: Partial<TaskItem> = {}): TaskItem {
 	return {
 		id: "task-1",
+		projectId: null,
 		title: "测试任务",
 		status: "pending",
 		priority: "medium",
