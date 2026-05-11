@@ -554,7 +554,7 @@
               <span class="label">已写入 spec 草案</span>
             </div>
             <div class="panel metric">
-              <span class="value">6</span>
+              <span class="value">9</span>
               <span class="label">实现任务已完成</span>
             </div>
           </div>
@@ -565,8 +565,12 @@
               <span class="status done">设计完成</span>
             </div>
             <p>输入 → 会话 / 闪念 / 文件 / 任务 → 处理和确认 → Markdown / 任务 / 项目 / 空间 / 记忆 → RAG / 图谱 / Wiki → 下一次会话可继续使用。</p>
-            <div class="bar" style="margin-top: 14px"><span style="width: 28%"></span></div>
-            <p style="margin-top: 8px">已验证/已合并口径：00–07 主路径基础较明确；08/09/12 代码完成但 AI 验收尚未跑完；13/16/36/37 多为部分实现或待验证，不作为完成。25 有设计/代码线索待复验。其余功能以 spec/占位为主。</p>
+            <div class="bar" style="margin-top: 14px"><span style="width: 34%"></span></div>
+            <p style="margin-top: 8px">已验证/已合并口径：00–09 主路径基础较明确；08 已实现任务里程碑数据模型、系统默认里程碑、项目绑定与 Agent 完成限制；09 已完成任务列表详情与状态流转（看板/列表/日历/里程碑四视图、详情编辑、状态流转、项目筛选、错误处理）。12 代码完成但 AI 验收尚未跑完；13/16/36/37 多为部分实现或待验证，不作为完成。25 有设计/代码线索待复验。其余功能以 spec/占位为主。</p>
+          </div>
+
+          <div class="panel" style="border-left:4px solid var(--amber); background:#fffaf0">
+            <p style="font-size:13px; color:#7c2d12"><strong>验证说明：</strong>08 任务里程碑数据模型和 09 任务列表详情与状态流转已完成代码审查与自动化非可视化验证（单元/集成测试 + 类型检查 + lint）。09 新增测试覆盖：用户完成任务流转、里程碑完成流转、Agent 不能完成、项目筛选、更新里程碑后任务继承、阻塞原因/截止日期/排序字段完整、前端详情同步、失败不回滚表单、看板非法拖拽拦截。</p>
           </div>
 
           <div class="panel" style="margin-top: 14px">
