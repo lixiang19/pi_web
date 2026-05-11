@@ -23,10 +23,11 @@ const mapRowToMetadata = (row: {
   created_at: number;
   updated_at: number;
   archived: number;
+  readonly: number;
   agent_name: string | null;
   explicit_model: string | null;
   explicit_thinking_level: string | null;
-}): SessionMetadata & { archived?: boolean } => ({
+}): SessionMetadata & { archived?: boolean; readonly?: boolean } => ({
   id: row.session_id,
   title: row.title,
   cwd: row.cwd,
@@ -38,6 +39,7 @@ const mapRowToMetadata = (row: {
   model: row.explicit_model || undefined,
   thinkingLevel: row.explicit_thinking_level || undefined,
   archived: Boolean(row.archived),
+  readonly: Boolean(row.readonly),
 });
 
 export function createSessionMetadataStore(): SessionMetadataStore {
@@ -54,6 +56,7 @@ export function createSessionMetadataStore(): SessionMetadataStore {
            s.created_at,
            s.updated_at,
            s.archived,
+           s.readonly,
            ss.agent_name,
            ss.explicit_model,
            ss.explicit_thinking_level
@@ -69,6 +72,7 @@ export function createSessionMetadataStore(): SessionMetadataStore {
       created_at: number;
       updated_at: number;
       archived: number;
+      readonly: number;
       agent_name: string | null;
       explicit_model: string | null;
       explicit_thinking_level: string | null;
@@ -84,7 +88,7 @@ export function createSessionMetadataStore(): SessionMetadataStore {
 
   const getSessionMetadata = async (
     sessionId: string,
-  ): Promise<Partial<SessionMetadata>> => {
+  ): Promise<Partial<SessionMetadata & { archived?: boolean; readonly?: boolean }>> => {
     const db = await getRidgeDb();
     const row = db
       .prepare(
@@ -97,6 +101,7 @@ export function createSessionMetadataStore(): SessionMetadataStore {
            s.created_at,
            s.updated_at,
            s.archived,
+           s.readonly,
            ss.agent_name,
            ss.explicit_model,
            ss.explicit_thinking_level
@@ -114,6 +119,7 @@ export function createSessionMetadataStore(): SessionMetadataStore {
           created_at: number;
           updated_at: number;
           archived: number;
+          readonly: number;
           agent_name: string | null;
           explicit_model: string | null;
           explicit_thinking_level: string | null;
@@ -184,12 +190,16 @@ export function createSessionMetadataStore(): SessionMetadataStore {
 
     const db = await getRidgeDb();
     const statement = db.prepare(
-      'UPDATE sessions SET archived = ?, updated_at = ? WHERE session_id = ?',
+      'UPDATE sessions SET archived = ?, readonly = ?, updated_at = ? WHERE session_id = ?',
+    );
+    const statementIndex = db.prepare(
+      'UPDATE session_index SET archived = ?, readonly = ?, updated_at = ? WHERE session_id = ?',
     );
     const now = Date.now();
     db.transaction((ids: string[]) => {
       for (const sessionId of ids) {
-        statement.run(archived ? 1 : 0, now, sessionId);
+        statement.run(archived ? 1 : 0, archived ? 1 : 0, now, sessionId);
+        statementIndex.run(archived ? 1 : 0, archived ? 1 : 0, now, sessionId);
       }
     })(sessionIds);
   };
@@ -201,10 +211,12 @@ export function createSessionMetadataStore(): SessionMetadataStore {
 
     const db = await getRidgeDb();
     const deleteSelection = db.prepare('DELETE FROM session_selections WHERE session_id = ?');
+    const deleteSessionIndex = db.prepare('DELETE FROM session_index WHERE session_id = ?');
     const deleteSession = db.prepare('DELETE FROM sessions WHERE session_id = ?');
     db.transaction((ids: string[]) => {
       for (const sessionId of ids) {
         deleteSelection.run(sessionId);
+        deleteSessionIndex.run(sessionId);
         deleteSession.run(sessionId);
       }
     })(sessionIds);

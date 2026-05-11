@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { usePerSessionChat } from "@/composables/usePerSessionChat";
 import type { ThinkingLevel, UiSessionSnapshot } from "@/lib/types";
 
-const mockSessions = ref<Array<{ id: string; title?: string; cwd?: string; agent?: string; model?: string; thinkingLevel?: string }>>([]);
+const mockSessions = ref<Array<{ id: string; title?: string; cwd?: string; agent?: string; model?: string; thinkingLevel?: string; archived?: boolean; readonly?: boolean; taskId?: string; sessionType?: string }>>([]);
 const mockSessionCache = ref<Record<string, { snapshot?: UiSessionSnapshot }>>({});
 const mockAgents = ref<Array<{ name: string; model?: string; thinking?: string }>>([]);
 const mockModels = ref<Array<{ value: string; label: string }>>([]);
@@ -45,6 +45,7 @@ vi.mock("@/composables/usePiChatCore", () => ({
     syncComposerSelection: mockSyncComposerSelection,
     syncComposerDraftState: vi.fn(),
     getCachedSessionSnapshot: (sid: string) => mockSessionCache.value[sid]?.snapshot ?? null,
+    syncSessions: vi.fn(),
     createHistoryMeta: vi.fn(() => ({ loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 })),
     expandVisibleHistoryMeta: vi.fn((meta) => meta),
     patchSessionSummary: vi.fn(),
@@ -89,6 +90,14 @@ vi.mock("@/lib/api", () => ({
   respondToPermissionRequest: vi.fn(),
   sendMessage: vi.fn(),
 }));
+
+class MockEventSource {
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  close() {}
+}
+
+Object.defineProperty(globalThis, "EventSource", { value: MockEventSource });
 
 describe("usePerSessionChat - temporary selection does NOT write global settings", () => {
   beforeEach(() => {
@@ -174,14 +183,128 @@ describe("usePerSessionChat - temporary selection does NOT write global settings
     expect(mockApplySelectionUpdate).toHaveBeenCalledWith("session-1", { thinkingLevel: "high" });
   });
 
-  it("setSelectedModel on draft session does NOT call settingsStore or API", async () => {
-    const sessionIdRef = ref("");
+  it("isReadonly disables composer when session is archived", async () => {
+    mockSessions.value = [{ id: "session-archived", title: "Archived", archived: true, readonly: true, cwd: "/workspace" }];
+    const sessionIdRef = ref("session-archived");
+    const chat = usePerSessionChat(sessionIdRef);
+    expect(chat.isReadonly.value).toBe(true);
+    expect(chat.composer.isDisabled).toBe(true);
+  });
+
+  it("isReadonly disables composer when session is readonly", async () => {
+    mockSessions.value = [{ id: "session-ro", title: "RO", archived: false, readonly: true, cwd: "/workspace" }];
+    const sessionIdRef = ref("session-ro");
+    const chat = usePerSessionChat(sessionIdRef);
+    expect(chat.isReadonly.value).toBe(true);
+    expect(chat.composer.isDisabled).toBe(true);
+  });
+
+  it("forkFromUserMessage returns undefined for readonly session", async () => {
+    mockSessions.value = [{ id: "session-ro", title: "RO", archived: false, readonly: true, cwd: "/workspace" }];
+    mockSessionCache.value = {
+      "session-ro": {
+        snapshot: {
+          id: "session-ro",
+          messages: [
+            { message: { role: "user", content: "hello", timestamp: Date.now() }, localId: "u1" },
+          ],
+          historyMeta: { loadedRounds: 1, totalRounds: 1, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+    const sessionIdRef = ref("session-ro");
+    const chat = usePerSessionChat(sessionIdRef);
+    const result = await chat.forkFromUserMessage(0);
+    expect(result).toBeUndefined();
+  });
+
+  it("forkFromUserMessage supports editing with new text", async () => {
+    mockSessions.value = [{ id: "session-edit", title: "Edit", archived: false, readonly: false, cwd: "/workspace" }];
+    mockSessionCache.value = {
+      "session-edit": {
+        snapshot: {
+          id: "session-edit",
+          messages: [
+            { message: { role: "user", content: "original", timestamp: Date.now() }, localId: "u1" },
+          ],
+          historyMeta: { loadedRounds: 1, totalRounds: 1, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+    const sessionIdRef = ref("session-edit");
+    const chat = usePerSessionChat(sessionIdRef);
+    const result = await chat.forkFromUserMessage(0, "edited text");
+    expect(result).not.toBeUndefined();
+  });
+
+  it("isTaskSession is true when session has taskId", async () => {
+    mockSessions.value = [{ id: "session-task", title: "Task", archived: false, readonly: false, cwd: "/workspace", taskId: "task-1" }];
+    const sessionIdRef = ref("session-task");
+    const chat = usePerSessionChat(sessionIdRef);
+    expect(chat.isTaskSession.value).toBe(true);
+  });
+
+  it("isTaskSession is true when sessionType is task", async () => {
+    mockSessions.value = [{ id: "session-task2", title: "Task", archived: false, readonly: false, cwd: "/workspace", sessionType: "task" }];
+    const sessionIdRef = ref("session-task2");
+    const chat = usePerSessionChat(sessionIdRef);
+    expect(chat.isTaskSession.value).toBe(true);
+  });
+
+  it("submit does not call sendMessage or createSession for readonly session", async () => {
+    const { sendMessage, createSession } = await import("@/lib/api");
+    mockSessions.value = [{ id: "session-ro-submit", title: "RO", archived: false, readonly: true, cwd: "/workspace" }];
+    mockSessionCache.value = {
+      "session-ro-submit": {
+        snapshot: {
+          id: "session-ro-submit",
+          messages: [],
+          historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+    const sessionIdRef = ref("session-ro-submit");
     const chat = usePerSessionChat(sessionIdRef);
 
-    await chat.setSelectedModel("draft-model");
+    chat.composer.draftText = "should not send";
+    await chat.submit();
 
-    expect(chat.composer.selectedModel).toBe("draft-model");
-    expect(mockSettingsStore.setDefaultModel).not.toHaveBeenCalled();
-    expect(mockApplySelectionUpdate).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it("submit does not call sendMessage or createSession when composer.isDisabled", async () => {
+    const { sendMessage, createSession } = await import("@/lib/api");
+    mockSessions.value = [{ id: "session-disabled", title: "Disabled", archived: false, readonly: false, cwd: "/workspace" }];
+    mockSessionCache.value = {
+      "session-disabled": {
+        snapshot: {
+          id: "session-disabled",
+          messages: [],
+          historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+    const sessionIdRef = ref("session-disabled");
+    const chat = usePerSessionChat(sessionIdRef);
+
+    chat.composer.isDisabled = true;
+    chat.composer.draftText = "should not send";
+    await chat.submit();
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
   });
 });

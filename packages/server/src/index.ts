@@ -409,6 +409,7 @@ import {
 	ensureSessionRecord,
 	getFileManager,
 	getIndexedSessionLookupOrThrow,
+	assertSessionAvailableById,
 	getStoredSessionMessagesPayload,
 	getStoredSessionRuntimePayload,
 	initSessionPayload,
@@ -560,6 +561,8 @@ app.use("/api/workspace/tasks", workspaceTasksRouter);
 const workspaceMilestonesRouter =
 	createWorkspaceMilestonesRouter(defaultWorkspaceDir);
 app.use("/api/workspace/milestones", workspaceMilestonesRouter);
+
+// ===== Workspace Data Routes =====
 // ===== Workspace Data Routes =====
 // ===== Workspace Data Routes =====
 const workspaceDataRouter = createWorkspaceDataRouter({
@@ -795,9 +798,15 @@ app.get(
 				createdAt: session.createdAt,
 				updatedAt: session.updatedAt,
 				archived: session.archived,
+				readonly: session.readonly,
 				sessionFile: session.sessionFile,
 				parentSessionId: session.parentSessionId,
 				contextId: session.contextId,
+				sessionType: session.sessionType,
+				contextType: session.contextType,
+				taskId: session.taskId,
+				deviceId: session.deviceId,
+				runLocation: session.runLocation,
 			}));
 			res.json(summaries);
 		} catch (error) {
@@ -818,6 +827,7 @@ app.get(
 				return;
 			}
 
+			await assertSessionAvailableById(sessionId);
 			res.json(await getStoredSessionMessagesPayload(sessionId, query));
 		} catch (error) {
 			next(error);
@@ -836,6 +846,7 @@ app.get(
 				return;
 			}
 
+			await assertSessionAvailableById(sessionId);
 			res.json(await getStoredSessionRuntimePayload(sessionId));
 		} catch (error) {
 			next(error);
@@ -858,6 +869,7 @@ app.get(
 				return;
 			}
 
+			await assertSessionAvailableById(sessionId);
 			const [messagesPayload, runtimePayload] = await Promise.all([
 				getStoredSessionMessagesPayload(sessionId, query),
 				getStoredSessionRuntimePayload(sessionId),
@@ -910,6 +922,11 @@ app.post(
 			const parentSession = payload.parentSessionId
 				? await getIndexedSessionLookupOrThrow(payload.parentSessionId)
 				: null;
+			if (parentSession?.taskId || parentSession?.sessionType === 'task') {
+				const error = new Error("任务处理会话不允许分叉") as HttpError;
+				error.statusCode = 403;
+				throw error;
+			}
 			const sessionCwd =
 				normalizeOptionalFsPath(payload.cwd) || parentSession?.cwd || "";
 			if (!sessionCwd) {
@@ -1048,8 +1065,8 @@ app.post(
 			const payload = messageSchema.parse(req.body ?? {});
 			const sessionId = String(req.params.sessionId);
 			const metadata = await sessionMetadataStore.getSessionMetadata(sessionId);
-			if (metadata.archived) {
-				const error = new Error("归档会话不可发送消息") as HttpError;
+			if (metadata.archived || metadata.readonly) {
+				const error = new Error("归档或只读会话不可发送消息") as HttpError;
 				error.statusCode = 403;
 				throw error;
 			}

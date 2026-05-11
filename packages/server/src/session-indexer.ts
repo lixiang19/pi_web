@@ -42,9 +42,15 @@ interface IndexedSessionRow {
   createdAt: number;
   updatedAt: number;
   contextId: string;
+  projectId?: string;
   userRoundCount: number;
   lastModel?: string;
   lastThinkingLevel?: string;
+  sessionType?: string;
+  contextType?: string;
+  taskId?: string;
+  deviceId?: string;
+  runLocation?: string;
 }
 
 interface IndexedSessionContextEntry {
@@ -81,9 +87,15 @@ export interface IndexedSessionSummary {
   updatedAt: number;
   createdAt: number;
   archived: boolean;
+  readonly: boolean;
   sessionFile: string;
   parentSessionId?: string;
   contextId: string;
+  sessionType?: string;
+  contextType?: string;
+  taskId?: string;
+  deviceId?: string;
+  runLocation?: string;
 }
 
 export interface IndexedSessionLookup {
@@ -97,12 +109,18 @@ export interface IndexedSessionLookup {
   updatedAt: number;
   contextId: string;
   archived: boolean;
+  readonly: boolean;
   agent?: string;
   explicitModel?: string;
   explicitThinkingLevel?: string;
   lastModel?: string;
   lastThinkingLevel?: string;
   userRoundCount: number;
+  sessionType?: string;
+  contextType?: string;
+  taskId?: string;
+  deviceId?: string;
+  runLocation?: string;
 }
 
 export interface IndexedSessionContextSummary {
@@ -391,6 +409,36 @@ const upsertCatalogRows = async (
       is_git = excluded.is_git,
       cwd = excluded.cwd`,
   );
+  const upsertSessionIndex = db.prepare(
+    `INSERT INTO session_index(
+      session_id,
+      title,
+      session_type,
+      context_type,
+      workspace_path,
+      project_id,
+      task_id,
+      device_id,
+      run_location,
+      archived,
+      readonly,
+      created_at,
+      updated_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      title = excluded.title,
+      session_type = excluded.session_type,
+      context_type = excluded.context_type,
+      workspace_path = excluded.workspace_path,
+      project_id = excluded.project_id,
+      task_id = excluded.task_id,
+      device_id = excluded.device_id,
+      run_location = excluded.run_location,
+      archived = COALESCE((SELECT archived FROM session_index WHERE session_id = excluded.session_id), excluded.archived),
+      readonly = COALESCE((SELECT readonly FROM session_index WHERE session_id = excluded.session_id), excluded.readonly),
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at`,
+  );
   db.transaction(() => {
     for (const row of rows) {
       upsertSession.run(
@@ -405,6 +453,21 @@ const upsertCatalogRows = async (
         row.userRoundCount,
         row.lastModel || null,
         row.lastThinkingLevel || null,
+      );
+      upsertSessionIndex.run(
+        row.id,
+        row.title,
+        row.sessionType || 'workspace',
+        row.contextType || 'workspace',
+        row.cwd,
+        row.projectId || null,
+        row.taskId || null,
+        row.deviceId || null,
+        row.runLocation || 'server',
+        0,
+        0,
+        row.createdAt,
+        row.updatedAt,
       );
     }
     for (const { projectId, projectLabel, context } of contexts) {
@@ -513,6 +576,7 @@ export const refreshSessionCatalog = async (
       createdAt: entry.created.getTime(),
       updatedAt: Math.max(entry.modified.getTime(), activeRecord?.updatedAt || 0),
       contextId,
+      projectId: projectScope.project.id,
       userRoundCount: stats.userRoundCount,
       lastModel: stats.lastModel,
       lastThinkingLevel: stats.lastThinkingLevel,
@@ -600,9 +664,13 @@ export const upsertIndexedSessionRecord = async (
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     contextId,
+    projectId: contextEntry.projectId,
     userRoundCount: stats.userRoundCount,
     lastModel: stats.lastModel,
     lastThinkingLevel: stats.lastThinkingLevel,
+    sessionType: 'workspace',
+    contextType: 'workspace',
+    runLocation: 'server',
   };
 
   await upsertCatalogRows([row], [contextEntry]);
@@ -622,11 +690,19 @@ export const listIndexedSessions = async (
          s.updated_at AS updatedAt,
          s.created_at AS createdAt,
          s.archived,
+         s.readonly,
          s.session_file AS sessionFile,
          s.parent_session_id AS parentSessionId,
-         s.context_id AS contextId
+         s.context_id AS contextId,
+         si.session_type AS sessionType,
+         si.context_type AS contextType,
+         si.task_id AS taskId,
+         si.device_id AS deviceId,
+         si.run_location AS runLocation
        FROM sessions s
-       ORDER BY s.archived ASC, s.updated_at DESC`,
+       LEFT JOIN session_index si ON si.session_id = s.session_id
+       WHERE s.archived = 0
+       ORDER BY s.updated_at DESC`,
     )
     .all() as Array<{
       id: string;
@@ -635,9 +711,15 @@ export const listIndexedSessions = async (
       updatedAt: number;
       createdAt: number;
       archived: number;
+      readonly: number;
       sessionFile: string;
       parentSessionId: string | null;
       contextId: string;
+      sessionType: string | null;
+      contextType: string | null;
+      taskId: string | null;
+      deviceId: string | null;
+      runLocation: string | null;
     }>;
   return rows.map((row) => {
     const activeRecord = activeSessions.get(row.id);
@@ -651,9 +733,15 @@ export const listIndexedSessions = async (
         : row.updatedAt,
       createdAt: row.createdAt,
       archived: Boolean(row.archived),
+      readonly: Boolean(row.readonly),
       sessionFile: row.sessionFile,
       parentSessionId: row.parentSessionId || undefined,
       contextId: row.contextId,
+      sessionType: row.sessionType || undefined,
+      contextType: row.contextType || undefined,
+      taskId: row.taskId || undefined,
+      deviceId: row.deviceId || undefined,
+      runLocation: row.runLocation || undefined,
     };
   });
 };
@@ -675,14 +763,21 @@ export const getIndexedSessionLookup = async (
          s.updated_at AS updatedAt,
          s.context_id AS contextId,
          s.archived,
+         s.readonly,
          s.user_round_count AS userRoundCount,
          s.last_model AS lastModel,
          s.last_thinking_level AS lastThinkingLevel,
          ss.agent_name AS agent,
          ss.explicit_model AS explicitModel,
-         ss.explicit_thinking_level AS explicitThinkingLevel
+         ss.explicit_thinking_level AS explicitThinkingLevel,
+         si.session_type AS sessionType,
+         si.context_type AS contextType,
+         si.task_id AS taskId,
+         si.device_id AS deviceId,
+         si.run_location AS runLocation
        FROM sessions s
        LEFT JOIN session_selections ss ON ss.session_id = s.session_id
+       LEFT JOIN session_index si ON si.session_id = s.session_id
        WHERE s.session_id = ?`,
     )
     .get(sessionId) as
@@ -697,12 +792,18 @@ export const getIndexedSessionLookup = async (
         updatedAt: number;
         contextId: string;
         archived: number;
+        readonly: number;
         userRoundCount: number;
         lastModel: string | null;
         lastThinkingLevel: string | null;
         agent: string | null;
         explicitModel: string | null;
         explicitThinkingLevel: string | null;
+        sessionType: string | null;
+        contextType: string | null;
+        taskId: string | null;
+        deviceId: string | null;
+        runLocation: string | null;
       }
     | undefined;
 
@@ -721,12 +822,18 @@ export const getIndexedSessionLookup = async (
     updatedAt: row.updatedAt,
     contextId: row.contextId,
     archived: Boolean(row.archived),
+    readonly: Boolean(row.readonly),
     agent: row.agent || undefined,
     explicitModel: row.explicitModel || undefined,
     explicitThinkingLevel: row.explicitThinkingLevel || undefined,
     lastModel: row.lastModel || undefined,
     lastThinkingLevel: row.lastThinkingLevel || undefined,
     userRoundCount: row.userRoundCount,
+    sessionType: row.sessionType || undefined,
+    contextType: row.contextType || undefined,
+    taskId: row.taskId || undefined,
+    deviceId: row.deviceId || undefined,
+    runLocation: row.runLocation || undefined,
   };
 };
 

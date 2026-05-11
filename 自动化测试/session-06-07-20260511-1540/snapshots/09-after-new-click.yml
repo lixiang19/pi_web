@@ -1,0 +1,120 @@
+- generic [ref=e2]:
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - button "闪念" [ref=e16]:
+          - img [ref=e17]
+          - generic [ref=e20]: 闪念
+        - button "搜索" [ref=e21]:
+          - img [ref=e22]
+          - generic [ref=e25]: 搜索
+        - button "通知" [ref=e26]:
+          - img [ref=e27]
+          - generic [ref=e30]: 通知
+        - button "任务" [ref=e31]:
+          - img [ref=e32]
+          - generic [ref=e35]: 任务
+        - button "文件" [ref=e36]:
+          - img [ref=e37]
+          - generic [ref=e41]: 文件
+        - button "终端" [ref=e42]:
+          - img [ref=e43]
+          - generic [ref=e46]: 终端
+        - button "自动化" [ref=e47]:
+          - img [ref=e48]
+          - generic [ref=e51]: 自动化
+        - button "Skill" [ref=e52]:
+          - img [ref=e53]
+          - generic [ref=e55]: Skill
+        - button "设置" [ref=e56]:
+          - img [ref=e57]
+          - generic [ref=e60]: 设置
+      - generic [ref=e62]:
+        - button "新建" [active] [ref=e63]:
+          - img [ref=e64]
+          - text: 新建
+        - button "文件夹" [ref=e67]:
+          - img [ref=e68]
+          - text: 文件夹
+        - button "Canvas" [ref=e70]:
+          - img [ref=e71]
+          - text: Canvas
+        - button "Base" [ref=e76]:
+          - img [ref=e77]
+          - text: Base
+      - generic [ref=e83]:
+        - tablist [ref=e84]:
+          - tab [selected] [ref=e85]:
+            - img
+          - tab [ref=e86]:
+            - img
+          - tab [ref=e87]:
+            - img
+          - tab [ref=e88]:
+            - img
+        - tabpanel [ref=e89]:
+          - button [ref=e91]:
+            - img [ref=e92]
+      - button "归档" [ref=e102]:
+        - img [ref=e103]
+        - generic [ref=e106]: 归档
+    - main [ref=e107]:
+      - generic [ref=e108]:
+        - generic [ref=e110]:
+          - generic [ref=e112] [cursor=pointer]:
+            - generic [ref=e114]: 主页
+            - button [ref=e115]:
+              - img [ref=e116]
+          - button [ref=e119]:
+            - img [ref=e120]
+        - generic [ref=e127]:
+          - generic [ref=e128]:
+            - paragraph [ref=e129]: 开始对话
+            - generic [ref=e131]:
+              - generic [ref=e132]:
+                - button "处理闪念" [ref=e133]:
+                  - img [ref=e134]
+                  - text: 处理闪念
+                - button "规划任务" [ref=e136]:
+                  - img [ref=e137]
+                  - text: 规划任务
+                - button "总结最近文件" [ref=e140]:
+                  - img [ref=e141]
+                  - text: 总结最近文件
+              - generic [ref=e143]:
+                - textbox "问我任何事…" [ref=e144]
+                - button [disabled]:
+                  - img
+              - generic [ref=e145]:
+                - button "附件" [ref=e146]:
+                  - img [ref=e147]
+                  - text: 附件
+                - combobox [ref=e149]:
+                  - img
+                  - generic: 模型
+                  - img
+                - combobox [ref=e150]:
+                  - img
+                  - generic: 无 Agent（直接对话）
+                  - img
+                - combobox [ref=e151]:
+                  - img
+                  - generic: Medium
+                  - img
+          - generic [ref=e152]:
+            - generic [ref=e153]:
+              - heading "最近事情" [level=3] [ref=e155]
+              - generic [ref=e157]: 暂无最近活动
+            - generic [ref=e158]:
+              - generic [ref=e159]:
+                - heading "最近文件" [level=3] [ref=e161]
+                - generic [ref=e163]: 暂无文件
+              - generic [ref=e164]:
+                - generic [ref=e166]:
+                  - img [ref=e167]
+                  - heading "AI 建议" [level=3] [ref=e170]
+                - paragraph [ref=e172]: AI 建议功能即将推出，届时会根据你的工作习惯给出智能推荐。
+  - button "打开闪念捕捉" [ref=e174]:
+    - img
+  - region "Notifications alt+T":
+    - list

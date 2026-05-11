@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Copy, Check } from "lucide-vue-next";
+import { Copy, Check, Pencil, RotateCw, X, SendHorizontal } from "lucide-vue-next";
 import { Markdown } from "vue-stream-markdown";
 import "vue-stream-markdown/index.css";
 
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import type {
   PiTextContent,
   UiConversationMessage,
@@ -18,6 +19,14 @@ import {
 const props = defineProps<{
   message: UiConversationMessage;
   isFinalAssistantMessage?: boolean;
+  readonly?: boolean;
+  isTaskSession?: boolean;
+}>();
+
+const emit = defineEmits<{
+  edit: [newText: string];
+  retry: [];
+  copy: [];
 }>();
 
 const textContents = computed<PiTextContent[]>(() => {
@@ -62,9 +71,34 @@ const handleCopy = async () => {
   }
   await navigator.clipboard.writeText(plainText.value);
   isCopied.value = true;
+  emit("copy");
   setTimeout(() => {
     isCopied.value = false;
   }, 2000);
+};
+
+const canEdit = computed(() => isUserMessage.value && !props.readonly && !props.isTaskSession);
+const canRetry = computed(() => isFinalAssistantText.value && !props.readonly && !props.isTaskSession);
+
+// Inline editing state
+const isEditing = ref(false);
+const editDraft = ref("");
+
+const startEdit = () => {
+  editDraft.value = plainText.value;
+  isEditing.value = true;
+};
+
+const cancelEdit = () => {
+  isEditing.value = false;
+  editDraft.value = "";
+};
+
+const submitEdit = () => {
+  const text = editDraft.value.trim();
+  if (!text) return;
+  isEditing.value = false;
+  emit("edit", text);
 };
 </script>
 
@@ -74,8 +108,30 @@ const handleCopy = async () => {
     :class="isUserMessage ? 'justify-end' : 'justify-start'"
   >
     <div class="flex max-w-[85%] min-w-0 flex-col md:max-w-[75%]">
+      <!-- Inline editing for user messages -->
       <div
-        v-if="isUserMessage"
+        v-if="isUserMessage && isEditing"
+        class="user-bubble rounded-2xl rounded-br-md px-4 py-3 text-foreground shadow-sm"
+      >
+        <Textarea
+          v-model="editDraft"
+          class="min-h-[80px] resize-none border-0 bg-transparent p-0 text-[15px] leading-6 focus-visible:ring-0 focus-visible:ring-offset-0"
+          @keydown.enter.exact.prevent="submitEdit"
+        />
+        <div class="mt-2 flex justify-end gap-2">
+          <Button variant="ghost" size="sm" class="h-7 text-xs" @click="cancelEdit">
+            <X class="size-3 mr-1" />
+            取消
+          </Button>
+          <Button variant="secondary" size="sm" class="h-7 text-xs" @click="submitEdit">
+            <SendHorizontal class="size-3 mr-1" />
+            提交
+          </Button>
+        </div>
+      </div>
+
+      <div
+        v-else-if="isUserMessage"
         class="user-bubble rounded-2xl rounded-br-md px-4 py-3 text-foreground shadow-sm"
       >
         <Markdown
@@ -110,10 +166,10 @@ const handleCopy = async () => {
       </div>
 
       <div
-        v-if="isFinalAssistantText && plainText.trim()"
-        class="mt-1 flex"
+        class="mt-1 flex gap-1"
       >
         <Button
+          v-if="plainText.trim()"
           variant="ghost"
           size="sm"
           class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
@@ -123,6 +179,26 @@ const handleCopy = async () => {
           <Check v-if="isCopied" class="size-3" />
           <Copy v-else class="size-3" />
           {{ isCopied ? "已复制" : "复制" }}
+        </Button>
+        <Button
+          v-if="canEdit && !isEditing"
+          variant="ghost"
+          size="sm"
+          class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+          @click="startEdit"
+        >
+          <Pencil class="size-3" />
+          编辑
+        </Button>
+        <Button
+          v-if="canRetry"
+          variant="ghost"
+          size="sm"
+          class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+          @click="emit('retry')"
+        >
+          <RotateCw class="size-3" />
+          重试
         </Button>
       </div>
     </div>

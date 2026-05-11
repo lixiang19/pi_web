@@ -39,6 +39,8 @@ defineProps<{
   skills: SkillCatalogItem[];
   status: SessionSummary["status"];
   thinkingOptions: Array<{ value: ThinkingLevel; label: string }>;
+  readonly?: boolean;
+  isTaskSession?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -59,6 +61,8 @@ const emit = defineEmits<{
   abort: [];
   toggleResourcePicker: [];
   "update:draftText": [text: string];
+  editMessage: [messageIndex: number, newText: string];
+  retryMessage: [messageIndex: number];
 }>();
 
 function handleDraftUpdate(text: string) {
@@ -97,11 +101,15 @@ function handleSelectThinking(value: ThinkingLevel) {
       :is-loading-older="isLoadingOlder"
       :messages="messages"
       :status="status"
+      :readonly="readonly"
+      :is-task-session="isTaskSession"
       @load-earlier="emit('loadEarlier')"
       @dismiss-ask="emit('dismissAsk', $event)"
       @submit-ask="(askId, answers) => emit('respondAsk', askId, answers)"
 
       @submit-permission="(requestId, action) => emit('respondPermission', requestId, action)"
+      @edit-message="(index, text) => emit('editMessage', index, text)"
+      @retry-message="emit('retryMessage', $event)"
     />
 
     <WorkbenchComposer
@@ -120,6 +128,7 @@ function handleSelectThinking(value: ThinkingLevel) {
       :skills="skills"
       :thinking-options="thinkingOptions"
       :value="composer.draftText"
+      :readonly="readonly"
       @apply-prompt="emit('applyPrompt', $event)"
       @inject-command="emit('injectCommand', $event)"
       @inject-skill="emit('injectSkill', $event)"

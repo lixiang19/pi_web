@@ -276,6 +276,12 @@ export const buildSessionSummaryFromIndex = (
 	createdAt: lookup.createdAt,
 	updatedAt: Math.max(lookup.updatedAt, record.updatedAt),
 	archived: lookup.archived,
+	readonly: lookup.readonly,
+	sessionType: lookup.sessionType,
+	contextType: lookup.contextType,
+	taskId: lookup.taskId,
+	deviceId: lookup.deviceId,
+	runLocation: lookup.runLocation,
 	agent: record.selectedAgentName,
 	model: record.explicitModelSpec,
 	thinkingLevel: record.explicitThinkingLevel,
@@ -451,6 +457,8 @@ export const buildStoredSessionMessagesPayload = (
 	};
 };
 
+import { getRidgeDb } from './db/index.js';
+
 export const getIndexedSessionLookupOrThrow = async (
 	sessionId: string,
 ): Promise<IndexedSessionLookup> => {
@@ -464,11 +472,33 @@ export const getIndexedSessionLookupOrThrow = async (
 	throw error;
 };
 
+export const assertSessionAvailableById = async (sessionId: string): Promise<void> => {
+	const lookup = await getIndexedSessionLookup(sessionId);
+	if (lookup) {
+		await assertSessionAvailable(lookup);
+	}
+};
+
+export const assertSessionAvailable = async (lookup: IndexedSessionLookup): Promise<void> => {
+	if (lookup.runLocation === "desktop" && lookup.deviceId) {
+		const db = await getRidgeDb();
+		const device = db
+			.prepare("SELECT status FROM devices WHERE device_id = ?")
+			.get(lookup.deviceId) as { status: string } | undefined;
+		if (!device || device.status === "offline") {
+			const error = new Error("桌面设备离线，无法读取会话内容") as HttpError;
+			error.statusCode = 403;
+			throw error;
+		}
+	}
+};
+
 export const getStoredSessionMessagesPayload = async (
 	sessionId: string,
 	options: ToSessionSnapshotOptions = {},
 ): Promise<SessionMessagesPayload> => {
 	const lookup = await getIndexedSessionLookupOrThrow(sessionId);
+	await assertSessionAvailable(lookup);
 	const requestedRounds = getRequestedRoundCount(options);
 	const messages =
 		lookup.userRoundCount > 0 && lookup.userRoundCount > requestedRounds
@@ -483,26 +513,11 @@ export const getStoredSessionMessagesPayload = async (
 	);
 };
 
-export const toSessionRuntimePayload = (
-	record: SessionRecord,
-): SessionRuntimePayload => ({
-	sessionId: record.id,
-	agent: record.selectedAgentName,
-	model: record.explicitModelSpec || formatModelSpec(record.session.model),
-	thinkingLevel:
-		record.explicitThinkingLevel ||
-		normalizeThinkingLevel(record.session.thinkingLevel),
-	resolvedModel:
-		record.resolvedModelSpec || formatModelSpec(record.session.model),
-	resolvedThinkingLevel:
-		record.resolvedThinkingLevel ||
-		normalizeThinkingLevel(record.session.thinkingLevel),
-});
-
 export const getStoredSessionRuntimePayload = async (
 	sessionId: string,
 ): Promise<SessionRuntimePayload> => {
 	const lookup = await getIndexedSessionLookupOrThrow(sessionId);
+	await assertSessionAvailable(lookup);
 	const thinkingLevel =
 		normalizeThinkingLevel(lookup.explicitThinkingLevel) ||
 		normalizeThinkingLevel(lookup.lastThinkingLevel);
@@ -533,6 +548,22 @@ export const toSessionSnapshot = async (
 		permissionRequests: messagesPayload.permissionRequests,
 	};
 };
+
+export const toSessionRuntimePayload = (
+	record: SessionRecord,
+): SessionRuntimePayload => ({
+	sessionId: record.id,
+	agent: record.selectedAgentName,
+	model: record.explicitModelSpec || formatModelSpec(record.session.model),
+	thinkingLevel:
+		record.explicitThinkingLevel ||
+		normalizeThinkingLevel(record.session.thinkingLevel),
+	resolvedModel:
+		record.resolvedModelSpec || formatModelSpec(record.session.model),
+	resolvedThinkingLevel:
+		record.resolvedThinkingLevel ||
+		normalizeThinkingLevel(record.session.thinkingLevel),
+});
 
 export const buildResourceCatalog = (
 	session: AgentSession,
@@ -601,6 +632,10 @@ export const ensureSessionRecord = async (
 ): Promise<SessionRecord> => {
 	const existing = deps.activeSessions.get(sessionId);
 	if (existing) {
+		const lookup = await getIndexedSessionLookup(sessionId);
+		if (lookup) {
+			await assertSessionAvailable(lookup);
+		}
 		return existing;
 	}
 
@@ -611,6 +646,7 @@ export const ensureSessionRecord = async (
 
 	const pendingRecord = (async (): Promise<SessionRecord> => {
 		const lookup = await getIndexedSessionLookupOrThrow(sessionId);
+		await assertSessionAvailable(lookup);
 		const sessionManager = SessionManager.open(lookup.sessionFile);
 		const settingsManager = createPiAgentScopeSettingsManager(lookup.cwd);
 		const recordState: Partial<SessionRecord> = {
