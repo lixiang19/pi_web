@@ -41,9 +41,11 @@ function makeMomentItem(
 ): InboxItem {
 	return {
 		id: "moment-1",
+		type: "text",
 		content: "一条闪念",
 		status: "pending",
 		analysisStatus: "suggested",
+		suggestion: null,
 		recommendationType: "journal",
 		recommendationText: "建议写入日记",
 		draft: "一条闪念",
@@ -52,6 +54,7 @@ function makeMomentItem(
 		piSessionFile: null,
 		createdAt: 3000,
 		updatedAt: 3000,
+		attachments: [],
 		...overrides,
 	};
 }

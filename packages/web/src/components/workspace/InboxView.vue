@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import {
 	BookOpen,
 	Bookmark,
+	FileUp,
 	Inbox,
 	Lightbulb,
 	LoaderCircle,
@@ -67,14 +68,17 @@ const clipTitle = ref("");
 const clipUrl = ref("");
 const clipContent = ref("");
 const clipSource = ref("闪念");
+const pendingAttachments = ref<File[]>([]);
 
 const handleCapture = async () => {
 	const text = fleetingText.value.trim();
-	if (!text || !props.workspaceDir) return;
+	const files = pendingAttachments.value;
+	if (!text && files.length === 0) return;
 	isSaving.value = true;
 	try {
-		await captureNote(text);
+		await captureNote(text, files);
 		fleetingText.value = "";
+		pendingAttachments.value = [];
 	} catch (err) {
 		toast.error("保存闪念失败", {
 			description: err instanceof Error ? err.message : String(err),
@@ -82,6 +86,20 @@ const handleCapture = async () => {
 	} finally {
 		isSaving.value = false;
 	}
+};
+
+const onAttachmentSelect = (event: Event) => {
+	const input = event.target as HTMLInputElement;
+	const files = input.files;
+	if (!files || files.length === 0) return;
+	for (const file of files) {
+		pendingAttachments.value.push(file);
+	}
+	input.value = "";
+};
+
+const removeAttachment = (index: number) => {
+	pendingAttachments.value.splice(index, 1);
 };
 
 const openJournalDialog = (note: InboxItem) => {
@@ -125,10 +143,16 @@ const handleSuggestion = (note: InboxItem) => {
 	else if (note.recommendationType === "delete") deleteItem(note.id);
 };
 
-const recommendationLabel = (note: InboxItem) => {
+const analysisStatusLabel = (note: InboxItem) => {
 	if (note.analysisStatus === "analyzing") return "建议生成中";
 	if (note.analysisStatus === "unanalyzed") return "等待分析";
-	return note.recommendationText || "已有建议";
+	if (note.analysisStatus === "failed") return "分析失败";
+	return note.suggestion || note.recommendationText || "已有建议";
+};
+
+const analysisStatusClass = (note: InboxItem) => {
+	if (note.analysisStatus === "failed") return "text-destructive bg-destructive/10";
+	return "text-muted-foreground";
 };
 
 const pendingCountText = computed(() => `${count.value} 待处理`);
@@ -139,7 +163,7 @@ const pendingCountText = computed(() => `${count.value} 待处理`);
     <div class="mx-auto max-w-3xl space-y-5">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-bold tracking-tight">收件箱</h1>
+          <h1 class="text-2xl font-bold tracking-tight">闪念</h1>
           <p class="mt-1 text-sm text-muted-foreground">清空闪念临时队列</p>
         </div>
         <div class="flex items-center gap-2">
@@ -161,12 +185,29 @@ const pendingCountText = computed(() => `${count.value} 待处理`);
           @keydown.meta.enter="handleCapture"
         />
         <div class="mt-3 flex items-center justify-between">
-          <span class="text-[11px] text-muted-foreground">保存后不会打开收件箱</span>
-          <Button size="sm" class="h-7 gap-1.5 text-xs" :disabled="!fleetingText.trim() || isSaving" @click="handleCapture">
+          <div class="flex items-center gap-2">
+            <label class="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground">
+              <FileUp class="size-3.5" />
+              <span>添加附件</span>
+              <input type="file" multiple class="sr-only" @change="onAttachmentSelect" />
+            </label>
+            <span v-if="pendingAttachments.length > 0" class="text-[11px] text-muted-foreground">
+              {{ pendingAttachments.length }} 个临时附件
+            </span>
+          </div>
+          <Button size="sm" class="h-7 gap-1.5 text-xs" :disabled="(!fleetingText.trim() && pendingAttachments.length === 0) || isSaving" @click="handleCapture">
             <LoaderCircle v-if="isSaving" class="size-3 animate-spin" />
             <Inbox v-else class="size-3" />
             保存
           </Button>
+        </div>
+        <div v-if="pendingAttachments.length > 0" class="mt-2 space-y-1">
+          <div v-for="(file, index) in pendingAttachments" :key="index" class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <FileUp class="size-3" />
+            <span>{{ file.name }}</span>
+            <span class="tabular-nums">({{ (file.size / 1024).toFixed(1) }} KB)</span>
+            <button class="ml-1 text-destructive hover:underline" @click="removeAttachment(index)">移除</button>
+          </div>
         </div>
       </div>
 
@@ -214,11 +255,16 @@ const pendingCountText = computed(() => `${count.value} 待处理`);
         <div v-else class="space-y-3">
           <div v-for="note in filteredFiles" :key="note.id" class="rounded-lg border border-border/50 bg-background/60 p-4">
             <div class="flex items-start justify-between gap-3">
-              <p class="whitespace-pre-wrap text-sm leading-6 text-foreground">{{ note.content }}</p>
+              <div class="min-w-0 flex-1">
+                <p class="whitespace-pre-wrap text-sm leading-6 text-foreground">{{ note.content }}</p>
+                <p v-if="note.attachments && note.attachments.length > 0" class="mt-1 text-[11px] text-muted-foreground">
+                  {{ note.attachments.length }} 个附件: {{ note.attachments.map(a => a.originalName).join(', ') }}
+                </p>
+              </div>
               <span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">{{ formatTime(note.createdAt) }}</span>
             </div>
-            <div class="mt-3 rounded-md bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
-              {{ recommendationLabel(note) }}
+            <div class="mt-3 rounded-md bg-muted/35 px-3 py-2 text-xs" :class="analysisStatusClass(note)">
+              {{ analysisStatusLabel(note) }}
             </div>
             <div class="mt-3 flex flex-wrap items-center gap-2">
               <Button size="sm" class="h-7 text-xs" :disabled="note.analysisStatus !== 'suggested'" @click="handleSuggestion(note)">
@@ -250,7 +296,7 @@ const pendingCountText = computed(() => `${count.value} 待处理`);
       <DialogContent>
         <DialogHeader>
           <DialogTitle>写入今日日记</DialogTitle>
-          <DialogDescription>闪念会追加到今天的日记，成功后从收件箱删除。</DialogDescription>
+          <DialogDescription>闪念会追加到今天的日记，成功后从闪念删除。</DialogDescription>
         </DialogHeader>
         <Textarea v-model="journalContent" class="min-h-32" />
         <DialogFooter>
@@ -264,7 +310,7 @@ const pendingCountText = computed(() => `${count.value} 待处理`);
       <DialogContent>
         <DialogHeader>
           <DialogTitle>保存为剪藏</DialogTitle>
-          <DialogDescription>剪藏会保存到 DB，成功后从收件箱删除。</DialogDescription>
+          <DialogDescription>剪藏会保存到 DB，成功后从闪念删除。</DialogDescription>
         </DialogHeader>
         <div class="space-y-3">
           <Input v-model="clipTitle" placeholder="标题" />

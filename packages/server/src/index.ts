@@ -449,7 +449,17 @@ app.post("/api/auth/login", authRuntime.login);
 app.post("/api/auth/logout", authRuntime.logout);
 app.use(authRuntime.requireApiAuth);
 
-app.use("/api/fleeting", createFleetingRouter({
+app.use("/api/fleeting", upload.fields([
+	{ name: "attachments", maxCount: 20 },
+	{ name: "files", maxCount: 20 },
+]), createFleetingRouter({
+	db: await initializeRidgeDb(defaultWorkspaceDir),
+	workspaceDir: defaultWorkspaceDir,
+}));
+app.use("/api/workspace/fleeting", upload.fields([
+	{ name: "attachments", maxCount: 20 },
+	{ name: "files", maxCount: 20 },
+]), createFleetingRouter({
 	db: await initializeRidgeDb(defaultWorkspaceDir),
 	workspaceDir: defaultWorkspaceDir,
 }));

@@ -16,6 +16,7 @@ vi.mock("@/lib/api", () => ({
 	processFleetingToJournal: vi.fn(),
 	processFleetingToClip: vi.fn(),
 	processFleetingToTask: vi.fn(),
+	patchFleetingNote: vi.fn(),
 }));
 
 import {
@@ -39,6 +40,8 @@ const note = {
 	content: "今天复盘闪念系统",
 	status: "pending" as const,
 	analysisStatus: "suggested" as const,
+	type: "text" as const,
+	suggestion: null,
 	recommendationType: "journal" as const,
 	recommendationText: "建议写入今天日记",
 	draft: "今天复盘闪念系统",
@@ -47,6 +50,7 @@ const note = {
 	piSessionFile: null,
 	createdAt: 1000,
 	updatedAt: 1000,
+	attachments: [],
 };
 
 describe("useWorkspaceInbox", () => {
@@ -72,22 +76,69 @@ describe("useWorkspaceInbox", () => {
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalled());
 		await store.captureNote("新的闪念");
-		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念");
+		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念", []);
 		expect(dispatchSpy).toHaveBeenCalledWith(
 			expect.objectContaining({ type: "ridge:fleeting-created" }),
 		);
 		dispatchSpy.mockRestore();
 	});
 
-	it("polls while notes are waiting for analysis", async () => {
+	it("creates a fleeting note with attachments", async () => {
+		mockCreateFleetingNote.mockResolvedValue({ note });
+		const store = useWorkspaceInbox(() => "/workspace");
+		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalled());
+		const file = new File(["data"], "img.png", { type: "image/png" });
+		await store.captureNote("带截图", [file]);
+		expect(mockCreateFleetingNote).toHaveBeenCalledWith(
+			"带截图",
+			expect.arrayContaining([expect.objectContaining({ name: "img.png" })]),
+		);
+	});
+
+	it("calls createFleetingNote even when workspaceDir is empty", async () => {
+		mockCreateFleetingNote.mockResolvedValue({ note });
+		mockGetFleetingNotes.mockResolvedValue({ notes: [] });
+		const store = useWorkspaceInbox(() => "");
+		await store.captureNote("无 workspaceDir 也要保存");
+		expect(mockCreateFleetingNote).toHaveBeenCalledWith("无 workspaceDir 也要保存", []);
+	});
+
+	it("calls createFleetingNote with attachments even when workspaceDir is empty", async () => {
+		mockCreateFleetingNote.mockResolvedValue({ note });
+		mockGetFleetingNotes.mockResolvedValue({ notes: [] });
+		const store = useWorkspaceInbox(() => "");
+		const file = new File(["data"], "img.png", { type: "image/png" });
+		await store.captureNote("", [file]);
+		expect(mockCreateFleetingNote).toHaveBeenCalledWith(
+			"",
+			expect.arrayContaining([expect.objectContaining({ name: "img.png" })]),
+		);
+	});
+
+	it("polls while notes are unanalyzed or analyzing", async () => {
 		vi.useFakeTimers();
 		mockGetFleetingNotes.mockResolvedValue({
-			notes: [{ ...note, analysisStatus: "unanalyzed" }],
+			notes: [{ ...note, analysisStatus: "unanalyzed" as const }],
 		});
 		useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1));
 		await vi.advanceTimersByTimeAsync(3000);
 		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(2);
+	});
+
+	it("stops polling when all notes are suggested or failed", async () => {
+		vi.useFakeTimers();
+		mockGetFleetingNotes.mockResolvedValue({
+			notes: [
+				{ ...note, analysisStatus: "suggested" as const },
+				{ ...note, id: "flash-2", analysisStatus: "failed" as const },
+			],
+		});
+		useWorkspaceInbox(() => "/workspace");
+		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1));
+		await vi.advanceTimersByTimeAsync(3000);
+		// Should not poll because neither unanalyzed nor analyzing
+		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1);
 	});
 
 	it("removes a note after journal processing succeeds", async () => {
@@ -137,5 +188,19 @@ describe("useWorkspaceInbox", () => {
 		await vi.waitFor(() => expect(store.count.value).toBe(1));
 		await expect(store.deleteItem("flash-1")).rejects.toThrow("delete failed");
 		expect(store.count.value).toBe(1);
+	});
+
+	it("search includes suggestion field", async () => {
+		mockGetFleetingNotes.mockResolvedValue({
+			notes: [
+				{ ...note, content: "A", suggestion: "搜索命中" },
+				{ ...note, id: "flash-2", content: "B", suggestion: null },
+			],
+		});
+		const store = useWorkspaceInbox(() => "/workspace");
+		await vi.waitFor(() => expect(store.count.value).toBe(2));
+		store.searchQuery.value = "搜索命中";
+		expect(store.filteredFiles.value).toHaveLength(1);
+		expect(store.filteredFiles.value[0]?.content).toBe("A");
 	});
 });
