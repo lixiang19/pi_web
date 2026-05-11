@@ -70,7 +70,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
-  readonly INTEGER NOT NULL DEFAULT 0,
   context_id TEXT,
   user_round_count INTEGER NOT NULL DEFAULT 0,
   last_model TEXT,
@@ -80,7 +79,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_context_id ON sessions(context_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_archived ON sessions(archived);
-CREATE INDEX IF NOT EXISTS idx_sessions_readonly ON sessions(readonly);
 CREATE INDEX IF NOT EXISTS idx_sessions_parent_session_id ON sessions(parent_session_id);
 
 CREATE TABLE IF NOT EXISTS session_index (

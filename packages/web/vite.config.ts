@@ -4,7 +4,6 @@ import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
 
 const serverPort = process.env.PORT || "3000";
-const frontendPort = Number.parseInt(process.env.FRONTEND_PORT || "5175", 10);
 
 export default defineConfig({
 	plugins: [vue()],
@@ -21,8 +20,8 @@ export default defineConfig({
 		css: false,
 	},
 	server: {
-		host: true,
-		port: frontendPort,
+		host: "0.0.0.0",
+		port: 80,
 		proxy: {
 			"/api": {
 				target: `http://127.0.0.1:${serverPort}`,

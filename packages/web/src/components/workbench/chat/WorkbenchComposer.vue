@@ -45,7 +45,6 @@ const props = defineProps<{
   resourceError: string;
   skills: SkillCatalogItem[];
   thinkingOptions: Array<{ value: ThinkingLevel; label: string }>;
-  readonly?: boolean;
   value: string;
 }>();
 
@@ -62,8 +61,6 @@ const emit = defineEmits<{
   toggleResourcePicker: [];
   "update:value": [string];
 }>();
-
-const isReadonly = computed(() => props.readonly === true || props.composer.isDisabled);
 
 const draftText = computed({
   get: () => props.value,
@@ -206,14 +203,11 @@ const handleDragLeave = (event: DragEvent) => {
   }
 };
 
-  const handleKeydown = (event: KeyboardEvent) => {
+const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     if (props.composer.canAbort) {
       emit("abort");
-      return;
-    }
-    if (isReadonly.value) {
       return;
     }
     if (draftText.value.trim()) {
@@ -290,7 +284,6 @@ const currentAgentLabel = computed(() => {
             placeholder="输入消息… 支持 Markdown，Shift + Enter 换行，可拖拽文件路径到输入框"
             class="min-h-[96px] resize-none border-0 bg-transparent px-4 py-3 pr-14 text-sm leading-6 focus-visible:ring-0 focus-visible:ring-offset-0"
             :class="isDraggingOver ? 'placeholder:text-primary/70' : ''"
-            :disabled="isReadonly"
             @keydown="handleKeydown"
             @drop="handleDrop"
             @dragover="handleDragOver"
@@ -303,15 +296,6 @@ const currentAgentLabel = computed(() => {
           >
             <span class="rounded-full border border-primary/20 bg-background/95 px-3 py-1 text-xs font-medium text-primary shadow-sm">
               释放以插入文件路径
-            </span>
-          </div>
-
-          <div
-            v-if="isReadonly"
-            class="pointer-events-none absolute inset-0 flex items-center justify-center"
-          >
-            <span class="rounded-full border border-muted bg-background/95 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
-              只读会话
             </span>
           </div>
 
@@ -329,7 +313,7 @@ const currentAgentLabel = computed(() => {
               v-else
               size="icon"
               class="size-9 rounded-lg"
-              :disabled="!value.trim() || isReadonly"
+              :disabled="!value.trim()"
               @click="emit('submit')"
             >
               <SendHorizontal class="size-4" />

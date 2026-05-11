@@ -1,0 +1,287 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "05 之后并行开发路线图" [level=1] [ref=e4]
+    - paragraph [ref=e5]:
+      - text: 当前状态：
+      - strong [ref=e6]: 00–05、25 已完成
+      - text: 。06 以后不是单线推进，而是
+      - strong [ref=e7]: 6 条并行线收敛
+      - text: 。
+    - generic [ref=e8]:
+      - generic [ref=e9]: 00–05 基座已完成
+      - generic [ref=e10]: 25 后台队列已完成
+      - generic [ref=e11]: 06–37 并行推进中
+      - generic [ref=e12]: 更新时间：2026-05-11
+  - generic [ref=e13]:
+    - heading "先开工推荐批次" [level=2] [ref=e14]
+    - generic [ref=e15]:
+      - paragraph [ref=e16]:
+        - strong [ref=e17]: 第一批并行开工：
+        - text: 以下 6 个任务互不阻塞，可立即同时启动。它们分别代表 6 条线的切入点。
+      - generic [ref=e18]:
+        - generic [ref=e19] [cursor=pointer]:
+          - generic [ref=e20]: "06"
+          - generic [ref=e21]: 会话索引归档与只读状态
+          - generic [ref=e22]: 会话线是用户每日主路径，先补齐会话的归档和只读，才能承接后续任务线和闪念线。
+        - generic [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: "08"
+          - generic [ref=e25]: 任务里程碑数据模型
+          - generic [ref=e26]: 任务线是工作闭环核心，数据模型越早确定，闪念正式化（16）、自动化（35-36）才有锚点。
+        - generic [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: "12"
+          - generic [ref=e29]: 闪念数据模型与 Web 入口
+          - generic [ref=e30]: 闪念线起点；13 附件、14 桌面采集、15 agent、16 正式化全部依赖 12 的 DB 和 API。
+        - generic [ref=e31] [cursor=pointer]:
+          - generic [ref=e32]: "17"
+          - generic [ref=e33]: 文件页与正式附件目录
+          - generic [ref=e34]: 文件线是资产沉淀基础；17 确定附件目录边界后，18 临时文件、19-20 转换才有处理目标。
+        - generic [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: "18"
+          - generic [ref=e37]: 文件处理状态与临时文件边界
+          - generic [ref=e38]: "和 17 同线紧耦合，定义 `.ridge` 临时区与正式区的迁移规则，是后续 RAG 索引的前置。"
+        - generic [ref=e39] [cursor=pointer]:
+          - generic [ref=e40]: "30"
+          - generic [ref=e41]: 项目注册与内部外部项目
+          - generic [ref=e42]: 项目设备线起点；30 先定义项目边界，31 设备在线、32 runtime、14 桌面采集才有归属。
+  - generic [ref=e43]:
+    - generic [ref=e44]:
+      - heading "六线并行依赖泳道图" [level=2] [ref=e45]
+      - generic [ref=e46]:
+        - button "全部" [ref=e47] [cursor=pointer]
+        - button "第一批" [ref=e48] [cursor=pointer]
+        - button "会话线" [ref=e49] [cursor=pointer]
+        - button "任务线" [ref=e50] [cursor=pointer]
+        - button "闪念线" [ref=e51] [cursor=pointer]
+        - button "文件线" [ref=e52] [cursor=pointer]
+        - button "项目设备线" [ref=e53] [cursor=pointer]
+        - button "后续线" [ref=e54] [cursor=pointer]
+    - generic [ref=e56]:
+      - generic [ref=e57]:
+        - generic [ref=e58]: A 会话线
+        - generic [ref=e59] [cursor=pointer]:
+          - generic [ref=e60]: 基座
+          - generic [ref=e61]: 00–05、25 已完成
+          - generic [ref=e62]: 目录 / DB / Shell / 队列
+        - generic [ref=e63] [cursor=pointer]:
+          - generic [ref=e64]: "06"
+          - generic [ref=e65]: 会话索引归档与只读状态
+          - generic [ref=e66]: 05 会话创建
+        - generic [ref=e68] [cursor=pointer]:
+          - generic [ref=e69]: "07"
+          - generic [ref=e70]: 会话界面与右侧工作侧栏
+          - generic [ref=e71]: 06 会话状态
+      - generic [ref=e72]:
+        - generic [ref=e73]: B 任务线
+        - generic [ref=e74] [cursor=pointer]:
+          - generic [ref=e75]: 基座
+          - generic [ref=e76]: 00–05、25 已完成
+          - generic [ref=e77]: 目录 / DB / Shell / 队列
+        - generic [ref=e78] [cursor=pointer]:
+          - generic [ref=e79]: "08"
+          - generic [ref=e80]: 任务里程碑数据模型
+          - generic [ref=e81]: 01 DB 基座
+        - generic [ref=e83] [cursor=pointer]:
+          - generic [ref=e84]: "09"
+          - generic [ref=e85]: 任务列表详情与状态流转
+          - generic [ref=e86]: 08 数据模型
+        - generic [ref=e88] [cursor=pointer]:
+          - generic [ref=e89]: "10"
+          - generic [ref=e90]: 任务处理会话与任务 Agent
+          - generic [ref=e91]: 09 状态流转 + 07 会话界面
+        - generic [ref=e93] [cursor=pointer]:
+          - generic [ref=e94]: "11"
+          - generic [ref=e95]: 规划工具与完成确认边界
+          - generic [ref=e96]: 10 任务处理会话
+      - generic [ref=e97]:
+        - generic [ref=e98]: C 闪念采集线
+        - generic [ref=e99] [cursor=pointer]:
+          - generic [ref=e100]: 基座
+          - generic [ref=e101]: 00–05、25 已完成
+          - generic [ref=e102]: 目录 / DB / Shell / 队列
+        - generic [ref=e103] [cursor=pointer]:
+          - generic [ref=e104]: "12"
+          - generic [ref=e105]: 闪念数据模型与 Web 入口
+          - generic [ref=e106]: 01 DB + 03 Shell
+        - generic [ref=e108] [cursor=pointer]:
+          - generic [ref=e109]: "13"
+          - generic [ref=e110]: 闪念临时附件生命周期
+          - generic [ref=e111]: 12 闪念模型 + 02 .ridge 边界
+        - generic [ref=e113] [cursor=pointer]:
+          - generic [ref=e114]: "14"
+          - generic [ref=e115]: 桌面采集入口
+          - generic [ref=e116]: 12 API + 31 桌面在线能力
+        - generic [ref=e118] [cursor=pointer]:
+          - generic [ref=e119]: "15"
+          - generic [ref=e120]: fleeting agent 分析建议
+          - generic [ref=e121]: 12 闪念数据 + 25 后台队列
+        - generic [ref=e123] [cursor=pointer]:
+          - generic [ref=e124]: "16"
+          - generic [ref=e125]: 闪念处理为正式对象
+          - generic [ref=e126]: 12/13 + 08/09 任务 + 17 附件
+      - generic [ref=e127]:
+        - generic [ref=e128]: D 文件空间线
+        - generic [ref=e129] [cursor=pointer]:
+          - generic [ref=e130]: 基座
+          - generic [ref=e131]: 00–05、25 已完成
+          - generic [ref=e132]: 目录 / DB / Shell / 队列
+        - generic [ref=e133] [cursor=pointer]:
+          - generic [ref=e134]: "17"
+          - generic [ref=e135]: 文件页与正式附件目录
+          - generic [ref=e136]: 02 目录边界 + 03 Shell
+        - generic [ref=e138] [cursor=pointer]:
+          - generic [ref=e139]: "18"
+          - generic [ref=e140]: 文件处理状态与临时文件边界
+          - generic [ref=e141]: 17 正式目录 + 02 .ridge 边界
+        - generic [ref=e143] [cursor=pointer]:
+          - generic [ref=e144]: "19"
+          - generic [ref=e145]: PDF Word 标准化转换
+          - generic [ref=e146]: 18 临时边界 + 25 后台队列
+        - generic [ref=e148] [cursor=pointer]:
+          - generic [ref=e149]: "20"
+          - generic [ref=e150]: 音频图片 Markdown 处理
+          - generic [ref=e151]: 18 临时边界 + 25 后台队列
+        - generic [ref=e153] [cursor=pointer]:
+          - generic [ref=e154]: "21"
+          - generic [ref=e155]: 空间 HTML 作品私有预览
+          - generic [ref=e156]: 17 文件页 + 18 空间边界
+      - generic [ref=e157]:
+        - generic [ref=e158]: E 项目设备线
+        - generic [ref=e159] [cursor=pointer]:
+          - generic [ref=e160]: 基座
+          - generic [ref=e161]: 00–05、25 已完成
+          - generic [ref=e162]: 目录 / DB / Shell / 队列
+        - generic [ref=e163] [cursor=pointer]:
+          - generic [ref=e164]: "30"
+          - generic [ref=e165]: 项目注册与内部外部项目
+          - generic [ref=e166]: 01 DB + 02 目录边界
+        - generic [ref=e168] [cursor=pointer]:
+          - generic [ref=e169]: "31"
+          - generic [ref=e170]: 设备注册在线状态与调度
+          - generic [ref=e171]: 30 项目注册 + 01 DB
+        - generic [ref=e173] [cursor=pointer]:
+          - generic [ref=e174]: "32"
+          - generic [ref=e175]: runtime bundle 与设备专属 Skill
+          - generic [ref=e176]: 31 设备在线
+      - generic [ref=e177]:
+        - generic [ref=e178]: F 知识/通知/收尾
+        - generic [ref=e179] [cursor=pointer]:
+          - generic [ref=e180]: 基座
+          - generic [ref=e181]: 00–05、25 已完成
+          - generic [ref=e182]: 目录 / DB / Shell / 队列
+        - generic [ref=e183] [cursor=pointer]:
+          - generic [ref=e184]: "34"
+          - generic [ref=e185]: 通知与建议中心
+          - generic [ref=e186]: 25 后台队列
+        - generic [ref=e188] [cursor=pointer]:
+          - generic [ref=e189]: "22"
+          - generic [ref=e190]: RAG 标准产物索引与 chunk
+          - generic [ref=e191]: 19/20 标准产物 + 18 状态边界
+        - generic [ref=e193] [cursor=pointer]:
+          - generic [ref=e194]: "23"
+          - generic [ref=e195]: RAG 更新删除移动规则
+          - generic [ref=e196]: 22 索引构建
+        - generic [ref=e198] [cursor=pointer]:
+          - generic [ref=e199]: "24"
+          - generic [ref=e200]: 全局搜索资产导航器
+          - generic [ref=e201]: 23 RAG 规则 + 22 索引
+        - generic [ref=e203] [cursor=pointer]:
+          - generic [ref=e204]: "26"
+          - generic [ref=e205]: summary agent daily 会话记忆
+          - generic [ref=e206]: 07 会话界面 + 25 后台队列
+        - generic [ref=e208] [cursor=pointer]:
+          - generic [ref=e209]: "27"
+          - generic [ref=e210]: memory agent MEMORY 维护与注入
+          - generic [ref=e211]: 26 daily 摘要
+        - generic [ref=e213] [cursor=pointer]:
+          - generic [ref=e214]: "28"
+          - generic [ref=e215]: Kuzu 图谱存储与抽取
+          - generic [ref=e216]: 22/23 RAG 产出稳定
+        - generic [ref=e218] [cursor=pointer]:
+          - generic [ref=e219]: "29"
+          - generic [ref=e220]: Wiki 夜间维护与 index 注入
+          - generic [ref=e221]: 28 图谱抽取
+        - generic [ref=e223] [cursor=pointer]:
+          - generic [ref=e224]: "33"
+          - generic [ref=e225]: workspace MCP 查读工具
+          - generic [ref=e226]: 24 搜索 + 28 图谱 + 29 Wiki
+        - generic [ref=e228] [cursor=pointer]:
+          - generic [ref=e229]: "35"
+          - generic [ref=e230]: task review agent 任务回顾
+          - generic [ref=e231]: 11 任务闭环 + 25 后台队列
+        - generic [ref=e233] [cursor=pointer]:
+          - generic [ref=e234]: "36"
+          - generic [ref=e235]: 自动化规则运行与跳过
+          - generic [ref=e236]: 34 通知 + 35 任务回顾 + 31 设备状态
+        - generic [ref=e238] [cursor=pointer]:
+          - generic [ref=e239]: "37"
+          - generic [ref=e240]: 备份恢复设置主题收尾
+  - generic [ref=e241]:
+    - heading "闪念线 12–16 详解" [level=2] [ref=e242]
+    - generic [ref=e243]:
+      - paragraph [ref=e244]:
+        - text: 这条线的核心目标是：
+        - strong [ref=e245]: 快速捕获 anything，不打扰，用户确认后再正式化。
+        - text: 以下是 5 个环节的职责边界。
+      - generic [ref=e246]:
+        - generic [ref=e247]:
+          - generic [ref=e248]: "12"
+          - generic [ref=e249]: 闪念 DB + Web 入口
+          - generic [ref=e250]: 数据模型：闪念头（文本/类型/来源）+ 附件关联。Web 提供快速输入框，不选项目、不分类。
+          - text: →
+        - generic [ref=e251]:
+          - generic [ref=e252]: "13"
+          - generic [ref=e253]: 临时附件生命周期
+          - generic [ref=e254]:
+            - text: 附件先落盘到
+            - code [ref=e255]: .ridge/fleeting-attachments
+            - text: 。未处理前：不进 RAG、不进文件树、不给 MCP。
+          - text: →
+        - generic [ref=e256]:
+          - generic [ref=e257]: "14"
+          - generic [ref=e258]: 桌面采集入口
+          - generic [ref=e259]: 桌面端菜单栏一键采集：文字、截图、文件、剪贴板、选区、浏览器网址、录音。统一上传到服务器变成闪念。
+          - text: →
+        - generic [ref=e260]:
+          - generic [ref=e261]: "15"
+          - generic [ref=e262]: fleeting agent 建议
+          - generic [ref=e263]:
+            - text: 依赖 25 后台队列。Agent 只读闪念内容，给出分类/任务/剪藏建议，
+            - strong [ref=e264]: 不自动执行
+            - text: ，等用户确认。
+          - text: →
+        - generic [ref=e265]:
+          - generic [ref=e266]: "16"
+          - generic [ref=e267]: 正式化处理
+          - generic [ref=e268]: 用户一键确认后，闪念迁移为：任务/里程碑、剪藏、正式附件。目标对象创建成功后删除原闪念记录；附件成功迁移为正式附件；失败则保留闪念和临时附件。
+      - generic [ref=e269]:
+        - strong [ref=e270]: 13 与 14 的关系
+        - paragraph [ref=e271]:
+          - strong [ref=e272]: 13 是后端边界：
+          - text: 无论 Web 还是桌面采集，上传的附件都先进入
+          - code [ref=e273]: .ridge/fleeting-attachments
+          - text: ，处于"隔离区"。未处理成功前，RAG 不索引、MCP 不可读、文件树不展示。处理成功后，才迁移到
+          - code [ref=e274]: 附件/
+          - text: 或对应项目目录，成为正式资产。
+          - strong [ref=e275]: 14 是前端入口：
+          - text: 桌面端提供系统级采集能力（菜单栏、全局快捷键），把多种输入格式统一封装成闪念 API 的 payload 发到服务器。14 依赖 12 的 API 和 31 的桌面在线能力；采集到的文件/截图走的正是 13 定义的临时附件链路。
+  - generic [ref=e276]:
+    - heading "暂缓区" [level=2] [ref=e277]
+    - generic [ref=e278]:
+      - paragraph [ref=e279]: 以下任务不阻塞主闭环，等上游依赖成熟后再启动。理由：先做可验证的闭环，再补长期知识系统。
+      - generic [ref=e280]:
+        - generic [ref=e281]: 22–24 RAG 索引与全局搜索。需等 17–21 文件标准化完成，否则 chunk 来源不稳定。
+        - generic [ref=e282]: 26–27 记忆与 daily。需等会话线成熟、有真实对话内容可总结，否则 memory agent 无输入。
+        - generic [ref=e283]: 28–29 图谱与 Wiki。需等 22–24 RAG 产出稳定，夜间维护才有可靠来源。
+        - generic [ref=e284]: 32 runtime bundle。需等 30–31 项目设备闭环跑通，桌面本机项目才有调度目标。
+        - generic [ref=e285]: 33 workspace MCP。需等 22–29 知识系统就位，否则 MCP 查读工具无数据可返回。
+        - generic [ref=e286]: 34–37 通知、回顾、自动化、备份收尾。需等 08–11 任务系统和 12–16 闪念闭环成熟，才有事件源和规则触发点。
+  - generic [ref=e287]:
+    - heading "相关文档" [level=2] [ref=e288]
+    - generic [ref=e289]:
+      - link "开发进展总看板（index.html）" [ref=e290] [cursor=pointer]:
+        - /url: ./index.html
+      - link "功能开发任务索引与状态矩阵" [ref=e291] [cursor=pointer]:
+        - /url: ../功能开发/index.md
+      - link "开发计划与里程碑总原则" [ref=e292] [cursor=pointer]:
+        - /url: ../项目设计/开发计划与里程碑.md
+  - contentinfo [ref=e293]: 静态路线图，可直接双击打开。交互数据内联，不依赖外部服务。

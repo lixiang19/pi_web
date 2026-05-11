@@ -30,8 +30,6 @@ const props = defineProps<{
   isLoadingOlder: boolean;
   messages: UiConversationMessage[];
   status: SessionSummary["status"];
-  readonly?: boolean;
-  isTaskSession?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -39,8 +37,6 @@ const emit = defineEmits<{
   loadEarlier: [];
   submitAsk: [askId: string, answers: AskQuestionAnswer[]];
   submitPermission: [requestId: string, action: "once" | "always" | "reject"];
-  editMessage: [messageIndex: number, newText: string];
-  retryMessage: [messageIndex: number];
 }>();
 
 const messageScrollArea = ref<HTMLElement | { $el?: Element } | null>(null);
@@ -56,10 +52,8 @@ const messageKey = (message: UiConversationMessage, index: number) =>
 type MessageRound = {
   key: string;
   userMessage: UiConversationMessage;
-  userMessageIndex: number;
   processMessages: UiConversationMessage[];
   finalMessage: UiConversationMessage | null;
-  finalMessageIndex: number | null;
 };
 
 const getUserMessageIndexes = (messages: UiConversationMessage[]) =>
@@ -143,7 +137,7 @@ const conversationLayout = computed(() => {
       : ([] as UiConversationMessage[]);
 
   let cursor = preludeMessages.length;
-    while (cursor < alignedMessages.length) {
+  while (cursor < alignedMessages.length) {
     const userMessage = alignedMessages[cursor];
     if (!userMessage || userMessage.message.role !== "user") {
       cursor += 1;
@@ -160,33 +154,27 @@ const conversationLayout = computed(() => {
 
     const roundMessages = alignedMessages.slice(cursor + 1, nextUserIndex);
     let finalMessage: UiConversationMessage | null = null;
-    let finalRoundIndex = -1;
+    let finalMessageIndex = -1;
 
     for (let index = roundMessages.length - 1; index >= 0; index -= 1) {
       const message = roundMessages[index];
       if (message && isAssistantMessage(message.message) && hasAssistantText(message.message)) {
         finalMessage = message;
-        finalRoundIndex = index;
+        finalMessageIndex = index;
         break;
       }
     }
 
     const processMessages =
-      finalRoundIndex >= 0
-        ? roundMessages.filter((_, index) => index !== finalRoundIndex)
+      finalMessageIndex >= 0
+        ? roundMessages.filter((_, index) => index !== finalMessageIndex)
         : roundMessages;
-
-    // Compute real indices within the full props.messages array
-    const realUserMessageIndex = startIndex + cursor;
-    const realFinalMessageIndex = finalMessage ? startIndex + cursor + 1 + finalRoundIndex : null;
 
     rounds.push({
       key: messageKey(userMessage, cursor),
       userMessage,
-      userMessageIndex: realUserMessageIndex,
       processMessages,
       finalMessage,
-      finalMessageIndex: realFinalMessageIndex,
     });
 
     cursor = nextUserIndex;
@@ -417,14 +405,8 @@ onBeforeUnmount(() => {
             :messages="conversationLayout.preludeMessages"
           />
 
-          <template v-for="(round) in conversationLayout.rounds" :key="round.key">
-            <ChatMessageItem
-              :message="round.userMessage"
-              :readonly="readonly"
-              :is-task-session="isTaskSession"
-              @edit="emit('editMessage', round.userMessageIndex, $event)"
-              @copy="() => {}"
-            />
+          <template v-for="round in conversationLayout.rounds" :key="round.key">
+            <ChatMessageItem :message="round.userMessage" />
 
             <ProcessMessagesFold
               v-if="round.processMessages.length"
@@ -435,10 +417,6 @@ onBeforeUnmount(() => {
               v-if="round.finalMessage"
               :message="round.finalMessage"
               :is-final-assistant-message="true"
-              :readonly="readonly"
-              :is-task-session="isTaskSession"
-              @retry="emit('retryMessage', round.finalMessageIndex!)"
-              @copy="() => {}"
             />
           </template>
 

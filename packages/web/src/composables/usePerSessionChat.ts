@@ -97,18 +97,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     core.sessions.value.find((s) => s.id === resolvedSessionId.value) ?? null,
   );
 
-  const isReadonly = computed(() => activeSession.value?.readonly === true || activeSession.value?.archived === true);
-
-  const isTaskSession = computed(() => {
-    const session = activeSession.value;
-    if (!session) return false;
-    return session.sessionType === "task" || !!session.taskId;
-  });
-
-  watch(isReadonly, (readonly) => {
-    composer.isDisabled = readonly;
-  }, { immediate: true });
-
   const activeSessionSnapshot = computed(() =>
     resolvedSessionId.value
       ? core.getCachedSessionSnapshot(resolvedSessionId.value) ?? null
@@ -485,10 +473,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   const submit = async (attachmentIds?: string[]) => {
     const prompt = composer.draftText.trim();
     if (!prompt || composer.isSending) {
-      return;
-    }
-
-    if (isReadonly.value || composer.isDisabled) {
       return;
     }
 
@@ -903,70 +887,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     ]);
   };
 
-  const forkFromUserMessage = async (messageIndex: number, newText?: string) => {
-    const sid = resolvedSessionId.value;
-    if (!sid) return;
-    if (isReadonly.value) return;
-    const snapshot = core.getCachedSessionSnapshot(sid);
-    if (!snapshot) return;
-    const userMessage = snapshot.messages[messageIndex];
-    if (!userMessage || userMessage.message.role !== "user") return;
-    const content = userMessage.message.content;
-    const text = newText || (typeof content === "string"
-      ? content
-      : (content as import("@pi/protocol").PiTextContent[])
-          .filter((c) => c.type === "text")
-          .map((c) => (c as unknown as { text: string }).text)
-          .join("\n"));
-    const fork = await createAndLoadSession({
-      cwd: activeSession.value?.cwd || activeDraftContext.value?.cwd,
-      parentSessionId: sid,
-      title: `编辑: ${text.slice(0, 24)}`,
-    });
-    await sendMessage(fork.id, {
-      prompt: text,
-      model: composer.selectedModel || undefined,
-      thinkingLevel: composer.selectedThinkingLevel || undefined,
-      agent: composer.selectedAgent || null,
-    });
-    return fork;
-  };
-
-  const forkFromAssistantRetry = async (messageIndex: number) => {
-    const sid = resolvedSessionId.value;
-    if (!sid) return;
-    if (isReadonly.value) return;
-    const snapshot = core.getCachedSessionSnapshot(sid);
-    if (!snapshot) return;
-    let userText = "";
-    for (let i = messageIndex - 1; i >= 0; i -= 1) {
-      const entry = snapshot.messages[i];
-      if (entry && entry.message.role === "user") {
-        const content = entry.message.content;
-        userText = typeof content === "string"
-          ? content
-          : (content as import("@pi/protocol").PiTextContent[])
-              .filter((c) => c.type === "text")
-              .map((c) => (c as unknown as { text: string }).text)
-              .join("\n");
-        break;
-      }
-    }
-    if (!userText) return;
-    const fork = await createAndLoadSession({
-      cwd: activeSession.value?.cwd || activeDraftContext.value?.cwd,
-      parentSessionId: sid,
-      title: `重试: ${userText.slice(0, 24)}`,
-    });
-    await sendMessage(fork.id, {
-      prompt: userText,
-      model: composer.selectedModel || undefined,
-      thinkingLevel: composer.selectedThinkingLevel || undefined,
-      agent: composer.selectedAgent || null,
-    });
-    return fork;
-  };
-
   const setDraftProjectPath = async (cwd: string) => {
     const normalizedCwd = cwd.trim();
     if (!normalizedCwd || resolvedSessionId.value) {
@@ -991,8 +911,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   // ============================================================================
   // 生命周期
   // ============================================================================
-  // 生命周期
-  // ============================================================================
 
   core.syncComposerDraftState(composer);
 
@@ -1005,9 +923,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     // Per-session state
     sessionId: computed(() => resolvedSessionId.value),
     activeSession,
-    activeSessionContext,
-    isReadonly,
-    isTaskSession,
     messages,
     status,
     isSending,
@@ -1046,8 +961,6 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     disconnectStream,
     connectStream,
     applySnapshotToSession,
-    forkFromUserMessage,
-    forkFromAssistantRetry,
 
     // Core reference (for accessing global state)
     core,

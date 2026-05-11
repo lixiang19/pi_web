@@ -115,12 +115,6 @@ export interface SessionSummary {
 	createdAt: number;
 	updatedAt: number;
 	archived: boolean;
-	readonly?: boolean;
-	sessionType?: string;
-	contextType?: string;
-	taskId?: string;
-	deviceId?: string;
-	runLocation?: string;
 	agent?: string;
 	model?: string;
 	thinkingLevel?: ThinkingLevel;

@@ -228,13 +228,7 @@ function toggleShowAllSessions(projectId: string) {
 	showAllProjectSessionIds.value = next;
 }
 
-function handleOpenProjectSession(sessionId: string, project?: SessionProjectView) {
-	// Guard: reject if the project is offline or archived
-	if (project && (isProjectOffline(project) || isProjectArchived(project))) {
-		toast.error("项目当前离线或已归档，无法打开会话");
-		return;
-	}
-
+function handleOpenProjectSession(sessionId: string) {
 	const existing = splitPanes.allPaneGroups.value
 		.flatMap((pane) => pane.tabs.map((tab) => ({ pane, tab })))
 		.find(({ tab }) => (tab.kind === "conversation" || tab.kind === "chat") && tab.sessionId === sessionId);
@@ -244,12 +238,6 @@ function handleOpenProjectSession(sessionId: string, project?: SessionProjectVie
 	}
 
 	const sessionSummary = core.sessions.value.find((s) => s.id === sessionId);
-	// Also guard by session summary if available
-	if (sessionSummary && (sessionSummary.archived || sessionSummary.readonly)) {
-		toast.error("会话已归档或只读，无法打开");
-		return;
-	}
-
 	const title = sessionSummary?.title || "新会话";
 	const chatTab = createChatTab(sessionId, title);
 	splitPanes.openTab(splitPanes.activePaneGroupId.value, chatTab);
@@ -772,7 +760,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 						:key="session.id"
 						type="button"
 						class="flex w-full min-w-0 items-center rounded-md px-2.5 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-						@click="handleOpenProjectSession(session.id, project)"
+						@click="handleOpenProjectSession(session.id)"
 					>
 						<span class="truncate">{{ session.title || '未命名会话' }}</span>
 					</button>

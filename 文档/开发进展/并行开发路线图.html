@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>05 之后并行开发路线图</title>
+    <style>
+      :root {
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --panel-soft: #f1f5f9;
+        --text: #172033;
+        --muted: #667085;
+        --line: #d8dee8;
+        --blue: #2563eb;
+        --green: #138a63;
+        --amber: #b7791f;
+        --red: #c2413b;
+        --ink: #111827;
+        --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 32px 24px;
+      }
+
+      /* Header */
+      .hero {
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        margin-bottom: 24px;
+      }
+
+      .hero h1 {
+        margin: 0 0 10px 0;
+        font-size: 28px;
+        line-height: 1.2;
+      }
+
+      .hero .subtitle {
+        color: var(--muted);
+        font-size: 15px;
+        margin-bottom: 18px;
+      }
+
+      .hero .status-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid #b7c7ef;
+        border-radius: 999px;
+        color: #1e3a8a;
+        background: #eff6ff;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .badge.done {
+        border-color: #abefc6;
+        color: #05603a;
+        background: #ecfdf3;
+      }
+
+      .badge.next {
+        border-color: #fde68a;
+        color: #92400e;
+        background: #fffbeb;
+      }
+
+      /* Sections */
+      section {
+        margin-bottom: 28px;
+      }
+
+      section h2 {
+        margin: 0 0 14px 0;
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .panel {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .panel + .panel {
+        margin-top: 14px;
+      }
+
+      /* Recommendation batch */
+      .batch-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+      }
+
+      .batch-card {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        cursor: pointer;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+
+      .batch-card:hover {
+        border-color: #93c5fd;
+        box-shadow: var(--shadow);
+      }
+
+      .batch-card .id {
+        font-weight: 700;
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 4px;
+      }
+
+      .batch-card .name {
+        font-weight: 600;
+        font-size: 15px;
+        margin-bottom: 6px;
+      }
+
+      .batch-card .reason {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      /* Swimlane board */
+      .swimlane-board {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(180px, 1fr));
+        gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .swimlane {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 180px;
+      }
+
+      .swimlane-header {
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-top: 4px solid var(--ink);
+        border-radius: 8px;
+        background: var(--panel);
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .swimlane-header.session {
+        border-top-color: var(--blue);
+      }
+
+      .swimlane-header.task {
+        border-top-color: #7c3aed;
+      }
+
+      .swimlane-header.fleeting {
+        border-top-color: var(--amber);
+      }
+
+      .swimlane-header.file {
+        border-top-color: var(--green);
+      }
+
+      .swimlane-header.project {
+        border-top-color: #0d9488;
+      }
+
+      .swimlane-header.later {
+        border-top-color: var(--muted);
+      }
+
+      .task-card {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        cursor: pointer;
+        transition: border-color 0.15s, transform 0.1s;
+        position: relative;
+      }
+
+      .task-card:hover {
+        border-color: #93c5fd;
+        transform: translateY(-1px);
+      }
+
+      .task-card.active {
+        border-color: var(--blue);
+        background: #eff6ff;
+      }
+
+      .task-card.done {
+        border-color: #abefc6;
+        background: #f0fdf4;
+      }
+
+      .task-card .task-id {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      .task-card .task-name {
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.4;
+        margin-bottom: 6px;
+      }
+
+      .task-card .task-meta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .task-card .connector {
+        position: absolute;
+        left: 50%;
+        bottom: -11px;
+        width: 1px;
+        height: 11px;
+        background: var(--line);
+        transform: translateX(-50%);
+        z-index: 0;
+      }
+
+      .task-card:last-child .connector {
+        display: none;
+      }
+
+      /* Detail panel */
+      .detail-panel {
+        position: sticky;
+        bottom: 0;
+        margin-top: 16px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.06);
+        display: none;
+      }
+
+      .detail-panel.visible {
+        display: block;
+      }
+
+      .detail-panel h3 {
+        margin: 0 0 8px 0;
+        font-size: 16px;
+      }
+
+      .detail-panel p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .detail-panel .deps {
+        margin-top: 10px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .detail-panel .deps strong {
+        color: var(--text);
+      }
+
+      /* 12-16 deep dive */
+      .flow-steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .flow-step {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        position: relative;
+      }
+
+      .flow-step::after {
+        content: "→";
+        position: absolute;
+        right: -16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .flow-step:last-child::after {
+        display: none;
+      }
+
+      @media (max-width: 700px) {
+        .flow-step::after {
+          right: auto;
+          left: 50%;
+          top: auto;
+          bottom: -18px;
+          transform: translateX(-50%) rotate(90deg);
+        }
+      }
+
+      .flow-step .step-id {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      .flow-step .step-name {
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 6px;
+      }
+
+      .flow-step .step-desc {
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .highlight-box {
+        padding: 14px;
+        border-left: 4px solid var(--amber);
+        border-radius: 0 8px 8px 0;
+        background: #fffaf0;
+        margin-top: 14px;
+      }
+
+      .highlight-box strong {
+        color: #7c2d12;
+        font-size: 14px;
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .highlight-box p {
+        margin: 0;
+        font-size: 14px;
+        color: #78350f;
+        line-height: 1.6;
+      }
+
+      /* Postponed */
+      .postponed-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 10px;
+      }
+
+      .postponed-item {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-soft);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .postponed-item .pp-id {
+        font-weight: 700;
+        color: var(--text);
+        margin-right: 4px;
+      }
+
+      /* Filters */
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      button.active {
+        border-color: var(--blue);
+        background: #eff6ff;
+        color: #1e3a8a;
+      }
+
+      /* Links */
+      .links {
+        display: grid;
+        gap: 8px;
+      }
+
+      .links a {
+        display: block;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--text);
+        text-decoration: none;
+      }
+
+      .links a:hover {
+        border-color: #93c5fd;
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      /* Responsive */
+      @media (max-width: 1100px) {
+        .swimlane-board {
+          grid-template-columns: repeat(3, minmax(200px, 1fr));
+        }
+      }
+
+      @media (max-width: 700px) {
+        .container {
+          padding: 16px;
+        }
+
+        .hero h1 {
+          font-size: 22px;
+        }
+
+        .swimlane-board {
+          grid-template-columns: 1fr;
+        }
+
+        .batch-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .flow-steps {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header -->
+      <div class="hero">
+        <h1>05 之后并行开发路线图</h1>
+        <p class="subtitle">
+          当前状态：<strong>00–05、25 已完成</strong>。06 以后不是单线推进，而是
+          <strong>6 条并行线收敛</strong>。
+        </p>
+        <div class="status-bar">
+          <span class="badge done">00–05 基座已完成</span>
+          <span class="badge done">25 后台队列已完成</span>
+          <span class="badge next">06–37 并行推进中</span>
+          <span class="badge">更新时间：2026-05-11</span>
+        </div>
+      </div>
+
+      <!-- Recommendation -->
+      <section id="recommendation">
+        <h2>先开工推荐批次</h2>
+        <div class="panel" style="border-color: #bfdbfe; background: #eff6ff;">
+          <p style="margin: 0 0 14px 0; font-size: 14px; color: var(--text);">
+            <strong>第一批并行开工：</strong>以下 6 个任务互不阻塞，可立即同时启动。它们分别代表 6 条线的切入点。
+          </p>
+          <div class="batch-grid">
+            <div class="batch-card" data-task="06" onclick="showDetail('06')">
+              <div class="id">06</div>
+              <div class="name">会话索引归档与只读状态</div>
+              <div class="reason">会话线是用户每日主路径，先补齐会话的归档和只读，才能承接后续任务线和闪念线。</div>
+            </div>
+            <div class="batch-card" data-task="08" onclick="showDetail('08')">
+              <div class="id">08</div>
+              <div class="name">任务里程碑数据模型</div>
+              <div class="reason">任务线是工作闭环核心，数据模型越早确定，闪念正式化（16）、自动化（35-36）才有锚点。</div>
+            </div>
+            <div class="batch-card" data-task="12" onclick="showDetail('12')">
+              <div class="id">12</div>
+              <div class="name">闪念数据模型与 Web 入口</div>
+              <div class="reason">闪念线起点；13 附件、14 桌面采集、15 agent、16 正式化全部依赖 12 的 DB 和 API。</div>
+            </div>
+            <div class="batch-card" data-task="17" onclick="showDetail('17')">
+              <div class="id">17</div>
+              <div class="name">文件页与正式附件目录</div>
+              <div class="reason">文件线是资产沉淀基础；17 确定附件目录边界后，18 临时文件、19-20 转换才有处理目标。</div>
+            </div>
+            <div class="batch-card" data-task="18" onclick="showDetail('18')">
+              <div class="id">18</div>
+              <div class="name">文件处理状态与临时文件边界</div>
+              <div class="reason">和 17 同线紧耦合，定义 `.ridge` 临时区与正式区的迁移规则，是后续 RAG 索引的前置。</div>
+            </div>
+            <div class="batch-card" data-task="30" onclick="showDetail('30')">
+              <div class="id">30</div>
+              <div class="name">项目注册与内部外部项目</div>
+              <div class="reason">项目设备线起点；30 先定义项目边界，31 设备在线、32 runtime、14 桌面采集才有归属。</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Swimlanes -->
+      <section id="swimlanes">
+        <div
+          style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;"
+        >
+          <h2 style="margin: 0">六线并行依赖泳道图</h2>
+          <div class="toolbar" id="laneFilters">
+            <button class="active" data-filter="all">全部</button>
+            <button data-filter="batch1">第一批</button>
+            <button data-filter="session">会话线</button>
+            <button data-filter="task">任务线</button>
+            <button data-filter="fleeting">闪念线</button>
+            <button data-filter="file">文件线</button>
+            <button data-filter="project">项目设备线</button>
+            <button data-filter="later">后续线</button>
+          </div>
+        </div>
+
+        <div class="panel" style="padding: 14px; overflow-x: auto;">
+          <div class="swimlane-board" id="swimlaneBoard"></div>
+        </div>
+
+        <div class="detail-panel" id="detailPanel">
+          <h3 id="detailTitle">任务详情</h3>
+          <p id="detailDesc">点击上方任务节点查看详情。</p>
+          <div class="deps" id="detailDeps"></div>
+        </div>
+      </section>
+
+      <!-- 12-16 Deep Dive -->
+      <section id="fleeting-detail">
+        <h2>闪念线 12–16 详解</h2>
+        <div class="panel">
+          <p style="margin: 0 0 14px 0; color: var(--muted); font-size: 14px;">
+            这条线的核心目标是：<strong>快速捕获 anything，不打扰，用户确认后再正式化。</strong>
+            以下是 5 个环节的职责边界。
+          </p>
+          <div class="flow-steps">
+            <div class="flow-step" onclick="showDetail('12')">
+              <div class="step-id">12</div>
+              <div class="step-name">闪念 DB + Web 入口</div>
+              <div class="step-desc">
+                数据模型：闪念头（文本/类型/来源）+ 附件关联。Web 提供快速输入框，不选项目、不分类。
+              </div>
+            </div>
+            <div class="flow-step" onclick="showDetail('13')">
+              <div class="step-id">13</div>
+              <div class="step-name">临时附件生命周期</div>
+              <div class="step-desc">
+                附件先落盘到 <code>.ridge/fleeting-attachments</code>。未处理前：不进 RAG、不进文件树、不给 MCP。
+              </div>
+            </div>
+            <div class="flow-step" onclick="showDetail('14')">
+              <div class="step-id">14</div>
+              <div class="step-name">桌面采集入口</div>
+              <div class="step-desc">
+                桌面端菜单栏一键采集：文字、截图、文件、剪贴板、选区、浏览器网址、录音。统一上传到服务器变成闪念。
+              </div>
+            </div>
+            <div class="flow-step" onclick="showDetail('15')">
+              <div class="step-id">15</div>
+              <div class="step-name">fleeting agent 建议</div>
+              <div class="step-desc">
+                依赖 25 后台队列。Agent 只读闪念内容，给出分类/任务/剪藏建议，<strong>不自动执行</strong>，等用户确认。
+              </div>
+            </div>
+            <div class="flow-step" onclick="showDetail('16')">
+              <div class="step-id">16</div>
+              <div class="step-name">正式化处理</div>
+              <div class="step-desc">
+                用户一键确认后，闪念迁移为：任务/里程碑、剪藏、正式附件。目标对象创建成功后删除原闪念记录；附件成功迁移为正式附件；失败则保留闪念和临时附件。
+              </div>
+            </div>
+          </div>
+
+          <div class="highlight-box">
+            <strong>13 与 14 的关系</strong>
+            <p>
+              <strong>13 是后端边界：</strong>无论 Web 还是桌面采集，上传的附件都先进入
+              <code>.ridge/fleeting-attachments</code>，处于"隔离区"。未处理成功前，RAG 不索引、MCP 不可读、文件树不展示。处理成功后，才迁移到
+              <code>附件/</code> 或对应项目目录，成为正式资产。
+              <br /><br />
+              <strong>14 是前端入口：</strong>桌面端提供系统级采集能力（菜单栏、全局快捷键），把多种输入格式统一封装成闪念
+              API 的 payload 发到服务器。14 依赖 12 的 API 和 31 的桌面在线能力；采集到的文件/截图走的正是 13 定义的临时附件链路。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Postponed -->
+      <section id="postponed">
+        <h2>暂缓区</h2>
+        <div class="panel">
+          <p style="margin: 0 0 14px 0; color: var(--muted); font-size: 14px;">
+            以下任务不阻塞主闭环，等上游依赖成熟后再启动。理由：先做可验证的闭环，再补长期知识系统。
+          </p>
+          <div class="postponed-list">
+            <div class="postponed-item">
+              <span class="pp-id">22–24</span>
+              RAG 索引与全局搜索。需等 17–21 文件标准化完成，否则 chunk 来源不稳定。
+            </div>
+            <div class="postponed-item">
+              <span class="pp-id">26–27</span>
+              记忆与 daily。需等会话线成熟、有真实对话内容可总结，否则 memory agent 无输入。
+            </div>
+            <div class="postponed-item">
+              <span class="pp-id">28–29</span>
+              图谱与 Wiki。需等 22–24 RAG 产出稳定，夜间维护才有可靠来源。
+            </div>
+            <div class="postponed-item">
+              <span class="pp-id">32</span>
+              runtime bundle。需等 30–31 项目设备闭环跑通，桌面本机项目才有调度目标。
+            </div>
+            <div class="postponed-item">
+              <span class="pp-id">33</span>
+              workspace MCP。需等 22–29 知识系统就位，否则 MCP 查读工具无数据可返回。
+            </div>
+            <div class="postponed-item">
+              <span class="pp-id">34–37</span>
+              通知、回顾、自动化、备份收尾。需等 08–11 任务系统和 12–16 闪念闭环成熟，才有事件源和规则触发点。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Links -->
+      <section id="links">
+        <h2>相关文档</h2>
+        <div class="links">
+          <a href="./index.html">开发进展总看板（index.html）</a>
+          <a href="../功能开发/index.md">功能开发任务索引与状态矩阵</a>
+          <a href="../项目设计/开发计划与里程碑.md">开发计划与里程碑总原则</a>
+        </div>
+      </section>
+
+      <footer style="padding: 18px 0 4px; color: var(--muted); font-size: 13px;">
+        静态路线图，可直接双击打开。交互数据内联，不依赖外部服务。
+      </footer>
+    </div>
+
+    <script>
+      const firstBatchIds = new Set(["06","08","12","17","18","30"]);
+
+      const taskData = {
+        // 已完成基座
+        base: {
+          id: "base",
+          name: "基座完成",
+          desc: "00–05、25 已完成。工作空间目录、ridge.db、.ridge 边界、工作台 Shell、会话创建、后台队列全部就位。",
+          deps: "无",
+        },
+        // A 会话线
+        "06": {
+          lane: "session",
+          phase: 1,
+          name: "会话索引归档与只读状态",
+          desc: "会话结束后的归档策略、只读状态管理、会话列表中的状态展示。",
+          deps: "依赖 05 会话创建",
+        },
+        "07": {
+          lane: "session",
+          phase: 2,
+          name: "会话界面与右侧工作侧栏",
+          desc: "完整的消息流界面、右侧可展开的工作侧栏（任务/文件/闪念快照）。",
+          deps: "依赖 06 会话状态",
+        },
+        // B 任务线
+        "08": {
+          lane: "task",
+          phase: 1,
+          name: "任务里程碑数据模型",
+          desc: "DB 表设计、状态机、与项目/会话的关联关系。",
+          deps: "依赖 01 DB 基座",
+        },
+        "09": {
+          lane: "task",
+          phase: 2,
+          name: "任务列表详情与状态流转",
+          desc: "前端任务页、状态变更 UI、权限边界（Agent 不可直接标记完成）。",
+          deps: "依赖 08 数据模型",
+        },
+        "10": {
+          lane: "task",
+          phase: 3,
+          name: "任务处理会话与任务 Agent",
+          desc: "任务一对一处理会话、任务 Agent 规划与执行。",
+          deps: "依赖 09 状态流转 + 07 会话界面",
+        },
+        "11": {
+          lane: "task",
+          phase: 3,
+          name: "规划工具与完成确认边界",
+          desc: "规划拆解 UI、完成必须用户确认、里程碑达成判定。",
+          deps: "依赖 10 任务处理会话",
+        },
+        // C 闪念线
+        "12": {
+          lane: "fleeting",
+          phase: 1,
+          name: "闪念数据模型与 Web 入口",
+          desc: "闪念头表、附件关联、Web 快速捕获输入框。不选项目、不分类。",
+          deps: "依赖 01 DB + 03 Shell",
+        },
+        "13": {
+          lane: "fleeting",
+          phase: 1,
+          name: "闪念临时附件生命周期",
+          desc: "附件先写入 .ridge/fleeting-attachments。未处理成功前：不进 RAG、不进文件树、不给 MCP。处理成功后迁移到附件/。",
+          deps: "依赖 12 闪念模型 + 02 .ridge 边界",
+        },
+        "14": {
+          lane: "fleeting",
+          phase: 2,
+          name: "桌面采集入口",
+          desc: "桌面菜单栏采集：文字、截图、文件、剪贴板、选区、浏览器网址、录音。统一上传到服务器变成闪念。",
+          deps: "依赖 12 API + 31 桌面在线能力",
+        },
+        "15": {
+          lane: "fleeting",
+          phase: 2,
+          name: "fleeting agent 分析建议",
+          desc: "后台读取闪念，给出分类/任务/剪藏建议。只建议，不自动执行。",
+          deps: "依赖 12 闪念数据 + 25 后台队列",
+        },
+        "16": {
+          lane: "fleeting",
+          phase: 3,
+          name: "闪念处理为正式对象",
+          desc: "用户确认后，闪念迁移为：任务/里程碑、剪藏、正式附件。需 08/09 任务系统、17 文件/附件能力。",
+          deps: "依赖 12/13 + 08/09 任务 + 17 附件",
+        },
+        // D 文件线
+        "17": {
+          lane: "file",
+          phase: 1,
+          name: "文件页与正式附件目录",
+          desc: "文件管理页、正式附件目录 附件/ 结构定义、文件元数据展示。",
+          deps: "依赖 02 目录边界 + 03 Shell",
+        },
+        "18": {
+          lane: "file",
+          phase: 1,
+          name: "文件处理状态与临时文件边界",
+          desc: "定义临时区 .ridge 与正式区的迁移规则、处理状态机（上传中/解析中/已完成/失败）。",
+          deps: "依赖 17 正式目录 + 02 .ridge 边界",
+        },
+        "19": {
+          lane: "file",
+          phase: 2,
+          name: "PDF Word 标准化转换",
+          desc: "PDF/Word 转为 Markdown + assets + metadata，原始文件保留在 .originals。",
+          deps: "依赖 18 临时边界 + 25 后台队列",
+        },
+        "20": {
+          lane: "file",
+          phase: 2,
+          name: "音频图片 Markdown 处理",
+          desc: "音频转文字、图片 OCR/描述，统一输出为 Markdown 作为 RAG 真源。",
+          deps: "依赖 18 临时边界 + 25 后台队列",
+        },
+        "21": {
+          lane: "file",
+          phase: 3,
+          name: "空间 HTML 作品私有预览",
+          desc: "空间目录下的 HTML 作品通过 iframe srcdoc 内部预览，不生成公开 URL。",
+          deps: "依赖 17 文件页 + 18 空间边界",
+        },
+        // E 项目设备线
+        "30": {
+          lane: "project",
+          phase: 1,
+          name: "项目注册与内部外部项目",
+          desc: "项目 DB 模型、内部项目（工作空间子目录）、外部项目（GitHub/本地路径）注册，不复制外部文件。",
+          deps: "依赖 01 DB + 02 目录边界",
+        },
+        "31": {
+          lane: "project",
+          phase: 2,
+          name: "设备注册在线状态与调度",
+          desc: "设备表、在线心跳、Web 调度桌面项目运行、离线禁止新建会话。",
+          deps: "依赖 30 项目注册 + 01 DB",
+        },
+        "32": {
+          lane: "project",
+          phase: 3,
+          name: "runtime bundle 与设备专属 Skill",
+          desc: "服务器下发 runtime bundle 到桌面，桌面 Pi 读取 ridge 配置而非用户真实 ~/.pi。",
+          deps: "依赖 31 设备在线",
+        },
+        // F 后续线（知识 + 通知自动化）
+        "22": {
+          lane: "later",
+          phase: 4,
+          name: "RAG 标准产物索引与 chunk",
+          desc: "Markdown 全文索引、chunk 构建、embedding 写入、metadata 保留路径和 hash。",
+          deps: "依赖 19/20 标准产物 + 18 状态边界",
+        },
+        "23": {
+          lane: "later",
+          phase: 4,
+          name: "RAG 更新删除移动规则",
+          desc: "文件删除即删 chunk、移动即更新 metadata、普通变更夜间索引。",
+          deps: "依赖 22 索引构建",
+        },
+        "24": {
+          lane: "later",
+          phase: 4,
+          name: "全局搜索资产导航器",
+          desc: "搜索聚合文件、任务、项目、会话索引、RAG、图谱节点，不启动 AI。",
+          deps: "依赖 23 RAG 规则 + 22 索引",
+        },
+        "26": {
+          lane: "later",
+          phase: 4,
+          name: "summary agent daily 会话记忆",
+          desc: "会话结束后生成 daily 摘要，写入 记忆/daily/YYYY/MM/YYYY-MM-DD.md。",
+          deps: "依赖 07 会话界面 + 25 后台队列",
+        },
+        "27": {
+          lane: "later",
+          phase: 5,
+          name: "memory agent MEMORY 维护与注入",
+          desc: "从 daily 和 MEMORY.md 更新长期记忆，空内容不注入 Pi。",
+          deps: "依赖 26 daily 摘要",
+        },
+        "28": {
+          lane: "later",
+          phase: 5,
+          name: "Kuzu 图谱存储与抽取",
+          desc: "图谱库初始化、夜间从标准产物抽取实体关系、证据短摘录。",
+          deps: "依赖 22/23 RAG 产出稳定",
+        },
+        "29": {
+          lane: "later",
+          phase: 5,
+          name: "Wiki 夜间维护与 index 注入",
+          desc: "wiki agent 维护 Wiki/index.md 入口页，低价值页面可删除。",
+          deps: "依赖 28 图谱抽取",
+        },
+        "33": {
+          lane: "later",
+          phase: 5,
+          name: "workspace MCP 查读工具",
+          desc: "为 Pi 提供 rag_search、graph_search、file_search、read_workspace_file，只查读不写。",
+          deps: "依赖 24 搜索 + 28 图谱 + 29 Wiki",
+        },
+        "34": {
+          lane: "later",
+          phase: 3,
+          name: "通知与建议中心",
+          desc: "后台结果（闪念分析、文件失败、任务建议）进入通知中心，成功不打扰。",
+          deps: "可与闪念线/文件线衔接，依赖 25 后台队列",
+        },
+        "35": {
+          lane: "later",
+          phase: 5,
+          name: "task review agent 任务回顾",
+          desc: "定期回顾任务状态，提出优先级调整建议，不自动完成任务。",
+          deps: "依赖 11 任务闭环 + 25 后台队列",
+        },
+        "36": {
+          lane: "later",
+          phase: 5,
+          name: "自动化规则运行与跳过",
+          desc: "自动化规则触发、执行、跳过记录，设备离线时跳过并记录原因。",
+          deps: "依赖 34 通知 + 35 任务回顾 + 31 设备状态",
+        },
+        "37": {
+          lane: "later",
+          phase: 6,
+          name: "备份恢复设置主题收尾",
+          desc: "全量备份（含 db/工作空间/附件/图谱/设置）、整包恢复、设置页、主题切换。",
+          deps: "基础线兜底，最后验收",
+        },
+      };
+
+      const laneConfig = {
+        session: { title: "A 会话线", cls: "session" },
+        task: { title: "B 任务线", cls: "task" },
+        fleeting: { title: "C 闪念采集线", cls: "fleeting" },
+        file: { title: "D 文件空间线", cls: "file" },
+        project: { title: "E 项目设备线", cls: "project" },
+        later: { title: "F 知识/通知/收尾", cls: "later" },
+      };
+
+      const laneOrder = ["session", "task", "fleeting", "file", "project", "later"];
+
+      function renderSwimlanes(filter) {
+        const board = document.getElementById("swimlaneBoard");
+        board.innerHTML = "";
+
+        laneOrder.forEach((laneKey) => {
+          const cfg = laneConfig[laneKey];
+          const laneEl = document.createElement("div");
+          laneEl.className = "swimlane";
+          laneEl.dataset.lane = laneKey;
+
+          const header = document.createElement("div");
+          header.className = `swimlane-header ${cfg.cls}`;
+          header.textContent = cfg.title;
+          laneEl.appendChild(header);
+
+          // Base block for all lanes
+          const baseCard = document.createElement("div");
+          baseCard.className = "task-card done";
+          baseCard.innerHTML = `
+            <div class="task-id">基座</div>
+            <div class="task-name">00–05、25 已完成</div>
+            <div class="task-meta">目录 / DB / Shell / 队列</div>
+          `;
+          baseCard.onclick = () => showDetail("base");
+          laneEl.appendChild(baseCard);
+
+          // Tasks in this lane
+          const tasks = Object.entries(taskData)
+            .filter(([id, t]) => t.lane === laneKey)
+            .sort((a, b) => a[1].phase - b[1].phase);
+
+          tasks.forEach(([id, task]) => {
+            if (filter === "batch1" && !firstBatchIds.has(id)) return;
+            if (filter !== "all" && filter !== "batch1" && laneKey !== filter) return;
+
+            const card = document.createElement("div");
+            card.className = "task-card";
+            card.dataset.taskId = id;
+            card.innerHTML = `
+              <div class="task-id">${id}</div>
+              <div class="task-name">${task.name}</div>
+              <div class="task-meta">${task.deps.split("依赖 ")[1] || ""}</div>
+              <div class="connector"></div>
+            `;
+            card.onclick = () => {
+              document.querySelectorAll(".task-card").forEach((c) => c.classList.remove("active"));
+              card.classList.add("active");
+              showDetail(id);
+            };
+            laneEl.appendChild(card);
+          });
+
+          board.appendChild(laneEl);
+        });
+      }
+
+      function showDetail(taskId) {
+        const task = taskData[taskId];
+        if (!task) return;
+        const panel = document.getElementById("detailPanel");
+        document.getElementById("detailTitle").textContent = `${taskId} ${task.name}`;
+        document.getElementById("detailDesc").textContent = task.desc;
+        document.getElementById("detailDeps").innerHTML = `<strong>依赖：</strong>${task.deps}`;
+        panel.classList.add("visible");
+      }
+
+      // Filter buttons
+      document.getElementById("laneFilters").addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-filter]");
+        if (!btn) return;
+        document.querySelectorAll("#laneFilters button").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        renderSwimlanes(btn.dataset.filter);
+      });
+
+      // Batch card selection sync
+      document.querySelectorAll(".batch-card").forEach((card) => {
+        card.addEventListener("click", () => {
+          const id = card.dataset.task;
+          document.querySelectorAll(".task-card").forEach((c) => c.classList.remove("active"));
+          const target = document.querySelector(`.task-card[data-task-id="${id}"]`);
+          if (target) {
+            target.classList.add("active");
+            const rect = target.getBoundingClientRect();
+            window.scrollTo({ top: window.scrollY + rect.top - 120, behavior: "smooth" });
+          }
+        });
+      });
+
+      // Init
+      renderSwimlanes("all");
+    </script>
+  </body>
+</html>
