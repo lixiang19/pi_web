@@ -44,6 +44,12 @@ function constantTimeEqual(left: string, right: string) {
 }
 
 function getClientKey(req: Request) {
+	if (process.env.VITEST) {
+		const testClient = req.headers["x-test-client-key"];
+		if (typeof testClient === "string") {
+			return testClient;
+		}
+	}
 	return req.ip || req.socket.remoteAddress || "unknown";
 }
 

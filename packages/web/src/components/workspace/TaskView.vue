@@ -317,7 +317,7 @@ const handleAddTask = async () => {
 	const title = newTaskTitle.value.trim();
 	const acceptanceCriteria = newTaskAcceptanceCriteria.value.trim();
 	if (!title || !acceptanceCriteria) return;
-	await addTask({
+	const result = await addTask({
 		title,
 		priority: newTaskPriority.value,
 		acceptanceCriteria,
@@ -325,6 +325,7 @@ const handleAddTask = async () => {
 		milestoneId: newTaskMilestoneId.value || null,
 		projectId: resolveNewTaskProjectId(newTaskProjectId.value),
 	});
+	if (!result.success) return;
 	newTaskTitle.value = "";
 	newTaskAcceptanceCriteria.value = "";
 	newTaskPriority.value = "normal";
@@ -338,13 +339,14 @@ const handleAddMilestone = async () => {
 	const goal = newMilestoneGoal.value.trim();
 	const acceptanceCriteria = newMilestoneAcceptanceCriteria.value.trim();
 	if (!title || !goal || !acceptanceCriteria) return;
-	await addMilestone({
+	const result = await addMilestone({
 		title,
 		goal,
 		acceptanceCriteria,
 		dueDate: toTimestamp(newMilestoneDueDate.value),
 		projectId: resolveMilestoneProjectId(newMilestoneProjectId.value),
 	});
+	if (!result.success) return;
 	newMilestoneTitle.value = "";
 	newMilestoneGoal.value = "";
 	newMilestoneAcceptanceCriteria.value = "";
@@ -383,21 +385,25 @@ const handleDropOnTask = async (targetTask: TaskItem) => {
 
 const confirmDeleteTask = async () => {
 	if (!pendingDeleteTask.value) return;
-	await removeTask(pendingDeleteTask.value.id);
-	if (selectedTask.value?.id === pendingDeleteTask.value.id) closeDetail();
+	const result = await removeTask(pendingDeleteTask.value.id);
+	if (result.success) {
+		if (selectedTask.value?.id === pendingDeleteTask.value.id) closeDetail();
+	}
 	pendingDeleteTask.value = null;
 };
 
 const confirmDeleteMilestone = async () => {
 	if (!pendingDeleteMilestone.value) return;
-	await removeMilestone(pendingDeleteMilestone.value.id);
-	if (selectedMilestone.value?.id === pendingDeleteMilestone.value.id) closeDetail();
+	const result = await removeMilestone(pendingDeleteMilestone.value.id);
+	if (result.success) {
+		if (selectedMilestone.value?.id === pendingDeleteMilestone.value.id) closeDetail();
+	}
 	pendingDeleteMilestone.value = null;
 };
 
 const saveSelectedTask = async () => {
 	if (!selectedTask.value) return;
-	await updateTask(selectedTask.value.id, {
+	const result = await updateTask(selectedTask.value.id, {
 		title: editTaskTitle.value.trim(),
 		acceptanceCriteria: editTaskAcceptanceCriteria.value.trim(),
 		priority: editTaskPriority.value,
@@ -408,11 +414,14 @@ const saveSelectedTask = async () => {
 		projectId: resolveEditTaskProjectId(editTaskProjectId.value),
 		actor: "user",
 	});
+	if (result.success) {
+		selectedTask.value = result.task;
+	}
 };
 
 const saveSelectedMilestone = async () => {
 	if (!selectedMilestone.value) return;
-	await updateMilestone(selectedMilestone.value.id, {
+	const result = await updateMilestone(selectedMilestone.value.id, {
 		title: editMilestoneTitle.value.trim(),
 		goal: editMilestoneGoal.value.trim(),
 		acceptanceCriteria: editMilestoneAcceptanceCriteria.value.trim(),
@@ -421,6 +430,9 @@ const saveSelectedMilestone = async () => {
 		projectId: resolveMilestoneProjectId(editMilestoneProjectId.value),
 		actor: "user",
 	});
+	if (result.success) {
+		selectedMilestone.value = result.milestone;
+	}
 };
 </script>
 

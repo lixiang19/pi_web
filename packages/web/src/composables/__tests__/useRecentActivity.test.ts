@@ -27,7 +27,7 @@ function makeTaskItem(overrides: Partial<TaskItem> = {}): TaskItem {
 		projectId: null,
 		title: "测试任务",
 		status: "pending",
-		priority: "medium",
+		priority: "normal",
 		dueDate: null,
 		tags: [],
 		createdAt: 2000,

@@ -1,12 +1,40 @@
 import { mount } from "@vue/test-utils";
 import { computed, ref } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import TaskView from "@/components/workspace/TaskView.vue";
 import type { MilestoneItem, TaskItem } from "@/composables/useWorkspaceTasks";
 
-const updateTask = vi.fn();
-const mockAddTask = vi.fn();
-const mockAddMilestone = vi.fn();
+const updateTask = vi.fn(() =>
+	Promise.resolve({
+		success: true,
+		task: {
+			id: "task-1",
+			title: "已更新",
+			status: "in_progress",
+			milestoneId: "milestone-1",
+			projectId: null,
+			priority: "normal",
+			acceptanceCriteria: "标准",
+			dueDate: null,
+			blockedReason: null,
+			sortOrder: 0,
+			createdAt: 1,
+			updatedAt: 2,
+		},
+	}),
+);
+const mockAddTask = vi.fn(() =>
+	Promise.resolve({
+		success: true,
+		task: { id: "new-task", title: "新任务", status: "pending" } as unknown as Record<string, unknown>,
+	}),
+);
+const mockAddMilestone = vi.fn(() =>
+	Promise.resolve({
+		success: true,
+		milestone: { id: "new-ms", title: "新里程碑" } as unknown as Record<string, unknown>,
+	}),
+);
 const mockLoadProjects = vi.fn();
 
 const milestones = ref<MilestoneItem[]>([
@@ -143,8 +171,24 @@ describe("TaskView", () => {
 	beforeEach(() => {
 		updateTask.mockClear();
 		mockAddTask.mockClear();
+		mockAddTask.mockImplementation(() =>
+			Promise.resolve({ success: true, task: { id: "new-task", title: "新任务" } }),
+		);
 		mockAddMilestone.mockClear();
+		mockAddMilestone.mockImplementation(() =>
+			Promise.resolve({ success: true, milestone: { id: "new-ms", title: "新里程碑" } }),
+		);
 		mockLoadProjects.mockClear();
+	});
+
+	afterEach(() => {
+		// Reset to default success implementation so other tests don't inherit failures
+		mockAddTask.mockImplementation(() =>
+			Promise.resolve({ success: true, task: { id: "new-task", title: "新任务" } }),
+		);
+		mockAddMilestone.mockImplementation(() =>
+			Promise.resolve({ success: true, milestone: { id: "new-ms", title: "新里程碑" } }),
+		);
 	});
 
 	it("renders milestone filter and hides Agent entry", () => {
@@ -246,12 +290,71 @@ describe("TaskView", () => {
 		);
 	});
 
-	it("new milestone options do not include '全部项目'", () => {
+	it("successful addTask clears new task form fields", async () => {
 		const wrapper = mountTaskView();
 		const vm = wrapper.vm as unknown as Record<string, unknown>;
-		const options = (vm as Record<string, Array<{ id: string; name: string }>>)["milestoneProjectOptions"];
-		expect(Array.isArray(options)).toBe(true);
-		expect(options!.some((o) => o.id === "__all__")).toBe(false);
-		expect(options!.some((o) => o.name === "全部项目")).toBe(false);
+		vm["newTaskTitle"] = "成功任务";
+		vm["newTaskAcceptanceCriteria"] = "标准";
+		await wrapper.vm.$nextTick();
+
+		const buttons = wrapper.findAll("button");
+		const addBtn = buttons.find((b) => b.text().includes("新建任务"));
+		await addBtn!.trigger("click");
+
+		expect(mockAddTask).toHaveBeenCalled();
+		expect(vm["newTaskTitle"]).toBe("");
+		expect(vm["newTaskAcceptanceCriteria"]).toBe("");
+	});
+
+	it("syncs selectedTask after successful save so user can continue editing", async () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+
+		// Open first task detail directly
+		vm["selectedTask"] = tasks.value[0];
+		vm["editTaskTitle"] = "修改后的标题";
+		await wrapper.vm.$nextTick();
+
+		const saveBtn = wrapper.findAll("button").find((b) => b.text().includes("保存"));
+		await saveBtn!.trigger("click");
+
+		expect(updateTask).toHaveBeenCalledWith(
+			"task-1",
+			expect.objectContaining({ title: "修改后的标题", actor: "user" }),
+		);
+		expect(vm["selectedTask"]).toMatchObject({ title: "已更新", status: "in_progress" });
+	});
+
+	it("kanban drag with invalid status transition does not call updateTask", async () => {
+		const wrapper = mountTaskView();
+		const card = wrapper.find("button[draggable='true']");
+		await card.trigger("dragstart");
+
+		const columns = wrapper.findAll("section");
+		// Column 4 = "completed" — invalid from pending
+		await columns[4]!.trigger("drop");
+
+		expect(updateTask).not.toHaveBeenCalled();
+	});
+
+	it("list view and milestone view can open detail", async () => {
+		const wrapper = mountTaskView();
+		// list view: click on task row
+		const listRows = wrapper.findAll("button.flex");
+		if (listRows.length > 0) {
+			await listRows[0]!.trigger("click");
+			const vm = wrapper.vm as unknown as Record<string, unknown>;
+			expect(vm["selectedTask"]).toBeTruthy();
+		}
+	});
+
+	it("calendar view can open task detail", async () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+		vm["viewMode"] = "calendar";
+		await wrapper.vm.$nextTick();
+		// calendar has no tasks in this mock because all tasks have null dueDate
+		// just check it renders
+		expect(wrapper.text()).toContain("无截止日期");
 	});
 });

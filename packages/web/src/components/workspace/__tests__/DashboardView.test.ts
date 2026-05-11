@@ -8,7 +8,7 @@ const tasks = ref<Array<{
 	id: string;
 	title: string;
 	status: "pending" | "in_progress" | "done";
-	priority: "low" | "medium" | "high";
+	priority: "normal" | "important" | "urgent";
 	dueDate: number | null;
 	tags: string[];
 	createdAt: number;
@@ -78,7 +78,7 @@ describe("DashboardView goal entry", () => {
 				id: "task-normal",
 				title: "普通任务",
 				status: "pending",
-				priority: "medium",
+				priority: "normal",
 				dueDate: null,
 				tags: [],
 				createdAt: 1,
@@ -88,7 +88,7 @@ describe("DashboardView goal entry", () => {
 				id: "task-goal",
 				title: "推进 MVP",
 				status: "pending",
-				priority: "medium",
+				priority: "normal",
 				dueDate: null,
 				tags: [],
 				createdAt: 2,

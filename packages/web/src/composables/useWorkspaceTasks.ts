@@ -52,11 +52,8 @@ const statusOrder: WorkspaceTaskStatus[] = [
 
 const priorityWeight: Record<WorkspaceTaskPriority, number> = {
 	urgent: 0,
-	high: 0,
 	important: 1,
-	medium: 1,
 	normal: 2,
-	low: 2,
 };
 
 export function provideWorkspaceTasks(workspaceDir: () => string) {
@@ -186,10 +183,11 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 			tasks.value.unshift(res.task);
 			await load();
 			toast.success("任务已创建");
+			return { success: true as const, task: res.task };
 		} catch (err) {
-			toast.error("创建任务失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
+			const message = err instanceof Error ? err.message : String(err);
+			toast.error("创建任务失败", { description: message });
+			return { success: false as const, error: message };
 		}
 	};
 
@@ -204,10 +202,11 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 			const res = await createWorkspaceMilestone(data);
 			milestones.value.push(res.milestone);
 			toast.success("里程碑已创建");
+			return { success: true as const, milestone: res.milestone };
 		} catch (err) {
-			toast.error("创建里程碑失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
+			const message = err instanceof Error ? err.message : String(err);
+			toast.error("创建里程碑失败", { description: message });
+			return { success: false as const, error: message };
 		}
 	};
 
@@ -229,21 +228,6 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		}
 	};
 
-	const removeTask = async (taskId: string) => {
-		const previous = [...tasks.value];
-		tasks.value = tasks.value.filter((task) => task.id !== taskId);
-		try {
-			await deleteWorkspaceTask(taskId);
-			await load();
-			toast.success("任务已删除");
-		} catch (err) {
-			tasks.value = previous;
-			toast.error("删除任务失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
-		}
-	};
-
 	const updateTask = async (
 		taskId: string,
 		data: Parameters<typeof updateWorkspaceTask>[1],
@@ -256,11 +240,12 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 			if (target) Object.assign(target, res.task);
 			await load();
 			toast.success("任务已更新");
+			return { success: true as const, task: res.task };
 		} catch (err) {
 			if (target && previous) Object.assign(target, previous);
-			toast.error("更新任务失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
+			const message = err instanceof Error ? err.message : String(err);
+			toast.error("更新任务失败", { description: message });
+			return { success: false as const, error: message };
 		}
 	};
 
@@ -268,29 +253,52 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		milestoneId: string,
 		data: Parameters<typeof updateWorkspaceMilestone>[1],
 	) => {
+		const index = milestones.value.findIndex(
+			(milestone) => milestone.id === milestoneId,
+		);
+		const previous = index >= 0 ? { ...milestones.value[index]! } : null;
 		try {
 			const res = await updateWorkspaceMilestone(milestoneId, data);
-			const index = milestones.value.findIndex(
-				(milestone) => milestone.id === milestoneId,
-			);
 			if (index >= 0) milestones.value[index] = res.milestone;
 			toast.success("里程碑已更新");
+			return { success: true as const, milestone: res.milestone };
 		} catch (err) {
-			toast.error("更新里程碑失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
+			if (index >= 0 && previous) milestones.value[index] = previous as MilestoneItem;
+			const message = err instanceof Error ? err.message : String(err);
+			toast.error("更新里程碑失败", { description: message });
+			return { success: false as const, error: message };
+		}
+	};
+
+	const removeTask = async (taskId: string) => {
+		const previous = [...tasks.value];
+		tasks.value = tasks.value.filter((task) => task.id !== taskId);
+		try {
+			await deleteWorkspaceTask(taskId);
+			await load();
+			toast.success("任务已删除");
+			return { success: true as const };
+		} catch (err) {
+			tasks.value = previous;
+			const message = err instanceof Error ? err.message : String(err);
+			toast.error("删除任务失败", { description: message });
+			return { success: false as const, error: message };
 		}
 	};
 
 	const removeMilestone = async (milestoneId: string) => {
+		const previous = [...milestones.value];
+		milestones.value = milestones.value.filter((m) => m.id !== milestoneId);
 		try {
 			await deleteWorkspaceMilestone(milestoneId);
 			await load();
 			toast.success("里程碑已删除");
+			return { success: true as const };
 		} catch (err) {
-			toast.error("删除里程碑失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
+			milestones.value = previous;
+			const message = err instanceof Error ? err.message : String(err);
+			toast.error("删除里程碑失败", { description: message });
+			return { success: false as const, error: message };
 		}
 	};
 

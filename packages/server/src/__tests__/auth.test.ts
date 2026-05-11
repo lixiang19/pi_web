@@ -2,6 +2,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
 import { app, authRuntime } from "../index.js";
 import { createAuthRuntime } from "../auth.js";
+import { getTestClientKey } from "../test/auth.js";
 
 const api = request(app);
 const ADMIN_PASSWORD = "ridge-admin";
@@ -47,16 +48,19 @@ describe("single-user auth", () => {
 
 	it("rate-limits repeated failed password attempts", async () => {
 		const agent = request.agent(app);
+		const clientKey = getTestClientKey();
 
 		for (let index = 0; index < 5; index += 1) {
 			const res = await agent
 				.post("/api/auth/login")
+				.set("x-test-client-key", clientKey)
 				.send({ password: "wrong" });
 			expect(res.status).toBe(401);
 		}
 
 		const locked = await agent
 			.post("/api/auth/login")
+			.set("x-test-client-key", clientKey)
 			.send({ password: ADMIN_PASSWORD });
 		expect(locked.status).toBe(429);
 	});
