@@ -20,6 +20,7 @@
     "@milkdown/vue": "^7.20.0",
     "@pi/protocol": "workspace:*",
     "@rive-app/webgl2": "^2.37.0",
+    "@tauri-apps/api": "^2.0.0",
     "@vue-flow/background": "^1.3.2",
     "@vue-flow/controls": "^1.1.3",
     "@vue-flow/core": "^1.48.2",

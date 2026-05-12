@@ -243,7 +243,36 @@
 - **父组件异步操作失败时必须提供可靠的状态复位机制**：HomePage 内部 `isSending` ref 在失败场景下会变成死锁（永远 true），导致按钮永久禁用。推荐把发送中状态提升为父组件维护的 `tabId → boolean` 映射，并通过 props 下发；父组件在 finally 中清除，保证无论成功/失败都能复位。
 - 文件附件在测试里要用 `Object.defineProperty(inputEl, "files", { value: [file] })` 才能让 change 事件拿到 files，直接 trigger 传参会被忽略。
 
-## 2026-05-12 已废弃说法纠正与部分实现备忘
+## 2026-05-12 任务 14 桌面采集入口
+
+### 实现要点
+
+- **Tauri 桥接模式**：前端通过 `isTauri()` 运行时检测区分桌面/Web 环境；桌面端直接调用 Tauri `invoke`，Web 端回退到浏览器 API。
+- **浏览器网址采集**：System Events 检测前台应用 → AppleScript 针对性查询浏览器 → base64 编码各字段 → tab 分隔 → Rust 解码。完全无损传输（支持逗号、tab、换行）。
+- **选区采集**：sentinel 标记模式（`pbcopy` 写入唯一标记 → `Cmd+C` → `pbpaste` 读取 → 若仍是标记则判定无选区）。比"比较新旧剪贴板"更可靠（不会因旧剪贴板恰好等于选区而误判）。
+- **剪贴板采集**：`pbpaste` 替代 AppleScript `get the clipboard`，更干净无 stderr 污染。
+- **截图**：`screencapture -i -s -x -o`（区域）、`-i -w`（窗口）、`-x -o`（全屏）。返回 `Vec<u8>` 直接传前端，不落地持久化。
+- **前端无回退**：Tauri 下失败时 toast 明确错误，不会偷偷回退到 webview 数据（如 `window.location.href`）。
+
+### 关键修复
+
+- **base64 编码协议**：最初用 `, ` 分隔 AppleScript 输出，网页标题含逗号会被拆坏；后改为 tab 分隔，但 title 含 tab 仍有问题；最终每个字段单独 base64 后用 tab 分隔，实现完全无损。
+- **metadata 保存**：最初 `document.title` 保存的是 ridge webview 标题而非浏览器页面标题；修复后通过 `nativeTitle` / `nativeSelectedText` ref 保存 AppleScript 返回的真实数据。
+- **剪贴板恢复验证**：选区采集恢复旧剪贴板后再次读取验证，失败时向用户报告警告（不静默忽略）。
+- **screencapture 参数**：最初误用 `-f` 标志（格式参数），实际应为路径直接作为末位参数。
+
+### 测试覆盖
+
+- Rust：`parse_browser_url_output`（含逗号/tab/空值/缺失 URL）、`shell_escape`（单引号/多引号）、`generate_sentinel`（唯一性）、`screencapture_binary_exists_and_runnable`（真实执行截图验证 PNG 魔数）。共 11 项。
+- Web：`desktop-bridge.test.ts` 25 项（7 个桥接函数的 Web/Tauri/成功/失败/空值边界）；`FleetingCaptureButton.test.ts` 11 项（含 5 个 Tauri 集成测试，验证 metadata 包含原生 title/selectedText）。
+
+### 教训
+
+- **AppleScript 输出必须用无损协议**：逗号和 tab 分隔都不够，base64 编码是唯一可靠方式。
+- **Tauri 下禁止回退到 webview 数据**：`window.location.href`、`window.getSelection()`、`navigator.clipboard` 在桌面端采集时会返回错误对象，必须显式失败。
+- **剪贴板操作必须验证恢复**：修改系统剪贴板后必须确认恢复成功，否则用户数据会被破坏。
+- **先写测试再实现**：浏览器 URL 解析、sentinel 唯一性、screencapture 真实执行等测试提前定义了验收标准，避免"调通 API 就当完成"。
+- **Rust 侧提取纯函数并测**：`parse_browser_url_output`、`shell_escape`、`generate_sentinel` 提取为独立函数后，Rust 测试可覆盖核心逻辑，不依赖 AppleScript 实际执行。
 
 1) **任务系统真源**：当前真源是 `~/.pi/ridge.db` 的 `workspace_tasks` / `workspace_milestones`，不是 `<workspace>/.ridge/ridge.db` 的 `tasks`；旧 2026-05-01 "task #13 任务 SQLite 真源最小实现" 说法已废弃，功能编号 13 现在是闪念临时附件生命周期。
 2) **闪念正式处理**：`routes/fleeting.ts` 中 `process/journal` 和 `process/clip` 已实现（写入日记/剪藏并删除闪念）；`process/task` 仅返回 202 且保留闪念；`process/milestone` 与 `process/attachment` 未实现。

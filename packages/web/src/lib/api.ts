@@ -774,6 +774,8 @@ export interface FleetingNote {
 	requiresInput: boolean;
 	piSessionId: string | null;
 	piSessionFile: string | null;
+	captureType?: string;
+	metadata?: Record<string, unknown>;
 	createdAt: number;
 	updatedAt: number;
 }
@@ -807,6 +809,34 @@ export function createFleetingNote(content: string) {
 	return request<{ note: FleetingNote }>("/api/fleeting", {
 		method: "POST",
 		body: JSON.stringify({ content }),
+	});
+}
+
+export type DesktopCaptureType =
+	| "text"
+	| "screenshot_region"
+	| "screenshot_window"
+	| "screenshot_fullscreen"
+	| "file"
+	| "clipboard"
+	| "selection"
+	| "browser_url"
+	| "audio";
+
+export interface DesktopCapturePayload {
+	content: string;
+	type: DesktopCaptureType;
+	metadata?: Record<string, unknown>;
+	attachments?: { name: string; mimeType: string; base64: string }[];
+}
+
+export function captureFromDesktop(payload: DesktopCapturePayload) {
+	return request<{
+		note: FleetingNote & { captureType: string; metadata: Record<string, unknown> };
+		attachments: FleetingAttachment[];
+	}>("/api/fleeting/capture", {
+		method: "POST",
+		body: JSON.stringify(payload),
 	});
 }
 

@@ -6,6 +6,7 @@ import {
 	logout,
 	setUnauthorizedHandler,
 } from "./api";
+import { syncDesktopStatus } from "./desktop-bridge";
 
 export const authState = reactive({
 	checked: false,
@@ -15,6 +16,7 @@ export const authState = reactive({
 export function markUnauthenticated() {
 	authState.checked = true;
 	authState.authenticated = false;
+	void syncDesktopStatus(navigator.onLine, false);
 }
 
 export async function ensureAuthSession() {
@@ -24,6 +26,7 @@ export async function ensureAuthSession() {
 	const session = await getAuthSession();
 	authState.checked = true;
 	authState.authenticated = session.authenticated;
+	void syncDesktopStatus(navigator.onLine, session.authenticated);
 	return authState.authenticated;
 }
 
@@ -31,6 +34,7 @@ export async function loginWithPassword(password: string) {
 	await login(password);
 	authState.checked = true;
 	authState.authenticated = true;
+	void syncDesktopStatus(navigator.onLine, true);
 }
 
 export async function logoutAuth() {

@@ -100,6 +100,8 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'pi_session_file', definition: 'TEXT' },
     { name: 'retry_count', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'last_error', definition: 'TEXT' },
+    { name: 'capture_type', definition: 'TEXT' },
+    { name: 'metadata_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ],

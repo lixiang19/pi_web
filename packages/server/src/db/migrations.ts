@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 8;
+export const RIDGE_DB_SCHEMA_VERSION = 9;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -588,6 +588,14 @@ CREATE TABLE IF NOT EXISTS fleeting_attachments (
 
 CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
   ON fleeting_attachments(note_id, created_at DESC);
+`,
+  },
+  {
+    version: 9,
+    name: 'desktop capture fields',
+    sql: `
+ALTER TABLE fleeting_notes ADD COLUMN capture_type TEXT;
+ALTER TABLE fleeting_notes ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';
 `,
   },
 ];

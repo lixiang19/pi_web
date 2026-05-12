@@ -28,6 +28,32 @@ interface FleetingRouterDeps {
 	analysisRunner?: FleetingAnalysisRunner;
 }
 
+const captureSchema = z.object({
+	content: z.string().optional().default(""),
+	type: z.enum([
+		"text",
+		"screenshot_region",
+		"screenshot_window",
+		"screenshot_fullscreen",
+		"file",
+		"clipboard",
+		"selection",
+		"browser_url",
+		"audio",
+	]),
+	metadata: z.record(z.string(), z.unknown()).optional(),
+	attachments: z
+		.array(
+			z.object({
+				name: z.string().min(1),
+				mimeType: z.string().min(1),
+				base64: z.string().min(1),
+			}),
+		)
+		.optional()
+		.default([]),
+});
+
 const createFleetingSchema = z.object({
 	content: z.string().trim().min(1),
 });
@@ -192,6 +218,56 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			void Promise.resolve(analysisRunner?.run(id)).catch(() => undefined);
 			const note = getNoteOrThrow(db, id);
 			res.status(201).json({ note: toPublicNote(note) });
+		} catch (error) {
+			forwardError(error, next);
+		}
+	});
+
+	router.post("/capture", async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const payload = captureSchema.parse(req.body ?? {});
+			const now = Date.now();
+			const id = makeId("flash");
+			db.prepare(
+				`INSERT INTO fleeting_notes(
+				  note_id, content, status, capture_type, metadata_json, analysis_status, created_at, updated_at
+				) VALUES(?, ?, 'pending', ?, ?, 'unanalyzed', ?, ?)`,
+			).run(
+				id,
+				payload.content,
+				payload.type,
+				JSON.stringify(payload.metadata ?? {}),
+				now,
+				now,
+			);
+
+			const attachmentRecords = [];
+			for (const att of payload.attachments) {
+				const buffer = Buffer.from(att.base64, "base64");
+				const record = await storeFleetingAttachment(
+					db,
+					workspaceDir,
+					id,
+					att.name,
+					buffer,
+					att.mimeType,
+				);
+				attachmentRecords.push(record);
+			}
+
+			void Promise.resolve(analysisRunner?.run(id)).catch(() => undefined);
+
+			const note = getNoteOrThrow(db, id);
+			res.status(201).json({
+				note: {
+					...toPublicNote(note),
+					captureType: payload.type,
+					metadata: payload.metadata ?? {},
+				},
+				attachments: attachmentRecords.map((r) =>
+					toPublicAttachment(r as unknown as Record<string, unknown>),
+				),
+			});
 		} catch (error) {
 			forwardError(error, next);
 		}
