@@ -332,6 +332,18 @@ export type StreamEvent =
 	| StreamErrorEvent
 	| StreamMessageEvent;
 
+export const FILE_PROCESSING_STATUS_VALUES = [
+	"pending",
+	"converting",
+	"converted",
+	"indexed",
+	"convert_failed",
+	"index_failed",
+] as const;
+
+export type FileProcessingStatus =
+	(typeof FILE_PROCESSING_STATUS_VALUES)[number];
+
 export interface FileTreeEntry {
 	name: string;
 	path: string;
@@ -340,6 +352,7 @@ export interface FileTreeEntry {
 	size: number | null;
 	modifiedAt: number;
 	extension: string;
+	processingStatus?: FileProcessingStatus;
 }
 
 export interface FileTreeResponse {

@@ -417,8 +417,25 @@ export function uploadFiles(root: string, directory: string, files: File[]) {
 
 export function getFilePreview(path: string, root: string) {
 	const params = new URLSearchParams({ path, root });
-
 	return request<FilePreviewPayload>(`/api/files/content?${params.toString()}`);
+}
+
+export function getWorkspaceFilesTree(path?: string) {
+	const params = new URLSearchParams();
+	if (path) {
+		params.set("path", path);
+	}
+	return request<FileTreeResponse>(
+		`/api/workspace/files/tree${params.size > 0 ? `?${params.toString()}` : ""}`,
+	);
+}
+
+export function getWorkspaceFilesRead(path: string) {
+	const params = new URLSearchParams();
+	if (path) {
+		params.set("path", path);
+	}
+	return request<FilePreviewPayload>(`/api/workspace/files/read?${params.toString()}`);
 }
 
 export function getFilePreviewWindow(

@@ -56,6 +56,7 @@ import {
 	createWorkspaceTasksRouter,
 } from "./routes/workspace-tasks.js";
 import { createWorktreeRouter } from "./routes/worktrees.js";
+import { createWorkspaceFilesRouter } from "./routes/workspace-files.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
@@ -603,6 +604,12 @@ const workspaceDataRouter = createWorkspaceDataRouter({
 	fileOpenSchema,
 });
 app.use(workspaceDataRouter);
+const workspaceFilesRouter = createWorkspaceFilesRouter({
+	defaultWorkspaceDir,
+	fileManager: getFileManager(),
+	getRidgeDb,
+});
+app.use(workspaceFilesRouter);
 app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(ensureSessionRecord));
 app.get(
 	"/api/files/content",

@@ -68,6 +68,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { FileTreeEntry, ThinkingLevel } from "@/lib/types";
 import { toast } from "vue-sonner";
+import FilesView from "@/components/workspace/FilesView.vue";
+import { useWorkspaceFiles } from "@/composables/useWorkspaceFiles";
 
 /** 从文件绝对路径构造完整的 FileTreeEntry（用于只需路径即可打开文件的场景） */
 function createFileTreeEntryFromPath(filePath: string): FileTreeEntry {
@@ -113,6 +115,9 @@ const { handleDelete, handleRename, handleCreateFolderInTree } = useFileTreeActi
 
 // 文件预览
 const preview = useWorkspaceFilePreview(workspaceDir);
+
+// 工作空间文件页
+const workspaceFiles = useWorkspaceFiles();
 
 // 分屏管理
 const splitPanes = useSplitPanes();
@@ -303,7 +308,16 @@ function handleFixedEntry(entry: (typeof fixedEntries)[number]) {
 		void handleOpenTerminal();
 		return;
 	}
+	if (entry.id === "files") {
+		handleOpenFiles();
+		return;
+	}
 	handleOpenSingletonFeature(entry.id);
+}
+
+async function handleOpenFiles() {
+	await workspaceFiles.load(workspaceDir.value);
+	handleOpenSingletonFeature("files");
 }
 
 /** 打开文件标签页到当前活跃面板 */
@@ -924,6 +938,16 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			  :workspace-dir="workspaceDir"
 			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
 			  @refresh-tree="refreshTree"
+			/>
+			<FilesView
+			  v-else-if="tab.featureId === 'files'"
+			  :workspace-root="workspaceFiles.workspaceRoot.value"
+			  :entries="workspaceFiles.entries.value"
+			  :current-path="workspaceFiles.currentPath.value"
+			  :loading="workspaceFiles.loading.value"
+			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
+			  @navigate="workspaceFiles.navigate"
+			  @navigate-back="workspaceFiles.navigateBack"
 			/>
 			<AutomationTabContent v-else-if="tab.featureId === 'automation'" />
 			<SettingsTabContent v-else-if="tab.featureId === 'settings'" />

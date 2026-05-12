@@ -290,3 +290,27 @@
    - 前端：`InboxView` 展示 `failed` 状态错误信息，提供"重新分析"按钮；`useInbox` 提供 `retryAnalysis()`。
    - 防重复：`background_jobs` 的 `UNIQUE INDEX` 保证同一闪念不会同时有多个 pending/running job。
    - 测试：后端 9 项测试覆盖入队、幂等、跳过、worker 成功/失败重试/最终失败/非 fleeting job 隔离、路由延迟获取、列表返回失败字段。
+
+## 2026-05-12 任务 17 文件页与正式附件目录
+
+### 实现要点
+
+- **文件树 API**：`GET /api/workspace/files/tree?path=<dir>` 返回工作空间可见目录；`GET /api/workspace/files/read?path=<file>` 返回文件预览；两者均复用 `fileManager.resolveManagedFileLocation` 做 root/realpath/`.ridge` 边界校验。
+- **状态展示**：后端路由查询 `file_processing_status` 表，按 `workspace_path` 匹配后把 `status` 注入 `entries[*].processingStatus`；目录节点无此字段。
+- **隐藏 `.ridge`**：文件树不展示 `.ridge` 目录；读取 `.ridge` 内文件会被 `assertNotRidgeSystemPath` 拦截返回 400。
+- **前端**：`FilesView.vue` 渲染文件树，文件节点展示 `processingStatus` 状态徽章（Badge 组件，shadcn-vue）。
+
+### 测试覆盖
+
+- 后端 `workspace-files-api.test.ts`：文件树返回带 `processingStatus` 的条目、目录节点无状态、正式附件可读取、临时附件（`.ridge`）读取 400、文件树不包含 `.ridge`。
+- 前端 `FilesView.test.ts`：渲染目录和文件、隐藏 `.ridge`、面包屑展示、点击目录导航、点击文件打开预览、状态徽章展示（含附件子目录场景）。
+- 前端 `useWorkspaceFiles.test.ts`：`navigateBack` 根边界、父目录导航、`load` 更新 entries/workspaceRoot/currentPath。
+
+### 教训
+
+- **API 签名只做需要的参数**：`getWorkspaceFilesTree`/`getWorkspaceFilesRead` 最初带了误导性的 `root` 参数但请求体并未使用；应删除未使用参数，否则 ESLint 门禁直接失败。
+- **Deps 接口最小化**：`createWorkspaceFilesRouter(deps)` 最初包含 `fileContentQuerySchema`（复制自旧文件预览路由），但 workspace-files 路由并未消费；Deps 接口应只声明真实消费项，避免死代码和类型噪声。
+- **DB 状态表与 RAG 索引不能混为一谈**：`file_processing_status` 就位只是“状态记录”，不等于“可被引用/可进入 RAG”。归档文档必须明确区分「本任务做了什么」和「后续任务（22-24）才做 RAG 入队/索引/检索」。
+- **schema version 必须与代码一致**：文档 `数据库与迁移.md` 写 `7` 但代码已 `10`，且 `file_processing_status`、`fleeting_attachments` 等表未列入核心表清单；模块梳理文档必须随代码同步更新。
+- **废弃 composable 立即删除**：`useFilesView.ts` 被 `useWorkspaceFiles.ts` 取代后未删除，会被后续开发者误引用；替换完成后立即清理旧文件。
+- **enum 类型不能只靠 TypeScript**：`file_processing_status.status` 在前端协议层定义为 `FileProcessingStatus` 并在后端 DB 增加 `CHECK` 约束，防止非法状态字符串进入系统。路由层做运行时校验再注入响应体。

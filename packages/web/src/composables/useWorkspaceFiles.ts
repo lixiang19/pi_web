@@ -1,0 +1,59 @@
+import { ref } from "vue";
+import { getWorkspaceFilesTree } from "@/lib/api";
+import type { FileTreeEntry } from "@/lib/types";
+
+export function getParentPath(currentPath: string): string | null {
+	const normalized = currentPath.replace(/\\/g, "/").replace(/\/+$/, "");
+	if (!normalized || normalized === "/") return null;
+	const lastIndex = normalized.lastIndexOf("/");
+	if (lastIndex <= 0) return null;
+	const parent = normalized.slice(0, lastIndex);
+	if (!parent || parent === normalized) return null;
+	return parent;
+}
+
+export function useWorkspaceFiles() {
+	const entries = ref<FileTreeEntry[]>([]);
+	const workspaceRoot = ref("");
+	const currentPath = ref("");
+	const loading = ref(false);
+	const error = ref("");
+
+	const load = async (targetPath: string) => {
+		loading.value = true;
+		error.value = "";
+		try {
+			const res = await getWorkspaceFilesTree(targetPath);
+			entries.value = res.entries;
+			workspaceRoot.value = res.root;
+			currentPath.value = res.directory;
+		} catch (err) {
+			error.value = err instanceof Error ? err.message : String(err);
+			entries.value = [];
+		} finally {
+			loading.value = false;
+		}
+	};
+
+	const navigate = async (targetPath: string) => {
+		await load(targetPath);
+	};
+
+	const navigateBack = async () => {
+		if (currentPath.value === workspaceRoot.value) return;
+		const parent = getParentPath(currentPath.value);
+		if (!parent) return;
+		await load(parent);
+	};
+
+	return {
+		entries,
+		workspaceRoot,
+		currentPath,
+		loading,
+		error,
+		load,
+		navigate,
+		navigateBack,
+	};
+}

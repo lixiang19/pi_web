@@ -73,6 +73,46 @@ export const assertNotRidgeSystemPath = (
   }
 };
 
+export const assertNotRidgeSystemPathReal = async (
+  candidatePath: string,
+  rootPath: string,
+): Promise<void> => {
+  if (isRidgeSystemPath(candidatePath, rootPath)) {
+    throw toHttpError('Requested path is inside the hidden ridge system directory', 400);
+  }
+
+  let current = candidatePath;
+  while (current !== path.dirname(current)) {
+    try {
+      const real = await fs.realpath(current);
+      if (isRidgeSystemPath(real, rootPath)) {
+        throw toHttpError('Resolved path is inside the hidden ridge system directory', 400);
+      }
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        current = path.dirname(current);
+        continue;
+      }
+      if ((error as HttpError).statusCode === 400) {
+        throw error;
+      }
+      throw error;
+    }
+  }
+
+  try {
+    const real = await fs.realpath(current);
+    if (isRidgeSystemPath(real, rootPath)) {
+      throw toHttpError('Resolved path is inside the hidden ridge system directory', 400);
+    }
+  } catch (error) {
+    if ((error as HttpError).statusCode === 400) {
+      throw error;
+    }
+  }
+};
+
 export const normalizeFsPath = (value: unknown): string =>
   path.resolve(normalizeString(value));
 
@@ -247,6 +287,7 @@ export const createFileManager = (options: FileManagerOptions) => {
     const targetPath = requestedPath || rootPath;
     ensureWithinRoot(targetPath, rootPath);
     assertNotRidgeSystemPath(targetPath, rootPath);
+    await assertNotRidgeSystemPathReal(targetPath, rootPath);
     await ensureResolvedPathWithinRoot(targetPath, rootPath);
 
     return {
@@ -279,18 +320,26 @@ export const createFileManager = (options: FileManagerOptions) => {
   ): Promise<FileTreeEntry[]> => {
     assertNotRidgeSystemPath(directoryPath, rootPath);
     const dirents = await fs.readdir(directoryPath, { withFileTypes: true });
-    const entries = await Promise.all(
+    const entries = (await Promise.all(
       dirents
         .filter(
           (entry) => entry.name !== '.' && !ignoredDirectoryNames.has(entry.name),
         )
         .map(async (entry) => {
           const entryPath = path.join(directoryPath, entry.name);
-          await ensureResolvedPathWithinRoot(entryPath, rootPath);
+          try {
+            await ensureResolvedPathWithinRoot(entryPath, rootPath);
+            await assertNotRidgeSystemPathReal(entryPath, rootPath);
+          } catch (error) {
+            if ((error as HttpError).statusCode === 400) {
+              return null;
+            }
+            throw error;
+          }
           const stats = await fs.stat(entryPath);
           return serializeEntry(rootPath, entryPath, stats);
         }),
-    );
+    )).filter((e): e is FileTreeEntry => e !== null);
 
     return entries.sort((left, right) => {
       if (left.kind !== right.kind) {

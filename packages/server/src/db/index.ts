@@ -188,6 +188,16 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'sha256', definition: "TEXT NOT NULL DEFAULT ''" },
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ],
+  file_processing_status: [
+    { name: 'file_path', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'workspace_path', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'pending'" },
+    { name: 'content_hash', definition: 'TEXT' },
+    { name: 'converted_at', definition: 'INTEGER' },
+    { name: 'indexed_at', definition: 'INTEGER' },
+    { name: 'error', definition: 'TEXT' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
 };
 
 const openDatabase = async (workspaceDir?: string): Promise<RidgeDatabase> => {

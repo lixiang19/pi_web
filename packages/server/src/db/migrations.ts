@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 9;
+export const RIDGE_DB_SCHEMA_VERSION = 10;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -592,12 +592,31 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
   ON fleeting_attachments(note_id, created_at DESC);
 `,
   },
-	{
-		version: 9,
-		name: 'desktop capture fields',
-		sql: `
+  {
+    version: 9,
+    name: 'desktop capture fields (no-op)',
+    sql: `
 -- capture_type and metadata_json are now in the bootstrap schema.
 -- This migration is retained for version tracking but is a no-op.
 `,
-	},
+  },
+  {
+    version: 10,
+    name: 'file processing status',
+    sql: `
+CREATE TABLE IF NOT EXISTS file_processing_status (
+  file_path TEXT PRIMARY KEY,
+  workspace_path TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'converting', 'converted', 'indexed', 'convert_failed', 'index_failed')),
+  content_hash TEXT,
+  converted_at INTEGER,
+  indexed_at INTEGER,
+  error TEXT,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_processing_status_workspace
+  ON file_processing_status(workspace_path, status, updated_at);
+`,
+  },
 ];
