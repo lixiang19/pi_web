@@ -15,9 +15,13 @@ import {
 	getTask,
 	listMilestones,
 	listTasks,
+	setTaskProcessingSessionId,
 	updateMilestone,
 	updateTask,
 } from "../task-system.js";
+import type { SessionRecord, SessionSnapshot } from "../types/index.js";
+import type { ProjectContextResolver } from "../project-context.js";
+import type { WorkspaceChatConfig } from "../workspace-chat.js";
 
 const actorSchema = z.enum(["user", "agent"]).default("user");
 
@@ -66,7 +70,6 @@ const updateTaskSchema = z
 		milestoneId: z.string().trim().min(1).optional(),
 		projectId: z.string().trim().min(1).nullable().optional(),
 		blockedReason: z.string().trim().nullable().optional(),
-		processingSessionId: z.string().trim().min(1).nullable().optional(),
 		sortOrder: z.number().int().optional(),
 		actor: actorSchema,
 	})
@@ -74,7 +77,20 @@ const updateTaskSchema = z
 		message: "至少要更新一个字段",
 	});
 
-export function createWorkspaceTasksRouter(defaultWorkspaceDir: string) {
+export interface WorkspaceTasksRouterDeps {
+	createSessionRecord: (params: { cwd: string; title?: string; model?: string }) => Promise<SessionRecord>;
+	applyTaskSessionAgentSelection: (record: SessionRecord, selection: { agentName?: string; model?: string; thinkingLevel?: string | null }) => Promise<void>;
+	persistSessionRecordMetadata: (record: SessionRecord) => Promise<void>;
+	upsertIndexedSessionRecord: (record: SessionRecord, deps: { projectContextResolver: ProjectContextResolver; workspaceChatConfig: WorkspaceChatConfig }) => Promise<void>;
+	toSessionSnapshot: (record: SessionRecord, options: { rounds?: number }) => Promise<SessionSnapshot>;
+	getProjects: () => Promise<{ projects: Array<{ id: string; path: string; deviceId?: string; isOnline: boolean }> }>;
+	getDefaultModel: () => Promise<string>;
+	getDefaultThinkingLevel: () => Promise<string>;
+	projectContextResolver: ProjectContextResolver;
+	workspaceChatConfig: WorkspaceChatConfig;
+}
+
+export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: WorkspaceTasksRouterDeps) {
 	const router = express.Router();
 
 	router.get("/", async (req: Request, res: Response, next: NextFunction) => {
@@ -127,6 +143,116 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string) {
 			try {
 				await deleteTask(defaultWorkspaceDir, req.params.taskId);
 				res.json({ ok: true });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
+
+	// ===== 任务处理会话 API =====
+	router.get(
+		"/:taskId/processing-session",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				if (!deps) {
+					const error = new Error("处理会话服务尚未初始化") as import("../types/index.js").HttpError;
+					error.statusCode = 503;
+					throw error;
+				}
+
+				const task = await getTask(defaultWorkspaceDir, req.params.taskId);
+				if (!task.processingSessionId) {
+					const error = new Error("任务无处理会话") as import("../types/index.js").HttpError;
+					error.statusCode = 404;
+					throw error;
+				}
+
+				// 返回已有会话前也要检查绑定项目离线状态
+				if (task.projectId) {
+					const projectsState = await deps.getProjects();
+					const project = projectsState.projects.find((p) => p.id === task.projectId);
+					if (project && project.deviceId && !project.isOnline) {
+						const error = new Error("项目离线，无法继续处理会话") as import("../types/index.js").HttpError;
+						error.statusCode = 409;
+						throw error;
+					}
+				}
+
+				res.json({ sessionId: task.processingSessionId });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
+
+	router.post(
+		"/:taskId/processing-session",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				if (!deps) {
+					const error = new Error("处理会话服务尚未初始化") as import("../types/index.js").HttpError;
+					error.statusCode = 503;
+					throw error;
+				}
+
+				const task = await getTask(defaultWorkspaceDir, req.params.taskId);
+
+				// 确定 cwd 并检查项目离线状态（无论是否已有会话都要检查）
+				let cwd = defaultWorkspaceDir;
+				if (task.projectId) {
+					const projectsState = await deps.getProjects();
+					const project = projectsState.projects.find((p) => p.id === task.projectId);
+					if (!project) {
+						const error = new Error(`项目不存在: ${task.projectId}`) as import("../types/index.js").HttpError;
+						error.statusCode = 404;
+						throw error;
+					}
+					// 有 deviceId 且离线的项目禁止启动/继续处理会话
+					if (project.deviceId && !project.isOnline) {
+						const error = new Error("项目离线，无法启动处理会话") as import("../types/index.js").HttpError;
+						error.statusCode = 409;
+						throw error;
+					}
+					cwd = project.path;
+				}
+
+				// 已有处理会话时直接返回已有会话（离线检查已通过）
+				if (task.processingSessionId) {
+					res.status(200).json({ sessionId: task.processingSessionId, created: false });
+					return;
+				}
+
+				// 创建会话
+				const record = await deps.createSessionRecord({
+					cwd,
+					title: task.title,
+				});
+
+				// 强制选择任务 Agent（mode=task 且 enabled）
+				const defaultModel = await deps.getDefaultModel();
+				const defaultThinkingLevel = await deps.getDefaultThinkingLevel();
+				await deps.applyTaskSessionAgentSelection(record, {
+					agentName: "task-agent",
+					model: defaultModel || undefined,
+					thinkingLevel: defaultThinkingLevel || undefined,
+				});
+
+				await deps.persistSessionRecordMetadata(record);
+				await deps.upsertIndexedSessionRecord(record, {
+					projectContextResolver: deps.projectContextResolver,
+					workspaceChatConfig: deps.workspaceChatConfig,
+				});
+
+				// 原子/条件记录 processing_session_id
+				const { existingSessionId } = await setTaskProcessingSessionId(defaultWorkspaceDir, task.id, record.id);
+				if (existingSessionId && existingSessionId !== record.id) {
+					// 并发情况下已有不同会话，返回已有的
+					res.status(200).json({ sessionId: existingSessionId, created: false });
+					return;
+				}
+
+				const snapshot = await deps.toSessionSnapshot(record, {});
+				res.status(201).json({ sessionId: record.id, created: true, snapshot });
 			} catch (error) {
 				next(error);
 			}

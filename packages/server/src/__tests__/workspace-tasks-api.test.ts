@@ -2,16 +2,83 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createWorkspaceTasksRouter, createWorkspaceMilestonesRouter } from "../routes/workspace-tasks.js";
+import { createWorkspaceTasksRouter, createWorkspaceMilestonesRouter, type WorkspaceTasksRouterDeps } from "../routes/workspace-tasks.js";
 import { createTempDir } from "../test/helpers.js";
 import { getRidgeDb } from "../db/index.js";
+import type { SessionRecord, SessionSnapshot } from "../types/index.js";
 
-const createApp = (workspaceDir: string) => {
+const createMockDeps = (): WorkspaceTasksRouterDeps => ({
+	createSessionRecord: vi.fn(async (params) => ({
+		id: `session-${Date.now()}`,
+		cwd: params.cwd,
+		sessionFile: `/tmp/session-${Date.now()}.json`,
+		status: "idle",
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+		session: {} as unknown as SessionRecord["session"],
+		settingsManager: {} as unknown,
+		resourceLoader: {} as unknown,
+		unsubscribe: null,
+		clients: new Set(),
+		defaultToolNames: [],
+		pendingAskRecords: new Map(),
+		pendingPermissionRecords: new Map(),
+		runtimePermissionRules: {},
+		selectedAgentName: undefined,
+		selectedAgentConfig: null,
+		selectedAgentSignature: "",
+		explicitModelSpec: undefined,
+		explicitThinkingLevel: undefined,
+		resolvedModelSpec: undefined,
+		resolvedThinkingLevel: undefined,
+		selectedPermissionPolicy: null,
+		turnBudget: { maxTurns: undefined, usedTurns: 0, exhausted: false },
+	}) as unknown as SessionRecord),
+	applyTaskSessionAgentSelection: vi.fn(async () => {}),
+	persistSessionRecordMetadata: vi.fn(async () => {}),
+	upsertIndexedSessionRecord: vi.fn(async () => {}),
+	toSessionSnapshot: vi.fn(async (record) => ({
+		id: record.id,
+		title: "测试会话",
+		cwd: record.cwd,
+		status: "idle",
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+		archived: false,
+		messages: [],
+		historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 },
+		interactiveRequests: [],
+		permissionRequests: [],
+	} as unknown as SessionSnapshot)),
+	getProjects: vi.fn(async () => ({ projects: [] })),
+	getDefaultModel: vi.fn(async () => ""),
+	getDefaultThinkingLevel: vi.fn(async () => "medium"),
+	projectContextResolver: {
+		resolveContext: vi.fn(async (cwd) => ({
+			isGit: false,
+			projectId: cwd,
+			projectRoot: cwd,
+			projectLabel: path.basename(cwd),
+			worktreeRoot: cwd,
+			worktreeLabel: path.basename(cwd),
+			branch: undefined,
+			worktrees: [{ path: cwd, branch: undefined, label: path.basename(cwd) }],
+		})),
+		isPathInsideRoot: vi.fn((candidate, root) => {
+			const relative = path.relative(root, candidate);
+			return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+		}),
+		invalidateContext: vi.fn(),
+	},
+	workspaceChatConfig: { workspaceDir: "/tmp/workspace", notesDir: "/tmp/workspace/notes" },
+});
+
+const createApp = (workspaceDir: string, deps?: WorkspaceTasksRouterDeps) => {
 	const app = express();
 	app.use(express.json());
-	app.use("/api/workspace/tasks", createWorkspaceTasksRouter(workspaceDir));
+	app.use("/api/workspace/tasks", createWorkspaceTasksRouter(workspaceDir, deps));
 	app.use("/api/workspace/milestones", createWorkspaceMilestonesRouter(workspaceDir));
 	app.use((err: Error & { statusCode?: number }, _req: Request, res: Response, _next: NextFunction) => {
 		res.status(err.statusCode ?? 500).json({ error: err.message });
@@ -63,17 +130,18 @@ describe("workspace tasks api", () => {
 		});
 		await expect(pathExists(path.join(workspaceDir, ".ridge", "tasks.json"))).resolves.toBe(false);
 
+		// 测试更新 blockedReason（processingSessionId 不再允许通过 PATCH 直接更新）
 		await request(app)
 			.patch(`/api/workspace/tasks/${createResponse.body.task.id}`)
 			.send({
-				processingSessionId: "session-123",
+				blockedReason: "等待资源",
 			})
 			.expect(200);
 
 		const listResponse = await request(app).get("/api/workspace/tasks").expect(200);
 		expect(listResponse.body.tasks[0]).toMatchObject({
 			title: "整理 pi_web MVP",
-			processingSessionId: "session-123",
+			blockedReason: "等待资源",
 		});
 	});
 
@@ -199,5 +267,307 @@ describe("workspace tasks api", () => {
 
 		const p1 = await request(app).get("/api/workspace/tasks?projectId=p1").expect(200);
 		expect(p1.body.tasks.map((t: { title: string }) => t.title)).toEqual(["T1"]);
+	});
+});
+
+describe("workspace tasks processing session api", () => {
+	let workspaceDir = "";
+	let cleanup: () => Promise<void> = async () => undefined;
+
+	beforeEach(async () => {
+		workspaceDir = await createTempDir("ridge-workspace-tasks-ps-");
+		const db = await getRidgeDb();
+		db.prepare("DELETE FROM workspace_tasks").run();
+		db.prepare("DELETE FROM workspace_milestones").run();
+		cleanup = () => fs.rm(workspaceDir, { recursive: true, force: true });
+	});
+
+	afterEach(async () => {
+		await cleanup();
+	});
+
+	it("GET /:taskId/processing-session returns 404 when no session exists", async () => {
+		const app = createApp(workspaceDir, createMockDeps());
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "无会话任务", priority: "normal", acceptanceCriteria: "标准" })
+			.expect(201);
+
+		await request(app)
+			.get(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(404);
+	});
+
+	it("POST creates processing session and records processing_session_id", async () => {
+		const deps = createMockDeps();
+		const app = createApp(workspaceDir, deps);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "创建会话任务", priority: "normal", acceptanceCriteria: "标准" })
+			.expect(201);
+		const taskId = createRes.body.task.id;
+
+		const psRes = await request(app)
+			.post(`/api/workspace/tasks/${taskId}/processing-session`)
+			.expect(201);
+
+		expect(psRes.body.created).toBe(true);
+		expect(psRes.body.sessionId).toBeTruthy();
+
+		// 再次 GET 应返回 sessionId
+		const getRes = await request(app)
+			.get(`/api/workspace/tasks/${taskId}/processing-session`)
+			.expect(200);
+		expect(getRes.body.sessionId).toBe(psRes.body.sessionId);
+
+		// 重复 POST 只返回已有会话
+		const psRes2 = await request(app)
+			.post(`/api/workspace/tasks/${taskId}/processing-session`)
+			.expect(200);
+		expect(psRes2.body.created).toBe(false);
+		expect(psRes2.body.sessionId).toBe(psRes.body.sessionId);
+	});
+
+	it("POST creates project session when task has projectId", async () => {
+		const deps = createMockDeps();
+		deps.getProjects = vi.fn(async () => ({
+			projects: [{ id: "proj-1", path: "/projects/alpha", deviceId: undefined, isOnline: false }],
+		}));
+
+		const app = createApp(workspaceDir, deps);
+
+		const msRes = await request(app)
+			.post("/api/workspace/milestones")
+			.send({ title: "M", goal: "g", acceptanceCriteria: "a", projectId: "proj-1" })
+			.expect(201);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "项目任务", priority: "normal", acceptanceCriteria: "标准", milestoneId: msRes.body.milestone.id })
+			.expect(201);
+
+		await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(201);
+
+		expect(deps.createSessionRecord).toHaveBeenCalledWith(
+			expect.objectContaining({ cwd: "/projects/alpha" }),
+		);
+	});
+
+	it("POST rejects when bound project is offline (has deviceId and isOnline=false)", async () => {
+		const deps = createMockDeps();
+		deps.getProjects = vi.fn(async () => ({
+			projects: [{ id: "proj-offline", path: "/projects/offline", deviceId: "device-1", isOnline: false }],
+		}));
+
+		const app = createApp(workspaceDir, deps);
+
+		const msRes = await request(app)
+			.post("/api/workspace/milestones")
+			.send({ title: "M", goal: "g", acceptanceCriteria: "a", projectId: "proj-offline" })
+			.expect(201);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "离线项目任务", priority: "normal", acceptanceCriteria: "标准", milestoneId: msRes.body.milestone.id })
+			.expect(201);
+
+		await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(409);
+	});
+
+	it("POST allows local server-folder project without deviceId even if isOnline=false", async () => {
+		const deps = createMockDeps();
+		deps.getProjects = vi.fn(async () => ({
+			projects: [{ id: "proj-local", path: "/projects/local", deviceId: undefined, isOnline: false }],
+		}));
+
+		const app = createApp(workspaceDir, deps);
+
+		const msRes = await request(app)
+			.post("/api/workspace/milestones")
+			.send({ title: "M", goal: "g", acceptanceCriteria: "a", projectId: "proj-local" })
+			.expect(201);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "本地项目任务", priority: "normal", acceptanceCriteria: "标准", milestoneId: msRes.body.milestone.id })
+			.expect(201);
+
+		await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(201);
+	});
+
+	it("POST rejects when projectId does not exist", async () => {
+		const deps = createMockDeps();
+		deps.getProjects = vi.fn(async () => ({ projects: [] }));
+
+		const app = createApp(workspaceDir, deps);
+
+		const msRes = await request(app)
+			.post("/api/workspace/milestones")
+			.send({ title: "M", goal: "g", acceptanceCriteria: "a", projectId: "nonexistent" })
+			.expect(201);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "未知项目任务", priority: "normal", acceptanceCriteria: "标准", milestoneId: msRes.body.milestone.id })
+			.expect(201);
+
+		await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(404);
+	});
+
+	it("POST uses defaultWorkspaceDir when task has no projectId", async () => {
+		const deps = createMockDeps();
+		const app = createApp(workspaceDir, deps);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "无项目任务", priority: "normal", acceptanceCriteria: "标准" })
+			.expect(201);
+
+		await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(201);
+
+		expect(deps.createSessionRecord).toHaveBeenCalledWith(
+			expect.objectContaining({ cwd: workspaceDir }),
+		);
+	});
+
+	it("POST does not override existing different processing_session_id", async () => {
+		const deps = createMockDeps();
+		const app = createApp(workspaceDir, deps);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "不覆盖任务", priority: "normal", acceptanceCriteria: "标准" })
+			.expect(201);
+
+		// 直接 DB 写入一个已有 sessionId
+		const db = await getRidgeDb();
+		const existingSessionId = `session-existing-${createRes.body.task.id}`;
+		db.prepare(
+			`UPDATE workspace_tasks SET processing_session_id = ? WHERE task_id = ?`,
+		).run(existingSessionId, createRes.body.task.id);
+
+		// POST 应该返回已有的 sessionId，不创建新会话
+		const psRes = await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(200);
+
+		expect(psRes.body.created).toBe(false);
+		expect(psRes.body.sessionId).toBe(existingSessionId);
+		expect(deps.createSessionRecord).toHaveBeenCalledTimes(0);
+	});
+
+	it("POST forces task-agent selection via applyTaskSessionAgentSelection", async () => {
+		const deps = createMockDeps();
+		const app = createApp(workspaceDir, deps);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "强制Agent任务", priority: "normal", acceptanceCriteria: "标准" })
+			.expect(201);
+
+		await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(201);
+
+		expect(deps.applyTaskSessionAgentSelection).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ agentName: "task-agent" }),
+		);
+	});
+
+	it("POST returns 409 when project is offline even if task already has processingSessionId", async () => {
+		const deps = createMockDeps();
+		deps.getProjects = vi.fn(async () => ({
+			projects: [{ id: "proj-offline", path: "/projects/offline", deviceId: "device-1", isOnline: false }],
+		}));
+
+		const app = createApp(workspaceDir, deps);
+
+		const msRes = await request(app)
+			.post("/api/workspace/milestones")
+			.send({ title: "M", goal: "g", acceptanceCriteria: "a", projectId: "proj-offline" })
+			.expect(201);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "离线已有会话任务", priority: "normal", acceptanceCriteria: "标准", milestoneId: msRes.body.milestone.id })
+			.expect(201);
+
+		// 直接 DB 写入 processing_session_id 来模拟已有处理会话
+		const db = await getRidgeDb();
+		const fakeSessionId = `session-existing-${createRes.body.task.id}`;
+		db.prepare(
+			`UPDATE workspace_tasks SET processing_session_id = ? WHERE task_id = ?`,
+		).run(fakeSessionId, createRes.body.task.id);
+
+		// POST 应该仍然 409，因为项目离线
+		await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(409);
+	});
+
+	it("GET returns 409 when project is offline and task has processingSessionId", async () => {
+		const deps = createMockDeps();
+		deps.getProjects = vi.fn(async () => ({
+			projects: [{ id: "proj-offline", path: "/projects/offline", deviceId: "device-1", isOnline: false }],
+		}));
+
+		const app = createApp(workspaceDir, deps);
+
+		const msRes = await request(app)
+			.post("/api/workspace/milestones")
+			.send({ title: "M", goal: "g", acceptanceCriteria: "a", projectId: "proj-offline" })
+			.expect(201);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "离线已有会话任务", priority: "normal", acceptanceCriteria: "标准", milestoneId: msRes.body.milestone.id })
+			.expect(201);
+
+		// 直接 DB 写入 processing_session_id
+		const db = await getRidgeDb();
+		const fakeSessionId = `session-existing-${createRes.body.task.id}`;
+		db.prepare(
+			`UPDATE workspace_tasks SET processing_session_id = ? WHERE task_id = ?`,
+		).run(fakeSessionId, createRes.body.task.id);
+
+		// GET 应该 409
+		await request(app)
+			.get(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(409);
+	});
+
+	it("POST uses real projectContextResolver and workspaceChatConfig types", async () => {
+		const deps = createMockDeps();
+		const app = createApp(workspaceDir, deps);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "真实依赖任务", priority: "normal", acceptanceCriteria: "标准" })
+			.expect(201);
+
+		await request(app)
+			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`)
+			.expect(201);
+
+		expect(deps.upsertIndexedSessionRecord).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				projectContextResolver: deps.projectContextResolver,
+				workspaceChatConfig: deps.workspaceChatConfig,
+			}),
+		);
 	});
 });

@@ -17,11 +17,13 @@ vi.mock("@/lib/api", () => ({
 	deleteWorkspaceTask: vi.fn(),
 	getWorkspaceMilestones: vi.fn(),
 	getWorkspaceTasks: vi.fn(),
+	getTaskProcessingSession: vi.fn(),
+	startTaskProcessingSession: vi.fn(),
 	updateWorkspaceMilestone: vi.fn(),
 	updateWorkspaceTask: vi.fn(),
 }));
 
-import { getWorkspaceMilestones, getWorkspaceTasks, createWorkspaceTask, updateWorkspaceTask, deleteWorkspaceTask, updateWorkspaceMilestone } from "@/lib/api";
+import { getWorkspaceMilestones, getWorkspaceTasks, createWorkspaceTask, updateWorkspaceTask, deleteWorkspaceTask, updateWorkspaceMilestone, startTaskProcessingSession } from "@/lib/api";
 
 const mockGetWorkspaceTasks = vi.mocked(getWorkspaceTasks);
 const mockGetWorkspaceMilestones = vi.mocked(getWorkspaceMilestones);
@@ -29,6 +31,7 @@ const mockCreateWorkspaceTask = vi.mocked(createWorkspaceTask);
 const mockUpdateWorkspaceTask = vi.mocked(updateWorkspaceTask);
 const mockDeleteWorkspaceTask = vi.mocked(deleteWorkspaceTask);
 const mockUpdateWorkspaceMilestone = vi.mocked(updateWorkspaceMilestone);
+const mockStartTaskProcessingSession = vi.mocked(startTaskProcessingSession);
 
 const mountStore = () => {
 	let store: ReturnType<typeof useWorkspaceTasks> | undefined;
@@ -70,6 +73,7 @@ const milestone = {
 		mockUpdateWorkspaceTask.mockRejectedValue(new Error("未设置 mockUpdateWorkspaceTask"));
 		mockDeleteWorkspaceTask.mockRejectedValue(new Error("未设置 mockDeleteWorkspaceTask"));
 		mockUpdateWorkspaceMilestone.mockRejectedValue(new Error("未设置 mockUpdateWorkspaceMilestone"));
+		mockStartTaskProcessingSession.mockRejectedValue(new Error("未设置 mockStartTaskProcessingSession"));
 	});
 
 	it("loads DB tasks and groups them by milestone", async () => {
@@ -242,5 +246,62 @@ const milestone = {
 		const result = await store.updateMilestone("milestone-1", { status: "in_progress", actor: "user" });
 		expect(result).toEqual({ success: true, milestone: updated });
 		expect(store.milestones.value[0]!.status).toBe("in_progress");
+	});
+
+	it("openProcessingSession returns success=true and updates local task processingSessionId", async () => {
+		const task = {
+			id: "task-1",
+			workspacePath: "/workspace",
+			projectId: null,
+			milestoneId: "milestone-1",
+			title: "普通任务",
+			status: "pending" as const,
+			priority: "normal" as const,
+			acceptanceCriteria: "完成标准",
+			dueDate: null,
+			blockedReason: null,
+			processingSessionId: null,
+			sortOrder: 0,
+			createdAt: 2,
+			updatedAt: 2,
+		};
+		mockGetWorkspaceTasks.mockResolvedValue({ tasks: [task] });
+		mockStartTaskProcessingSession.mockResolvedValue({ sessionId: "session-abc", created: true, snapshot: { messages: [], historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 }, interactiveRequests: [], permissionRequests: [], id: "session-abc", title: "", cwd: "", status: "idle", createdAt: 0, updatedAt: 0, archived: false } as unknown as import("@/lib/types").SessionSnapshot });
+
+		const store = mountStore();
+		await vi.waitFor(() => expect(store.tasks.value).toHaveLength(1));
+
+		const result = await store.openProcessingSession("task-1");
+		expect(result).toEqual({ success: true, sessionId: "session-abc", created: true });
+		expect(store.tasks.value[0]!.processingSessionId).toBe("session-abc");
+		expect(mockStartTaskProcessingSession).toHaveBeenCalledWith("task-1");
+	});
+
+	it("openProcessingSession returns success=false and does not update local task on failure", async () => {
+		const task = {
+			id: "task-1",
+			workspacePath: "/workspace",
+			projectId: null,
+			milestoneId: "milestone-1",
+			title: "普通任务",
+			status: "pending" as const,
+			priority: "normal" as const,
+			acceptanceCriteria: "完成标准",
+			dueDate: null,
+			blockedReason: null,
+			processingSessionId: null,
+			sortOrder: 0,
+			createdAt: 2,
+			updatedAt: 2,
+		};
+		mockGetWorkspaceTasks.mockResolvedValue({ tasks: [task] });
+		mockStartTaskProcessingSession.mockRejectedValue(new Error("项目离线，无法启动处理会话"));
+
+		const store = mountStore();
+		await vi.waitFor(() => expect(store.tasks.value).toHaveLength(1));
+
+		const result = await store.openProcessingSession("task-1");
+		expect(result).toEqual({ success: false, error: "项目离线，无法启动处理会话" });
+		expect(store.tasks.value[0]!.processingSessionId).toBeNull();
 	});
 });

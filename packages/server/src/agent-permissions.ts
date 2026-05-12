@@ -31,6 +31,15 @@ const SIMPLE_PERMISSION_KEYS = new Set<LogicalPermissionKey>([
 const EDIT_PERMISSION_KEY: LogicalPermissionKey = 'edit';
 const LEGACY_EDIT_TOOL_KEYS = new Set(['write']);
 const MUTATION_TOOL_NAMES = new Set(['edit', 'write']);
+const PLANNING_TOOL_NAMES = new Set([
+  'create_task',
+  'update_task',
+  'create_milestone',
+  'update_milestone',
+  'move_task',
+  'set_blocked',
+  'set_reviewing',
+]);
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -294,6 +303,9 @@ export const mapToolToLogicalPermission = (
   if (MUTATION_TOOL_NAMES.has(normalized)) {
     return EDIT_PERMISSION_KEY;
   }
+  if (PLANNING_TOOL_NAMES.has(normalized)) {
+    return 'task';
+  }
   return SIMPLE_PERMISSION_KEYS.has(normalized as LogicalPermissionKey)
     ? (normalized as LogicalPermissionKey)
     : null;
@@ -318,6 +330,10 @@ export const extractPermissionSubject = (
   const logicalPermission = mapToolToLogicalPermission(toolName);
   if (!logicalPermission) {
     return null;
+  }
+
+  if (PLANNING_TOOL_NAMES.has(toolName)) {
+    return toolName;
   }
 
   switch (logicalPermission) {
@@ -356,6 +372,10 @@ export const derivePermissionPattern = (
   const logicalPermission = mapToolToLogicalPermission(toolName);
   if (!logicalPermission) {
     return null;
+  }
+
+  if (PLANNING_TOOL_NAMES.has(toolName)) {
+    return toolName;
   }
 
   switch (logicalPermission) {
@@ -413,7 +433,17 @@ export const compileAgentPermission = (
     }
 
     for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
-      if (normalizeString(activeToolNames[index]).toLowerCase() === permissionKey) {
+      const normalized = normalizeString(activeToolNames[index]).toLowerCase();
+      if (normalized === permissionKey) {
+        activeToolNames.splice(index, 1);
+      }
+    }
+  }
+
+  // Remove planning tools when task: deny
+  if (isToolFullyDenied(rulesByPermission['task'])) {
+    for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
+      if (PLANNING_TOOL_NAMES.has(normalizeString(activeToolNames[index]).toLowerCase())) {
         activeToolNames.splice(index, 1);
       }
     }

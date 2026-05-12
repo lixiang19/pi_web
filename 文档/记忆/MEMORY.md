@@ -47,6 +47,7 @@
 - [任务store共享] useWorkspaceTasks 必须通过 provide/inject 在 WorkspacePage 层级共享，不能让 DashboardView 和 TaskView 各自实例化；WorkspacePage 自身要直接复用 provideWorkspaceTasks 返回值，不能在同一 setup 内靠 inject 读回自己刚 provide 的值
 - [任务系统基准] 任务系统以 `任务系统PRD-v0.1.md` 为准，旧 `.ridge/tasks.json` 和 checkbox 聚合属于废弃原型；新实现必须走 `~/.pi/ridge.db` 的任务/里程碑表，不迁移旧 JSON 数据
 - [乐观更新] 任务 toggle/create/delete 应先本地更新状态、失败再回滚，避免每次操作后 await load() 全量重新加载的延迟感
+- [规划工具权限] 多个工具应共享同一个逻辑权限键（如 7 个规划工具全部映射到 `task`），而不是每个工具一个键。`compileAgentPermission` 移除工具时不能只按 `normalizeString === permissionKey`，要单独遍历 `PLANNING_TOOL_NAMES`，否则 deny 不会生效。`extractPermissionSubject` 和 `derivePermissionPattern` 对规划工具返回工具名本身，让 `task: ask` 的 permission request 能精确归类到 `task`。子代理 `task` 工具与规划工具共享同一个逻辑权限键，这是设计意图。
 - [Checkbox ID] checkbox 任务 ID 不能含数组下标（顺序变化会致 key 失效），只能用 (sourcePath, lineNumber) 组合
 - [Checkbox toggle] 文件行号定位 toggle 必须带 expectedText 校验，防止文件被编辑后行号偏移改错行
 - [草稿标签] 多标签工作台不能把“打开标签”和“创建服务端 session”合并；新建会话必须先落在前端草稿标签，cwd 继承链至少保持 payload -> 当前活动标签 -> workspaceDir
@@ -127,6 +128,33 @@
 - [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
 - [首页选择器异步默认值] 首页这类长驻标签页不要只在 setup 时拷贝异步 props；模型/Agent/thinking 默认值从 core/settings 异步到达后，需要在“不覆盖用户有效选择”的前提下同步本地选择状态
 - [反思先行] 每个里程碑完成后必须做功能反思，确认每个子功能真的可端到端跑通，而非"调 API 了就当完成"。见 `文档/功能开发/2026-04-28_工作空间功能反思.md`
+
+## 2026-05-11 任务 10 任务处理会话与任务 Agent
+
+### 实现要点
+
+- **内置任务 Agent**：`default-agents.ts` 新增 `task-agent`（mode: 'task', enabled: true），供任务处理会话强制选择。
+- **任务处理会话 API**：`POST /api/workspace/tasks/:taskId/processing-session` 创建/返回已有会话；`GET` 查询。
+- **一任务一会话**：`workspace_tasks.processing_session_id` 通过 `setTaskProcessingSessionId` 内部写入；普通 PATCH 已移除该字段，禁止直接修改。
+- **项目绑定逻辑**：有 projectId 时查找项目 → 找不到 404；有 deviceId 且 isOnline=false → 409；无 deviceId 的本地项目允许运行（isOnline 不阻断）。
+- **未绑定项目**：cwd = defaultWorkspaceDir。
+- **强制 Agent**：会话创建后强制调用 `applySessionAgentSelection(record, { agentName: 'task-agent' })`。
+- **禁止分叉**：`POST /api/sessions` 带 parentSessionId 时，先查 workspace_tasks 看是否属于任务处理会话，若是则 409。
+- **前端**：TaskView 详情增加「开始处理/继续处理」按钮，调用 `openProcessingSession` → 成功后 `emit('openSession', sessionId)` → WorkspacePage 监听打开会话标签。
+
+### 测试覆盖
+
+- 后端 `workspace-tasks.test.ts` / `workspace-tasks-api.test.ts`：重复创建只返回同一会话、离线设备项目 409、本地无 deviceId 项目允许运行、强制选择 task-agent、禁止分叉任务处理会话、允许分叉普通会话。
+- 前端 `TaskView.test.ts`：点击处理会话按钮 emit openSession、已有 session 显示继续处理、失败不 emit。
+- 前端 `useWorkspaceTasks.test.ts`：openProcessingSession 成功更新本地 processingSessionId、失败不更新且 toast 报错。
+
+### 教训
+
+- **会话创建需要完整依赖注入**：`createWorkspaceTasksRouter` 不能直接 import `createSessionRecord`（会产生循环依赖和 Pi SDK 初始化时序问题），必须通过 `deps` 参数注入。
+- **禁止直接 PATCH 更新 processingSessionId**：updateTaskSchema 中移除该字段，内部提供 `setTaskProcessingSessionId` 专用函数，否则任意客户端 PATCH 即可破坏一任务一会话边界。
+- **分叉守卫要在 parentSession 查找前执行**：如果先查 `getIndexedSessionLookupOrThrow`，fake sessionId 不存在时会先 404，守卫逻辑就失效了。
+- **mock 类型安全**：前端测试 mock `openProcessingSession` 返回值需加 `as Promise<Record<string, unknown>>`，否则 TypeScript 在 `mockImplementationOnce` 中改返回 `{ success: false, error: '...' }` 会报缺少 sessionId/created 字段。
+- **先写测试再实现**：测试先定义了「重复创建只返回同一会话」「离线项目 409」「本地项目允许」等边界，代码实现时自然按这些验收标准编写。
 
 ## 2026-05-11 任务 09 任务列表详情与状态流转
 

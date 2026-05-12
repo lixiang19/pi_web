@@ -8,6 +8,7 @@ import {
 	deleteWorkspaceTask,
 	getWorkspaceMilestones,
 	getWorkspaceTasks,
+	startTaskProcessingSession,
 	updateWorkspaceMilestone,
 	updateWorkspaceTask,
 	type WorkspaceMilestone,
@@ -302,6 +303,22 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		}
 	};
 
+	const openProcessingSession = async (taskId: string) => {
+		try {
+			const res = await startTaskProcessingSession(taskId);
+			// 更新本地任务的 processingSessionId
+			const task = tasks.value.find((t) => t.id === taskId);
+			if (task) {
+				task.processingSessionId = res.sessionId;
+			}
+			return { success: true as const, sessionId: res.sessionId, created: res.created };
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			toast.error("打开处理会话失败", { description: message });
+			return { success: false as const, error: message };
+		}
+	};
+
 	watch(
 		() => workspaceDir(),
 		(dir) => {
@@ -337,6 +354,7 @@ function useWorkspaceTasksInner(workspaceDir: () => string) {
 		updateTask,
 		updateMilestone,
 		removeMilestone,
+		openProcessingSession,
 	};
 }
 

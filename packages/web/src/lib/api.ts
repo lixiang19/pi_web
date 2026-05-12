@@ -935,7 +935,6 @@ export function updateWorkspaceTask(
 		milestoneId?: string;
 		projectId?: string | null;
 		blockedReason?: string | null;
-		processingSessionId?: string | null;
 		sortOrder?: number;
 		actor?: "user" | "agent";
 		kind?: "goal" | "task";
@@ -947,6 +946,19 @@ export function updateWorkspaceTask(
 		method: "PATCH",
 		body: JSON.stringify(data),
 	});
+}
+
+export function getTaskProcessingSession(taskId: string) {
+	return request<{ sessionId: string }>(
+		`/api/workspace/tasks/${taskId}/processing-session`,
+	);
+}
+
+export function startTaskProcessingSession(taskId: string) {
+	return request<{ sessionId: string; created: boolean; snapshot?: SessionSnapshot }>(
+		`/api/workspace/tasks/${taskId}/processing-session`,
+		{ method: "POST" },
+	);
 }
 
 export function deleteWorkspaceTask(taskId: string) {

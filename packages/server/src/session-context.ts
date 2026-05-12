@@ -58,6 +58,7 @@ import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
 import type { WorkspaceChatConfig } from "./workspace-chat.js";
 import { createWorkspaceChatProject } from "./workspace-chat.js";
+import { createPlanningToolsExtension } from "./planning-tools.js";
 
 // ===== Dependency injection =====
 export interface SessionContextDeps {
@@ -531,6 +532,7 @@ export const createSessionResourceLoader = (record: SessionRecord) =>
 				modelRegistry: deps.modelRegistry,
 				resolveModel: findModel,
 			}),
+			createPlanningToolsExtension(deps.defaultWorkspaceDir),
 		],
 	});
 
@@ -540,6 +542,9 @@ export const isEnabledAgent = (
 export const isPrimarySessionAgent = (
 	agent: AgentConfigInternal | null | undefined,
 ): boolean => Boolean(isEnabledAgent(agent) && agent!.mode !== "task");
+export const isTaskSessionAgent = (
+	agent: AgentConfigInternal | null | undefined,
+): boolean => Boolean(isEnabledAgent(agent) && agent!.mode === "task");
 export const ensurePrimaryAgentOrThrow = (
 	agentName: string | null | undefined,
 	agent: AgentConfigInternal | null | undefined,
@@ -561,6 +566,34 @@ export const ensurePrimaryAgentOrThrow = (
 	if (!isPrimarySessionAgent(agent)) {
 		const error = new Error(
 			`Agent ${agentName} 仅允许 task 模式调用`,
+		) as HttpError;
+		error.statusCode = 400;
+		throw error;
+	}
+	return agent;
+};
+
+export const ensureTaskAgentOrThrow = (
+	agentName: string | null | undefined,
+	agent: AgentConfigInternal | null | undefined,
+): AgentConfigInternal | null => {
+	if (!agentName) {
+		return null;
+	}
+	if (!agent) {
+		const error = new Error(`Agent 不存在: ${agentName}`) as HttpError;
+		error.statusCode = 404;
+		throw error;
+	}
+
+	if (!isEnabledAgent(agent)) {
+		const error = new Error(`Agent 已禁用: ${agentName}`) as HttpError;
+		error.statusCode = 400;
+		throw error;
+	}
+	if (!isTaskSessionAgent(agent)) {
+		const error = new Error(
+			`Agent ${agentName} 不是 task 模式 Agent，无法用于任务处理会话`,
 		) as HttpError;
 		error.statusCode = 400;
 		throw error;
@@ -629,6 +662,103 @@ export const applySessionAgentSelection = async (
 		throw error;
 	}
 	record.explicitModelSpec = nextExplicitModel;
+
+	const chosenModel =
+		findModel(record.explicitModelSpec) ||
+		findModel(agent?.model) ||
+		record.session.model ||
+		null;
+	if (chosenModel) {
+		await record.session.setModel(chosenModel);
+	}
+	record.resolvedModelSpec = formatModelSpec(
+		record.session.model || chosenModel,
+	);
+
+	const nextExplicitThinking =
+		selection.thinkingLevel !== undefined
+			? normalizeThinkingLevel(selection.thinkingLevel)
+			: record.explicitThinkingLevel;
+	if (
+		selection.thinkingLevel !== undefined &&
+		selection.thinkingLevel !== null &&
+		!nextExplicitThinking
+	) {
+		const error = new Error(
+			`thinkingLevel 非法: ${selection.thinkingLevel}`,
+		) as HttpError;
+		error.statusCode = 400;
+		throw error;
+	}
+	record.explicitThinkingLevel = nextExplicitThinking;
+
+	const thinking =
+		record.explicitThinkingLevel ||
+		normalizeThinkingLevel(agent?.thinking) ||
+		normalizeThinkingLevel(record.session.thinkingLevel);
+	if (thinking) {
+		await record.session.setThinkingLevel(thinking);
+	}
+	record.resolvedThinkingLevel =
+		normalizeThinkingLevel(record.session.thinkingLevel) || thinking;
+};
+
+export const applyTaskSessionAgentSelection = async (
+	record: SessionRecord,
+	selection: SessionSelectionInput,
+): Promise<void> => {
+	const selectedAgentName = normalizeString(selection.agentName) || "";
+	const agents = await discoverAgents(record.cwd);
+	const agent = selectedAgentName
+		? ensureTaskAgentOrThrow(
+				selectedAgentName,
+				agents.find((item) => item.name === selectedAgentName),
+			)
+		: null;
+
+	const nextSignature = getAgentConfigSignature(agent);
+	const shouldReload = nextSignature !== record.selectedAgentSignature;
+
+	record.selectedAgentName = agent?.name || undefined;
+	record.selectedAgentConfig = agent || null;
+	record.selectedAgentSignature = nextSignature;
+	record.selectedPermissionPolicy = compileAgentPermission(
+		record.cwd,
+		agent?.permission as AgentPermission | undefined,
+		record.defaultToolNames,
+	);
+	if (shouldReload || record.turnBudget.maxTurns !== agent?.maxTurns) {
+		record.turnBudget = {
+			maxTurns: agent?.maxTurns,
+			usedTurns: 0,
+			exhausted: false,
+		};
+	}
+
+	if (shouldReload) {
+		await record.resourceLoader.reload();
+		await record.session.reload();
+	}
+
+	await record.session.setActiveToolsByName(
+		record.selectedPermissionPolicy.activeToolNames,
+	);
+
+	const nextExplicitModel =
+		selection.model !== undefined
+			? normalizeString(selection.model) || undefined
+			: record.explicitModelSpec;
+	// 任务会话中：模型不存在时跳过而不是抛错（e2e 环境可能没有默认模型）
+	if (
+		selection.model !== undefined &&
+		nextExplicitModel &&
+		!findModel(nextExplicitModel)
+	) {
+		console.warn(`任务会话跳过不存在的模型: ${nextExplicitModel}`);
+		record.explicitModelSpec = undefined;
+	} else {
+		record.explicitModelSpec = nextExplicitModel;
+	}
 
 	const chosenModel =
 		findModel(record.explicitModelSpec) ||

@@ -4,6 +4,10 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import TaskView from "@/components/workspace/TaskView.vue";
 import type { MilestoneItem, TaskItem } from "@/composables/useWorkspaceTasks";
 
+const openProcessingSession = vi.fn(() =>
+	Promise.resolve({ success: true, sessionId: "session-123", created: true }) as Promise<Record<string, unknown>>,
+);
+
 const updateTask = vi.fn(() =>
 	Promise.resolve({
 		success: true,
@@ -118,6 +122,7 @@ vi.mock("@/composables/useWorkspaceTasks", () => ({
 		removeTask: vi.fn(),
 		updateTask,
 		updateMilestone: vi.fn(),
+		openProcessingSession,
 		removeMilestone: vi.fn(),
 		projectFilter: ref<string | null | undefined>(undefined),
 	}),
@@ -139,7 +144,7 @@ const mountTaskView = () =>
 		props: { workspaceDir: "/workspace" },
 		global: {
 			stubs: {
-				Button: { template: "<button v-bind='$attrs' @click='$emit(\"click\", $event)'><slot /></button>" },
+				Button: { template: "<button v-bind='$attrs'><slot /></button>" },
 				Input: { template: "<input v-bind='$attrs' />" },
 				Textarea: { template: "<textarea v-bind='$attrs' />" },
 				Select: { template: "<div><slot /></div>" },
@@ -167,7 +172,7 @@ const mountTaskView = () =>
 		},
 	});
 
-describe("TaskView", () => {
+	describe("TaskView", () => {
 	beforeEach(() => {
 		updateTask.mockClear();
 		mockAddTask.mockClear();
@@ -179,6 +184,10 @@ describe("TaskView", () => {
 			Promise.resolve({ success: true, milestone: { id: "new-ms", title: "新里程碑" } }),
 		);
 		mockLoadProjects.mockClear();
+		openProcessingSession.mockClear();
+		openProcessingSession.mockImplementation(() =>
+			Promise.resolve({ success: true, sessionId: "session-123", created: true }),
+		);
 	});
 
 	afterEach(() => {
@@ -189,6 +198,9 @@ describe("TaskView", () => {
 		mockAddMilestone.mockImplementation(() =>
 			Promise.resolve({ success: true, milestone: { id: "new-ms", title: "新里程碑" } }),
 		);
+		openProcessingSession.mockImplementation(() =>
+			Promise.resolve({ success: true, sessionId: "session-123", created: true }),
+		);
 	});
 
 	it("renders milestone filter and hides Agent entry", () => {
@@ -197,6 +209,58 @@ describe("TaskView", () => {
 		expect(wrapper.text()).toContain("里程碑筛选");
 		expect(wrapper.text()).toContain("M1");
 		expect(wrapper.text()).not.toContain("Agent 处理");
+	});
+
+	it("emits openSession when processing session button is clicked in task detail", async () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+
+		// Open first task detail
+		vm["selectedTask"] = tasks.value[0];
+		await wrapper.vm.$nextTick();
+
+		// Find and click the processing session button
+		const buttons = wrapper.findAll("button");
+		const psBtn = buttons.find((b) => b.text().includes("开始处理") || b.text().includes("继续处理"));
+		expect(psBtn).toBeDefined();
+		await psBtn!.trigger("click");
+
+		expect(openProcessingSession).toHaveBeenCalledWith("task-1");
+		expect(wrapper.emitted("openSession")).toHaveLength(1);
+		expect(wrapper.emitted("openSession")![0]).toEqual(["session-123"]);
+	});
+
+	it("shows '继续处理' when task already has processingSessionId", async () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+
+		// Open task with existing processingSessionId
+		const taskWithSession = { ...tasks.value[0], processingSessionId: "session-existing" };
+		vm["selectedTask"] = taskWithSession;
+		await wrapper.vm.$nextTick();
+
+		const buttons = wrapper.findAll("button");
+		const psBtn = buttons.find((b) => b.text().includes("继续处理"));
+		expect(psBtn).toBeDefined();
+	});
+
+	it("does not emit openSession when openProcessingSession fails", async () => {
+		openProcessingSession.mockImplementationOnce(() =>
+			Promise.resolve({ success: false, error: "项目离线" }) as Promise<Record<string, unknown>>,
+		);
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+
+		vm["selectedTask"] = tasks.value[0];
+		await wrapper.vm.$nextTick();
+
+		const buttons = wrapper.findAll("button");
+		const psBtn = buttons.find((b) => b.text().includes("开始处理") || b.text().includes("继续处理"));
+		expect(psBtn).toBeDefined();
+		await psBtn!.trigger("click");
+
+		expect(openProcessingSession).toHaveBeenCalledWith("task-1");
+		expect(wrapper.emitted("openSession")).toBeUndefined();
 	});
 
 	it("updates task status when dropped into a valid kanban column", async () => {
