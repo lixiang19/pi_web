@@ -215,9 +215,8 @@
 - **父组件异步操作失败时必须提供可靠的状态复位机制**：HomePage 内部 `isSending` ref 在失败场景下会变成死锁（永远 true），导致按钮永久禁用。推荐把发送中状态提升为父组件维护的 `tabId → boolean` 映射，并通过 props 下发；父组件在 finally 中清除，保证无论成功/失败都能复位。
 - 文件附件在测试里要用 `Object.defineProperty(inputEl, "files", { value: [file] })` 才能让 change 事件拿到 files，直接 trigger 传参会被忽略。
 
-## 2026-05-01 task #13 任务 SQLite 真源最小实现
+## 2026-05-12 已废弃说法纠正与部分实现备忘
 
-- task #13 是任务系统当前唯一 canonical 实现任务；旧 #8/#9/#10 不再推进。
-- 实现口径：`SqliteTaskRepository` 作为 `/api/workspace/tasks` 底层真源，写入 `<workspace>/.ridge/ridge.db` 的 `tasks` 表。
-- 不读取/写入/迁移/兼容 `.ridge/tasks.json`；不改 UI、不接 AI 工具、不做 `ai_operations` 或 RAG 投影。
-- 新增 spec：`文档/spec/任务系统SQLite真源最小实现.spec.md`。
+1) **任务系统真源**：当前真源是 `~/.pi/ridge.db` 的 `workspace_tasks` / `workspace_milestones`，不是 `<workspace>/.ridge/ridge.db` 的 `tasks`；旧 2026-05-01 "task #13 任务 SQLite 真源最小实现" 说法已废弃，功能编号 13 现在是闪念临时附件生命周期。
+2) **闪念正式处理**：`routes/fleeting.ts` 中 `process/journal` 和 `process/clip` 已实现（写入日记/剪藏并删除闪念）；`process/task` 仅返回 202 且保留闪念；`process/milestone` 与 `process/attachment` 未实现。
+3) **闪念临时附件**：`.ridge/fleeting-attachments` 目录模板已在 `workspace-chat.ts` 就位，但附件上传 API、DB 引用字段、清理/迁移逻辑均未闭环；会话附件 `session_attachments` 是另一套独立体系。

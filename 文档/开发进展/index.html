@@ -535,9 +535,9 @@
           <div class="hero-top">
             <div>
               <h1>ridge 第一版开发进展</h1>
-              <p>当前阶段：产品闭环、项目设计、任务级功能文档和内嵌 spec 草案已经完成，全局基座已完成。</p>
+              <p>当前阶段：产品闭环、项目设计、任务级功能文档和内嵌 spec 草案已经完成，全局基座与主路径部分已验证，后续功能按真实合并/验收口径推进。</p>
             </div>
-            <span class="badge">更新时间：2026-05-11</span>
+            <span class="badge">更新时间：2026-05-12</span>
           </div>
 
           <div class="grid cols-4">
@@ -554,7 +554,7 @@
               <span class="label">已写入 spec 草案</span>
             </div>
             <div class="panel metric">
-              <span class="value">9</span>
+              <span class="value">6</span>
               <span class="label">实现任务已完成</span>
             </div>
           </div>
@@ -565,12 +565,32 @@
               <span class="status done">设计完成</span>
             </div>
             <p>输入 → 会话 / 闪念 / 文件 / 任务 → 处理和确认 → Markdown / 任务 / 项目 / 空间 / 记忆 → RAG / 图谱 / Wiki → 下一次会话可继续使用。</p>
-            <div class="bar" style="margin-top: 14px"><span style="width: 45%"></span></div>
-            <p style="margin-top: 8px">整体进度估算：设计与任务拆解完成，00–05、08–09 已完成；08 已实现任务里程碑数据模型、系统默认里程碑、项目绑定与 Agent 完成限制；09 已完成任务列表详情与状态流转（看板/列表/日历/里程碑四视图、详情编辑、状态流转、项目筛选、错误处理）。</p>
+            <div class="bar" style="margin-top: 14px"><span style="width: 28%"></span></div>
+            <p style="margin-top: 8px">已验证/已合并口径：00–07 主路径基础较明确；08/09/12 代码完成但 AI 验收尚未跑完；13/16/36/37 多为部分实现或待验证，不作为完成。25 有设计/代码线索待复验。其余功能以 spec/占位为主。</p>
           </div>
 
-          <div class="panel" style="border-left:4px solid var(--amber); background:#fffaf0">
-            <p style="font-size:13px; color:#7c2d12"><strong>验证说明：</strong>08 任务里程碑数据模型和 09 任务列表详情与状态流转均处于 worktree 环境，未进行可视化测试，仅完成代码审查与自动化非可视化验证（单元/集成测试 + 类型检查 + lint）。09 新增测试覆盖：用户完成任务流转、里程碑完成流转、Agent 不能完成、项目筛选、更新里程碑后任务继承、阻塞原因/截止日期/排序字段完整、前端详情同步、失败不回滚表单、看板非法拖拽拦截。</p>
+          <div class="panel" style="margin-top: 14px">
+            <div class="section-head">
+              <h2>当前真实实现口径 / 插件与扩展能力</h2>
+              <span class="status next">2026-05-12 校准</span>
+            </div>
+            <p><strong>已真实接入</strong></p>
+            <ul style="margin: 6px 0 10px; padding-left: 18px; color: var(--muted); font-size: 13px">
+              <li>Agent 注册/发现/选择（<code>/api/agents</code>、HomePage / WorkspaceChatTab agent 选择）</li>
+              <li>自动化规则（作为定时创建普通会话并发送消息的规则系统）</li>
+              <li>Pi resource catalog 后端可列 prompts/skills/extension commands（<code>/api/resources</code>、<code>buildResourceCatalog</code>）</li>
+            </ul>
+            <p><strong>未在当前工作空间主会话 UI 完整接入</strong></p>
+            <ul style="margin: 6px 0 10px; padding-left: 18px; color: var(--muted); font-size: 13px">
+              <li>Skill 独立功能页仍占位；WorkspaceChatTab 给 WorkbenchChatPanel 传 <code>commands=[]、prompts=[]、skills=[]</code></li>
+              <li>主工作空间会话的资源选择器/Skill 注入没有真正可用</li>
+              <li>runtime bundle 与设备专属 Skill、workspace MCP 仍是 spec/未实现</li>
+            </ul>
+            <p><strong>占位 / 仅入口</strong></p>
+            <ul style="margin: 6px 0 10px; padding-left: 18px; color: var(--muted); font-size: 13px">
+              <li>搜索/通知/文件/Skill 固定入口：导航存在，但 WorkspacePage 中均走 WorkspaceFeaturePlaceholder，真实功能未实现</li>
+              <li>旧 SessionTabContent 有 resourcePicker 接入，但当前主界面走 WorkspaceChatTab，不能当作当前真实可用功能</li>
+            </ul>
           </div>
         </section>
 
@@ -745,7 +765,7 @@
         ["22", "RAG 标准产物索引与 chunk", "M5", "spec"],
         ["23", "RAG 更新删除移动规则", "M5", "spec"],
         ["24", "全局搜索资产导航器", "M5", "spec"],
-        ["25", "后台任务队列与重试", "M6", "done"],
+        ["25", "后台任务队列与重试", "M6", "spec"],
         ["26", "summary agent daily 会话记忆", "M6", "spec"],
         ["27", "memory agent MEMORY 维护与注入", "M6", "spec"],
         ["28", "Kuzu 图谱存储与抽取", "M7", "spec"],
