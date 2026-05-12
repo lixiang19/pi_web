@@ -1,0 +1,205 @@
+- generic:
+  - generic:
+    - generic:
+      - generic:
+        - complementary:
+          - generic:
+            - button:
+              - img
+              - generic: 闪念
+            - button:
+              - img
+              - generic: 搜索
+            - button:
+              - img
+              - generic: 通知
+            - button:
+              - img
+              - generic: 任务
+            - button:
+              - img
+              - generic: 文件
+            - button:
+              - img
+              - generic: 终端
+            - button:
+              - img
+              - generic: 自动化
+            - button:
+              - img
+              - generic: Skill
+            - button:
+              - img
+              - generic: 设置
+          - generic:
+            - generic: 项目
+            - generic:
+              - generic:
+                - button:
+                  - img
+                  - generic: AuroraPlatformWeb
+                  - generic: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+                  - generic: 外部
+                  - generic: 服务器文件夹
+                  - generic: 离线
+            - generic:
+              - generic:
+                - button:
+                  - img
+                  - generic: openchamber
+                  - generic: /Users/lixiang/Documents/myCode/openchamber
+                  - generic: 外部
+                  - generic: 服务器文件夹
+                  - generic: 离线
+          - generic:
+            - generic:
+              - button:
+                - img
+                - text: 新建
+              - button:
+                - img
+                - text: 文件夹
+              - button:
+                - img
+                - text: Canvas
+              - button:
+                - img
+                - text: Base
+          - generic:
+            - generic:
+              - generic:
+                - tablist:
+                  - tab [selected]:
+                    - img
+                  - tab:
+                    - img
+                  - tab:
+                    - img
+                  - tab:
+                    - img
+                - generic:
+                  - button:
+                    - img
+          - generic:
+            - button:
+              - img
+              - generic: 归档
+        - main:
+          - generic:
+            - generic [ref=e129]:
+              - generic [ref=e130]:
+                - generic [ref=e131] [cursor=pointer]:
+                  - generic [ref=e133]: 主页
+                  - button [ref=e134]:
+                    - img [ref=e135]
+                - generic [ref=e194] [cursor=pointer]:
+                  - generic [ref=e196]: 任务
+                  - button [ref=e197]:
+                    - img [ref=e198]
+              - button [ref=e138]:
+                - img [ref=e139]
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - heading [level=2]: 任务
+                        - paragraph: 待处理 1 · 进行中 0 · 阻塞 0 · 审核中 0 · 完成 0
+                      - generic:
+                        - generic: 项目筛选
+                        - combobox:
+                          - generic: 全部项目
+                          - img
+                        - textbox:
+                          - /placeholder: 任务标题
+                        - textbox:
+                          - /placeholder: 完成标准（必填）
+                        - combobox:
+                          - generic: 普通
+                          - img
+                        - combobox:
+                          - generic: 里程碑
+                          - img
+                        - combobox:
+                          - generic: 继承里程碑
+                          - img
+                        - textbox
+                        - button [disabled]:
+                          - img
+                          - text: 新建任务
+                    - generic:
+                      - generic:
+                        - tablist:
+                          - tab [selected]: 看板
+                          - tab: 列表
+                          - tab: 日历
+                          - tab: 里程碑
+                      - tabpanel:
+                        - generic:
+                          - generic: 里程碑筛选
+                          - combobox:
+                            - generic: 全部里程碑
+                            - img
+                        - generic:
+                          - generic:
+                            - generic:
+                              - heading [level=3]: 待处理
+                              - generic: "1"
+                            - generic:
+                              - button:
+                                - generic:
+                                  - paragraph: 验收测试任务
+                                  - generic: 普通
+                                - paragraph: 验证任务10处理会话功能
+                                - paragraph: 无项目
+                                - paragraph: 无截止日期
+                          - generic:
+                            - generic:
+                              - heading [level=3]: 进行中
+                              - generic: "0"
+                          - generic:
+                            - generic:
+                              - heading [level=3]: 阻塞
+                              - generic: "0"
+                          - generic:
+                            - generic:
+                              - heading [level=3]: 审核中
+                              - generic: "0"
+                          - generic:
+                            - generic:
+                              - heading [level=3]: 完成
+                              - generic: "0"
+    - generic:
+      - button:
+        - img
+    - region "Notifications alt+T":
+      - list
+  - dialog "验收测试任务" [ref=e270]:
+    - generic [ref=e271]:
+      - heading "验收测试任务" [level=2] [ref=e273]
+      - generic [ref=e274]:
+        - textbox "标题" [active] [ref=e275]: 验收测试任务
+        - textbox "完成标准" [ref=e276]: 验证任务10处理会话功能
+        - combobox [ref=e277]:
+          - generic: 待处理
+          - img
+        - combobox [ref=e278]:
+          - generic: 普通
+          - img
+        - combobox [ref=e279]:
+          - img
+        - combobox [ref=e280]:
+          - generic: 无项目
+          - img
+        - textbox [ref=e281]
+        - textbox "阻塞原因（可选）" [ref=e282]
+      - paragraph [ref=e283]: 当前里程碑：未知 · 项目：无项目
+      - generic [ref=e284]:
+        - button "保存" [ref=e285]
+        - button "删除" [ref=e286]:
+          - img
+          - text: 删除
+    - button "Close" [ref=e287]:
+      - img [ref=e288]
+      - generic [ref=e291]: Close

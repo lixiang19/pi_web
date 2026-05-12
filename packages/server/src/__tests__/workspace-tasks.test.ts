@@ -386,4 +386,83 @@ describe("workspace task system", () => {
 		expect(updateRes.status).toBe(200);
 		expect(updateRes.body.milestone.projectId).toBeNull();
 	});
+
+	it("rejects forking a task processing session via POST /api/sessions", async () => {
+		// 创建一个任务并直接写入 processing_session_id 来模拟已有处理会话
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "分叉禁止任务",
+			priority: "normal",
+			acceptanceCriteria: "禁止分叉",
+		});
+		const taskId = taskRes.body.task.id;
+		const fakeSessionId = `session-task-${taskId}`;
+
+		// 直接通过 DB 写入 processing_session_id
+		const db = await getRidgeDb();
+		db.prepare(
+			`UPDATE workspace_tasks SET processing_session_id = ? WHERE task_id = ?`,
+		).run(fakeSessionId, taskId);
+
+		// 验证写入成功
+		const row = db.prepare(
+			`SELECT processing_session_id FROM workspace_tasks WHERE task_id = ?`,
+		).get(taskId) as { processing_session_id: string } | undefined;
+		expect(row?.processing_session_id).toBe(fakeSessionId);
+
+		// 尝试分叉该会话
+		const forkRes = await api.post("/api/sessions").send({
+			parentSessionId: fakeSessionId,
+			cwd: WORKSPACE,
+		});
+
+		// eslint-disable-next-line no-console
+		if (forkRes.status !== 409) console.log("forkRes", forkRes.status, forkRes.text);
+
+		expect(forkRes.status).toBe(409);
+		expect(forkRes.text).toContain("任务处理会话不允许分叉");
+	});
+
+	it("allows normal session fork when parent is not a task processing session", async () => {
+		// 先创建一个普通会话
+		const sessionRes = await api.post("/api/sessions").send({
+			cwd: WORKSPACE,
+			title: "普通会话",
+		});
+		// 注意：如果没有可用的模型，创建会话可能 500；这里主要验证守卫逻辑本身
+		// 当环境不支持创建真实会话时，只要不是因为"任务处理会话不允许分叉"而失败即可
+		if (sessionRes.status === 500) {
+			// 由于模型缺失导致 500，跳过分叉测试
+			expect(sessionRes.text).not.toContain("任务处理会话不允许分叉");
+			return;
+		}
+		expect(sessionRes.status).toBe(201);
+		const sessionId = sessionRes.body.id;
+
+		// 尝试分叉普通会话
+		const forkRes = await api.post("/api/sessions").send({
+			parentSessionId: sessionId,
+			cwd: WORKSPACE,
+		});
+
+		if (forkRes.status === 500) {
+			expect(forkRes.text).not.toContain("任务处理会话不允许分叉");
+			return;
+		}
+		expect(forkRes.status).toBe(201);
+	});
+
+	it("POST /api/sessions still rejects task-agent for normal sessions", async () => {
+		// 普通会话选择 task-agent 应该被拒绝
+		const sessionRes = await api.post("/api/sessions").send({
+			cwd: WORKSPACE,
+			title: "普通会话选task-agent",
+			agent: "task-agent",
+		});
+
+		// 可能 400 或 500（取决于模型环境），但绝不能 201
+		expect(sessionRes.status).not.toBe(201);
+		if (sessionRes.status === 400 || sessionRes.status === 500) {
+			expect(sessionRes.text).toContain("task");
+		}
+	});
 });

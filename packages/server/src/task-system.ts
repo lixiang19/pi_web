@@ -482,7 +482,6 @@ export const updateTask = async (
 		milestoneId: string;
 		projectId: string | null;
 		blockedReason: string | null;
-		processingSessionId: string | null;
 		sortOrder: number;
 		actor: TaskActor;
 	}>,
@@ -506,7 +505,7 @@ export const updateTask = async (
 	db.prepare(
 		`UPDATE workspace_tasks SET
        milestone_id = ?, project_id = ?, title = ?, status = ?, priority = ?, acceptance_criteria = ?,
-       due_date = ?, blocked_reason = ?, processing_session_id = ?, sort_order = ?, updated_at = ?
+       due_date = ?, blocked_reason = ?, sort_order = ?, updated_at = ?
      WHERE workspace_path = ? AND task_id = ?`,
 	).run(
 		input.milestoneId ?? current.milestoneId,
@@ -517,15 +516,57 @@ export const updateTask = async (
 		input.acceptanceCriteria ?? current.acceptanceCriteria,
 		input.dueDate !== undefined ? input.dueDate : current.dueDate,
 		input.blockedReason !== undefined ? input.blockedReason : current.blockedReason,
-		input.processingSessionId !== undefined
-			? input.processingSessionId
-			: current.processingSessionId,
 		input.sortOrder ?? current.sortOrder,
 		Date.now(),
 		workspacePath,
 		taskId,
 	);
 	return getTask(workspaceDir, taskId);
+};
+
+/** 内部专用：原子/条件设置任务的 processingSessionId。
+ *  - 传入 null：清除（用于销毁会话时解绑）。
+ *  - 传入 string：
+ *      • DB 已有相同值 → 返回当前任务（幂等）。
+ *      • DB 已有不同值 → 返回已有值的任务（不覆盖，防止并发创建多个会话）。
+ *      • DB 无值 → 写入新值并返回。
+ */
+export const setTaskProcessingSessionId = async (
+	workspaceDir: string,
+	taskId: string,
+	processingSessionId: string | null,
+): Promise<{ task: WorkspaceTask; existingSessionId: string | null }> => {
+	const db = await getRidgeDb();
+	const workspacePath = normalizeWorkspacePath(workspaceDir);
+
+	if (processingSessionId === null) {
+		db.prepare(
+			`UPDATE workspace_tasks SET processing_session_id = ?, updated_at = ? WHERE workspace_path = ? AND task_id = ?`,
+		).run(null, Date.now(), workspacePath, taskId);
+		return { task: await getTask(workspaceDir, taskId), existingSessionId: null };
+	}
+
+	// 先读取当前值
+	const existing = db
+		.prepare(
+			`SELECT processing_session_id FROM workspace_tasks WHERE workspace_path = ? AND task_id = ?`,
+		)
+		.get(workspacePath, taskId) as { processing_session_id: string | null } | undefined;
+
+	if (existing?.processing_session_id) {
+		if (existing.processing_session_id === processingSessionId) {
+			// 幂等：相同值，不写入，直接返回
+			return { task: await getTask(workspaceDir, taskId), existingSessionId: processingSessionId };
+		}
+		// 已有不同值 → 不覆盖，返回已有值
+		return { task: await getTask(workspaceDir, taskId), existingSessionId: existing.processing_session_id };
+	}
+
+	// 无值 → 写入
+	db.prepare(
+		`UPDATE workspace_tasks SET processing_session_id = ?, updated_at = ? WHERE workspace_path = ? AND task_id = ?`,
+	).run(processingSessionId, Date.now(), workspacePath, taskId);
+	return { task: await getTask(workspaceDir, taskId), existingSessionId: null };
 };
 
 export const deleteTask = async (

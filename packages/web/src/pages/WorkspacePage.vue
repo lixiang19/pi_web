@@ -914,9 +914,10 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 		    class="h-full"
 		  >
 			<TaskView
-			  v-if="tab.featureId === 'tasks'"
-			  :workspace-dir="workspaceDir"
-			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
+				v-if="tab.featureId === 'tasks'"
+				:workspace-dir="workspaceDir"
+				@open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
+				@open-session="handleOpenSession($event)"
 			/>
 			<InboxView
 			  v-else-if="tab.featureId === 'moments'"

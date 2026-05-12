@@ -42,6 +42,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { WorkspaceTaskPriority, WorkspaceTaskStatus } from "@/lib/api";
 
+const emit = defineEmits<{ openSession: [sessionId: string] }>();
+
 defineProps<{ workspaceDir: string }>();
 
 const {
@@ -56,6 +58,7 @@ const {
 	updateTask,
 	updateMilestone,
 	removeMilestone,
+	openProcessingSession,
 	projectFilter,
 } = useWorkspaceTasks();
 
@@ -434,6 +437,14 @@ const saveSelectedMilestone = async () => {
 		selectedMilestone.value = result.milestone;
 	}
 };
+
+const handleOpenProcessingSession = async () => {
+	if (!selectedTask.value) return;
+	const result = await openProcessingSession(selectedTask.value.id);
+	if (result.success && result.sessionId) {
+		emit("openSession", result.sessionId);
+	}
+};
 </script>
 
 <template>
@@ -668,6 +679,13 @@ const saveSelectedMilestone = async () => {
         <p class="text-[11px] text-muted-foreground">当前里程碑：{{ selectedTaskMilestone?.title ?? '未知' }} · 项目：{{ projectName(selectedTask.projectId) }}</p>
         <div class="flex gap-2">
           <Button size="sm" class="h-8 flex-1 text-xs" @click="saveSelectedTask">保存</Button>
+          <Button
+            size="sm"
+            class="h-8 flex-1 text-xs"
+            @click="handleOpenProcessingSession"
+          >
+            {{ selectedTask.processingSessionId ? '继续处理' : '开始处理' }}
+          </Button>
           <Button variant="destructive" size="sm" class="h-8 text-xs" @click="pendingDeleteTask = selectedTask">
             <Trash2 class="mr-1 size-3" />删除
           </Button>

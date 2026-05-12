@@ -32,6 +32,7 @@ import {
 import { createAuthRuntime } from "./auth.js";
 import {
 	ensureStoredWorkspaceDir,
+	getRidgeDb,
 	getStoredWorkspaceDir,
 	initializeRidgeDb,
 } from "./db/index.js";
@@ -386,6 +387,7 @@ import {
 // ===== Session Modules =====
 import {
 	applySessionAgentSelection,
+	applyTaskSessionAgentSelection,
 	cancelPendingPermissions,
 	createAgentConfigResponse,
 	createAgentSummary,
@@ -555,7 +557,24 @@ const coreRouter = createCoreRouter({
 	fileTreeQuerySchema,
 });
 app.use(coreRouter);
-const workspaceTasksRouter = createWorkspaceTasksRouter(defaultWorkspaceDir);
+const workspaceTasksRouter = createWorkspaceTasksRouter(defaultWorkspaceDir, {
+	createSessionRecord,
+	applyTaskSessionAgentSelection,
+	persistSessionRecordMetadata,
+	upsertIndexedSessionRecord,
+	toSessionSnapshot,
+	getProjects,
+	async getDefaultModel() {
+		const settings = await getSettings();
+		return settings.defaultModel;
+	},
+	async getDefaultThinkingLevel() {
+		const settings = await getSettings();
+		return settings.defaultThinkingLevel;
+	},
+	projectContextResolver,
+	workspaceChatConfig,
+});
 app.use("/api/workspace/tasks", workspaceTasksRouter);
 const workspaceMilestonesRouter =
 	createWorkspaceMilestonesRouter(defaultWorkspaceDir);
@@ -909,9 +928,24 @@ app.post(
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const payload = createSessionSchema.parse(req.body ?? {});
+
+			// 禁止分叉任务处理会话 — 在查找 parent session 前检查
+			if (payload.parentSessionId) {
+				const db = await getRidgeDb();
+				const taskRow = db.prepare(
+					`SELECT task_id FROM workspace_tasks WHERE processing_session_id = ?`,
+				).get(payload.parentSessionId) as { task_id: string } | undefined;
+				if (taskRow) {
+					const error = new Error("任务处理会话不允许分叉") as HttpError;
+					error.statusCode = 409;
+					throw error;
+				}
+			}
+
 			const parentSession = payload.parentSessionId
 				? await getIndexedSessionLookupOrThrow(payload.parentSessionId)
 				: null;
+
 			const sessionCwd =
 				normalizeOptionalFsPath(payload.cwd) || parentSession?.cwd || "";
 			if (!sessionCwd) {
