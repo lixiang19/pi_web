@@ -291,6 +291,8 @@ export const buildSessionSummaryFromIndex = (
 	branch: context?.branch,
 	worktreeRoot: context?.worktreeRoot || "",
 	worktreeLabel: context?.worktreeLabel || "",
+	taskId: lookup.taskId,
+	sessionType: lookup.sessionType,
 });
 
 export const resolveSessionSummary = async (

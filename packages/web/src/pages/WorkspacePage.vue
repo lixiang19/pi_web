@@ -971,6 +971,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
               :initial-agent="tab.initialAgent"
               :initial-thinking-level="tab.initialThinkingLevel"
               :initial-attachment-ids="tab.initialAttachmentIds"
+              @open-chat-tab="handleOpenSession($event)"
             />
           </div>
 

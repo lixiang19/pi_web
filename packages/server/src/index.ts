@@ -798,6 +798,8 @@ app.get(
 				sessionFile: session.sessionFile,
 				parentSessionId: session.parentSessionId,
 				contextId: session.contextId,
+				taskId: session.taskId,
+				sessionType: session.sessionType,
 			}));
 			res.json(summaries);
 		} catch (error) {

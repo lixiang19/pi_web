@@ -1,0 +1,130 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - button "闪念 2" [ref=e7]:
+          - img [ref=e8]
+          - generic [ref=e11]: 闪念
+          - generic [ref=e12]: "2"
+        - button "搜索" [ref=e13]:
+          - img [ref=e14]
+          - generic [ref=e17]: 搜索
+        - button "通知" [ref=e18]:
+          - img [ref=e19]
+          - generic [ref=e22]: 通知
+        - button "任务" [ref=e23]:
+          - img [ref=e24]
+          - generic [ref=e27]: 任务
+        - button "文件" [ref=e28]:
+          - img [ref=e29]
+          - generic [ref=e33]: 文件
+        - button "终端" [ref=e34]:
+          - img [ref=e35]
+          - generic [ref=e38]: 终端
+        - button "自动化" [ref=e39]:
+          - img [ref=e40]
+          - generic [ref=e43]: 自动化
+        - button "Skill" [ref=e44]:
+          - img [ref=e45]
+          - generic [ref=e47]: Skill
+        - button "设置" [ref=e48]:
+          - img [ref=e49]
+          - generic [ref=e52]: 设置
+      - generic [ref=e53]:
+        - generic [ref=e54]: 项目
+        - button "openchamber /Users/lixiang/Documents/myCode/openchamber 外部 服务器文件夹 离线" [ref=e57]:
+          - img [ref=e58]
+          - generic [ref=e60]: openchamber
+          - generic [ref=e61]: /Users/lixiang/Documents/myCode/openchamber
+          - generic [ref=e62]: 外部
+          - generic [ref=e63]: 服务器文件夹
+          - generic [ref=e64]: 离线
+        - button "AuroraPlatformWeb /Users/lixiang/Documents/myCode/AuroraPlatformWeb 外部 服务器文件夹 Git 离线" [ref=e67]:
+          - img [ref=e68]
+          - generic [ref=e70]: AuroraPlatformWeb
+          - generic [ref=e71]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+          - generic [ref=e72]: 外部
+          - generic [ref=e73]: 服务器文件夹
+          - generic [ref=e74]: Git
+          - generic [ref=e75]: 离线
+      - generic [ref=e76]:
+        - generic [ref=e77]: 工作空间会话
+        - button "验收测试会话" [active] [ref=e78]:
+          - generic [ref=e79]: 验收测试会话
+        - button "你好" [ref=e80]:
+          - generic [ref=e81]: 你好
+      - generic [ref=e83]:
+        - button "新建" [ref=e84]:
+          - img [ref=e85]
+          - text: 新建
+        - button "文件夹" [ref=e88]:
+          - img [ref=e89]
+          - text: 文件夹
+        - button "Canvas" [ref=e91]:
+          - img [ref=e92]
+          - text: Canvas
+        - button "Base" [ref=e97]:
+          - img [ref=e98]
+          - text: Base
+      - generic:
+        - generic:
+          - generic:
+            - tablist [ref=e102]:
+              - tab [selected] [ref=e103]:
+                - img
+              - tab [ref=e104]:
+                - img
+              - tab [ref=e105]:
+                - img
+              - tab [ref=e106]:
+                - img
+            - tabpanel:
+              - button [ref=e108]:
+                - img [ref=e109]
+              - paragraph [ref=e194]: Requested path is outside the allowed workspace root
+      - button "归档" [ref=e120]:
+        - img [ref=e121]
+        - generic [ref=e124]: 归档
+    - main [ref=e125]:
+      - generic [ref=e126]:
+        - generic [ref=e128]:
+          - generic [ref=e129]:
+            - generic [ref=e130] [cursor=pointer]:
+              - generic [ref=e132]: 主页
+              - button [ref=e133]:
+                - img [ref=e134]
+            - generic [ref=e238] [cursor=pointer]:
+              - generic [ref=e240]: 验收测试会话
+              - button [ref=e241]:
+                - img [ref=e242]
+          - button [ref=e137]:
+            - img [ref=e138]
+        - generic [ref=e247]:
+          - generic [ref=e253]:
+            - img [ref=e255]
+            - generic [ref=e263]:
+              - heading "暂无消息" [level=3] [ref=e264]
+              - paragraph [ref=e265]: 发送一条消息开始对话，或通过资源面板插入 prompt、skill 与 command。
+          - generic [ref=e268]:
+            - generic [ref=e269]:
+              - textbox "输入消息… 支持 Markdown，Shift + Enter 换行，可拖拽文件路径到输入框" [ref=e270]
+              - generic [ref=e271]:
+                - button [disabled]:
+                  - img
+            - generic [ref=e274]:
+              - combobox [ref=e275]:
+                - img
+                - generic [ref=e276]: Aurora / kimi2.6
+                - img
+              - combobox [ref=e277]:
+                - img
+                - generic [ref=e278]: Medium
+                - img
+              - combobox [ref=e279]:
+                - img
+                - generic [ref=e280]: Direct
+                - img
+  - button "打开闪念捕捉" [ref=e192]:
+    - img
+  - region "Notifications alt+T":
+    - list

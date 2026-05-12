@@ -18,7 +18,6 @@ test.describe("工作台 Shell 与标签系统", () => {
 		await expect(page.getByRole("heading", { name: "输入访问密码" })).toBeVisible();
 		await page.getByRole("textbox", { name: "密码" }).fill("ridge-admin");
 		await page.getByRole("textbox", { name: "密码" }).press("Enter");
-		await page.waitForURL("http://localhost:81/");
 		await expect(page.locator("main")).toBeVisible();
 		await page.waitForTimeout(2000);
 	});
@@ -30,7 +29,7 @@ test.describe("工作台 Shell 与标签系统", () => {
 		}
 
 		// 主页按钮仅应出现在顶部标签栏，不应出现在左侧固定入口
-		const sidebar = page.locator("div").filter({ hasText: "闪念" }).first().locator("..");
+		const sidebar = page.locator("aside");
 		const sidebarButtons = await sidebar.locator("button").allInnerTexts();
 		expect(sidebarButtons).not.toContain("主页");
 	});
@@ -40,7 +39,7 @@ test.describe("工作台 Shell 与标签系统", () => {
 		await page.waitForTimeout(1500);
 		await expect(page.locator("main").getByRole("heading", { name: "任务", level: 2 })).toBeVisible();
 
-		const tabs = page.locator("main > div > div").locator("span.truncate");
+		const tabs = page.locator("main").locator("span.truncate");
 		const texts1 = await tabs.allTextContents();
 		const taskCount1 = texts1.filter((t) => t === "任务").length;
 		expect(taskCount1).toBe(1);
@@ -60,25 +59,35 @@ test.describe("工作台 Shell 与标签系统", () => {
 		await page.getByRole("button", { name: "终端" }).first().click();
 		await page.waitForTimeout(1500);
 
-		const tabs = page.locator("main > div > div").locator("span.truncate");
+		const tabs = page.locator("main").locator("span.truncate");
 		const texts = await tabs.allTextContents();
 		const terminalCount = texts.filter((t) => t === "终端").length;
 		expect(terminalCount).toBe(3);
 	});
 
 	test("关闭空主页标签后未创建会话", async ({ page }) => {
+		// 拦截所有 POST /api/sessions 请求，记录是否触发
+		let sessionCreated = false;
+		await page.route("**/api/sessions", (route) => {
+			if (route.request().method() === "POST") {
+				sessionCreated = true;
+			}
+			route.continue();
+		});
+
 		await page.getByRole("button", { name: "任务" }).first().click();
 		await page.waitForTimeout(1500);
-		const tabBar = page.locator("main > div > div");
-		const tabs = tabBar.locator("span.truncate");
-		const textsBefore = await tabs.allTextContents();
+
+		const tabBar = page.locator("main").locator("span.truncate");
+		const textsBefore = await tabBar.allTextContents();
 		if (textsBefore.includes("主页")) {
-			const homeSpan = tabBar.locator("span.truncate").filter({ hasText: "主页" });
+			const homeSpan = page.locator("main").locator("span.truncate").filter({ hasText: "主页" });
 			await homeSpan.locator("xpath=..").locator("button").last().click();
 			await page.waitForTimeout(500);
 		}
-		const textsAfter = await tabs.allTextContents();
+		const textsAfter = await tabBar.allTextContents();
 		expect(textsAfter).not.toContain("主页");
+		expect(sessionCreated).toBe(false);
 	});
 
 	test("打开同一会话时只激活已有标签", async ({ page }) => {
@@ -86,7 +95,8 @@ test.describe("工作台 Shell 与标签系统", () => {
 		await page.waitForTimeout(1500);
 		await page.getByRole("button", { name: "任务" }).first().click();
 		await page.waitForTimeout(1500);
-		const tabs = page.locator("main > div > div").locator("span.truncate");
+
+		const tabs = page.locator("main").locator("span.truncate");
 		const texts = await tabs.allTextContents();
 		const taskCount = texts.filter((t) => t === "任务").length;
 		expect(taskCount).toBe(1);

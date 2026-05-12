@@ -1,0 +1,139 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - button "闪念 2" [ref=e543]:
+          - img [ref=e8]
+          - generic [ref=e11]: 闪念
+          - generic [ref=e544]: "2"
+        - button "搜索" [ref=e12]:
+          - img [ref=e13]
+          - generic [ref=e16]: 搜索
+        - button "通知" [ref=e17]:
+          - img [ref=e18]
+          - generic [ref=e21]: 通知
+        - button "任务" [ref=e22]:
+          - img [ref=e23]
+          - generic [ref=e26]: 任务
+        - button "文件" [ref=e27]:
+          - img [ref=e28]
+          - generic [ref=e32]: 文件
+        - button "终端" [ref=e33]:
+          - img [ref=e34]
+          - generic [ref=e37]: 终端
+        - button "自动化" [ref=e38]:
+          - img [ref=e39]
+          - generic [ref=e42]: 自动化
+        - button "Skill" [ref=e43]:
+          - img [ref=e44]
+          - generic [ref=e46]: Skill
+        - button "设置" [ref=e47]:
+          - img [ref=e48]
+          - generic [ref=e51]: 设置
+      - generic [ref=e545]:
+        - generic [ref=e546]: 项目
+        - button "openchamber /Users/lixiang/Documents/myCode/openchamber 外部 服务器文件夹 离线" [ref=e549]:
+          - img [ref=e550]
+          - generic [ref=e552]: openchamber
+          - generic [ref=e553]: /Users/lixiang/Documents/myCode/openchamber
+          - generic [ref=e554]: 外部
+          - generic [ref=e555]: 服务器文件夹
+          - generic [ref=e556]: 离线
+        - button "AuroraPlatformWeb /Users/lixiang/Documents/myCode/AuroraPlatformWeb 外部 服务器文件夹 Git 离线" [ref=e559]:
+          - img [ref=e560]
+          - generic [ref=e562]: AuroraPlatformWeb
+          - generic [ref=e563]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+          - generic [ref=e564]: 外部
+          - generic [ref=e565]: 服务器文件夹
+          - generic [ref=e566]: Git
+          - generic [ref=e567]: 离线
+      - generic [ref=e52]:
+        - generic [ref=e53]: 工作空间会话
+        - button "验收测试会话" [ref=e54]:
+          - generic [ref=e55]: 验收测试会话
+        - button "你好" [active] [ref=e58]:
+          - generic [ref=e59]: 你好
+      - generic [ref=e433]:
+        - button "新建" [ref=e434]:
+          - img [ref=e435]
+          - text: 新建
+        - button "文件夹" [ref=e438]:
+          - img [ref=e439]
+          - text: 文件夹
+        - button "Canvas" [ref=e441]:
+          - img [ref=e442]
+          - text: Canvas
+        - button "Base" [ref=e447]:
+          - img [ref=e448]
+          - text: Base
+      - generic:
+        - generic:
+          - generic:
+            - tablist [ref=e452]:
+              - tab [selected] [ref=e453]:
+                - img
+              - tab [ref=e454]:
+                - img
+              - tab [ref=e455]:
+                - img
+              - tab [ref=e456]:
+                - img
+            - tabpanel:
+              - button [ref=e458]:
+                - img [ref=e459]
+              - paragraph [ref=e569]: Requested path is outside the allowed workspace root
+      - button "归档" [ref=e470]:
+        - img [ref=e471]
+        - generic [ref=e474]: 归档
+    - main [ref=e475]:
+      - generic [ref=e476]:
+        - generic [ref=e478]:
+          - generic [ref=e479]:
+            - generic [ref=e480] [cursor=pointer]:
+              - generic [ref=e482]: 主页
+              - button [ref=e483]:
+                - img [ref=e484]
+            - generic [ref=e570] [cursor=pointer]:
+              - generic [ref=e572]: 终端
+              - button [ref=e573]:
+                - img [ref=e574]
+            - generic [ref=e622] [cursor=pointer]:
+              - generic [ref=e624]: 你好
+              - button [ref=e625]:
+                - img [ref=e626]
+          - button [ref=e487]:
+            - img [ref=e488]
+        - generic [ref=e631]:
+          - generic [ref=e636]:
+            - button "折叠旧轮次" [ref=e638]
+            - paragraph [ref=e643]:
+              - generic [ref=e644]: 你好
+            - generic [ref=e646]:
+              - paragraph [ref=e650]:
+                - generic [ref=e651]: 你好！😊 有什么我可以帮你的吗？无论是代码开发、项目探索、文件编辑，还是其他技术问题，都可以跟我说！
+              - button "复制" [ref=e653]:
+                - img
+                - text: 复制
+          - generic [ref=e656]:
+            - generic [ref=e657]:
+              - textbox "输入消息… 支持 Markdown，Shift + Enter 换行，可拖拽文件路径到输入框" [ref=e658]
+              - generic [ref=e659]:
+                - button [disabled]:
+                  - img
+            - generic [ref=e662]:
+              - combobox [ref=e663]:
+                - img
+                - generic [ref=e664]: Aurora / kimi2.6
+                - img
+              - combobox [ref=e665]:
+                - img
+                - generic [ref=e666]: Medium
+                - img
+              - combobox [ref=e667]:
+                - img
+                - generic [ref=e668]: Direct
+                - img
+  - button "打开闪念捕捉" [ref=e542]:
+    - img
+  - region "Notifications alt+T":
+    - list

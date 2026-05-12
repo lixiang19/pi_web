@@ -1,0 +1,185 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - button "闪念 18" [ref=e539]:
+          - img [ref=e8]
+          - generic [ref=e11]: 闪念
+          - generic [ref=e540]: "18"
+        - button "搜索" [ref=e12]:
+          - img [ref=e13]
+          - generic [ref=e16]: 搜索
+        - button "通知" [ref=e17]:
+          - img [ref=e18]
+          - generic [ref=e21]: 通知
+        - button "任务" [ref=e22]:
+          - img [ref=e23]
+          - generic [ref=e26]: 任务
+        - button "文件" [ref=e27]:
+          - img [ref=e28]
+          - generic [ref=e32]: 文件
+        - button "终端" [ref=e33]:
+          - img [ref=e34]
+          - generic [ref=e37]: 终端
+        - button "自动化" [ref=e38]:
+          - img [ref=e39]
+          - generic [ref=e42]: 自动化
+        - button "Skill" [ref=e43]:
+          - img [ref=e44]
+          - generic [ref=e46]: Skill
+        - button "设置" [ref=e47]:
+          - img [ref=e48]
+          - generic [ref=e51]: 设置
+      - generic [ref=e541]:
+        - generic [ref=e542]: 项目
+        - button "AuroraPlatformWeb /Users/lixiang/Documents/myCode/AuroraPlatformWeb 外部 服务器文件夹 Git 离线" [ref=e545]:
+          - img [ref=e546]
+          - generic [ref=e548]: AuroraPlatformWeb
+          - generic [ref=e549]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+          - generic [ref=e550]: 外部
+          - generic [ref=e551]: 服务器文件夹
+          - generic [ref=e552]: Git
+          - generic [ref=e553]: 离线
+        - button "openchamber /Users/lixiang/Documents/myCode/openchamber 外部 服务器文件夹 离线" [ref=e556]:
+          - img [ref=e557]
+          - generic [ref=e559]: openchamber
+          - generic [ref=e560]: /Users/lixiang/Documents/myCode/openchamber
+          - generic [ref=e561]: 外部
+          - generic [ref=e562]: 服务器文件夹
+          - generic [ref=e563]: 离线
+      - generic [ref=e52]:
+        - generic [ref=e53]: 工作空间会话
+        - button "你好" [ref=e54]:
+          - generic [ref=e55]: 你好
+      - generic [ref=e429]:
+        - button "新建" [ref=e430]:
+          - img [ref=e431]
+          - text: 新建
+        - button "文件夹" [ref=e434]:
+          - img [ref=e435]
+          - text: 文件夹
+        - button "Canvas" [ref=e437]:
+          - img [ref=e438]
+          - text: Canvas
+        - button "Base" [ref=e443]:
+          - img [ref=e444]
+          - text: Base
+      - generic:
+        - generic:
+          - generic:
+            - tablist [ref=e448]:
+              - tab [selected] [ref=e449]:
+                - img
+              - tab [ref=e450]:
+                - img
+              - tab [ref=e451]:
+                - img
+              - tab [ref=e452]:
+                - img
+            - tabpanel:
+              - button [ref=e454]:
+                - img [ref=e455]
+              - paragraph [ref=e565]: Requested path is outside the allowed workspace root
+      - button "归档" [ref=e466]:
+        - img [ref=e467]
+        - generic [ref=e470]: 归档
+    - main [ref=e471]:
+      - generic [ref=e472]:
+        - generic [ref=e474]:
+          - generic [ref=e476] [cursor=pointer]:
+            - generic [ref=e478]: 主页
+            - button [ref=e479]:
+              - img [ref=e480]
+          - button [ref=e483]:
+            - img [ref=e484]
+        - generic [ref=e491]:
+          - generic [ref=e492]:
+            - paragraph [ref=e493]: 开始对话
+            - generic [ref=e495]:
+              - generic [ref=e496]:
+                - button "处理闪念" [ref=e497]:
+                  - img [ref=e498]
+                  - text: 处理闪念
+                - button "规划任务" [ref=e500]:
+                  - img [ref=e501]
+                  - text: 规划任务
+                - button "总结最近文件" [ref=e504]:
+                  - img [ref=e505]
+                  - text: 总结最近文件
+              - generic [ref=e507]:
+                - textbox "问我任何事…" [ref=e508]
+                - button [disabled]:
+                  - img
+              - generic [ref=e509]:
+                - button "附件" [ref=e510]:
+                  - img [ref=e511]
+                  - text: 附件
+                - combobox [ref=e513]:
+                  - img
+                  - generic: 模型
+                  - img
+                - combobox [ref=e514]:
+                  - img
+                  - generic: 无 Agent（直接对话）
+                  - img
+                - combobox [ref=e515]:
+                  - img
+                  - generic: Medium
+                  - img
+          - generic [ref=e516]:
+            - generic [ref=e517]:
+              - heading "最近事情" [level=3] [ref=e519]
+              - generic [ref=e566]:
+                - button "功能16纯文本闪念 闪念 5月12日 07:59" [ref=e567]:
+                  - img [ref=e568]
+                  - generic [ref=e570]: 功能16纯文本闪念
+                  - generic [ref=e571]: 闪念
+                  - generic [ref=e572]: 5月12日 07:59
+                - button "功能16 e2e 测试闪念 闪念 5月12日 07:59" [ref=e573]:
+                  - img [ref=e574]
+                  - generic [ref=e576]: 功能16 e2e 测试闪念
+                  - generic [ref=e577]: 闪念
+                  - generic [ref=e578]: 5月12日 07:59
+                - button "功能16纯文本闪念 闪念 5月12日 07:57" [ref=e579]:
+                  - img [ref=e580]
+                  - generic [ref=e582]: 功能16纯文本闪念
+                  - generic [ref=e583]: 闪念
+                  - generic [ref=e584]: 5月12日 07:57
+                - button "你好 会话 4月26日 22:56" [ref=e585]:
+                  - img [ref=e586]
+                  - generic [ref=e588]: 你好
+                  - generic [ref=e589]: 会话
+                  - generic [ref=e590]: 4月26日 22:56
+                - button "项目里生成游戏示意图的提示词是什么 会话 4月22日 02:54" [ref=e591]:
+                  - img [ref=e592]
+                  - generic [ref=e594]: 项目里生成游戏示意图的提示词是什么
+                  - generic [ref=e595]: 会话
+                  - generic [ref=e596]: 4月22日 02:54
+                - button "你好 会话 4月18日 05:22" [ref=e597]:
+                  - img [ref=e598]
+                  - generic [ref=e600]: 你好
+                  - generic [ref=e601]: 会话
+                  - generic [ref=e602]: 4月18日 05:22
+                - button "你好 会话 4月18日 04:21" [ref=e603]:
+                  - img [ref=e604]
+                  - generic [ref=e606]: 你好
+                  - generic [ref=e607]: 会话
+                  - generic [ref=e608]: 4月18日 04:21
+                - button "你好啊 会话 4月14日 02:02" [ref=e609]:
+                  - img [ref=e610]
+                  - generic [ref=e612]: 你好啊
+                  - generic [ref=e613]: 会话
+                  - generic [ref=e614]: 4月14日 02:02
+            - generic [ref=e522]:
+              - generic [ref=e523]:
+                - heading "最近文件" [level=3] [ref=e525]
+                - generic [ref=e527]: 暂无文件
+              - generic [ref=e528]:
+                - generic [ref=e530]:
+                  - img [ref=e531]
+                  - heading "AI 建议" [level=3] [ref=e534]
+                - paragraph [ref=e536]: AI 建议功能即将推出，届时会根据你的工作习惯给出智能推荐。
+  - button "打开闪念捕捉" [ref=e538]:
+    - img
+  - region "Notifications alt+T":
+    - list

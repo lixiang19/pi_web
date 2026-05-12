@@ -1,0 +1,26 @@
+### Result
+240. [GET] http://127.0.0.1:5175/api/system/info => [401] Unauthorized
+241. [GET] http://127.0.0.1:5175/api/providers => [401] Unauthorized
+242. [GET] http://127.0.0.1:5175/api/sessions => [401] Unauthorized
+243. [GET] http://127.0.0.1:5175/api/session-contexts => [401] Unauthorized
+245. [GET] http://127.0.0.1:5175/api/auth/session => [200] OK
+246. [GET] http://127.0.0.1:5175/api/auth/session => [200] OK
+249. [POST] http://127.0.0.1:5175/api/auth/login => [200] OK
+250. [GET] http://127.0.0.1:5175/api/projects => [200] OK
+252. [GET] http://127.0.0.1:5175/api/system/info => [200] OK
+253. [GET] http://127.0.0.1:5175/api/projects => [200] OK
+254. [GET] http://127.0.0.1:5175/api/projects/5a54f286/worktrees => [200] OK
+255. [GET] http://127.0.0.1:5175/api/projects/9a5e71e0/worktrees => [200] OK
+256. [POST] http://127.0.0.1:5175/api/terminals => [201] Created
+258. [GET] http://127.0.0.1:5175/api/system/info => [200] OK
+259. [GET] http://127.0.0.1:5175/api/projects => [200] OK
+260. [GET] http://127.0.0.1:5175/api/projects/5a54f286/worktrees => [200] OK
+261. [GET] http://127.0.0.1:5175/api/projects/9a5e71e0/worktrees => [200] OK
+262. [POST] http://127.0.0.1:5175/api/terminals => [201] Created
+263. [GET] http://127.0.0.1:5175/api/system/info => [200] OK
+264. [GET] http://127.0.0.1:5175/api/projects => [200] OK
+265. [GET] http://127.0.0.1:5175/api/projects/5a54f286/worktrees => [200] OK
+266. [GET] http://127.0.0.1:5175/api/projects/9a5e71e0/worktrees => [200] OK
+267. [POST] http://127.0.0.1:5175/api/terminals => [201] Created
+
+Note: 244 static requests not shown, run with --static option to see them.

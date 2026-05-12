@@ -66,3 +66,32 @@
 - `home` 首次提交后调用会话创建 API，并原地替换为 `conversation` 标签；`cwd` 继承自 `home` tab 的 `cwd` 字段（项目主页时为项目路径，普通主页时为工作空间目录）。
 - 打开同一会话时，如果已有标签，只激活原标签，不创建重复标签。
 - 关闭会话标签不删除会话。
+
+## 会话界面与右侧工作侧栏
+
+会话标签页内由 `WorkspaceChatTab.vue` 渲染，其内部布局为：
+
+- **中间主区域**：`WorkbenchChatPanel` → `WorkbenchMessageStream` + `WorkbenchComposer`。
+- **右侧工作侧栏**：固定四个 tab（摘要、文件、Git、Diff），通过 shadcn-vue `Tabs` 切换。
+
+### 消息操作
+
+每轮消息由 `ChatMessageItem.vue` 渲染：
+
+- `user` 消息 hover 显示"编辑"按钮；点击后通过 `usePerSessionChat.forkSession()` 创建分叉会话（带 `parentSessionId`），并发送编辑后的 prompt。
+- `assistant` 最终消息 hover 显示"复制"和"重试"按钮；点击重试后同样创建分叉会话，并重新发送对应轮次的用户 prompt。
+- 任务会话（`taskId` 存在或 `sessionType === 'task'`）禁用编辑/重试，按钮 disabled + tooltip 说明。
+
+### 右侧侧栏数据来源
+
+- **摘要**：纯前端从当前 `usePerSessionChat` 计算属性投影（标题、ID、状态、轮次、运行位置、模型、Agent）。
+- **文件**：复用 `WorkspaceFileTree.vue`，`rootDir` 取自 `chat.fileTreeRoot.value`（工作空间会话为 `workspaceDir`，项目会话为项目目录）。
+- **Git**：复用 `WorkbenchGitPanel.vue`，通过 `useGitRepositoryStatus` 探测当前 `fileTreeRoot` 是否为 Git 仓库；非 Git 仓库显示不可用状态。
+- **Diff**：第一版显示占位说明"Diff 暂不可用/等待隐藏版本管理"，不做伪装。
+
+### 类型与 API
+
+- `SessionSummary`（`@pi/protocol`）新增 `taskId?: string` 和 `sessionType?: string`。
+- `IndexedSessionSummary`、`IndexedSessionLookup`（`session-indexer.ts`）同步暴露 `taskId` 和 `sessionType`。
+- `/api/sessions` 返回体同步包含 `taskId` 和 `sessionType`。
+- 前端通过 `chat.activeSession.value?.taskId / sessionType` 判断是否为任务会话。

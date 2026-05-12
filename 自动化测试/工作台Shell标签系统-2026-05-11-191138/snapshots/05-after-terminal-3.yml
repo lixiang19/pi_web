@@ -1,0 +1,109 @@
+- generic [ref=e2]:
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - button "闪念" [ref=e16]:
+          - img [ref=e17]
+          - generic [ref=e20]: 闪念
+        - button "搜索" [ref=e21]:
+          - img [ref=e22]
+          - generic [ref=e25]: 搜索
+        - button "通知" [ref=e26]:
+          - img [ref=e27]
+          - generic [ref=e30]: 通知
+        - button "任务" [ref=e31]:
+          - img [ref=e32]
+          - generic [ref=e35]: 任务
+        - button "文件" [ref=e36]:
+          - img [ref=e37]
+          - generic [ref=e41]: 文件
+        - button "终端" [ref=e42]:
+          - img [ref=e43]
+          - generic [ref=e46]: 终端
+        - button "自动化" [ref=e47]:
+          - img [ref=e48]
+          - generic [ref=e51]: 自动化
+        - button "Skill" [ref=e52]:
+          - img [ref=e53]
+          - generic [ref=e55]: Skill
+        - button "设置" [ref=e56]:
+          - img [ref=e57]
+          - generic [ref=e60]: 设置
+      - generic [ref=e61]:
+        - generic [ref=e62]: 项目
+        - button "AuroraPlatformWeb /Users/lixiang/Documents/myCode/AuroraPlatformWeb 外部 服务器文件夹 离线" [ref=e65]:
+          - img [ref=e66]
+          - generic [ref=e68]: AuroraPlatformWeb
+          - generic [ref=e69]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+          - generic [ref=e70]: 外部
+          - generic [ref=e71]: 服务器文件夹
+          - generic [ref=e72]: 离线
+        - button "openchamber /Users/lixiang/Documents/myCode/openchamber 外部 服务器文件夹 离线" [ref=e75]:
+          - img [ref=e76]
+          - generic [ref=e78]: openchamber
+          - generic [ref=e79]: /Users/lixiang/Documents/myCode/openchamber
+          - generic [ref=e80]: 外部
+          - generic [ref=e81]: 服务器文件夹
+          - generic [ref=e82]: 离线
+      - generic [ref=e84]:
+        - button "新建" [ref=e85]:
+          - img [ref=e86]
+          - text: 新建
+        - button "文件夹" [ref=e89]:
+          - img [ref=e90]
+          - text: 文件夹
+        - button "Canvas" [ref=e92]:
+          - img [ref=e93]
+          - text: Canvas
+        - button "Base" [ref=e98]:
+          - img [ref=e99]
+          - text: Base
+      - generic [ref=e105]:
+        - tablist [ref=e106]:
+          - tab [selected] [ref=e107]:
+            - img
+          - tab [ref=e108]:
+            - img
+          - tab [ref=e109]:
+            - img
+          - tab [ref=e110]:
+            - img
+        - tabpanel:
+          - button [ref=e112]:
+            - img [ref=e113]
+      - button "归档" [ref=e121]:
+        - img [ref=e122]
+        - generic [ref=e125]: 归档
+    - main [ref=e126]:
+      - generic [ref=e127]:
+        - generic [ref=e129]:
+          - generic [ref=e130]:
+            - generic [ref=e131] [cursor=pointer]:
+              - generic [ref=e133]: 主页
+              - button [ref=e134]:
+                - img [ref=e135]
+            - generic [ref=e194] [cursor=pointer]:
+              - generic [ref=e196]: 任务
+              - button [ref=e197]:
+                - img [ref=e198]
+            - generic [ref=e249] [cursor=pointer]:
+              - generic [ref=e251]: 终端
+              - button [ref=e252]:
+                - img [ref=e253]
+            - generic [ref=e301] [cursor=pointer]:
+              - generic [ref=e303]: 终端
+              - button [ref=e304]:
+                - img [ref=e305]
+            - generic [ref=e353] [cursor=pointer]:
+              - generic [ref=e355]: 终端
+              - button [ref=e356]:
+                - img [ref=e357]
+          - button [ref=e138]:
+            - img [ref=e139]
+        - generic [ref=e364]:
+          - generic [ref=e366]: lixiang@lixiangdeMac-mini-3 ridge-workspace %
+          - textbox [active]
+  - button "打开闪念捕捉" [ref=e193]:
+    - img
+  - region "Notifications alt+T":
+    - list

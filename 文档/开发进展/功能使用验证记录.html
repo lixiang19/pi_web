@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ridge 功能使用验证记录</title>
+    <style>
+      :root {
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --panel-soft: #f1f5f9;
+        --text: #172033;
+        --muted: #667085;
+        --line: #d8dee8;
+        --blue: #2563eb;
+        --green: #138a63;
+        --amber: #b7791f;
+        --red: #c2413b;
+        --ink: #111827;
+        --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .container {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 32px 24px 48px;
+      }
+
+      .hero,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        display: grid;
+        gap: 18px;
+        padding: 28px;
+        margin-bottom: 24px;
+      }
+
+      .hero-top,
+      .section-head,
+      .toolbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 30px;
+        line-height: 1.15;
+      }
+
+      h2 {
+        font-size: 19px;
+      }
+
+      h3 {
+        font-size: 15px;
+      }
+
+      p,
+      .muted {
+        color: var(--muted);
+      }
+
+      .badge,
+      .status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid #b7c7ef;
+        background: #eff6ff;
+        color: #1e3a8a;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .status.ai-pass,
+      .badge.done {
+        border-color: #abefc6;
+        background: #ecfdf3;
+        color: #05603a;
+      }
+
+      .status.ai-partial,
+      .badge.warn {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #92400e;
+      }
+
+      .status.ai-missing,
+      .badge.blocked {
+        border-color: #fecaca;
+        background: #fef2f2;
+        color: #991b1b;
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .grid.cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .grid.cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .panel {
+        padding: 18px;
+      }
+
+      .metric {
+        display: grid;
+        gap: 8px;
+      }
+
+      .metric .value {
+        color: var(--ink);
+        font-size: 30px;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      .metric .label {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      section {
+        margin-top: 24px;
+      }
+
+      .rule-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .rule {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-soft);
+      }
+
+      .rule-number {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background: var(--ink);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+      }
+
+      table {
+        width: 100%;
+        min-width: 1120px;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 13px;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #f8fafc;
+        color: #344054;
+        font-weight: 700;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .feature-id {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 34px;
+        height: 26px;
+        border-radius: 6px;
+        background: #eef2ff;
+        color: #3730a3;
+        font-weight: 700;
+      }
+
+      .feature-name {
+        display: grid;
+        gap: 4px;
+        min-width: 220px;
+      }
+
+      .feature-name strong {
+        color: var(--ink);
+        font-size: 14px;
+      }
+
+      .evidence {
+        display: grid;
+        gap: 6px;
+      }
+
+      .manual-cell {
+        min-width: 240px;
+      }
+
+      .manual-controls {
+        display: grid;
+        gap: 8px;
+      }
+
+      label.check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--green);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 72px;
+        resize: vertical;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px 10px;
+        color: var(--text);
+        background: #fff;
+        font: inherit;
+        font-size: 13px;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--text);
+        cursor: pointer;
+        font: inherit;
+        font-size: 13px;
+        padding: 8px 10px;
+      }
+
+      button.primary {
+        border-color: #1d4ed8;
+        background: #2563eb;
+        color: #fff;
+      }
+
+      button:hover {
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
+      }
+
+      .callout {
+        border-left: 4px solid var(--blue);
+        background: #eff6ff;
+      }
+
+      .callout.warn {
+        border-left-color: var(--amber);
+        background: #fffbeb;
+      }
+
+      .callout.blocked {
+        border-left-color: var(--red);
+        background: #fef2f2;
+      }
+
+      .footer-note {
+        margin-top: 20px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .export-box {
+        display: none;
+        margin-top: 12px;
+      }
+
+      .export-box.is-visible {
+        display: grid;
+        gap: 8px;
+      }
+
+      .export-box textarea {
+        min-height: 180px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      }
+
+      @media (max-width: 920px) {
+        .container {
+          padding: 18px 14px 32px;
+        }
+
+        .hero-top,
+        .section-head,
+        .toolbar {
+          display: grid;
+        }
+
+        .grid.cols-4,
+        .grid.cols-3 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header class="hero">
+        <div class="hero-top">
+          <div>
+            <h1>ridge 功能使用验证记录</h1>
+            <p>每一个完成的功能点都必须先由 AI 做真实使用验证，再交给用户手工验证。没有 AI 验证记录的功能，只能算“代码完成”，不能算“产品完成”。</p>
+          </div>
+          <span class="badge">更新时间：2026-05-11</span>
+        </div>
+
+        <div class="grid cols-4">
+          <div class="panel metric">
+            <span class="value" id="totalCount">0</span>
+            <span class="label">纳入记录的功能点</span>
+          </div>
+          <div class="panel metric">
+            <span class="value" id="aiPassedCount">0</span>
+            <span class="label">AI 已完整验证</span>
+          </div>
+          <div class="panel metric">
+            <span class="value" id="aiPendingCount">0</span>
+            <span class="label">AI 待补使用验证</span>
+          </div>
+          <div class="panel metric">
+            <span class="value" id="manualPassedCount">0</span>
+            <span class="label">用户已手工确认</span>
+          </div>
+        </div>
+      </header>
+
+      <section>
+        <div class="section-head">
+          <h2>验收闸门</h2>
+          <span class="status ai-missing">强制规则</span>
+        </div>
+        <div class="panel callout blocked" style="margin-top: 12px">
+          <h3>完成定义</h3>
+          <p>功能点必须同时满足：代码实现完成、测试和检查通过、AI 真实使用验证通过、用户手工验证通过。任何一项缺失，都不能从“完成”归档为“已验收”。</p>
+        </div>
+        <div class="rule-list">
+          <div class="rule">
+            <span class="rule-number">1</span>
+            <div>
+              <h3>先 AI 验证</h3>
+              <p>AI 必须用真实页面或真实 API 跑通功能，保存报告、截图、console、requests 和可复跑 e2e。只看代码或只跑单测不算使用验证。</p>
+            </div>
+          </div>
+          <div class="rule">
+            <span class="rule-number">2</span>
+            <div>
+              <h3>再人工验证</h3>
+              <p>AI 验证通过后，用户按记录里的手工路径确认体验、文案、交互和结果是否符合预期。人工未确认的功能保留在待确认状态。</p>
+            </div>
+          </div>
+          <div class="rule">
+            <span class="rule-number">3</span>
+            <div>
+              <h3>失败回到修复</h3>
+              <p>AI 或人工任一验证失败，都要回到对应功能文档修复，修复后重新跑 AI 验证，再重新提交人工验证。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>已实现功能点使用验证队列</h2>
+          <div class="toolbar">
+            <button type="button" id="exportButton">导出人工记录</button>
+            <button type="button" id="resetButton">清空本页人工记录</button>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-top: 12px">
+          <table>
+            <thead>
+              <tr>
+                <th>编号</th>
+                <th>功能点</th>
+                <th>实现状态</th>
+                <th>AI 使用验证</th>
+                <th>证据</th>
+                <th>用户手工验证</th>
+                <th>下一步</th>
+              </tr>
+            </thead>
+            <tbody id="featureRows"></tbody>
+          </table>
+        </div>
+        <div class="export-box" id="exportBox">
+          <p class="muted" id="exportMessage">人工验证记录已生成，可复制后写回文档。</p>
+          <textarea id="exportPayload" readonly></textarea>
+        </div>
+        <p class="footer-note">人工验证勾选和备注保存在当前浏览器 localStorage 中。如需沉淀到仓库，点击“导出人工记录”后把结果写回文档。</p>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>主线缺口</h2>
+          <span class="status ai-missing">必须优先补齐</span>
+        </div>
+        <div class="grid cols-3" style="margin-top: 12px">
+          <div class="panel callout blocked">
+            <h3>38 AI 对话主线闭环</h3>
+            <p>这是 ridge 的第一主线。只有主页首发、恢复续聊、流式回复、工具事件、ask、permission、附件上下文、历史恢复和归档只读全部跑通，才算 AI 工作平台主线成立。</p>
+          </div>
+          <div class="panel callout warn">
+            <h3>当前风险</h3>
+            <p>05、06、07 已覆盖部分边界，但缺少一个统一的真实多轮 AI 对话验收报告。不能因为会话能创建，就默认 AI 对话可用。</p>
+          </div>
+          <div class="panel callout">
+            <h3>验收要求</h3>
+            <p>AI 必须先跑真实浏览器链路：登录、首发、看到流式回复、继续追问、刷新恢复、归档后禁止发送。然后再交给用户手工验证。</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const STORAGE_KEY = "ridge-feature-manual-verification-v1";
+
+      const features = [
+        {
+          id: "00",
+          name: "工作空间初始化",
+          status: "服务启动自动初始化；无手动创建/切换入口",
+          ai: "partial",
+          aiLabel: "AI 待补使用验证",
+          evidence: [
+            "packages/server/src/workspace-chat.ts：ensureWorkspaceTemplate(workspaceDir)",
+            "packages/server/src/index.ts：启动时 resolveDefaultWorkspaceDir + ensureWorkspaceTemplate(defaultWorkspaceDir)",
+            "packages/server/src/__tests__/workspace-chat.test.ts：覆盖默认路径、幂等、路径被文件占用失败",
+          ],
+          manualPath: "重启服务后确认 ~/ridge-workspace 自动存在，八个可见目录、.ridge、记忆/MEMORY.md、Wiki/index.md 均存在；不要验证切换或手动创建，因为当前没有这些入口。",
+          next: "补一条服务启动自动初始化的真实验收报告。",
+        },
+        {
+          id: "01",
+          name: "ridge DB 基础表与迁移框架",
+          status: "结构化真源文件应存在于 ~/.pi/ridge.db",
+          ai: "partial",
+          aiLabel: "AI 待补使用验证",
+          evidence: [
+            "packages/server/src/utils/paths.ts：getRidgeDbPath() 默认返回 ~/.pi/ridge.db",
+            "packages/server/src/db/index.ts：initializeRidgeDb() 打开并迁移 ridge.db",
+            "文档/模块梳理/数据库与迁移.md：当前 schema_version=7，核心表清单已记录",
+          ],
+          manualPath: "直接确认 ~/.pi/ridge.db 文件存在；需要进一步验证时读取 ridge_meta 的 schema_version 和核心表清单。",
+          next: "AI 直接读取本机 ~/.pi/ridge.db 是否存在，并记录 schema_version/表清单。",
+        },
+        {
+          id: "02",
+          name: "隐藏 ridge 目录与路径边界",
+          status: "系统目录存在性与文件接口边界可直接验证",
+          ai: "partial",
+          aiLabel: "AI 待补使用验证",
+          evidence: [
+            "packages/server/src/workspace-chat.ts：ensureWorkspaceTemplate() 创建 .ridge/fleeting-attachments、rag、graph.kuzu、cache、runtime",
+            "packages/server/src/file-manager.ts：ignoredDirectoryNames 包含 .ridge，文件树不展示",
+            "packages/server/src/file-manager.ts：assertNotRidgeSystemPath() 拒绝 .ridge 路径访问和写入",
+            "文档/模块梳理/ridge系统目录边界.md：文件界面边界已记录",
+          ],
+          manualPath: "直接确认 ~/ridge-workspace/.ridge 及五个子目录存在；文件树/API 不应返回 .ridge，直接访问 .ridge 路径应失败。",
+          next: "AI 直接读取本机目录存在性，并用文件树/API 验证 .ridge 不暴露。",
+        },
+        {
+          id: "03",
+          name: "工作台 Shell 与标签系统",
+          status: "代码/测试已完成，真实使用验证通过",
+          ai: "pass",
+          aiLabel: "AI 已完整验证",
+          evidence: [
+            "自动化测试/工作台Shell标签系统-2026-05-11-191138/report.md",
+            "packages/web/e2e/workspace-shell-tabs.spec.ts：5 passed (25.8s)",
+          ],
+          manualPath: "按 AI 报告路径复核：打开多个标签、切换、关闭，确认布局不抖动、状态不串。",
+          next: "等待用户手工确认。",
+        },
+        {
+          id: "04",
+          name: "左侧导航固定入口与会话列表",
+          status: "已归档",
+          ai: "pass",
+          aiLabel: "AI 已完整验证",
+          evidence: [
+            "自动化测试/workspace-left-nav-task04-2026-05-11-013237/report.md",
+            "packages/web/e2e/workspace-left-nav-task04.spec.ts：5 passed",
+          ],
+          manualPath: "登录后点击任务、终端、归档、项目，确认入口可见、激活态正确、主区域正确切换。",
+          next: "等待用户手工确认。",
+        },
+        {
+          id: "05",
+          name: "工作空间主页与会话创建",
+          status: "已归档",
+          ai: "pass",
+          aiLabel: "AI 已完整验证",
+          evidence: [
+            "自动化测试/工作空间主页与会话创建-2026-05-11-020546/report.md",
+            "自动化测试/session-attachments-2026-05-11-0248/report.md",
+            "workspace-home-session.spec.ts：5 passed，session-attachments.spec.ts：4 passed",
+          ],
+          manualPath: "打开主页，输入内容，选择附件，确认首发前不创建会话、失败不丢输入、成功后进入会话标签。",
+          next: "等待用户手工确认。",
+        },
+        {
+          id: "06",
+          name: "会话索引归档与只读状态",
+          status: "代码/测试已完成，真实使用验证通过",
+          ai: "pass",
+          aiLabel: "AI 已完整验证",
+          evidence: [
+            "自动化测试/会话索引归档只读-复验-2026-05-11-193745/report.md",
+            "packages/web/e2e/session-archive.spec.ts：4 passed (8.7s)",
+            "关键通过点：归档入口可见并打开归档标签；真实 API 创建会话 archived=false；归档前 /api/sessions 包含，归档后 /api/sessions 不再包含；归档后 /messages 返回 403；DB schema 无消息正文字段/无 messages 表；控制台无阻塞 JS error。",
+            "巡查修复记录：归档后发送消息 403 有服务端测试要求；本轮修复了后端 /api/sessions 普通列表排除 archived=1 的问题，并通过复验确认生效。",
+          ],
+          manualPath: "按 AI 报告路径复核：归档入口、归档 API、普通列表过滤、归档后不可发送；离线设备项目历史待有数据后复核。",
+          next: "等待用户手工确认；离线设备项目历史待有设备数据后补验。",
+        },
+        {
+          id: "07",
+          name: "会话界面与右侧工作侧栏",
+          status: "代码/测试已完成，真实使用验证通过",
+          ai: "pass",
+          aiLabel: "AI 已完整验证",
+          evidence: [
+            "自动化测试/会话界面右侧侧栏-复验-2026-05-12-075933/report.md",
+            "packages/web/e2e/session-interface-sidebar.spec.ts：7 passed (51.1s)",
+            "关键通过点：会话打开、消息流/composer、复制/编辑/重试、编辑触发分叉 POST /api/sessions 带 parentSessionId、右侧摘要/文件/Git/Diff、Diff 明确暂不可用、控制台无阻塞 JS error。",
+          ],
+          manualPath: "按 AI 报告路径复核：打开“你好”会话，检查消息流、复制/编辑/重试、编辑分叉、右侧摘要/文件/Git/Diff；任务会话禁止分叉待有任务会话数据后复核。",
+          next: "等待用户手工确认；任务会话禁止分叉待有任务会话数据后补验。",
+        },
+        {
+          id: "08",
+          name: "任务里程碑数据模型",
+          status: "代码/测试已标记完成",
+          ai: "partial",
+          aiLabel: "AI 部分验证",
+          evidence: ["功能矩阵：API/DB/前端/测试已完成", "final-daily-inspection 覆盖任务项目筛选 UI"],
+          manualPath: "创建里程碑和任务，确认状态、优先级、项目归属和筛选结果。",
+          next: "补完整任务模型使用验收。",
+        },
+        {
+          id: "09",
+          name: "任务列表详情与状态流转",
+          status: "代码/测试已标记完成",
+          ai: "partial",
+          aiLabel: "AI 部分验证",
+          evidence: ["功能矩阵：API/DB/前端/测试已完成", "final-daily-inspection：TaskView 项目筛选控件通过"],
+          manualPath: "在任务页切换状态，确认用户可完成任务、Agent 不能完成任务、筛选不丢状态。",
+          next: "补状态流转完整 e2e。",
+        },
+        {
+          id: "12",
+          name: "闪念数据模型与 Web 入口",
+          status: "代码/测试已标记完成",
+          ai: "partial",
+          aiLabel: "AI 待补使用验证",
+          evidence: ["功能矩阵：API/DB/前端/测试已完成", "巡查修复记录：闪念 API 端到端可用为验收项"],
+          manualPath: "从 Web 入口创建闪念，刷新后确认仍存在，状态和分析状态符合预期。",
+          next: "补真实闪念创建、刷新、状态验收。",
+        },
+        {
+          id: "13",
+          name: "闪念临时附件生命周期",
+          status: "代码部分完成，测试未标记",
+          ai: "missing",
+          aiLabel: "AI 未验证",
+          evidence: ["功能矩阵：导航/API/DB/前端已有，测试/E2E 未标记"],
+          manualPath: "给闪念添加附件，确认处理前不进文件树/RAG/MCP，处理成功后迁移到正式附件目录。",
+          next: "补 AI 使用验收和测试。",
+        },
+        {
+          id: "16",
+          name: "闪念处理为正式对象",
+          status: "代码部分完成，测试未标记",
+          ai: "missing",
+          aiLabel: "AI 未验证",
+          evidence: ["功能矩阵：导航/API/DB/前端已有，测试/E2E 未标记"],
+          manualPath: "把闪念处理为笔记、任务或剪藏，确认目标对象创建成功后原闪念才移除。",
+          next: "补 AI 使用验收和测试。",
+        },
+        {
+          id: "36",
+          name: "自动化规则运行与跳过",
+          status: "代码/测试已标记完成",
+          ai: "partial",
+          aiLabel: "AI 待补使用验证",
+          evidence: ["功能矩阵：导航/API/DB/前端/测试已完成", "巡查修复记录：automation store/scheduler 初始化修复"],
+          manualPath: "创建自动化规则，触发运行和跳过，确认状态、调度和创建会话结果。",
+          next: "补真实自动化规则运行 e2e。",
+        },
+        {
+          id: "38",
+          name: "AI 对话主线闭环",
+          status: "主线任务已补文档，尚未完成",
+          ai: "missing",
+          aiLabel: "AI 未验证",
+          evidence: ["文档/功能开发/38-AI对话主线闭环.md"],
+          manualPath: "AI 验证通过后，再由用户手工确认首发、续聊、流式回复、刷新恢复、归档只读。",
+          next: "最高优先级：实现并验收真实 AI 对话主链路。",
+        },
+      ];
+
+      function loadManualRecords() {
+        try {
+          return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        } catch {
+          return {};
+        }
+      }
+
+      function saveManualRecords(records) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(records, null, 2));
+      }
+
+      function statusClass(ai) {
+        if (ai === "pass") return "ai-pass";
+        if (ai === "partial") return "ai-partial";
+        return "ai-missing";
+      }
+
+      function updateMetrics() {
+        const records = loadManualRecords();
+
+        document.getElementById("totalCount").textContent = String(features.length);
+        document.getElementById("aiPassedCount").textContent = String(features.filter((item) => item.ai === "pass").length);
+        document.getElementById("aiPendingCount").textContent = String(features.filter((item) => item.ai !== "pass").length);
+        document.getElementById("manualPassedCount").textContent = String(
+          features.filter((item) => records[item.id]?.passed).length,
+        );
+      }
+
+      function render() {
+        const records = loadManualRecords();
+        const tbody = document.getElementById("featureRows");
+        tbody.innerHTML = features
+          .map((feature) => {
+            const record = records[feature.id] || {};
+            const evidence = feature.evidence.map((item) => `<span>${item}</span>`).join("");
+            return `
+              <tr data-id="${feature.id}">
+                <td><span class="feature-id">${feature.id}</span></td>
+                <td>
+                  <div class="feature-name">
+                    <strong>${feature.name}</strong>
+                    <span class="muted">手工路径：${feature.manualPath}</span>
+                  </div>
+                </td>
+                <td>${feature.status}</td>
+                <td><span class="status ${statusClass(feature.ai)}">${feature.aiLabel}</span></td>
+                <td><div class="evidence">${evidence}</div></td>
+                <td class="manual-cell">
+                  <div class="manual-controls">
+                    <label class="check">
+                      <input type="checkbox" data-field="passed" ${record.passed ? "checked" : ""} ${feature.ai !== "pass" ? "disabled" : ""} />
+                      用户已手工验证通过
+                    </label>
+                    <textarea data-field="note" placeholder="记录手工验证时间、操作结果、问题或截图路径" ${feature.ai !== "pass" ? "disabled" : ""}>${record.note || ""}</textarea>
+                    ${feature.ai !== "pass" ? "<span class=\"muted\">需先补齐 AI 使用验证，才能进行人工确认。</span>" : ""}
+                  </div>
+                </td>
+                <td>${feature.next}</td>
+              </tr>
+            `;
+          })
+          .join("");
+        updateMetrics();
+      }
+
+      function updateRecord(event) {
+        const target = event.target;
+        const row = target.closest("tr[data-id]");
+        if (!row) return;
+
+        const records = loadManualRecords();
+        const id = row.dataset.id;
+        records[id] = records[id] || {};
+
+        if (target.dataset.field === "passed") {
+          records[id].passed = target.checked;
+        }
+
+        if (target.dataset.field === "note") {
+          records[id].note = target.value;
+        }
+
+        records[id].updatedAt = new Date().toISOString();
+        saveManualRecords(records);
+        updateMetrics();
+      }
+
+      document.addEventListener("change", updateRecord);
+      document.addEventListener("input", updateRecord);
+
+      document.getElementById("exportButton").addEventListener("click", async () => {
+        const records = loadManualRecords();
+        const payload = JSON.stringify(records, null, 2);
+        const exportBox = document.getElementById("exportBox");
+        const exportPayload = document.getElementById("exportPayload");
+        const exportMessage = document.getElementById("exportMessage");
+        exportPayload.value = payload;
+        exportBox.classList.add("is-visible");
+        try {
+          await navigator.clipboard.writeText(payload);
+          exportMessage.textContent = "人工验证记录已复制到剪贴板，也可从下方文本框复制。";
+        } catch {
+          exportMessage.textContent = "浏览器未允许自动复制，请从下方文本框手动复制。";
+        }
+      });
+
+      document.getElementById("resetButton").addEventListener("click", () => {
+        localStorage.removeItem(STORAGE_KEY);
+        document.getElementById("exportBox").classList.remove("is-visible");
+        render();
+      });
+
+      render();
+    </script>
+  </body>
+</html>

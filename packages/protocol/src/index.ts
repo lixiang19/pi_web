@@ -130,6 +130,8 @@ export interface SessionSummary {
 	branch?: string;
 	worktreeRoot?: string;
 	worktreeLabel?: string;
+	taskId?: string;
+	sessionType?: string;
 }
 
 export interface SessionContextSummary {

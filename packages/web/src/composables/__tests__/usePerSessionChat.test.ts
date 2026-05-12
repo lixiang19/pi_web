@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { usePerSessionChat } from "@/composables/usePerSessionChat";
 import type { ThinkingLevel, UiSessionSnapshot } from "@/lib/types";
 
-const mockSessions = ref<Array<{ id: string; title?: string; cwd?: string; agent?: string; model?: string; thinkingLevel?: string }>>([]);
+const mockSessions = ref<Array<{ id: string; title?: string; cwd?: string; agent?: string; model?: string; thinkingLevel?: string; taskId?: string; sessionType?: string }>>([]);
 const mockSessionCache = ref<Record<string, { snapshot?: UiSessionSnapshot }>>({});
 const mockAgents = ref<Array<{ name: string; model?: string; thinking?: string }>>([]);
 const mockModels = ref<Array<{ value: string; label: string }>>([]);
@@ -44,6 +44,7 @@ vi.mock("@/composables/usePiChatCore", () => ({
     applySelectionUpdate: mockApplySelectionUpdate,
     syncComposerSelection: mockSyncComposerSelection,
     syncComposerDraftState: vi.fn(),
+    syncSessions: vi.fn(),
     getCachedSessionSnapshot: (sid: string) => mockSessionCache.value[sid]?.snapshot ?? null,
     createHistoryMeta: vi.fn(() => ({ loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 })),
     expandVisibleHistoryMeta: vi.fn((meta) => meta),
@@ -67,6 +68,13 @@ vi.mock("@/composables/usePiChatCore", () => ({
     prefetchNeighborSessions: vi.fn(),
   }),
 }));
+
+class MockEventSource {
+  close = vi.fn();
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+}
+(globalThis as unknown as Record<string, unknown>)['EventSource'] = MockEventSource;
 
 vi.mock("@/lib/api", () => ({
   abortSession: vi.fn(),
@@ -183,5 +191,79 @@ describe("usePerSessionChat - temporary selection does NOT write global settings
     expect(chat.composer.selectedModel).toBe("draft-model");
     expect(mockSettingsStore.setDefaultModel).not.toHaveBeenCalled();
     expect(mockApplySelectionUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("usePerSessionChat - forkSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSessions.value = [];
+    mockSessionCache.value = {};
+    mockAgents.value = [];
+    mockModels.value = [];
+    mockSettingsStore.defaultModel = "global-model";
+    mockSettingsStore.defaultAgent = "global-agent";
+    mockSettingsStore.defaultThinkingLevel = "medium";
+  });
+
+  it("forkSession creates new session with parentSessionId", async () => {
+    const sessionIdRef = ref("session-1");
+    const chat = usePerSessionChat(sessionIdRef);
+
+    mockSessions.value = [
+      { id: "session-1", title: "Original", cwd: "/workspace", model: "m1", agent: "a1", thinkingLevel: "low" },
+    ];
+    mockSessionCache.value = {
+      "session-1": {
+        snapshot: {
+          id: "session-1",
+          messages: [],
+          historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+
+    const result = await chat.forkSession({ prompt: "forked prompt" });
+
+    expect(result).not.toBeNull();
+    expect(result?.id).toBe("new-session");
+  });
+
+  it("forkSession returns null when no current session", async () => {
+    const sessionIdRef = ref("");
+    const chat = usePerSessionChat(sessionIdRef);
+
+    const result = await chat.forkSession({ prompt: "forked prompt" });
+
+    expect(result).toBeNull();
+  });
+
+  it("activeSession exposes taskId and sessionType", async () => {
+    const sessionIdRef = ref("session-task");
+    const chat = usePerSessionChat(sessionIdRef);
+
+    mockSessions.value = [
+      { id: "session-task", title: "Task Session", cwd: "/workspace", taskId: "task-1", sessionType: "task" } as unknown as typeof mockSessions.value[number],
+    ];
+    mockSessionCache.value = {
+      "session-task": {
+        snapshot: {
+          id: "session-task",
+          messages: [],
+          historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+
+    expect(chat.activeSession.value).toBeDefined();
+    expect(chat.activeSession.value?.id).toBe("session-task");
+    expect((chat.activeSession.value as unknown as { taskId?: string }).taskId).toBe("task-1");
+    expect((chat.activeSession.value as unknown as { sessionType?: string }).sessionType).toBe("task");
   });
 });

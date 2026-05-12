@@ -1,0 +1,133 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - button "闪念 2" [ref=e539]:
+          - img [ref=e8]
+          - generic [ref=e11]: 闪念
+          - generic [ref=e540]: "2"
+        - button "搜索" [ref=e12]:
+          - img [ref=e13]
+          - generic [ref=e16]: 搜索
+        - button "通知" [ref=e17]:
+          - img [ref=e18]
+          - generic [ref=e21]: 通知
+        - button "任务" [ref=e22]:
+          - img [ref=e23]
+          - generic [ref=e26]: 任务
+        - button "文件" [ref=e27]:
+          - img [ref=e28]
+          - generic [ref=e32]: 文件
+        - button "终端" [ref=e33]:
+          - img [ref=e34]
+          - generic [ref=e37]: 终端
+        - button "自动化" [ref=e38]:
+          - img [ref=e39]
+          - generic [ref=e42]: 自动化
+        - button "Skill" [ref=e43]:
+          - img [ref=e44]
+          - generic [ref=e46]: Skill
+        - button "设置" [ref=e47]:
+          - img [ref=e48]
+          - generic [ref=e51]: 设置
+      - generic [ref=e541]:
+        - generic [ref=e542]: 项目
+        - button "openchamber /Users/lixiang/Documents/myCode/openchamber 外部 服务器文件夹 离线" [ref=e545]:
+          - img [ref=e636]
+          - generic [ref=e548]: openchamber
+          - generic [ref=e549]: /Users/lixiang/Documents/myCode/openchamber
+          - generic [ref=e550]: 外部
+          - generic [ref=e551]: 服务器文件夹
+          - generic [ref=e552]: 离线
+        - button "AuroraPlatformWeb /Users/lixiang/Documents/myCode/AuroraPlatformWeb 外部 服务器文件夹 Git 离线" [ref=e555]:
+          - img [ref=e556]
+          - generic [ref=e558]: AuroraPlatformWeb
+          - generic [ref=e559]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+          - generic [ref=e560]: 外部
+          - generic [ref=e561]: 服务器文件夹
+          - generic [ref=e562]: Git
+          - generic [ref=e563]: 离线
+      - generic [ref=e52]:
+        - generic [ref=e53]: 工作空间会话
+        - button "你好" [active] [ref=e54]:
+          - generic [ref=e55]: 你好
+      - generic [ref=e429]:
+        - button "新建" [ref=e430]:
+          - img [ref=e431]
+          - text: 新建
+        - button "文件夹" [ref=e434]:
+          - img [ref=e435]
+          - text: 文件夹
+        - button "Canvas" [ref=e437]:
+          - img [ref=e438]
+          - text: Canvas
+        - button "Base" [ref=e443]:
+          - img [ref=e444]
+          - text: Base
+      - generic:
+        - generic:
+          - generic:
+            - tablist [ref=e448]:
+              - tab [selected] [ref=e449]:
+                - img
+              - tab [ref=e450]:
+                - img
+              - tab [ref=e451]:
+                - img
+              - tab [ref=e452]:
+                - img
+            - tabpanel:
+              - button [ref=e454]:
+                - img [ref=e455]
+              - paragraph [ref=e565]: Requested path is outside the allowed workspace root
+      - button "归档" [ref=e466]:
+        - img [ref=e467]
+        - generic [ref=e470]: 归档
+    - main [ref=e471]:
+      - generic [ref=e472]:
+        - generic [ref=e474]:
+          - generic [ref=e475]:
+            - generic [ref=e476] [cursor=pointer]:
+              - generic [ref=e478]: 主页
+              - button [ref=e479]:
+                - img [ref=e480]
+            - generic [ref=e638] [cursor=pointer]:
+              - generic [ref=e640]: 你好
+              - button [ref=e641]:
+                - img [ref=e642]
+          - button [ref=e483]:
+            - img [ref=e484]
+        - generic [ref=e647]:
+          - generic [ref=e652]:
+            - button "折叠旧轮次" [ref=e654]
+            - paragraph [ref=e659]:
+              - generic [ref=e660]: 你好
+            - generic [ref=e662]:
+              - paragraph [ref=e666]:
+                - generic [ref=e667]: 你好！😊 有什么我可以帮你的吗？无论是代码开发、项目探索、文件编辑，还是其他技术问题，都可以跟我说！
+              - button "复制" [ref=e669]:
+                - img
+                - text: 复制
+          - generic [ref=e672]:
+            - generic [ref=e673]:
+              - textbox "输入消息… 支持 Markdown，Shift + Enter 换行，可拖拽文件路径到输入框" [ref=e674]
+              - generic [ref=e675]:
+                - button [disabled]:
+                  - img
+            - generic [ref=e678]:
+              - combobox [ref=e679]:
+                - img
+                - generic [ref=e680]: opencode-deepseek/deepseek-v4-flash
+                - img
+              - combobox [ref=e681]:
+                - img
+                - generic [ref=e682]: Medium
+                - img
+              - combobox [ref=e683]:
+                - img
+                - generic [ref=e684]: Direct
+                - img
+  - button "打开闪念捕捉" [ref=e538]:
+    - img
+  - region "Notifications alt+T":
+    - list

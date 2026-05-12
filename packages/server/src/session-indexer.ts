@@ -84,6 +84,8 @@ export interface IndexedSessionSummary {
   sessionFile: string;
   parentSessionId?: string;
   contextId: string;
+  taskId?: string;
+  sessionType?: string;
 }
 
 export interface IndexedSessionLookup {
@@ -103,6 +105,8 @@ export interface IndexedSessionLookup {
   lastModel?: string;
   lastThinkingLevel?: string;
   userRoundCount: number;
+  taskId?: string;
+  sessionType?: string;
 }
 
 export interface IndexedSessionContextSummary {
@@ -624,9 +628,13 @@ export const listIndexedSessions = async (
          s.archived,
          s.session_file AS sessionFile,
          s.parent_session_id AS parentSessionId,
-         s.context_id AS contextId
+         s.context_id AS contextId,
+         si.task_id AS taskId,
+         si.session_type AS sessionType
        FROM sessions s
-       ORDER BY s.archived ASC, s.updated_at DESC`,
+       LEFT JOIN session_index si ON si.session_id = s.session_id
+       WHERE s.archived = 0
+       ORDER BY s.updated_at DESC`,
     )
     .all() as Array<{
       id: string;
@@ -638,6 +646,8 @@ export const listIndexedSessions = async (
       sessionFile: string;
       parentSessionId: string | null;
       contextId: string;
+      taskId: string | null;
+      sessionType: string | null;
     }>;
   return rows.map((row) => {
     const activeRecord = activeSessions.get(row.id);
@@ -654,6 +664,8 @@ export const listIndexedSessions = async (
       sessionFile: row.sessionFile,
       parentSessionId: row.parentSessionId || undefined,
       contextId: row.contextId,
+      taskId: row.taskId || undefined,
+      sessionType: row.sessionType || undefined,
     };
   });
 };
@@ -680,9 +692,12 @@ export const getIndexedSessionLookup = async (
          s.last_thinking_level AS lastThinkingLevel,
          ss.agent_name AS agent,
          ss.explicit_model AS explicitModel,
-         ss.explicit_thinking_level AS explicitThinkingLevel
+         ss.explicit_thinking_level AS explicitThinkingLevel,
+         si.task_id AS taskId,
+         si.session_type AS sessionType
        FROM sessions s
        LEFT JOIN session_selections ss ON ss.session_id = s.session_id
+       LEFT JOIN session_index si ON si.session_id = s.session_id
        WHERE s.session_id = ?`,
     )
     .get(sessionId) as
@@ -703,6 +718,8 @@ export const getIndexedSessionLookup = async (
         agent: string | null;
         explicitModel: string | null;
         explicitThinkingLevel: string | null;
+        taskId: string | null;
+        sessionType: string | null;
       }
     | undefined;
 
@@ -727,6 +744,8 @@ export const getIndexedSessionLookup = async (
     lastModel: row.lastModel || undefined,
     lastThinkingLevel: row.lastThinkingLevel || undefined,
     userRoundCount: row.userRoundCount,
+    taskId: row.taskId || undefined,
+    sessionType: row.sessionType || undefined,
   };
 };
 

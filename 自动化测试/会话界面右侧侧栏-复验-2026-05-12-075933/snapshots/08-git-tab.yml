@@ -1,0 +1,211 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - button "闪念 20" [ref=e876]:
+          - img [ref=e8]
+          - generic [ref=e11]: 闪念
+          - generic [ref=e540]: "20"
+        - button "搜索" [ref=e12]:
+          - img [ref=e13]
+          - generic [ref=e16]: 搜索
+        - button "通知" [ref=e17]:
+          - img [ref=e18]
+          - generic [ref=e21]: 通知
+        - button "任务" [ref=e22]:
+          - img [ref=e23]
+          - generic [ref=e26]: 任务
+        - button "文件" [ref=e27]:
+          - img [ref=e28]
+          - generic [ref=e32]: 文件
+        - button "终端" [ref=e33]:
+          - img [ref=e34]
+          - generic [ref=e37]: 终端
+        - button "自动化" [ref=e38]:
+          - img [ref=e39]
+          - generic [ref=e42]: 自动化
+        - button "Skill" [ref=e43]:
+          - img [ref=e44]
+          - generic [ref=e46]: Skill
+        - button "设置" [ref=e47]:
+          - img [ref=e48]
+          - generic [ref=e51]: 设置
+      - generic [ref=e541]:
+        - generic [ref=e542]: 项目
+        - button "AuroraPlatformWeb /Users/lixiang/Documents/myCode/AuroraPlatformWeb 外部 服务器文件夹 Git 离线" [ref=e545]:
+          - img [ref=e546]
+          - generic [ref=e548]: AuroraPlatformWeb
+          - generic [ref=e549]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+          - generic [ref=e550]: 外部
+          - generic [ref=e551]: 服务器文件夹
+          - generic [ref=e552]: Git
+          - generic [ref=e553]: 离线
+        - button "openchamber /Users/lixiang/Documents/myCode/openchamber 外部 服务器文件夹 离线" [ref=e556]:
+          - img [ref=e557]
+          - generic [ref=e559]: openchamber
+          - generic [ref=e560]: /Users/lixiang/Documents/myCode/openchamber
+          - generic [ref=e561]: 外部
+          - generic [ref=e562]: 服务器文件夹
+          - generic [ref=e563]: 离线
+      - generic [ref=e52]:
+        - generic [ref=e53]: 工作空间会话
+        - button "你好" [ref=e54]:
+          - generic [ref=e55]: 你好
+        - button "新会话" [ref=e697]:
+          - generic [ref=e698]: 新会话
+      - generic [ref=e429]:
+        - button "新建" [ref=e430]:
+          - img [ref=e431]
+          - text: 新建
+        - button "文件夹" [ref=e434]:
+          - img [ref=e435]
+          - text: 文件夹
+        - button "Canvas" [ref=e437]:
+          - img [ref=e438]
+          - text: Canvas
+        - button "Base" [ref=e443]:
+          - img [ref=e444]
+          - text: Base
+      - generic:
+        - generic:
+          - generic:
+            - tablist [ref=e448]:
+              - tab [selected] [ref=e449]:
+                - img
+              - tab [ref=e450]:
+                - img
+              - tab [ref=e451]:
+                - img
+              - tab [ref=e452]:
+                - img
+            - tabpanel:
+              - button [ref=e454]:
+                - img [ref=e455]
+              - paragraph [ref=e565]: Requested path is outside the allowed workspace root
+      - button "归档" [ref=e466]:
+        - img [ref=e467]
+        - generic [ref=e470]: 归档
+    - main [ref=e471]:
+      - generic [ref=e472]:
+        - generic [ref=e474]:
+          - generic [ref=e475]:
+            - generic [ref=e476] [cursor=pointer]:
+              - generic [ref=e478]: 主页
+              - button [ref=e479]:
+                - img [ref=e480]
+            - generic [ref=e615] [cursor=pointer]:
+              - generic [ref=e617]: 你好
+              - button [ref=e618]:
+                - img [ref=e619]
+            - generic [ref=e699] [cursor=pointer]:
+              - generic [ref=e701]: 新会话
+              - button [ref=e702]:
+                - img [ref=e703]
+          - button [ref=e483]:
+            - img [ref=e484]
+        - generic [ref=e708]:
+          - main [ref=e709]:
+            - generic [ref=e710]:
+              - generic [ref=e716]:
+                - img [ref=e718]
+                - generic [ref=e726]:
+                  - heading "暂无消息" [level=3] [ref=e727]
+                  - paragraph [ref=e728]: 发送一条消息开始对话，或通过资源面板插入 prompt、skill 与 command。
+              - generic [ref=e731]:
+                - generic [ref=e732]:
+                  - textbox "输入消息… 支持 Markdown，Shift + Enter 换行，可拖拽文件路径到输入框" [ref=e733]
+                  - generic [ref=e734]:
+                    - button [disabled]:
+                      - img
+                - generic [ref=e737]:
+                  - combobox [ref=e738]:
+                    - img
+                    - generic [ref=e739]: Aurora / kimi2.6
+                    - img
+                  - combobox [ref=e740]:
+                    - img
+                    - generic [ref=e741]: Medium
+                    - img
+                  - combobox [ref=e742]:
+                    - img
+                    - generic [ref=e743]: Direct
+                    - img
+          - complementary [ref=e744]:
+            - generic [ref=e745]:
+              - tablist [ref=e746]:
+                - tab "摘要" [ref=e747]:
+                  - img
+                  - text: 摘要
+                - tab "文件" [ref=e748]:
+                  - img
+                  - text: 文件
+                - tab "Git" [active] [selected] [ref=e749]:
+                  - img
+                  - text: Git
+                - tab "Diff" [ref=e750]:
+                  - img
+                  - text: Diff
+              - tabpanel "Git" [ref=e877]:
+                - generic [ref=e878]:
+                  - generic [ref=e879]:
+                    - generic [ref=e880]:
+                      - img [ref=e881]
+                      - generic [ref=e885]: main
+                    - button [ref=e887]:
+                      - img
+                  - generic [ref=e889]:
+                    - button "Changes 5 5/5" [ref=e890] [cursor=pointer]:
+                      - generic [ref=e891]:
+                        - checkbox [checked] [ref=e892]:
+                          - generic:
+                            - img
+                        - generic [ref=e893]: Changes
+                        - generic [ref=e894]: "5"
+                      - generic [ref=e895]: 5/5
+                    - generic [ref=e896]:
+                      - generic [ref=e897]:
+                        - checkbox [checked] [ref=e898]:
+                          - generic:
+                            - img
+                        - img [ref=e899]
+                        - generic [ref=e904]: README.md
+                        - generic [ref=e905]: modified
+                      - generic [ref=e906]:
+                        - checkbox [checked] [ref=e907]:
+                          - generic:
+                            - img
+                        - img [ref=e908]
+                        - generic [ref=e913]: 啊啊.md
+                        - generic [ref=e914]: modified
+                      - generic [ref=e915]:
+                        - checkbox [checked] [ref=e916]:
+                          - generic:
+                            - img
+                        - img [ref=e917]
+                        - generic [ref=e922]: 未命名1.md
+                        - generic [ref=e923]: modified
+                      - generic [ref=e924]:
+                        - checkbox [checked] [ref=e925]:
+                          - generic:
+                            - img
+                        - img [ref=e926]
+                        - generic [ref=e931]: 未命名2.md
+                        - generic [ref=e932]: modified
+                      - generic [ref=e933]:
+                        - checkbox [checked] [ref=e934]:
+                          - generic:
+                            - img
+                        - img [ref=e935]
+                        - generic [ref=e940]: 未命名3.md
+                        - generic [ref=e941]: modified
+                  - generic [ref=e942]:
+                    - textbox "Commit message..." [ref=e943]
+                    - generic [ref=e944]:
+                      - button "Commit (5)" [disabled]:
+                        - img
+                        - text: Commit
+                        - generic: (5)
+  - button "打开闪念捕捉" [ref=e538]:
+    - img
+  - region "Notifications alt+T":
+    - list

@@ -84,4 +84,30 @@ describe("POST /api/sessions/:sessionId/messages archived guard", () => {
 		const msgRes = await api.post(`/api/sessions/${sessionId}/messages`).send({ prompt: "hi" });
 		expect(msgRes.status).toBe(403);
 	});
+
+	it("excludes archived sessions from GET /api/sessions", async () => {
+		const db = await getRidgeDb();
+		const sessionId = `session-archive-list-${Date.now()}`;
+		// Insert a fake session row directly
+		db.prepare(
+			`INSERT INTO sessions(session_id, title, cwd, session_file, created_at, updated_at, archived)
+			 VALUES(?, ?, ?, ?, ?, ?, ?)`,
+		).run(sessionId, "archive-list-test", WORKSPACE, "", Date.now(), Date.now(), 0);
+
+		// Before archive: should appear in list
+		const beforeRes = await api.get("/api/sessions");
+		expect(beforeRes.status).toBe(200);
+		const beforeList = beforeRes.body as Array<{ id: string; archived: boolean }>;
+		expect(beforeList.find((s) => s.id === sessionId)).toBeDefined();
+
+		// Archive it
+		const archiveRes = await api.post(`/api/sessions/${sessionId}/archive`).send({ archived: true });
+		expect(archiveRes.status).toBe(200);
+
+		// After archive: should NOT appear in list
+		const afterRes = await api.get("/api/sessions");
+		expect(afterRes.status).toBe(200);
+		const afterList = afterRes.body as Array<{ id: string; archived: boolean }>;
+		expect(afterList.find((s) => s.id === sessionId)).toBeUndefined();
+	});
 });

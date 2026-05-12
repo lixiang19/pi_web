@@ -909,6 +909,32 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   };
 
   // ============================================================================
+  // 分叉会话
+  // ============================================================================
+
+  const forkSession = async (options: { prompt: string }): Promise<{ id: string; title: string } | null> => {
+    if (!resolvedSessionId.value) {
+      error.value = "当前无会话，无法分叉";
+      return null;
+    }
+    const parent = activeSession.value;
+    const parentSnapshot = core.getCachedSessionSnapshot(resolvedSessionId.value);
+    const snapshot = await createAndLoadSession({
+      cwd: activeDraftContext.value?.cwd || parent?.cwd || parentSnapshot?.cwd,
+      parentSessionId: resolvedSessionId.value,
+      model: composer.selectedModel || undefined,
+      thinkingLevel: composer.selectedThinkingLevel || null,
+      agent: composer.selectedAgent || null,
+    });
+    // 如果提供了 prompt，在 fork 后立即发送
+    if (options.prompt?.trim()) {
+      composer.draftText = options.prompt.trim();
+      await submit();
+    }
+    return { id: snapshot.id, title: snapshot.title || "新会话" };
+  };
+
+  // ============================================================================
   // 生命周期
   // ============================================================================
 
@@ -961,6 +987,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     disconnectStream,
     connectStream,
     applySnapshotToSession,
+    forkSession,
 
     // Core reference (for accessing global state)
     core,
