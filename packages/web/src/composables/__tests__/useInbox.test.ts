@@ -16,9 +16,12 @@ vi.mock("@/lib/api", () => ({
 	processFleetingToJournal: vi.fn(),
 	processFleetingToClip: vi.fn(),
 	processFleetingToTask: vi.fn(),
+	processFleetingToMilestone: vi.fn(),
+	processFleetingToAttachment: vi.fn(),
 	uploadFleetingAttachments: vi.fn(),
 	getFleetingAttachments: vi.fn(),
 	triggerFleetingAnalysis: vi.fn(),
+	getProjects: vi.fn(),
 }));
 
 import {
@@ -28,6 +31,8 @@ import {
 	processFleetingToClip,
 	processFleetingToJournal,
 	processFleetingToTask,
+	processFleetingToMilestone,
+	processFleetingToAttachment,
 	getFleetingAttachments,
 	triggerFleetingAnalysis,
 } from "@/lib/api";
@@ -38,6 +43,8 @@ const mockDeleteFleetingNote = vi.mocked(deleteFleetingNote);
 const mockProcessFleetingToJournal = vi.mocked(processFleetingToJournal);
 const mockProcessFleetingToClip = vi.mocked(processFleetingToClip);
 const mockProcessFleetingToTask = vi.mocked(processFleetingToTask);
+const mockProcessFleetingToMilestone = vi.mocked(processFleetingToMilestone);
+const mockProcessFleetingToAttachment = vi.mocked(processFleetingToAttachment);
 const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
 const mockTriggerFleetingAnalysis = vi.mocked(triggerFleetingAnalysis);
 

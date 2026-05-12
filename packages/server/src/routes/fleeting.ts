@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import express, {
 	type NextFunction,
 	type Request,
@@ -15,6 +16,84 @@ import {
 	migrateFleetingAttachments,
 } from "../fleeting-attachments.js";
 import type { RidgeDatabase } from "../db/index.js";
+
+// --- Task system helpers (direct DB access to avoid circular deps / async global DB) ---
+// These mirror task-system.ts logic but work with the injected db and workspaceDir.
+
+const TASK_STATUSES = [
+	"pending",
+	"in_progress",
+	"blocked",
+	"reviewing",
+	"completed",
+] as const;
+
+const TASK_PRIORITIES = ["normal", "important", "urgent"] as const;
+
+const DEFAULT_MILESTONE_TITLE = "未归属";
+const DEFAULT_MILESTONE_COLOR = "#64748b";
+
+const normalizeWorkspacePath = (workspaceDir: string): string =>
+	path.resolve(workspaceDir);
+
+const createId = (prefix: string): string => `${prefix}-${crypto.randomUUID()}`;
+
+const getMilestoneById = (
+	db: RidgeDatabase,
+	workspacePath: string,
+	milestoneId: string,
+) => {
+	const row = db
+		.prepare(
+			`SELECT m.*, COUNT(t.task_id) AS task_count
+       FROM workspace_milestones m
+       LEFT JOIN workspace_tasks t ON t.milestone_id = m.milestone_id
+       WHERE m.workspace_path = ? AND m.milestone_id = ?
+       GROUP BY m.milestone_id`,
+		)
+		.get(workspacePath, milestoneId) as Record<string, unknown> | undefined;
+	return row ?? null;
+};
+
+const ensureDefaultMilestone = (db: RidgeDatabase, workspaceDir: string) => {
+	const workspacePath = normalizeWorkspacePath(workspaceDir);
+	const existing = db
+		.prepare(
+			`SELECT m.*, COUNT(t.task_id) AS task_count
+       FROM workspace_milestones m
+       LEFT JOIN workspace_tasks t ON t.milestone_id = m.milestone_id
+       WHERE m.workspace_path = ? AND m.is_system = 1 AND m.title = ?
+       GROUP BY m.milestone_id`,
+		)
+		.get(workspacePath, DEFAULT_MILESTONE_TITLE) as Record<string, unknown> | undefined;
+
+	if (existing) {
+		return existing.milestone_id as string;
+	}
+
+	const now = Date.now();
+	const id = createId("milestone");
+	db.prepare(
+		`INSERT INTO workspace_milestones(
+      milestone_id, workspace_path, title, goal, acceptance_criteria, status,
+      due_date, is_system, color, sort_order, created_at, updated_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	).run(
+		id,
+		workspacePath,
+		DEFAULT_MILESTONE_TITLE,
+		"系统默认里程碑，用于承载未手动归属的任务",
+		"系统里程碑不允许完成",
+		"pending",
+		null,
+		1,
+		DEFAULT_MILESTONE_COLOR,
+		0,
+		now,
+		now,
+	);
+	return id;
+};
 
 type HttpError = Error & { statusCode?: number };
 
@@ -79,6 +158,23 @@ const clipSchema = z.object({
 	url: z.string().trim().optional().default(""),
 	content: z.string().trim().min(1),
 	source: z.string().trim().optional().default(""),
+});
+
+const taskSchema = z.object({
+	title: z.string().trim().min(1),
+	priority: z.enum(TASK_PRIORITIES),
+	acceptanceCriteria: z.string().trim().min(1),
+	dueDate: z.number().int().nonnegative().nullable().optional(),
+	projectId: z.string().trim().min(1).nullable().optional(),
+});
+
+const milestoneSchema = z.object({
+	title: z.string().trim().min(1),
+	goal: z.string().trim().min(1),
+	acceptanceCriteria: z.string().trim().min(1),
+	dueDate: z.number().int().nonnegative().nullable().optional(),
+	color: z.string().trim().min(1).optional(),
+	projectId: z.string().trim().min(1).nullable().optional(),
 });
 
 const toPublicNote = (row: Record<string, unknown>) => ({
@@ -177,6 +273,7 @@ const upload = multer({
 export function createFleetingRouter(deps: FleetingRouterDeps) {
 	const router = express.Router();
 	const { db, workspaceDir, getAnalysisRunner } = deps;
+	const workspacePath = normalizeWorkspacePath(workspaceDir);
 
 	router.get("/", (_req: Request, res: Response, next: NextFunction) => {
 		try {
@@ -471,14 +568,158 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 		},
 	);
 
+	// ====== process/task ======
 	router.post("/:noteId/process/task", async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			getNoteOrThrow(db, req.params.noteId);
-			// 任务系统尚未接入，不迁移附件（处理未成功，临时附件应保留）
-			res.status(202).json({
-				processed: false,
-				message: "任务系统正在接入中，暂不能从闪念创建任务",
+			const payload = taskSchema.parse(req.body ?? {});
+			const { migratedPaths, failed } = await migrateFleetingAttachments(
+				db,
+				workspaceDir,
+				req.params.noteId,
+			);
+			const defaultMilestoneId = ensureDefaultMilestone(db, workspaceDir);
+			const now = Date.now();
+			const taskId = createId("task");
+
+			const createAndDelete = db.transaction(() => {
+				db.prepare(
+					`INSERT INTO workspace_tasks(
+					  task_id, workspace_path, project_id, milestone_id, title, status, priority,
+					  acceptance_criteria, due_date, blocked_reason, processing_session_id,
+					  sort_order, created_at, updated_at
+					) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				).run(
+					taskId,
+					workspacePath,
+					payload.projectId ?? null,
+					defaultMilestoneId,
+					payload.title,
+					"pending",
+					payload.priority,
+					payload.acceptanceCriteria,
+					payload.dueDate ?? null,
+					null,
+					null,
+					now,
+					now,
+					now,
+				);
+				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
 			});
+			createAndDelete();
+
+			const row = db
+				.prepare("SELECT * FROM workspace_tasks WHERE task_id = ?")
+				.get(taskId) as Record<string, unknown>;
+			res.json({
+				deleted: true,
+				task: {
+					id: row.task_id,
+					workspacePath: row.workspace_path,
+					projectId: row.project_id || null,
+					milestoneId: row.milestone_id,
+					title: row.title,
+					status: row.status,
+					priority: row.priority,
+					acceptanceCriteria: row.acceptance_criteria,
+					dueDate: row.due_date,
+					blockedReason: row.blocked_reason,
+					processingSessionId: row.processing_session_id,
+					sortOrder: row.sort_order,
+					createdAt: row.created_at,
+					updatedAt: row.updated_at,
+				},
+				migratedAttachments: migratedPaths,
+				failedAttachments: failed,
+			});
+		} catch (error) {
+			forwardError(error, next);
+		}
+	});
+
+	// ====== process/milestone ======
+	router.post("/:noteId/process/milestone", async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			getNoteOrThrow(db, req.params.noteId);
+			const payload = milestoneSchema.parse(req.body ?? {});
+			const { migratedPaths, failed } = await migrateFleetingAttachments(
+				db,
+				workspaceDir,
+				req.params.noteId,
+			);
+			const now = Date.now();
+			const milestoneId = createId("milestone");
+
+			const createAndDelete = db.transaction(() => {
+				db.prepare(
+					`INSERT INTO workspace_milestones(
+					  milestone_id, workspace_path, project_id, title, goal, acceptance_criteria, status,
+					  due_date, is_system, color, sort_order, created_at, updated_at
+					) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				).run(
+					milestoneId,
+					workspacePath,
+					payload.projectId ?? null,
+					payload.title,
+					payload.goal,
+					payload.acceptanceCriteria,
+					"pending",
+					payload.dueDate ?? null,
+					0,
+					payload.color || DEFAULT_MILESTONE_COLOR,
+					now,
+					now,
+					now,
+				);
+				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
+			});
+			createAndDelete();
+
+			const row = db
+				.prepare("SELECT * FROM workspace_milestones WHERE milestone_id = ?")
+				.get(milestoneId) as Record<string, unknown>;
+			res.json({
+				deleted: true,
+				milestone: {
+					id: row.milestone_id,
+					workspacePath: row.workspace_path,
+					projectId: row.project_id || null,
+					title: row.title,
+					goal: row.goal,
+					acceptanceCriteria: row.acceptance_criteria,
+					status: row.status,
+					dueDate: row.due_date,
+					isSystem: row.is_system === 1,
+					color: row.color,
+					sortOrder: row.sort_order,
+					createdAt: row.created_at,
+					updatedAt: row.updated_at,
+				},
+				migratedAttachments: migratedPaths,
+				failedAttachments: failed,
+			});
+		} catch (error) {
+			forwardError(error, next);
+		}
+	});
+
+	// ====== process/attachment ======
+	router.post("/:noteId/process/attachment", async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			getNoteOrThrow(db, req.params.noteId);
+			const { migratedPaths, failed } = await migrateFleetingAttachments(
+				db,
+				workspaceDir,
+				req.params.noteId,
+			);
+			if (migratedPaths.length === 0 && failed.length === 0) {
+				const error = new Error("该闪念没有附件") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
+			res.json({ deleted: true, migratedAttachments: migratedPaths, failedAttachments: failed });
 		} catch (error) {
 			forwardError(error, next);
 		}

@@ -46,6 +46,41 @@ CREATE TABLE IF NOT EXISTS clips (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS workspace_milestones (
+  milestone_id TEXT PRIMARY KEY,
+  workspace_path TEXT NOT NULL,
+  project_id TEXT,
+  title TEXT NOT NULL,
+  goal TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL,
+  status TEXT NOT NULL,
+  due_date INTEGER,
+  is_system INTEGER NOT NULL DEFAULT 0,
+  color TEXT NOT NULL DEFAULT '#64748b',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_milestones_default
+  ON workspace_milestones(workspace_path, title)
+  WHERE is_system = 1;
+CREATE TABLE IF NOT EXISTS workspace_tasks (
+  task_id TEXT PRIMARY KEY,
+  workspace_path TEXT NOT NULL,
+  project_id TEXT,
+  milestone_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  priority TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL,
+  due_date INTEGER,
+  blocked_reason TEXT,
+  processing_session_id TEXT UNIQUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(milestone_id) REFERENCES workspace_milestones(milestone_id) ON DELETE RESTRICT
+);
 CREATE TABLE IF NOT EXISTS fleeting_attachments (
   attachment_id TEXT PRIMARY KEY,
   note_id TEXT NOT NULL,
@@ -257,7 +292,33 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(files.filter((f) => f.startsWith("conflict"))).toHaveLength(2);
 	});
 
-	it("keeps temporary attachments when processing fails", async () => {
+	it("keeps temporary attachments when task processing fails", async () => {
+		const noteRes = await request(app)
+			.post("/api/fleeting")
+			.send({ content: "任务闪念" });
+		const noteId = noteRes.body.note.id;
+
+		await request(app)
+			.post(`/api/fleeting/${noteId}/attachments`)
+			.attach("files", Buffer.from("task attachment"), { filename: "task.txt" });
+
+		// Send invalid payload to cause failure
+		const res = await request(app)
+			.post(`/api/fleeting/${noteId}/process/task`)
+			.send({ title: "" });
+
+		expect(res.status).toBe(400);
+
+		// Note should still exist
+		const list = await request(app).get("/api/fleeting");
+		expect(list.body.notes).toHaveLength(1);
+
+		// Attachment should still exist in temp dir
+		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
+		expect(await fs.readdir(tempDir)).toHaveLength(1);
+	});
+
+	it("migrates attachments and deletes note on successful task processing", async () => {
 		const noteRes = await request(app)
 			.post("/api/fleeting")
 			.send({ content: "任务闪念" });
@@ -268,17 +329,19 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.attach("files", Buffer.from("task attachment"), { filename: "task.txt" });
 
 		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/task`);
+			.post(`/api/fleeting/${noteId}/process/task`)
+			.send({ title: "整理任务系统", priority: "normal", acceptanceCriteria: "完成" });
 
-		expect(res.status).toBe(202);
-		expect(res.body.processed).toBe(false);
+		expect(res.status).toBe(200);
+		expect(res.body.deleted).toBe(true);
+		expect(res.body.task.title).toBe("整理任务系统");
+		expect(res.body.migratedAttachments).toHaveLength(1);
 
-		// Note should still exist
 		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes).toEqual([]);
 
-		// Attachment should still exist in temp dir
-		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
-		expect(await fs.readdir(tempDir)).toHaveLength(1);
+		const formalPath = path.join(workspaceDir, "附件", "task.txt");
+		const content = await fs.readFile(formalPath, "utf-8");
+		expect(content).toBe("task attachment");
 	});
 });

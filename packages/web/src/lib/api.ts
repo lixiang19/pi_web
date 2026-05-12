@@ -886,9 +886,35 @@ export function processFleetingToClip(
 	);
 }
 
-export function processFleetingToTask(noteId: string) {
-	return request<{ processed: false; message: string; migratedAttachments?: string[]; failedAttachments?: string[] }>(
+export function processFleetingToTask(
+	noteId: string,
+	data: { title: string; priority: WorkspaceTaskPriority; acceptanceCriteria: string; dueDate?: number | null; projectId?: string | null },
+) {
+	return request<{ deleted: true; task: WorkspaceTask; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/task`,
+		{
+			method: "POST",
+			body: JSON.stringify(data),
+		},
+	);
+}
+
+export function processFleetingToMilestone(
+	noteId: string,
+	data: { title: string; goal: string; acceptanceCriteria: string; dueDate?: number | null; color?: string; projectId?: string | null },
+) {
+	return request<{ deleted: true; milestone: WorkspaceMilestone; migratedAttachments?: string[]; failedAttachments?: string[] }>(
+		`/api/fleeting/${noteId}/process/milestone`,
+		{
+			method: "POST",
+			body: JSON.stringify(data),
+		},
+	);
+}
+
+export function processFleetingToAttachment(noteId: string) {
+	return request<{ deleted: true; migratedAttachments?: string[]; failedAttachments?: string[] }>(
+		`/api/fleeting/${noteId}/process/attachment`,
 		{ method: "POST" },
 	);
 }

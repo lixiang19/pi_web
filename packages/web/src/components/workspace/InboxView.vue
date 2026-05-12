@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, onMounted } from "vue";
 import {
 	BookOpen,
 	Bookmark,
@@ -14,6 +14,9 @@ import {
 	Image,
 	FileText,
 	RefreshCw,
+	Flag,
+	Archive,
+	ChevronDown,
 } from "lucide-vue-next";
 import { toast } from "vue-sonner";
 
@@ -37,6 +40,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkspaceInbox, type InboxItem } from "@/composables/useInbox";
+import { useProjects } from "@/composables/useProjects";
 
 const props = defineProps<{
 	workspaceDir: string;
@@ -59,6 +63,8 @@ const {
 	processToJournal,
 	processToClip,
 	processToTask,
+	processToMilestone,
+	processToAttachment,
 	retryAnalysis,
 	formatTime,
 	uploadAttachments,
@@ -66,41 +72,65 @@ const {
 	getNoteAttachments,
 } = useWorkspaceInbox(() => props.workspaceDir);
 
+const { projects, load: loadProjects } = useProjects();
+
+onMounted(() => {
+	void loadProjects();
+});
+
 const fleetingText = ref("");
 const isSaving = ref(false);
 const activeNote = ref<InboxItem | null>(null);
+
+// Journal dialog
 const journalDialogOpen = ref(false);
-const clipDialogOpen = ref(false);
 const journalContent = ref("");
+
+// Clip dialog
+const clipDialogOpen = ref(false);
 const clipTitle = ref("");
 const clipUrl = ref("");
 const clipContent = ref("");
 const clipSource = ref("闪念");
+
+// Task dialog
+const taskDialogOpen = ref(false);
+const taskTitle = ref("");
+const taskPriority = ref<"normal" | "important" | "urgent">("normal");
+const taskAcceptance = ref("");
+const taskProjectId = ref<string | null>(null);
+
+// Milestone dialog
+const milestoneDialogOpen = ref(false);
+const milestoneTitle = ref("");
+const milestoneGoal = ref("");
+const milestoneAcceptance = ref("");
+const milestoneProjectId = ref<string | null>(null);
+
 const attachmentInput = ref<HTMLInputElement | null>(null);
 const selectedFiles = ref<File[]>([]);
 const isDragging = ref(false);
 
 const handleCapture = async () => {
-  const text = fleetingText.value.trim();
-  if (!text || !props.workspaceDir) return;
-  isSaving.value = true;
-  try {
-    const hasAttachments = selectedFiles.value.length > 0;
-    const note = await captureNote(text, hasAttachments);
-    if (note && hasAttachments) {
-      await uploadAttachments(note.id, selectedFiles.value);
-      // Now that attachments are stored, trigger analysis with full context.
-      await retryAnalysis(note.id);
-    }
-    fleetingText.value = "";
-    selectedFiles.value = [];
-  } catch (err) {
-    toast.error("保存闪念失败", {
-      description: err instanceof Error ? err.message : String(err),
-    });
-  } finally {
-    isSaving.value = false;
-  }
+	const text = fleetingText.value.trim();
+	if (!text || !props.workspaceDir) return;
+	isSaving.value = true;
+	try {
+		const hasAttachments = selectedFiles.value.length > 0;
+		const note = await captureNote(text, hasAttachments);
+		if (note && hasAttachments) {
+			await uploadAttachments(note.id, selectedFiles.value);
+			await retryAnalysis(note.id);
+		}
+		fleetingText.value = "";
+		selectedFiles.value = [];
+	} catch (err) {
+		toast.error("保存闪念失败", {
+			description: err instanceof Error ? err.message : String(err),
+		});
+	} finally {
+		isSaving.value = false;
+	}
 };
 
 const openJournalDialog = (note: InboxItem) => {
@@ -120,6 +150,24 @@ const openClipDialog = (note: InboxItem) => {
 	clipDialogOpen.value = true;
 };
 
+const openTaskDialog = (note: InboxItem) => {
+	activeNote.value = note;
+	taskTitle.value = note.content.split("\n")[0]?.slice(0, 80) || "未命名任务";
+	taskPriority.value = "normal";
+	taskAcceptance.value = "";
+	taskProjectId.value = null;
+	taskDialogOpen.value = true;
+};
+
+const openMilestoneDialog = (note: InboxItem) => {
+	activeNote.value = note;
+	milestoneTitle.value = note.content.split("\n")[0]?.slice(0, 80) || "未命名里程碑";
+	milestoneGoal.value = "";
+	milestoneAcceptance.value = "";
+	milestoneProjectId.value = null;
+	milestoneDialogOpen.value = true;
+};
+
 const confirmJournal = async () => {
 	if (!activeNote.value || !journalContent.value.trim()) return;
 	await processToJournal(activeNote.value.id, journalContent.value.trim());
@@ -137,10 +185,41 @@ const confirmClip = async () => {
 	clipDialogOpen.value = false;
 };
 
+const confirmTask = async () => {
+	if (!activeNote.value || !taskTitle.value.trim() || !taskAcceptance.value.trim()) return;
+	await processToTask(activeNote.value.id, {
+		title: taskTitle.value.trim(),
+		priority: taskPriority.value,
+		acceptanceCriteria: taskAcceptance.value.trim(),
+		projectId: taskProjectId.value,
+	});
+	taskDialogOpen.value = false;
+};
+
+const confirmMilestone = async () => {
+	if (!activeNote.value || !milestoneTitle.value.trim() || !milestoneGoal.value.trim() || !milestoneAcceptance.value.trim()) return;
+	await processToMilestone(activeNote.value.id, {
+		title: milestoneTitle.value.trim(),
+		goal: milestoneGoal.value.trim(),
+		acceptanceCriteria: milestoneAcceptance.value.trim(),
+		projectId: milestoneProjectId.value,
+	});
+	milestoneDialogOpen.value = false;
+};
+
+const handleAttachment = async (note: InboxItem) => {
+	const atts = getNoteAttachments(note.id);
+	if (atts.length === 0) {
+		toast.error("该闪念没有附件");
+		return;
+	}
+	await processToAttachment(note.id);
+};
+
 const handleSuggestion = (note: InboxItem) => {
 	if (note.recommendationType === "journal") openJournalDialog(note);
 	else if (note.recommendationType === "clip") openClipDialog(note);
-	else if (note.recommendationType === "task") processToTask(note.id);
+	else if (note.recommendationType === "task") openTaskDialog(note);
 	else if (note.recommendationType === "delete") deleteItem(note.id);
 };
 
@@ -349,13 +428,21 @@ const formatFileSize = (bytes: number) => {
                 <BookOpen class="size-3" />
                 日记
               </Button>
-              <Button variant="outline" size="sm" class="h-7 gap-1.5 text-xs" @click="processToTask(note.id)">
+              <Button variant="outline" size="sm" class="h-7 gap-1.5 text-xs" @click="openTaskDialog(note)">
                 <CheckSquare class="size-3" />
                 任务
+              </Button>
+              <Button variant="outline" size="sm" class="h-7 gap-1.5 text-xs" @click="openMilestoneDialog(note)">
+                <Flag class="size-3" />
+                里程碑
               </Button>
               <Button variant="outline" size="sm" class="h-7 gap-1.5 text-xs" @click="openClipDialog(note)">
                 <Bookmark class="size-3" />
                 剪藏
+              </Button>
+              <Button v-if="getNoteAttachments(note.id).length > 0" variant="outline" size="sm" class="h-7 gap-1.5 text-xs" @click="handleAttachment(note)">
+                <Archive class="size-3" />
+                附件
               </Button>
               <Button variant="ghost" size="sm" class="h-7 gap-1.5 text-xs text-destructive hover:text-destructive" @click="deleteItem(note.id)">
                 <Trash2 class="size-3" />
@@ -367,6 +454,7 @@ const formatFileSize = (bytes: number) => {
       </div>
     </div>
 
+    <!-- Journal Dialog -->
     <Dialog v-model:open="journalDialogOpen">
       <DialogContent>
         <DialogHeader>
@@ -381,6 +469,7 @@ const formatFileSize = (bytes: number) => {
       </DialogContent>
     </Dialog>
 
+    <!-- Clip Dialog -->
     <Dialog v-model:open="clipDialogOpen">
       <DialogContent>
         <DialogHeader>
@@ -396,6 +485,75 @@ const formatFileSize = (bytes: number) => {
         <DialogFooter>
           <Button variant="outline" @click="clipDialogOpen = false">取消</Button>
           <Button :disabled="!clipTitle.trim() || !clipContent.trim()" @click="confirmClip">保存剪藏</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Task Dialog -->
+    <Dialog v-model:open="taskDialogOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>创建任务</DialogTitle>
+          <DialogDescription>从闪念创建任务，成功后从收件箱删除。</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3">
+          <Input v-model="taskTitle" placeholder="任务标题" />
+          <Select v-model="taskPriority">
+            <SelectTrigger>
+              <SelectValue placeholder="优先级" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="normal">普通</SelectItem>
+              <SelectItem value="important">重要</SelectItem>
+              <SelectItem value="urgent">紧急</SelectItem>
+            </SelectContent>
+          </Select>
+          <Textarea v-model="taskAcceptance" class="min-h-20" placeholder="完成标准 / 验收标准" />
+          <Select v-model="taskProjectId">
+            <SelectTrigger>
+              <SelectValue placeholder="选择项目（可选）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem :value="null">无项目</SelectItem>
+              <SelectItem v-for="project in projects" :key="project.id" :value="project.id">
+                {{ project.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="taskDialogOpen = false">取消</Button>
+          <Button :disabled="!taskTitle.trim() || !taskAcceptance.trim()" @click="confirmTask">创建任务</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Milestone Dialog -->
+    <Dialog v-model:open="milestoneDialogOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>创建里程碑</DialogTitle>
+          <DialogDescription>从闪念创建里程碑，成功后从收件箱删除。</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3">
+          <Input v-model="milestoneTitle" placeholder="里程碑标题" />
+          <Textarea v-model="milestoneGoal" class="min-h-20" placeholder="目标" />
+          <Textarea v-model="milestoneAcceptance" class="min-h-20" placeholder="完成标准 / 验收标准" />
+          <Select v-model="milestoneProjectId">
+            <SelectTrigger>
+              <SelectValue placeholder="选择项目（可选）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem :value="null">无项目</SelectItem>
+              <SelectItem v-for="project in projects" :key="project.id" :value="project.id">
+                {{ project.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="milestoneDialogOpen = false">取消</Button>
+          <Button :disabled="!milestoneTitle.trim() || !milestoneGoal.trim() || !milestoneAcceptance.trim()" @click="confirmMilestone">创建里程碑</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
