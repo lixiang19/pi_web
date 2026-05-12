@@ -778,6 +778,17 @@ export interface FleetingNote {
 	updatedAt: number;
 }
 
+export interface FleetingAttachment {
+	id: string;
+	noteId: string;
+	originalName: string;
+	storedName: string;
+	mimeType: string;
+	size: number;
+	sha256: string;
+	createdAt: number;
+}
+
 export interface ClipRecord {
 	id: string;
 	title: string;
@@ -799,6 +810,21 @@ export function createFleetingNote(content: string) {
 	});
 }
 
+export function uploadFleetingAttachments(noteId: string, files: File[]) {
+	const formData = new FormData();
+	for (const file of files) {
+		formData.append("files", file);
+	}
+	return request<{ attachments: FleetingAttachment[] }>(`/api/fleeting/${noteId}/attachments`, {
+		method: "POST",
+		body: formData,
+	});
+}
+
+export function getFleetingAttachments(noteId: string) {
+	return request<{ attachments: FleetingAttachment[] }>(`/api/fleeting/${noteId}/attachments`);
+}
+
 export function deleteFleetingNote(noteId: string) {
 	return request<{ deleted: true }>(`/api/fleeting/${noteId}`, {
 		method: "DELETE",
@@ -806,7 +832,7 @@ export function deleteFleetingNote(noteId: string) {
 }
 
 export function processFleetingToJournal(noteId: string, content: string) {
-	return request<{ deleted: true; journalPath: string }>(
+	return request<{ deleted: true; journalPath: string; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/journal`,
 		{
 			method: "POST",
@@ -819,7 +845,7 @@ export function processFleetingToClip(
 	noteId: string,
 	data: { title: string; url?: string; content: string; source?: string },
 ) {
-	return request<{ deleted: true; clip: ClipRecord }>(
+	return request<{ deleted: true; clip: ClipRecord; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/clip`,
 		{
 			method: "POST",
@@ -829,7 +855,7 @@ export function processFleetingToClip(
 }
 
 export function processFleetingToTask(noteId: string) {
-	return request<{ processed: false; message: string }>(
+	return request<{ processed: false; message: string; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/task`,
 		{ method: "POST" },
 	);

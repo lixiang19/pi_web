@@ -175,6 +175,17 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'read_at', definition: 'INTEGER' },
   ],
+  fleeting_attachments: [
+    { name: 'attachment_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'note_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'original_name', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'stored_name', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'stored_path', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'mime_type', definition: "TEXT NOT NULL DEFAULT 'application/octet-stream'" },
+    { name: 'size', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'sha256', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
 };
 
 const openDatabase = async (workspaceDir?: string): Promise<RidgeDatabase> => {

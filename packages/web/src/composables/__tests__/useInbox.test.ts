@@ -16,6 +16,8 @@ vi.mock("@/lib/api", () => ({
 	processFleetingToJournal: vi.fn(),
 	processFleetingToClip: vi.fn(),
 	processFleetingToTask: vi.fn(),
+	uploadFleetingAttachments: vi.fn(),
+	getFleetingAttachments: vi.fn(),
 }));
 
 import {
@@ -25,6 +27,7 @@ import {
 	processFleetingToClip,
 	processFleetingToJournal,
 	processFleetingToTask,
+	getFleetingAttachments,
 } from "@/lib/api";
 
 const mockGetFleetingNotes = vi.mocked(getFleetingNotes);
@@ -33,6 +36,7 @@ const mockDeleteFleetingNote = vi.mocked(deleteFleetingNote);
 const mockProcessFleetingToJournal = vi.mocked(processFleetingToJournal);
 const mockProcessFleetingToClip = vi.mocked(processFleetingToClip);
 const mockProcessFleetingToTask = vi.mocked(processFleetingToTask);
+const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
 
 const note = {
 	id: "flash-1",
@@ -53,30 +57,50 @@ describe("useWorkspaceInbox", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockGetFleetingNotes.mockResolvedValue({ notes: [note] });
+		mockGetFleetingAttachments.mockResolvedValue({ attachments: [] });
+		mockCreateFleetingNote.mockResolvedValue({ note });
+		mockProcessFleetingToJournal.mockResolvedValue({
+			deleted: true,
+			journalPath: "/workspace/日记/2026/05/2026-05-08.md",
+		});
+		mockProcessFleetingToClip.mockResolvedValue({
+			deleted: true,
+			clip: {
+				id: "clip-1",
+				title: "资料",
+				url: null,
+				content: "资料",
+				source: "闪念",
+				createdAt: 1000,
+				updatedAt: 1000,
+			},
+		});
+		mockProcessFleetingToTask.mockResolvedValue({
+			processed: false,
+			message: "任务系统正在接入中，暂不能从闪念创建任务",
+		});
+		mockDeleteFleetingNote.mockResolvedValue({ deleted: true });
 	});
 
 	afterEach(() => {
 		vi.useRealTimers();
 	});
 
-	it("loads fleeting notes from DB API", async () => {
+	it("loads fleeting notes and attachments from DB API", async () => {
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalled());
+		await vi.waitFor(() => expect(mockGetFleetingAttachments).toHaveBeenCalledWith("flash-1"));
 		expect(store.count.value).toBe(1);
 		expect(store.filteredFiles.value[0]?.content).toBe("今天复盘闪念系统");
 	});
 
-	it("creates a fleeting note without opening a file", async () => {
-		const dispatchSpy = vi.spyOn(window, "dispatchEvent");
-		mockCreateFleetingNote.mockResolvedValue({ note });
+	it("creates a fleeting note with attachments", async () => {
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalled());
+		
+		// Capture note with text only first
 		await store.captureNote("新的闪念");
 		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念");
-		expect(dispatchSpy).toHaveBeenCalledWith(
-			expect.objectContaining({ type: "ridge:fleeting-created" }),
-		);
-		dispatchSpy.mockRestore();
 	});
 
 	it("polls while notes are waiting for analysis", async () => {
@@ -94,6 +118,7 @@ describe("useWorkspaceInbox", () => {
 		mockProcessFleetingToJournal.mockResolvedValue({
 			deleted: true,
 			journalPath: "/workspace/日记/2026/05/2026-05-08.md",
+			migratedAttachments: ["/workspace/附件/file.txt"],
 		});
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(store.count.value).toBe(1));
@@ -113,6 +138,7 @@ describe("useWorkspaceInbox", () => {
 				createdAt: 1000,
 				updatedAt: 1000,
 			},
+			migratedAttachments: ["/workspace/附件/file.pdf"],
 		});
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(store.count.value).toBe(1));

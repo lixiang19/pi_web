@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { mount, flushPromises } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import InboxView from "../InboxView.vue";
 
@@ -17,16 +17,20 @@ vi.mock("@/lib/api", () => ({
 	processFleetingToJournal: vi.fn(),
 	processFleetingToClip: vi.fn(),
 	processFleetingToTask: vi.fn(),
+	uploadFleetingAttachments: vi.fn(),
+	getFleetingAttachments: vi.fn(),
 }));
 
 import {
 	createFleetingNote,
 	getFleetingNotes,
+	getFleetingAttachments,
 	processFleetingToTask,
 } from "@/lib/api";
 
 const mockGetFleetingNotes = vi.mocked(getFleetingNotes);
 const mockCreateFleetingNote = vi.mocked(createFleetingNote);
+const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
 const mockProcessFleetingToTask = vi.mocked(processFleetingToTask);
 
 const note = {
@@ -48,6 +52,7 @@ describe("InboxView", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockGetFleetingNotes.mockResolvedValue({ notes: [note] });
+		mockGetFleetingAttachments.mockResolvedValue({ attachments: [] });
 		mockCreateFleetingNote.mockResolvedValue({ note });
 		mockProcessFleetingToTask.mockResolvedValue({
 			processed: false,
@@ -60,7 +65,7 @@ describe("InboxView", () => {
 			props: { workspaceDir: "/workspace" },
 		});
 
-		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalled());
+		await flushPromises();
 		expect(wrapper.text()).toContain("明天整理任务系统");
 		expect(wrapper.text()).toContain("建议转为任务");
 		expect(wrapper.text()).toContain("日记");
@@ -74,7 +79,7 @@ describe("InboxView", () => {
 			props: { workspaceDir: "/workspace" },
 		});
 
-		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalled());
+		await flushPromises();
 		await wrapper.get("textarea").setValue("新的闪念");
 		const saveButton = wrapper
 			.findAll("button")
@@ -90,7 +95,8 @@ describe("InboxView", () => {
 			props: { workspaceDir: "/workspace" },
 		});
 
-		await vi.waitFor(() => expect(wrapper.text()).toContain("明天整理任务系统"));
+		await flushPromises();
+		expect(wrapper.text()).toContain("明天整理任务系统");
 		const taskButton = wrapper
 			.findAll("button")
 			.find((button) => button.text() === "任务")!;

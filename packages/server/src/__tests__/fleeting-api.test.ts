@@ -52,6 +52,19 @@ CREATE TABLE IF NOT EXISTS clips (
 );
 CREATE INDEX IF NOT EXISTS idx_clips_created_at
   ON clips(created_at DESC);
+CREATE TABLE IF NOT EXISTS fleeting_attachments (
+  attachment_id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  original_name TEXT NOT NULL DEFAULT '',
+  stored_name TEXT NOT NULL DEFAULT '',
+  stored_path TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size INTEGER NOT NULL DEFAULT 0,
+  sha256 TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
+  ON fleeting_attachments(note_id, created_at DESC);
 		`);
 		runAnalysis = vi.fn(async () => undefined);
 		app = express();

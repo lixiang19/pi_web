@@ -16,6 +16,9 @@ import {
 	processFleetingToClip,
 	processFleetingToJournal,
 	processFleetingToTask,
+	uploadFleetingAttachments,
+	getFleetingAttachments,
+	type FleetingAttachment,
 	type FleetingNote,
 } from "@/lib/api";
 
@@ -64,6 +67,8 @@ function useInboxInner(workspaceDir: () => string) {
 	const error = ref("");
 	const searchQuery = ref("");
 	const sortKey = ref<InboxSortKey>("modified");
+	const attachmentsMap = ref<Record<string, FleetingAttachment[]>>({});
+	const isUploadingAttachments = ref(false);
 
 	const load = async () => {
 		if (!workspaceDir()) return;
@@ -72,9 +77,23 @@ function useInboxInner(workspaceDir: () => string) {
 		try {
 			const res = await getFleetingNotes();
 			inboxFiles.value = res.notes;
+			// Load attachments for all notes
+			const newMap: Record<string, FleetingAttachment[]> = {};
+			await Promise.all(
+				res.notes.map(async (note) => {
+					try {
+						const attRes = await getFleetingAttachments(note.id);
+						newMap[note.id] = attRes.attachments;
+					} catch {
+						newMap[note.id] = [];
+					}
+				}),
+			);
+			attachmentsMap.value = newMap;
 		} catch (err) {
 			error.value = err instanceof Error ? err.message : String(err);
 			inboxFiles.value = [];
+			attachmentsMap.value = {};
 		} finally {
 			isLoading.value = false;
 		}
@@ -128,6 +147,27 @@ function useInboxInner(workspaceDir: () => string) {
 		return response.note;
 	};
 
+	const uploadAttachments = async (noteId: string, files: File[]) => {
+		if (!files.length || !workspaceDir()) return;
+		isUploadingAttachments.value = true;
+		try {
+			const res = await uploadFleetingAttachments(noteId, files);
+			attachmentsMap.value = {
+				...attachmentsMap.value,
+				[noteId]: [...(attachmentsMap.value[noteId] || []), ...res.attachments],
+			};
+			toast.success(`已上传 ${files.length} 个附件`);
+			return res.attachments;
+		} catch (err) {
+			toast.error("上传附件失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
+			throw err;
+		} finally {
+			isUploadingAttachments.value = false;
+		}
+	};
+
 	const deleteItem = async (id: string) => {
 		const prev = [...inboxFiles.value];
 		inboxFiles.value = inboxFiles.value.filter((item) => item.id !== id);
@@ -144,24 +184,42 @@ function useInboxInner(workspaceDir: () => string) {
 	};
 
 	const processToJournal = async (id: string, content: string) => {
-		await processFleetingToJournal(id, content);
+		const res = await processFleetingToJournal(id, content);
 		inboxFiles.value = inboxFiles.value.filter((item) => item.id !== id);
+		// Clean up attachments from map
+		const newMap = { ...attachmentsMap.value };
+		delete newMap[id];
+		attachmentsMap.value = newMap;
 		toast.success("已写入今日日记");
+		if (res.migratedAttachments?.length) {
+			toast.info(`已迁移 ${res.migratedAttachments.length} 个附件到正式目录`);
+		}
 	};
 
 	const processToClip = async (
 		id: string,
 		data: { title: string; url?: string; content: string; source?: string },
 	) => {
-		await processFleetingToClip(id, data);
+		const res = await processFleetingToClip(id, data);
 		inboxFiles.value = inboxFiles.value.filter((item) => item.id !== id);
+		const newMap = { ...attachmentsMap.value };
+		delete newMap[id];
+		attachmentsMap.value = newMap;
 		toast.success("已保存为剪藏");
+		if (res.migratedAttachments?.length) {
+			toast.info(`已迁移 ${res.migratedAttachments.length} 个附件到正式目录`);
+		}
 	};
 
 	const processToTask = async (id: string) => {
 		const res = await processFleetingToTask(id);
 		toast.info(res.message);
+		if (res.migratedAttachments?.length) {
+			toast.info(`已迁移 ${res.migratedAttachments.length} 个附件到正式目录`);
+		}
 	};
+
+	const getNoteAttachments = (noteId: string) => attachmentsMap.value[noteId] || [];
 
 	const formatTime = (ts: number) => formatRelativeTime(ts);
 
@@ -214,12 +272,15 @@ function useInboxInner(workspaceDir: () => string) {
 		sortKey,
 		count,
 		analyzingCount,
+		isUploadingAttachments,
 		load,
 		captureNote,
+		uploadAttachments,
 		deleteItem,
 		processToJournal,
 		processToClip,
 		processToTask,
+		getNoteAttachments,
 		formatTime,
 	};
 }

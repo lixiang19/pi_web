@@ -9,6 +9,10 @@ import {
 	Search,
 	Trash2,
 	CheckSquare,
+	Paperclip,
+	X,
+	Image,
+	FileText,
 } from "lucide-vue-next";
 import { toast } from "vue-sonner";
 
@@ -55,6 +59,9 @@ const {
 	processToClip,
 	processToTask,
 	formatTime,
+	uploadAttachments,
+	isUploadingAttachments,
+	getNoteAttachments,
 } = useWorkspaceInbox(() => props.workspaceDir);
 
 const fleetingText = ref("");
@@ -67,14 +74,21 @@ const clipTitle = ref("");
 const clipUrl = ref("");
 const clipContent = ref("");
 const clipSource = ref("闪念");
+const attachmentInput = ref<HTMLInputElement | null>(null);
+const selectedFiles = ref<File[]>([]);
+const isDragging = ref(false);
 
 const handleCapture = async () => {
 	const text = fleetingText.value.trim();
 	if (!text || !props.workspaceDir) return;
 	isSaving.value = true;
 	try {
-		await captureNote(text);
+		const note = await captureNote(text);
+		if (note && selectedFiles.value.length > 0) {
+			await uploadAttachments(note.id, selectedFiles.value);
+		}
 		fleetingText.value = "";
+		selectedFiles.value = [];
 	} catch (err) {
 		toast.error("保存闪念失败", {
 			description: err instanceof Error ? err.message : String(err),
@@ -132,6 +146,47 @@ const recommendationLabel = (note: InboxItem) => {
 };
 
 const pendingCountText = computed(() => `${count.value} 待处理`);
+
+const handleFileSelect = (event: Event) => {
+	const input = event.target as HTMLInputElement;
+	if (input.files && input.files.length > 0) {
+		selectedFiles.value = [...selectedFiles.value, ...Array.from(input.files)];
+	}
+	if (attachmentInput.value) attachmentInput.value.value = "";
+};
+
+const removeSelectedFile = (index: number) => {
+	selectedFiles.value = selectedFiles.value.filter((_, i) => i !== index);
+};
+
+const handleDragOver = (e: DragEvent) => {
+	e.preventDefault();
+	isDragging.value = true;
+};
+
+const handleDragLeave = (e: DragEvent) => {
+	e.preventDefault();
+	isDragging.value = false;
+};
+
+const handleDrop = (e: DragEvent) => {
+	e.preventDefault();
+	isDragging.value = false;
+	if (e.dataTransfer?.files.length) {
+		selectedFiles.value = [...selectedFiles.value, ...Array.from(e.dataTransfer.files)];
+	}
+};
+
+const getAttachmentIcon = (mimeType: string) => {
+	if (mimeType.startsWith("image/")) return Image;
+	return FileText;
+};
+
+const formatFileSize = (bytes: number) => {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 </script>
 
 <template>
@@ -148,7 +203,13 @@ const pendingCountText = computed(() => `${count.value} 待处理`);
         </div>
       </div>
 
-      <div class="rounded-lg border border-border/50 bg-card p-5">
+      <div
+        class="rounded-lg border border-border/50 bg-card p-5"
+        :class="{ 'ring-2 ring-primary/30': isDragging }"
+        @dragover="handleDragOver"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop"
+      >
         <div class="mb-3 flex items-center gap-2">
           <Lightbulb class="size-4 text-amber-500" />
           <h2 class="text-sm font-semibold text-foreground">闪念捕捉</h2>
@@ -160,12 +221,48 @@ const pendingCountText = computed(() => `${count.value} 待处理`);
           @keydown.ctrl.enter="handleCapture"
           @keydown.meta.enter="handleCapture"
         />
+
+        <!-- Selected files preview -->
+        <div v-if="selectedFiles.length > 0" class="mt-3 space-y-2">
+          <div
+            v-for="(file, index) in selectedFiles"
+            :key="index"
+            class="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs"
+          >
+            <Paperclip class="size-3.5 text-muted-foreground" />
+            <span class="flex-1 truncate">{{ file.name }}</span>
+            <span class="text-muted-foreground">{{ formatFileSize(file.size) }}</span>
+            <button class="ml-1 text-muted-foreground hover:text-destructive" @click="removeSelectedFile(index)">
+              <X class="size-3.5" />
+            </button>
+          </div>
+        </div>
+
         <div class="mt-3 flex items-center justify-between">
-          <span class="text-[11px] text-muted-foreground">保存后不会打开收件箱</span>
-          <Button size="sm" class="h-7 gap-1.5 text-xs" :disabled="!fleetingText.trim() || isSaving" @click="handleCapture">
-            <LoaderCircle v-if="isSaving" class="size-3 animate-spin" />
+          <div class="flex items-center gap-2">
+            <input
+              ref="attachmentInput"
+              type="file"
+              multiple
+              class="hidden"
+              accept="image/*,application/pdf,.doc,.docx,.txt,.md,.csv,.json,.yaml,.yml"
+              @change="handleFileSelect"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              class="h-7 gap-1.5 text-xs text-muted-foreground"
+              @click="attachmentInput?.click()"
+            >
+              <Paperclip class="size-3.5" />
+              添加附件
+            </Button>
+            <span v-if="isDragging" class="text-xs text-primary">松开以添加附件</span>
+          </div>
+		<Button size="sm" class="h-7 gap-1.5 text-xs" :disabled="!fleetingText.trim() || isSaving || isUploadingAttachments" @click="handleCapture">
+            <LoaderCircle v-if="isSaving || isUploadingAttachments" class="size-3 animate-spin" />
             <Inbox v-else class="size-3" />
-            保存
+            {{ isUploadingAttachments ? '上传中...' : '保存' }}
           </Button>
         </div>
       </div>
@@ -217,6 +314,20 @@ const pendingCountText = computed(() => `${count.value} 待处理`);
               <p class="whitespace-pre-wrap text-sm leading-6 text-foreground">{{ note.content }}</p>
               <span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">{{ formatTime(note.createdAt) }}</span>
             </div>
+
+            <!-- Attachments display -->
+            <div v-if="getNoteAttachments(note.id).length > 0" class="mt-2 flex flex-wrap gap-2">
+              <div
+                v-for="att in getNoteAttachments(note.id)"
+                :key="att.id"
+                class="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground"
+              >
+                <component :is="getAttachmentIcon(att.mimeType)" class="size-3" />
+                <span class="max-w-[150px] truncate">{{ att.originalName }}</span>
+                <span>{{ formatFileSize(att.size) }}</span>
+              </div>
+            </div>
+
             <div class="mt-3 rounded-md bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
               {{ recommendationLabel(note) }}
             </div>

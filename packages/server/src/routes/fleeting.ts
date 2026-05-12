@@ -6,19 +6,16 @@ import express, {
 	type Response,
 } from "express";
 import { z } from "zod";
+import multer from "multer";
 import { atomicWriteFile } from "../utils/fs.js";
+import {
+	storeFleetingAttachment,
+	getFleetingAttachments,
+	deleteFleetingAttachmentsForNote,
+	migrateFleetingAttachments,
+} from "../fleeting-attachments.js";
+import type { RidgeDatabase } from "../db/index.js";
 
-interface SqliteStatement {
-	run: (...args: unknown[]) => { changes?: number };
-	get: (...args: unknown[]) => unknown;
-	all: (...args: unknown[]) => unknown[];
-}
-
-interface RidgeDatabase {
-	exec: (sql: string) => void;
-	prepare: (sql: string) => SqliteStatement;
-	transaction: (fn: () => void) => () => void;
-}
 type HttpError = Error & { statusCode?: number };
 
 export interface FleetingAnalysisRunner {
@@ -68,6 +65,17 @@ const toPublicNote = (row: Record<string, unknown>) => ({
 	piSessionFile: row.pi_session_file,
 	createdAt: row.created_at,
 	updatedAt: row.updated_at,
+});
+
+const toPublicAttachment = (row: Record<string, unknown>) => ({
+	id: row.attachment_id,
+	noteId: row.note_id,
+	originalName: row.original_name,
+	storedName: row.stored_name,
+	mimeType: row.mime_type,
+	size: row.size,
+	sha256: row.sha256,
+	createdAt: row.created_at,
 });
 
 const makeId = (prefix: string) =>
@@ -127,6 +135,14 @@ const appendToTodayJournal = async (workspaceDir: string, content: string) => {
 	return journalPath;
 };
 
+const upload = multer({
+	storage: multer.memoryStorage(),
+	limits: {
+		files: 10,
+		fileSize: 50 * 1024 * 1024,
+	},
+});
+
 export function createFleetingRouter(deps: FleetingRouterDeps) {
 	const router = express.Router();
 	const { db, workspaceDir, analysisRunner } = deps;
@@ -181,11 +197,67 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 		}
 	});
 
-	router.delete("/:noteId", (req: Request, res: Response, next: NextFunction) => {
+	router.post(
+		"/:noteId/attachments",
+		upload.array("files", 10),
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const noteId = req.params.noteId;
+				getNoteOrThrow(db, noteId);
+				const files = req.files as Express.Multer.File[] | undefined;
+				if (!files || files.length === 0) {
+					const error = new Error("No files uploaded") as HttpError;
+					error.statusCode = 400;
+					throw error;
+				}
+
+				const records = [];
+				for (const file of files) {
+					const record = await storeFleetingAttachment(
+						db,
+						workspaceDir,
+						noteId,
+						file.originalname,
+						file.buffer,
+						file.mimetype,
+					);
+					records.push(record);
+				}
+
+				res.status(201).json({
+					attachments: records.map((r) => toPublicAttachment(r as unknown as Record<string, unknown>)),
+				});
+			} catch (error) {
+				forwardError(error, next);
+			}
+		},
+	);
+
+	router.get(
+		"/:noteId/attachments",
+		(req: Request, res: Response, next: NextFunction) => {
+			try {
+				const noteId = req.params.noteId;
+				getNoteOrThrow(db, noteId);
+				const rows = getFleetingAttachments(db, noteId);
+				res.json({
+					attachments: rows.map((r) => toPublicAttachment(r as unknown as Record<string, unknown>)),
+				});
+			} catch (error) {
+				forwardError(error, next);
+			}
+		},
+	);
+
+	router.delete("/:noteId", async (req: Request, res: Response, next: NextFunction) => {
 		try {
+			const noteId = req.params.noteId;
+			// 1. 清理临时附件（先删 DB 和文件，再删闪念记录）
+			await deleteFleetingAttachmentsForNote(db, workspaceDir, noteId);
+
 			const info = db
 				.prepare("DELETE FROM fleeting_notes WHERE note_id = ?")
-				.run(req.params.noteId);
+				.run(noteId);
 			if (info.changes === 0) {
 				const error = new Error("闪念不存在") as HttpError;
 				error.statusCode = 404;
@@ -245,8 +317,14 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				getNoteOrThrow(db, req.params.noteId);
 				const payload = journalSchema.parse(req.body ?? {});
 				const journalPath = await appendToTodayJournal(workspaceDir, payload.content);
+				// 迁移附件到正式目录
+				const { migratedPaths, failed } = await migrateFleetingAttachments(
+					db,
+					workspaceDir,
+					req.params.noteId,
+				);
 				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
-				res.json({ deleted: true, journalPath });
+				res.json({ deleted: true, journalPath, migratedAttachments: migratedPaths, failedAttachments: failed });
 			} catch (error) {
 				forwardError(error, next);
 			}
@@ -255,12 +333,18 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 
 	router.post(
 		"/:noteId/process/clip",
-		(req: Request, res: Response, next: NextFunction) => {
+		async (req: Request, res: Response, next: NextFunction) => {
 			try {
 				getNoteOrThrow(db, req.params.noteId);
 				const payload = clipSchema.parse(req.body ?? {});
 				const now = Date.now();
 				const clipId = makeId("clip");
+				// 先迁移附件
+				const { migratedPaths, failed } = await migrateFleetingAttachments(
+					db,
+					workspaceDir,
+					req.params.noteId,
+				);
 				const createAndDelete = db.transaction(() => {
 					db.prepare(
 						`INSERT INTO clips(
@@ -291,6 +375,8 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 						createdAt: now,
 						updatedAt: now,
 					},
+					migratedAttachments: migratedPaths,
+					failedAttachments: failed,
 				});
 			} catch (error) {
 				forwardError(error, next);
@@ -298,9 +384,10 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 		},
 	);
 
-	router.post("/:noteId/process/task", (req: Request, res: Response, next: NextFunction) => {
+	router.post("/:noteId/process/task", async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			getNoteOrThrow(db, req.params.noteId);
+			// 任务系统尚未接入，不迁移附件（处理未成功，临时附件应保留）
 			res.status(202).json({
 				processed: false,
 				message: "任务系统正在接入中，暂不能从闪念创建任务",

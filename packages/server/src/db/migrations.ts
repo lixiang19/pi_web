@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 7;
+export const RIDGE_DB_SCHEMA_VERSION = 8;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -568,6 +568,26 @@ CREATE INDEX IF NOT EXISTS idx_workspace_milestones_project
   ON workspace_milestones(workspace_path, project_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_tasks_project
   ON workspace_tasks(workspace_path, project_id);
+`,
+  },
+  {
+    version: 8,
+    name: 'fleeting attachments',
+    sql: `
+CREATE TABLE IF NOT EXISTS fleeting_attachments (
+  attachment_id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  original_name TEXT NOT NULL DEFAULT '',
+  stored_name TEXT NOT NULL DEFAULT '',
+  stored_path TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size INTEGER NOT NULL DEFAULT 0,
+  sha256 TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
+  ON fleeting_attachments(note_id, created_at DESC);
 `,
   },
 ];
