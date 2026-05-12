@@ -13,6 +13,7 @@ import {
 	X,
 	Image,
 	FileText,
+	RefreshCw,
 } from "lucide-vue-next";
 import { toast } from "vue-sonner";
 
@@ -58,6 +59,7 @@ const {
 	processToJournal,
 	processToClip,
 	processToTask,
+	retryAnalysis,
 	formatTime,
 	uploadAttachments,
 	isUploadingAttachments,
@@ -79,23 +81,26 @@ const selectedFiles = ref<File[]>([]);
 const isDragging = ref(false);
 
 const handleCapture = async () => {
-	const text = fleetingText.value.trim();
-	if (!text || !props.workspaceDir) return;
-	isSaving.value = true;
-	try {
-		const note = await captureNote(text);
-		if (note && selectedFiles.value.length > 0) {
-			await uploadAttachments(note.id, selectedFiles.value);
-		}
-		fleetingText.value = "";
-		selectedFiles.value = [];
-	} catch (err) {
-		toast.error("保存闪念失败", {
-			description: err instanceof Error ? err.message : String(err),
-		});
-	} finally {
-		isSaving.value = false;
-	}
+  const text = fleetingText.value.trim();
+  if (!text || !props.workspaceDir) return;
+  isSaving.value = true;
+  try {
+    const hasAttachments = selectedFiles.value.length > 0;
+    const note = await captureNote(text, hasAttachments);
+    if (note && hasAttachments) {
+      await uploadAttachments(note.id, selectedFiles.value);
+      // Now that attachments are stored, trigger analysis with full context.
+      await retryAnalysis(note.id);
+    }
+    fleetingText.value = "";
+    selectedFiles.value = [];
+  } catch (err) {
+    toast.error("保存闪念失败", {
+      description: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    isSaving.value = false;
+  }
 };
 
 const openJournalDialog = (note: InboxItem) => {
@@ -141,6 +146,7 @@ const handleSuggestion = (note: InboxItem) => {
 
 const recommendationLabel = (note: InboxItem) => {
 	if (note.analysisStatus === "analyzing") return "建议生成中";
+	if (note.analysisStatus === "failed") return `分析失败${note.lastError ? `：${note.lastError}` : ""}`;
 	if (note.analysisStatus === "unanalyzed") return "等待分析";
 	return note.recommendationText || "已有建议";
 };
@@ -334,6 +340,10 @@ const formatFileSize = (bytes: number) => {
             <div class="mt-3 flex flex-wrap items-center gap-2">
               <Button size="sm" class="h-7 text-xs" :disabled="note.analysisStatus !== 'suggested'" @click="handleSuggestion(note)">
                 按建议处理
+              </Button>
+              <Button v-if="note.analysisStatus === 'failed' || note.lastError" variant="outline" size="sm" class="h-7 gap-1.5 text-xs" @click="retryAnalysis(note.id)">
+                <RefreshCw class="size-3" />
+                重新分析
               </Button>
               <Button variant="outline" size="sm" class="h-7 gap-1.5 text-xs" @click="openJournalDialog(note)">
                 <BookOpen class="size-3" />

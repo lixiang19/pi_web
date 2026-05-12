@@ -60,12 +60,12 @@ INSERT INTO workspace_tasks(
 	db.close();
 };
 
-const listColumns = (db: Database.Database, tableName: string): string[] =>
+const listColumns = (db: InstanceType<typeof Database>, tableName: string): string[] =>
 	(db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]).map(
 		(row) => row.name,
 	);
 
-const listTables = (db: Database.Database): string[] =>
+const listTables = (db: InstanceType<typeof Database>): string[] =>
 	(
 		db
 			.prepare(

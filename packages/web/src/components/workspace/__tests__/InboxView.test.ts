@@ -19,6 +19,7 @@ vi.mock("@/lib/api", () => ({
 	processFleetingToTask: vi.fn(),
 	uploadFleetingAttachments: vi.fn(),
 	getFleetingAttachments: vi.fn(),
+	triggerFleetingAnalysis: vi.fn(),
 }));
 
 import {
@@ -42,6 +43,8 @@ const note = {
 	recommendationText: "建议转为任务",
 	draft: "明天整理任务系统",
 	requiresInput: false,
+	lastError: null,
+	retryCount: 0,
 	piSessionId: null,
 	piSessionFile: null,
 	createdAt: Date.now(),
@@ -86,7 +89,7 @@ describe("InboxView", () => {
 			.find((button) => button.text().includes("保存"))!;
 		await saveButton.trigger("click");
 
-		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念");
+		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念", false);
 		expect(wrapper.emitted("open-file")).toBeUndefined();
 	});
 

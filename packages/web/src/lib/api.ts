@@ -767,11 +767,13 @@ export interface FleetingNote {
 	id: string;
 	content: string;
 	status: "pending" | "processing";
-	analysisStatus: "unanalyzed" | "analyzing" | "suggested";
+	analysisStatus: "unanalyzed" | "analyzing" | "suggested" | "failed";
 	recommendationType: FleetingRecommendationType | null;
 	recommendationText: string | null;
 	draft: string | null;
 	requiresInput: boolean;
+	lastError?: string | null;
+	retryCount?: number;
 	piSessionId: string | null;
 	piSessionFile: string | null;
 	captureType?: string;
@@ -805,10 +807,10 @@ export function getFleetingNotes() {
 	return request<{ notes: FleetingNote[] }>("/api/fleeting");
 }
 
-export function createFleetingNote(content: string) {
+export function createFleetingNote(content: string, delayAnalysis?: boolean) {
 	return request<{ note: FleetingNote }>("/api/fleeting", {
 		method: "POST",
-		body: JSON.stringify({ content }),
+		body: JSON.stringify({ content, delayAnalysis }),
 	});
 }
 
@@ -889,6 +891,31 @@ export function processFleetingToTask(noteId: string) {
 		`/api/fleeting/${noteId}/process/task`,
 		{ method: "POST" },
 	);
+}
+
+export function triggerFleetingAnalysis(noteId: string) {
+	return request<{ triggered: true; note: FleetingNote }>(`/api/fleeting/${noteId}/analyze`, {
+		method: "POST",
+	});
+}
+
+export function getFleetingAnalysis(noteId: string) {
+	return request<{
+		analysisStatus: string;
+		recommendationType: string | null;
+		recommendationText: string | null;
+		draft: string | null;
+		requiresInput: boolean;
+		lastError: string | null;
+		retryCount: number;
+		updatedAt: number;
+	}>(`/api/fleeting/${noteId}/analysis`);
+}
+
+export function getFleetingSuggestions(status?: "unanalyzed" | "analyzing" | "suggested" | "failed") {
+	const params = new URLSearchParams();
+	if (status) params.set("status", status);
+	return request<{ notes: FleetingNote[] }>(`/api/fleeting/suggestions${params.size > 0 ? `?${params.toString()}` : ""}`);
 }
 
 export function getClips() {

@@ -18,6 +18,7 @@ vi.mock("@/lib/api", () => ({
 	processFleetingToTask: vi.fn(),
 	uploadFleetingAttachments: vi.fn(),
 	getFleetingAttachments: vi.fn(),
+	triggerFleetingAnalysis: vi.fn(),
 }));
 
 import {
@@ -28,6 +29,7 @@ import {
 	processFleetingToJournal,
 	processFleetingToTask,
 	getFleetingAttachments,
+	triggerFleetingAnalysis,
 } from "@/lib/api";
 
 const mockGetFleetingNotes = vi.mocked(getFleetingNotes);
@@ -37,6 +39,7 @@ const mockProcessFleetingToJournal = vi.mocked(processFleetingToJournal);
 const mockProcessFleetingToClip = vi.mocked(processFleetingToClip);
 const mockProcessFleetingToTask = vi.mocked(processFleetingToTask);
 const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
+const mockTriggerFleetingAnalysis = vi.mocked(triggerFleetingAnalysis);
 
 const note = {
 	id: "flash-1",
@@ -47,6 +50,8 @@ const note = {
 	recommendationText: "建议写入今天日记",
 	draft: "今天复盘闪念系统",
 	requiresInput: false,
+	lastError: null,
+	retryCount: 0,
 	piSessionId: null,
 	piSessionFile: null,
 	createdAt: 1000,
@@ -80,6 +85,7 @@ describe("useWorkspaceInbox", () => {
 			message: "任务系统正在接入中，暂不能从闪念创建任务",
 		});
 		mockDeleteFleetingNote.mockResolvedValue({ deleted: true });
+		mockTriggerFleetingAnalysis.mockResolvedValue({ triggered: true, note });
 	});
 
 	afterEach(() => {
@@ -94,13 +100,20 @@ describe("useWorkspaceInbox", () => {
 		expect(store.filteredFiles.value[0]?.content).toBe("今天复盘闪念系统");
 	});
 
-	it("creates a fleeting note with attachments", async () => {
+	it("creates a fleeting note without attachments (immediate analysis)", async () => {
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalled());
-		
-		// Capture note with text only first
+
 		await store.captureNote("新的闪念");
-		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念");
+		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念", undefined);
+	});
+
+	it("creates a fleeting note with delayed analysis when attachments are present", async () => {
+		const store = useWorkspaceInbox(() => "/workspace");
+		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalled());
+
+		await store.captureNote("新的闪念", true);
+		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念", true);
 	});
 
 	it("polls while notes are waiting for analysis", async () => {

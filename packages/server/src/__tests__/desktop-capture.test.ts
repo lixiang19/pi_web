@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
-import express from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFleetingRouter } from "../routes/fleeting.js";
@@ -61,7 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
     app.use(express.json({ limit: "6mb" }));
 
     // 模拟认证中间件：未带 session cookie 时返回 401
-    const mockAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const mockAuth = (req: Request, res: Response, next: NextFunction) => {
       const cookie = req.headers.cookie || "";
       if (!cookie.includes("ridge_session=")) {
         res.status(401).json({ error: "Unauthorized" });
@@ -74,7 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
     const router = createFleetingRouter({
       db,
       workspaceDir,
-      analysisRunner: { run: runAnalysis },
+      getAnalysisRunner: () => ({ run: runAnalysis, resetJob: vi.fn() }),
     });
     app.use("/api/fleeting", router);
     app.use((err: Error & { statusCode?: number }, _req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }, _next: unknown) => {

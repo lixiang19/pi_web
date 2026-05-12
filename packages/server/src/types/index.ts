@@ -175,6 +175,7 @@ export interface SessionMetadata {
   agent?: string;
   model?: string;
   thinkingLevel?: string;
+  archived?: boolean;
 }
 
 export interface SessionMetadataState {

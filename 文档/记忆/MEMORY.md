@@ -277,3 +277,16 @@
 1) **任务系统真源**：当前真源是 `~/.pi/ridge.db` 的 `workspace_tasks` / `workspace_milestones`，不是 `<workspace>/.ridge/ridge.db` 的 `tasks`；旧 2026-05-01 "task #13 任务 SQLite 真源最小实现" 说法已废弃，功能编号 13 现在是闪念临时附件生命周期。
 2) **闪念正式处理**：`routes/fleeting.ts` 中 `process/journal` 和 `process/clip` 已实现（写入日记/剪藏并删除闪念）；`process/task` 仅返回 202 且保留闪念；`process/milestone` 与 `process/attachment` 未实现。
 3) **闪念临时附件**：`.ridge/fleeting-attachments` 目录模板已在 `workspace-chat.ts` 就位，但附件上传 API、DB 引用字段、清理/迁移逻辑均未闭环；会话附件 `session_attachments` 是另一套独立体系。
+4) **任务15 fleeting agent 分析建议**：已实现后台 AI 分析系统。审查发现 6 个阻断问题并全部修复。
+   - **问题1（路由时序）**：`createFleetingRouter()` 在 `index.ts` 模块加载时执行，`getAnalysisRunner()` 返回 `undefined` 后被永久缓存为 `undefined`，导致所有 `POST /api/fleeting` 都不会触发分析。**修复**：移除 `const analysisRunner = getAnalysisRunner?.()` 提前解构，改为每次请求时实时调用 `getAnalysisRunner?.()?.run(id)`。
+   - **问题2（worker ReferenceError）**：`createFleetingAnalysisWorker` 解构漏了 `modelSpec`，运行时调用 `runAnalysis({..., modelSpec})` 触发 `ReferenceError`。**修复**：恢复 `modelSpec` 解构。
+   - **问题3（全局队列污染）**：`claimNext()` 无 `job_type` 过滤，fleeting worker 会抢到 memory/summary/automation 等 job 并直接 `fail`。**修复**：扩展 `claimNext(workerId, jobType?)` SQL 增加 `AND job_type = ?`，worker 调用 `claimNext("fleeting-worker", "fleeting.analyze")`。
+   - **问题4（失败状态缺失）**：worker 失败时始终把 note 写回 `unanalyzed`，没有任何路径进入 `failed`；`toPublicNote` 也不返回 `lastError`/`retryCount`。**修复**：根据 `remainingAttempts` 区分 `unanalyzed`（可重试）和 `failed`（最终失败）；`toPublicNote` 新增这两个字段。
+   - **问题5（附件时序）**：前端 `handleCapture` 先 `captureNote()`（此时后端触发分析），再 `uploadAttachments()`，导致 AI 分析时附件尚未上传。**修复**：附件上传成功后显式调用 `retryAnalysis(note.id)` 重新入队分析。
+   - **问题6（测试未覆盖核心链路）**：测试没有 mock `createAgentSession`，没有验证 `getAnalysisRunner` 延迟获取，没有覆盖 worker 真实执行和失败状态。**修复**：重写测试，mock `@mariozechner/pi-coding-agent` 和 `fleeting-attachments.js`；新增 9 项测试覆盖 worker 成功/失败重试/最终失败/非 fleeting job 隔离/路由延迟获取/列表返回失败字段。
+   - 后端：`fleeting-analysis.ts` 包含 runner（入队）和 worker（轮询执行），使用 `background_jobs` 队列，`fleeting.analyze` job type。
+   - LLM 调用：通过 `createAgentSession` + `SessionManager.inMemory()` 创建轻量无工具 session，解析 JSON 输出。
+   - API：新增 `GET /suggestions`、`GET /:noteId/analysis`、`POST /:noteId/analyze`。
+   - 前端：`InboxView` 展示 `failed` 状态错误信息，提供"重新分析"按钮；`useInbox` 提供 `retryAnalysis()`。
+   - 防重复：`background_jobs` 的 `UNIQUE INDEX` 保证同一闪念不会同时有多个 pending/running job。
+   - 测试：后端 9 项测试覆盖入队、幂等、跳过、worker 成功/失败重试/最终失败/非 fleeting job 隔离、路由延迟获取、列表返回失败字段。

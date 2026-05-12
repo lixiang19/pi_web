@@ -257,7 +257,9 @@ export const addProject = async (
   const db = await getRidgeDb();
   const existing = db
     .prepare(
-      `SELECT project_id, name, path, is_git, added_at
+      `SELECT project_id, name, path, is_git, added_at,
+              project_type, source, device_id, device_name, device_status,
+              archived_at, updated_at
        FROM projects
        WHERE path = ?`,
     )
@@ -268,6 +270,13 @@ export const addProject = async (
         path: string;
         is_git: number;
         added_at: number;
+        project_type: string;
+        source: string;
+        device_id: string | null;
+        device_name: string | null;
+        device_status: string | null;
+        archived_at: number | null;
+        updated_at: number;
       }
     | undefined;
 
@@ -277,14 +286,21 @@ export const addProject = async (
 
   const nextProject = createProjectRecord(normalizedPath, isGit);
   db.prepare(
-    `INSERT INTO projects(project_id, name, path, is_git, added_at)
-     VALUES(?, ?, ?, ?, ?)`,
+    `INSERT INTO projects(
+      project_id, name, path, is_git, added_at,
+      project_type, source, device_id, archived_at, updated_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     nextProject.id,
     nextProject.name,
     nextProject.path,
     nextProject.isGit ? 1 : 0,
     nextProject.addedAt,
+    nextProject.projectType,
+    nextProject.source,
+    null,
+    null,
+    nextProject.updatedAt,
   );
 
   return nextProject;

@@ -18,6 +18,7 @@ import {
 	processFleetingToTask,
 	uploadFleetingAttachments,
 	getFleetingAttachments,
+	triggerFleetingAnalysis,
 	type FleetingAttachment,
 	type FleetingNote,
 } from "@/lib/api";
@@ -135,12 +136,14 @@ function useInboxInner(workspaceDir: () => string) {
 		() => inboxFiles.value.filter((item) => item.analysisStatus === "analyzing").length,
 	);
 	const hasPendingAnalysis = computed(() =>
-		inboxFiles.value.some((item) => item.analysisStatus !== "suggested"),
+		inboxFiles.value.some(
+			(item) => item.analysisStatus === "unanalyzed" || item.analysisStatus === "analyzing",
+		),
 	);
 
-	const captureNote = async (text: string) => {
+	const captureNote = async (text: string, delayAnalysis?: boolean) => {
 		if (!text.trim() || !workspaceDir()) return;
-		const response = await createFleetingNote(text);
+		const response = await createFleetingNote(text, delayAnalysis);
 		toast.success("已保存闪念");
 		window.dispatchEvent(new CustomEvent("ridge:fleeting-created"));
 		await load();
@@ -219,6 +222,19 @@ function useInboxInner(workspaceDir: () => string) {
 		}
 	};
 
+	const retryAnalysis = async (id: string) => {
+		try {
+			await triggerFleetingAnalysis(id);
+			toast.success("已触发重新分析");
+			await load();
+		} catch (err) {
+			toast.error("重新分析失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
+			throw err;
+		}
+	};
+
 	const getNoteAttachments = (noteId: string) => attachmentsMap.value[noteId] || [];
 
 	const formatTime = (ts: number) => formatRelativeTime(ts);
@@ -280,6 +296,7 @@ function useInboxInner(workspaceDir: () => string) {
 		processToJournal,
 		processToClip,
 		processToTask,
+		retryAnalysis,
 		getNoteAttachments,
 		formatTime,
 	};

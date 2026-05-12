@@ -74,7 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			createFleetingRouter({
 				db,
 				workspaceDir,
-				analysisRunner: { run: runAnalysis },
+				getAnalysisRunner: () => ({ run: runAnalysis, resetJob: vi.fn() }),
 			}),
 		);
 		app.use((err: Error & { statusCode?: number }, _req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }, _next: unknown) => {

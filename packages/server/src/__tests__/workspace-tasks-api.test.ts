@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorkspaceTasksRouter, createWorkspaceMilestonesRouter, type WorkspaceTasksRouterDeps } from "../routes/workspace-tasks.js";
 import { createTempDir } from "../test/helpers.js";
 import { getRidgeDb } from "../db/index.js";
-import type { SessionRecord, SessionSnapshot } from "../types/index.js";
+import type { SessionRecord, SessionSnapshot, ThinkingLevel } from "../types/index.js";
 
 const createMockDeps = (): WorkspaceTasksRouterDeps => ({
 	createSessionRecord: vi.fn(async (params) => ({
@@ -54,7 +54,7 @@ const createMockDeps = (): WorkspaceTasksRouterDeps => ({
 	} as unknown as SessionSnapshot)),
 	getProjects: vi.fn(async () => ({ projects: [] })),
 	getDefaultModel: vi.fn(async () => ""),
-	getDefaultThinkingLevel: vi.fn(async () => "medium"),
+	getDefaultThinkingLevel: vi.fn(async () => "medium" as ThinkingLevel),
 	projectContextResolver: {
 		resolveContext: vi.fn(async (cwd) => ({
 			isGit: false,
@@ -72,7 +72,7 @@ const createMockDeps = (): WorkspaceTasksRouterDeps => ({
 		}),
 		invalidateContext: vi.fn(),
 	},
-	workspaceChatConfig: { workspaceDir: "/tmp/workspace", notesDir: "/tmp/workspace/notes" },
+	workspaceChatConfig: { workspaceDir: "/tmp/workspace", chatProjectId: "test-project", chatProjectPath: "/tmp/workspace", chatProjectLabel: "Test" },
 });
 
 const createApp = (workspaceDir: string, deps?: WorkspaceTasksRouterDeps) => {

@@ -22,6 +22,7 @@ import {
 import type { SessionRecord, SessionSnapshot } from "../types/index.js";
 import type { ProjectContextResolver } from "../project-context.js";
 import type { WorkspaceChatConfig } from "../workspace-chat.js";
+import type { ThinkingLevel } from "../types/index.js";
 
 const actorSchema = z.enum(["user", "agent"]).default("user");
 
@@ -79,13 +80,13 @@ const updateTaskSchema = z
 
 export interface WorkspaceTasksRouterDeps {
 	createSessionRecord: (params: { cwd: string; title?: string; model?: string }) => Promise<SessionRecord>;
-	applyTaskSessionAgentSelection: (record: SessionRecord, selection: { agentName?: string; model?: string; thinkingLevel?: string | null }) => Promise<void>;
+	applyTaskSessionAgentSelection: (record: SessionRecord, selection: { agentName?: string; model?: string; thinkingLevel?: ThinkingLevel | null }) => Promise<void>;
 	persistSessionRecordMetadata: (record: SessionRecord) => Promise<void>;
 	upsertIndexedSessionRecord: (record: SessionRecord, deps: { projectContextResolver: ProjectContextResolver; workspaceChatConfig: WorkspaceChatConfig }) => Promise<void>;
 	toSessionSnapshot: (record: SessionRecord, options: { rounds?: number }) => Promise<SessionSnapshot>;
 	getProjects: () => Promise<{ projects: Array<{ id: string; path: string; deviceId?: string; isOnline: boolean }> }>;
 	getDefaultModel: () => Promise<string>;
-	getDefaultThinkingLevel: () => Promise<string>;
+	getDefaultThinkingLevel: () => Promise<ThinkingLevel>;
 	projectContextResolver: ProjectContextResolver;
 	workspaceChatConfig: WorkspaceChatConfig;
 }

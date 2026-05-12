@@ -6,7 +6,7 @@ import { normalizeString } from '../utils/strings.js';
 import { RIDGE_DB_MIGRATIONS, RIDGE_DB_SCHEMA_VERSION } from './migrations.js';
 import { type SessionMetadataState } from '../types/index.js';
 
-type RidgeDatabase = InstanceType<typeof Database>;
+export type RidgeDatabase = InstanceType<typeof Database>;
 type ColumnDefinition = {
   name: string;
   definition: string;

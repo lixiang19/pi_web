@@ -48,6 +48,8 @@ function makeMomentItem(
 		recommendationText: "建议写入日记",
 		draft: "一条闪念",
 		requiresInput: false,
+		lastError: null,
+		retryCount: 0,
 		piSessionId: null,
 		piSessionFile: null,
 		createdAt: 3000,

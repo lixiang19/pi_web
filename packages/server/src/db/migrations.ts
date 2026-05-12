@@ -275,6 +275,8 @@ CREATE TABLE IF NOT EXISTS fleeting_notes (
   pi_session_file TEXT,
   retry_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
+  capture_type TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0
 );
@@ -590,12 +592,12 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
   ON fleeting_attachments(note_id, created_at DESC);
 `,
   },
-  {
-    version: 9,
-    name: 'desktop capture fields',
-    sql: `
-ALTER TABLE fleeting_notes ADD COLUMN capture_type TEXT;
-ALTER TABLE fleeting_notes ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';
+	{
+		version: 9,
+		name: 'desktop capture fields',
+		sql: `
+-- capture_type and metadata_json are now in the bootstrap schema.
+-- This migration is retained for version tracking but is a no-op.
 `,
-  },
+	},
 ];

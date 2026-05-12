@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
-import express from "express";
+import express, { type Request, type Response } from "express";
 import { getRidgeDb } from "../db/index.js";
 import {
 	createSessionAttachmentsRouter,
@@ -133,7 +133,7 @@ const mockEnsureSessionRecord = async (sessionId: string) => {
 	it("router rejects upload to non-existent session and does not write DB", async () => {
 		const app = express();
 		app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(mockEnsureSessionRecord));
-		app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response) => {
+		app.use((err: Error & { statusCode?: number }, _req: Request, res: Response) => {
 			res.status(err.statusCode ?? 500).json({ error: err.message });
 		});
 
@@ -151,7 +151,7 @@ const mockEnsureSessionRecord = async (sessionId: string) => {
 	it("router rejects list to non-existent session", async () => {
 		const app = express();
 		app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(mockEnsureSessionRecord));
-		app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response) => {
+		app.use((err: Error & { statusCode?: number }, _req: Request, res: Response) => {
 			res.status(err.statusCode ?? 500).json({ error: err.message });
 		});
 

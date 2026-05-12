@@ -20,12 +20,13 @@ type HttpError = Error & { statusCode?: number };
 
 export interface FleetingAnalysisRunner {
 	run: (noteId: string) => Promise<void> | void;
+	resetJob: (noteId: string) => void;
 }
 
 interface FleetingRouterDeps {
 	db: RidgeDatabase;
 	workspaceDir: string;
-	analysisRunner?: FleetingAnalysisRunner;
+	getAnalysisRunner?: () => FleetingAnalysisRunner | undefined;
 }
 
 const captureSchema = z.object({
@@ -52,10 +53,12 @@ const captureSchema = z.object({
 		)
 		.optional()
 		.default([]),
+	delayAnalysis: z.boolean().optional().default(false),
 });
 
 const createFleetingSchema = z.object({
 	content: z.string().trim().min(1),
+	delayAnalysis: z.boolean().optional().default(false),
 });
 
 const analysisSchema = z.object({
@@ -87,6 +90,8 @@ const toPublicNote = (row: Record<string, unknown>) => ({
 	recommendationText: row.recommendation_text,
 	draft: row.draft,
 	requiresInput: row.requires_input === 1,
+	lastError: row.last_error,
+	retryCount: row.retry_count,
 	piSessionId: row.pi_session_id,
 	piSessionFile: row.pi_session_file,
 	createdAt: row.created_at,
@@ -171,7 +176,7 @@ const upload = multer({
 
 export function createFleetingRouter(deps: FleetingRouterDeps) {
 	const router = express.Router();
-	const { db, workspaceDir, analysisRunner } = deps;
+	const { db, workspaceDir, getAnalysisRunner } = deps;
 
 	router.get("/", (_req: Request, res: Response, next: NextFunction) => {
 		try {
@@ -215,7 +220,9 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				  note_id, content, status, analysis_status, created_at, updated_at
 				) VALUES(?, ?, 'pending', 'unanalyzed', ?, ?)`,
 			).run(id, payload.content, now, now);
-			void Promise.resolve(analysisRunner?.run(id)).catch(() => undefined);
+			if (!payload.delayAnalysis) {
+				void Promise.resolve(getAnalysisRunner?.()?.run(id)).catch(() => undefined);
+			}
 			const note = getNoteOrThrow(db, id);
 			res.status(201).json({ note: toPublicNote(note) });
 		} catch (error) {
@@ -255,7 +262,11 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				attachmentRecords.push(record);
 			}
 
-			void Promise.resolve(analysisRunner?.run(id)).catch(() => undefined);
+			// Only enqueue analysis after attachments are stored.
+			// If delayAnalysis is true, skip entirely (caller will trigger later).
+			if (!payload.delayAnalysis) {
+				void Promise.resolve(getAnalysisRunner?.()?.run(id)).catch(() => undefined);
+			}
 
 			const note = getNoteOrThrow(db, id);
 			res.status(201).json({
@@ -472,6 +483,76 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			forwardError(error, next);
 		}
 	});
+
+	router.post(
+		"/:noteId/analyze",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const note = getNoteOrThrow(db, req.params.noteId);
+				const runner = getAnalysisRunner?.();
+				if (!runner) {
+					const error = new Error("分析服务尚未就绪，请稍后重试") as HttpError;
+					error.statusCode = 503;
+					throw error;
+				}
+				// Reset to unanalyzed and trigger re-analysis
+				const now = Date.now();
+				db.prepare(
+					`UPDATE fleeting_notes SET
+					  analysis_status = 'unanalyzed',
+					  last_error = NULL,
+					  updated_at = ?
+					 WHERE note_id = ?`,
+				).run(now, req.params.noteId);
+
+				runner.resetJob(req.params.noteId);
+				res.json({ triggered: true, note: toPublicNote({ ...note, analysis_status: 'unanalyzed', updated_at: now }) });
+			} catch (error) {
+				forwardError(error, next);
+			}
+		},
+	);
+
+	router.get(
+		"/:noteId/analysis",
+		(req: Request, res: Response, next: NextFunction) => {
+			try {
+				const note = getNoteOrThrow(db, req.params.noteId);
+				res.json({
+					analysisStatus: note.analysis_status,
+					recommendationType: note.recommendation_type,
+					recommendationText: note.recommendation_text,
+					draft: note.draft,
+					requiresInput: note.requires_input === 1,
+					lastError: note.last_error,
+					retryCount: note.retry_count,
+					updatedAt: note.updated_at,
+				});
+			} catch (error) {
+				forwardError(error, next);
+			}
+		},
+	);
+
+	router.get(
+		"/suggestions",
+		(req: Request, res: Response, next: NextFunction) => {
+			try {
+				const status = req.query.status as string | undefined;
+				let sql = "SELECT * FROM fleeting_notes";
+				const params: (string | number)[] = [];
+				if (status) {
+					sql += " WHERE analysis_status = ?";
+					params.push(status);
+				}
+				sql += " ORDER BY created_at DESC";
+				const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
+				res.json({ notes: rows.map(toPublicNote) });
+			} catch (error) {
+				forwardError(error, next);
+			}
+		},
+	);
 
 	return router;
 }

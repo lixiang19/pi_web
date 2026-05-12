@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 
 type RidgeDatabase = InstanceType<typeof Database>;
 
-export type BackgroundJobStatus = "pending" | "running" | "completed" | "failed";
+export type BackgroundJobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export interface BackgroundJob {
 	jobId: string;
@@ -117,6 +117,12 @@ const assertRunningJob = (job: BackgroundJob | null, action: string): Background
 	return job;
 };
 
+export interface CancelBackgroundJobFilter {
+	type: string;
+	relatedType?: string;
+	relatedId?: string;
+}
+
 export const createBackgroundJobQueue = (
 	db: RidgeDatabase,
 	options: BackgroundJobQueueOptions = {},
@@ -204,7 +210,7 @@ export const createBackgroundJobQueue = (
 		);
 	};
 
-	const claimNext = (workerId: string): BackgroundJob | null => {
+	const claimNext = (workerId: string, jobType?: string): BackgroundJob | null => {
 		const timestamp = now();
 		const candidates = (
 			db
@@ -213,9 +219,10 @@ export const createBackgroundJobQueue = (
 					 WHERE status = 'pending'
 					   AND (run_after IS NULL OR run_after <= ?)
 					   AND (next_retry_at IS NULL OR next_retry_at <= ?)
+					   ${jobType ? "AND job_type = ?" : ""}
 					 ORDER BY created_at ASC`,
 				)
-				.all(timestamp, timestamp) as BackgroundJobRow[]
+				.all(...(jobType ? [timestamp, timestamp, jobType] : [timestamp, timestamp])) as BackgroundJobRow[]
 		).map(mapRow);
 
 		for (const candidate of candidates) {
@@ -242,7 +249,12 @@ export const createBackgroundJobQueue = (
 	};
 
 	const complete = (jobId: string, result: unknown = {}): BackgroundJob | null => {
-		assertRunningJob(get(jobId), "complete");
+		const job = get(jobId);
+		if (!job || job.status === "cancelled") {
+			// Silently ignore cancellation; the runner already stopped work.
+			return job;
+		}
+		assertRunningJob(job, "complete");
 		const timestamp = now();
 		db.prepare(
 			`UPDATE background_jobs
@@ -258,7 +270,12 @@ export const createBackgroundJobQueue = (
 	};
 
 	const fail = (jobId: string, error: Error | string): BackgroundJob | null => {
-		const current = assertRunningJob(get(jobId), "fail");
+		const job = get(jobId);
+		if (!job || job.status === "cancelled") {
+			// Silently ignore cancellation.
+			return job;
+		}
+		const current = assertRunningJob(job, "fail");
 
 		const message = typeof error === "string" ? error : error.message;
 		const retryCount = current.retryCount + 1;
@@ -310,6 +327,50 @@ export const createBackgroundJobQueue = (
 		return get(jobId);
 	};
 
+	/**
+	 * Cancel jobs matching the given filter.
+	 * - pending/failed jobs are deleted.
+	 * - running jobs are marked 'cancelled' so their workers gracefully stop.
+	 * Returns the number of jobs cancelled.
+	 */
+	const cancel = (filter: CancelBackgroundJobFilter): number => {
+		const timestamp = now();
+		const conditions: string[] = ["job_type = ?"];
+		const params: (string | number | null)[] = [filter.type];
+
+		if (filter.relatedType) {
+			conditions.push("related_type = ?");
+			params.push(filter.relatedType);
+		}
+		if (filter.relatedId) {
+			conditions.push("related_id = ?");
+			params.push(filter.relatedId);
+		}
+
+		const where = conditions.join(" AND ");
+
+		// Delete pending / failed jobs outright.
+		db.prepare(
+			`DELETE FROM background_jobs
+			 WHERE ${where}
+			   AND status IN ('pending', 'failed')`,
+		).run(...params);
+
+		// Mark running jobs as cancelled so workers skip complete/fail.
+		db.prepare(
+			`UPDATE background_jobs
+			 SET status = 'cancelled',
+			     updated_at = ?
+			 WHERE ${where}
+			   AND status = 'running'`,
+		).run(timestamp, ...params);
+
+		const result = db.prepare(
+			`SELECT COUNT(*) as count FROM background_jobs WHERE ${where} AND status = 'cancelled'`
+		).get(...params) as { count: number } | undefined;
+		return result?.count ?? 0;
+	};
+
 	return {
 		claimNext,
 		complete,
@@ -317,5 +378,6 @@ export const createBackgroundJobQueue = (
 		fail,
 		get,
 		list,
+		cancel,
 	};
 };

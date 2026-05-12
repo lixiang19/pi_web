@@ -59,6 +59,13 @@ import { createWorktreeRouter } from "./routes/worktrees.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
+	createBackgroundJobQueue,
+} from "./background-jobs.js";
+import {
+	createFleetingAnalysisRunner,
+	createFleetingAnalysisWorker,
+} from "./fleeting-analysis.js";
+import {
 	getIndexedSessionTree,
 	invalidateManagedProjectScopes,
 	listIndexedSessionContexts,
@@ -143,6 +150,9 @@ const worktreeService = createWorktreeService(gitService);
 
 let automationStore: AutomationStore | undefined;
 let automationScheduler: ReturnType<typeof createAutomationScheduler> | undefined;
+const fleetingRunnerRef: {
+	value?: ReturnType<typeof createFleetingAnalysisRunner>;
+} = {};
 
 export const getAutomationStore = (): AutomationStore => {
 	if (!automationStore) {
@@ -452,6 +462,7 @@ app.use(authRuntime.requireApiAuth);
 app.use("/api/fleeting", createFleetingRouter({
 	db: await initializeRidgeDb(defaultWorkspaceDir),
 	workspaceDir: defaultWorkspaceDir,
+	getAnalysisRunner: () => fleetingRunnerRef.value,
 }));
 
 // ===== Notes API =====
@@ -1326,6 +1337,16 @@ export async function startServer() {
 
 	await ensureWorkspaceTemplate(defaultWorkspaceDir);
 	const db = await initializeRidgeDb(defaultWorkspaceDir);
+	const jobQueue = createBackgroundJobQueue(db);
+	fleetingRunnerRef.value = createFleetingAnalysisRunner({ db, jobQueue });
+	const fleetingAnalysisWorker = createFleetingAnalysisWorker({
+		db,
+		jobQueue,
+		modelRegistry,
+		authStorage,
+		workspaceDir: defaultWorkspaceDir,
+	});
+	fleetingAnalysisWorker.start();
 	automationStore = createAutomationStore(db);
 	automationScheduler = createAutomationScheduler({
 		store: automationStore,
