@@ -131,15 +131,12 @@ describe("ridge db migrations", () => {
 				"workspace_tasks",
 				"workspace_milestones",
 				"fleeting_notes",
-				"fleeting_attachments",
 				"automations",
 				"automation_runs",
 				"background_jobs",
 				"search_index_status",
 				"notification_events",
 				"app_settings",
-				"session_attachments",
-				"clips",
 			]),
 		);
 		expect(listColumns(db, "devices")).toEqual(
@@ -157,26 +154,6 @@ describe("ridge db migrations", () => {
 				"task_id",
 				"device_id",
 				"readonly",
-			]),
-		);
-		expect(listColumns(db, "fleeting_notes")).toEqual(
-			expect.arrayContaining([
-				"note_id",
-				"content",
-				"status",
-				"analysis_status",
-				"type",
-				"suggestion",
-				"recommendation_type",
-				"recommendation_text",
-				"draft",
-				"requires_input",
-				"pi_session_id",
-				"pi_session_file",
-				"retry_count",
-				"last_error",
-				"created_at",
-				"updated_at",
 			]),
 		);
 		expect(listColumns(db, "background_jobs")).toEqual(

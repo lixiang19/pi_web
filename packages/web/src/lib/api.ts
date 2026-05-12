@@ -763,23 +763,11 @@ export function getRecentFiles(root: string, limit = 20) {
 // Fleeting Notes API
 export type FleetingRecommendationType = "journal" | "clip" | "task" | "delete";
 
-export interface FleetingAttachment {
-	id: string;
-	originalName: string;
-	storedName: string;
-	mimeType: string;
-	size: number;
-	sha256: string;
-	createdAt: number;
-}
-
 export interface FleetingNote {
 	id: string;
-	type: string;
 	content: string;
 	status: "pending" | "processing";
-	analysisStatus: "unanalyzed" | "analyzing" | "suggested" | "failed";
-	suggestion: string | null;
+	analysisStatus: "unanalyzed" | "analyzing" | "suggested";
 	recommendationType: FleetingRecommendationType | null;
 	recommendationText: string | null;
 	draft: string | null;
@@ -788,7 +776,6 @@ export interface FleetingNote {
 	piSessionFile: string | null;
 	createdAt: number;
 	updatedAt: number;
-	attachments: FleetingAttachment[];
 }
 
 export interface ClipRecord {
@@ -802,47 +789,25 @@ export interface ClipRecord {
 }
 
 export function getFleetingNotes() {
-	return request<{ notes: FleetingNote[] }>("/api/workspace/fleeting");
+	return request<{ notes: FleetingNote[] }>("/api/fleeting");
 }
 
-export function createFleetingNote(content: string, files?: File[]) {
-	const formData = new FormData();
-	formData.append("content", content);
-	if (files && files.length > 0) {
-		for (const file of files) {
-			formData.append("attachments", file, file.name);
-		}
-	}
-	return request<{ note: FleetingNote }>("/api/workspace/fleeting", {
+export function createFleetingNote(content: string) {
+	return request<{ note: FleetingNote }>("/api/fleeting", {
 		method: "POST",
-		body: formData,
-	});
-}
-
-export function patchFleetingNote(
-	noteId: string,
-	data: {
-		content?: string;
-		status?: "pending" | "processing";
-		analysisStatus?: "unanalyzed" | "analyzing" | "suggested" | "failed";
-		suggestion?: string;
-	},
-) {
-	return request<{ note: FleetingNote }>(`/api/workspace/fleeting/${noteId}`, {
-		method: "PATCH",
-		body: JSON.stringify(data),
+		body: JSON.stringify({ content }),
 	});
 }
 
 export function deleteFleetingNote(noteId: string) {
-	return request<{ deleted: true }>(`/api/workspace/fleeting/${noteId}`, {
+	return request<{ deleted: true }>(`/api/fleeting/${noteId}`, {
 		method: "DELETE",
 	});
 }
 
 export function processFleetingToJournal(noteId: string, content: string) {
-	return request<{ deleted: true; journalPath: string; migratedAttachments?: string[] }>(
-		`/api/workspace/fleeting/${noteId}/process/journal`,
+	return request<{ deleted: true; journalPath: string }>(
+		`/api/fleeting/${noteId}/process/journal`,
 		{
 			method: "POST",
 			body: JSON.stringify({ content }),
@@ -854,8 +819,8 @@ export function processFleetingToClip(
 	noteId: string,
 	data: { title: string; url?: string; content: string; source?: string },
 ) {
-	return request<{ deleted: true; clip: ClipRecord; migratedAttachments?: string[] }>(
-		`/api/workspace/fleeting/${noteId}/process/clip`,
+	return request<{ deleted: true; clip: ClipRecord }>(
+		`/api/fleeting/${noteId}/process/clip`,
 		{
 			method: "POST",
 			body: JSON.stringify(data),
@@ -865,13 +830,13 @@ export function processFleetingToClip(
 
 export function processFleetingToTask(noteId: string) {
 	return request<{ processed: false; message: string }>(
-		`/api/workspace/fleeting/${noteId}/process/task`,
+		`/api/fleeting/${noteId}/process/task`,
 		{ method: "POST" },
 	);
 }
 
 export function getClips() {
-	return request<{ clips: ClipRecord[] }>("/api/workspace/fleeting/clips");
+	return request<{ clips: ClipRecord[] }>("/api/fleeting/clips");
 }
 
 // Workspace Tasks API

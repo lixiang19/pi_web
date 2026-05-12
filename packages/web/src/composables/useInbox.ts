@@ -86,11 +86,9 @@ function useInboxInner(workspaceDir: () => string) {
 		if (q) {
 			list = list.filter((item) => {
 				const recommendation = item.recommendationText ?? "";
-				const suggestion = item.suggestion ?? "";
 				return (
 					item.content.toLowerCase().includes(q) ||
-					recommendation.toLowerCase().includes(q) ||
-					suggestion.toLowerCase().includes(q)
+					recommendation.toLowerCase().includes(q)
 				);
 			});
 		}
@@ -117,16 +115,13 @@ function useInboxInner(workspaceDir: () => string) {
 	const analyzingCount = computed(
 		() => inboxFiles.value.filter((item) => item.analysisStatus === "analyzing").length,
 	);
-	// Only poll for unanalyzed or analyzing; suggested/failed should not poll
 	const hasPendingAnalysis = computed(() =>
-		inboxFiles.value.some(
-			(item) => item.analysisStatus === "unanalyzed" || item.analysisStatus === "analyzing",
-		),
+		inboxFiles.value.some((item) => item.analysisStatus !== "suggested"),
 	);
 
-	const captureNote = async (text: string, files?: File[]) => {
-		if (!text.trim() && (!files || files.length === 0)) return;
-		const response = await createFleetingNote(text, files ?? []);
+	const captureNote = async (text: string) => {
+		if (!text.trim() || !workspaceDir()) return;
+		const response = await createFleetingNote(text);
 		toast.success("已保存闪念");
 		window.dispatchEvent(new CustomEvent("ridge:fleeting-created"));
 		await load();

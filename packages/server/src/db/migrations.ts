@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 9;
+export const RIDGE_DB_SCHEMA_VERSION = 7;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -265,10 +265,8 @@ CREATE INDEX IF NOT EXISTS idx_workspace_tasks_due_date
 CREATE TABLE IF NOT EXISTS fleeting_notes (
   note_id TEXT PRIMARY KEY,
   content TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'pending',
-  analysis_status TEXT NOT NULL DEFAULT 'unanalyzed',
-  type TEXT NOT NULL DEFAULT 'text',
-  suggestion TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  analysis_status TEXT NOT NULL DEFAULT 'pending',
   recommendation_type TEXT,
   recommendation_text TEXT,
   draft TEXT,
@@ -281,22 +279,8 @@ CREATE TABLE IF NOT EXISTS fleeting_notes (
   updated_at INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS fleeting_attachments (
-  attachment_id TEXT PRIMARY KEY,
-  note_id TEXT NOT NULL,
-  original_name TEXT NOT NULL DEFAULT '',
-  stored_name TEXT NOT NULL DEFAULT '',
-  temp_path TEXT NOT NULL DEFAULT '',
-  final_path TEXT,
-  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
-  size INTEGER NOT NULL DEFAULT 0,
-  sha256 TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL DEFAULT 0,
-  FOREIGN KEY(note_id) REFERENCES fleeting_notes(note_id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
-  ON fleeting_attachments(note_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fleeting_notes_created_at
+  ON fleeting_notes(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS search_index_status (
   target_path TEXT PRIMARY KEY,
@@ -584,35 +568,6 @@ CREATE INDEX IF NOT EXISTS idx_workspace_milestones_project
   ON workspace_milestones(workspace_path, project_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_tasks_project
   ON workspace_tasks(workspace_path, project_id);
-`,
-  },
-  {
-    version: 8,
-    name: 'fleeting_notes type suggestion and correct defaults',
-    sql: `
-UPDATE fleeting_notes SET status = 'pending' WHERE status = 'active';
-UPDATE fleeting_notes SET analysis_status = 'unanalyzed' WHERE analysis_status = 'pending';
-`,
-  },
-  {
-    version: 9,
-    name: 'fleeting_attachments table',
-    sql: `
-CREATE TABLE IF NOT EXISTS fleeting_attachments (
-  attachment_id TEXT PRIMARY KEY,
-  note_id TEXT NOT NULL,
-  original_name TEXT NOT NULL DEFAULT '',
-  stored_name TEXT NOT NULL DEFAULT '',
-  temp_path TEXT NOT NULL DEFAULT '',
-  final_path TEXT,
-  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
-  size INTEGER NOT NULL DEFAULT 0,
-  sha256 TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL DEFAULT 0,
-  FOREIGN KEY(note_id) REFERENCES fleeting_notes(note_id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
-  ON fleeting_attachments(note_id, created_at DESC);
 `,
   },
 ];
