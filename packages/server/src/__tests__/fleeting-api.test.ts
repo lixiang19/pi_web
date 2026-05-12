@@ -440,4 +440,141 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(res.status).toBe(200);
 		expect(res.body.ignored).toBe(true);
 	});
+
+	it("keeps fleeting note and temp attachments when attachment copy fails", async () => {
+		const noteRes = await request(app)
+			.post("/api/fleeting")
+			.send({ content: "附件迁移失败闪念" });
+		const noteId = noteRes.body.note.id;
+
+		await request(app)
+			.post(`/api/fleeting/${noteId}/attachments`)
+			.attach("files", Buffer.from("content"), { filename: "doc.txt" });
+
+		// Make target directory read-only to force copy failure
+		const targetDir = path.join(workspaceDir, "附件");
+		await fs.mkdir(targetDir, { recursive: true });
+		await fs.chmod(targetDir, 0o500);
+
+		const res = await request(app)
+			.post(`/api/fleeting/${noteId}/process/task`)
+			.send({ title: "任务", priority: "normal", acceptanceCriteria: "完成" });
+
+		expect(res.status).toBe(500);
+
+		// Note must still exist
+		const list = await request(app).get("/api/fleeting");
+		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes[0].id).toBe(noteId);
+
+		// Temp file must still exist
+		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
+		expect(await fs.readdir(tempDir)).toHaveLength(1);
+
+		// DB record must still exist
+		const rows = db
+			.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
+			.all(noteId) as unknown[];
+		expect(rows).toHaveLength(1);
+
+		// Restore permission for cleanup
+		await fs.chmod(targetDir, 0o755);
+	});
+
+	it("keeps fleeting note, temp attachments, and cleans up formal files when one of multiple attachments partially fails to migrate", async () => {
+		const noteRes = await request(app)
+			.post("/api/fleeting")
+			.send({ content: "多附件部分迁移失败闪念" });
+		const noteId = noteRes.body.note.id;
+
+		await request(app)
+			.post(`/api/fleeting/${noteId}/attachments`)
+			.attach("files", Buffer.from("first content"), { filename: "first.txt" });
+
+		await request(app)
+			.post(`/api/fleeting/${noteId}/attachments`)
+			.attach("files", Buffer.from("second content"), { filename: "second.txt" });
+
+		// Monkey-patch fs.readFile to succeed on first call, fail on second call
+		let callCount = 0;
+		const originalReadFile = fs.readFile;
+		const readFileSpy = vi.spyOn(fs, "readFile").mockImplementation(async (filepath, ...args) => {
+			callCount++;
+			if (callCount === 2) {
+				throw new Error("Simulated read failure on second attachment");
+			}
+			return originalReadFile(filepath, ...(args as any[]));
+		});
+
+		const res = await request(app)
+			.post(`/api/fleeting/${noteId}/process/attachment`)
+			.send({});
+
+		expect(res.status).toBe(500);
+		expect(res.body.error).toContain("附件迁移失败");
+
+		// Note must still exist
+		const list = await request(app).get("/api/fleeting");
+		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes[0].id).toBe(noteId);
+
+		// All temp DB records must still exist
+		const dbRows = db
+			.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
+			.all(noteId) as unknown[];
+		expect(dbRows).toHaveLength(2);
+
+		// All temp files must still exist
+		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
+		const tempFiles = await fs.readdir(tempDir);
+		expect(tempFiles).toHaveLength(2);
+
+		// No half-copied files should remain in formal directory
+		const formalDir = path.join(workspaceDir, "附件");
+		try {
+			const formalFiles = await fs.readdir(formalDir);
+			expect(formalFiles).toHaveLength(0);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		}
+
+		readFileSpy.mockRestore();
+	});
+
+	it("keeps fleeting note and temp attachments when target INSERT fails after successful copy", async () => {
+		const noteRes = await request(app)
+			.post("/api/fleeting")
+			.send({ content: "事务失败闪念" });
+		const noteId = noteRes.body.note.id;
+
+		await request(app)
+			.post(`/api/fleeting/${noteId}/attachments`)
+			.attach("files", Buffer.from("content"), { filename: "doc.txt" });
+
+		// Rename target DB table to force INSERT to fail
+		db.prepare("ALTER TABLE workspace_tasks RENAME TO workspace_tasks_bak").run();
+
+		const res = await request(app)
+			.post(`/api/fleeting/${noteId}/process/task`)
+			.send({ title: "任务", priority: "normal", acceptanceCriteria: "完成" });
+
+		expect(res.status).toBe(500);
+
+		// Formal file was written but note must still exist because INSERT failed
+		const list = await request(app).get("/api/fleeting");
+		expect(list.body.notes).toHaveLength(1);
+
+		// Temp file must still exist
+		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
+		expect(await fs.readdir(tempDir)).toHaveLength(1);
+
+		// Temp DB record must still exist
+		const rows = db
+			.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
+			.all(noteId) as unknown[];
+		expect(rows).toHaveLength(1);
+
+		// Restore table for other tests
+		db.prepare("ALTER TABLE workspace_tasks_bak RENAME TO workspace_tasks").run();
+	});
 });

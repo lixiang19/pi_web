@@ -10,6 +10,9 @@ import {
 import { toast } from "vue-sonner";
 
 import {
+	createFleetingNote,
+	deleteFleetingNote,
+	getFleetingNotes,
 	processFleetingToClip,
 	processFleetingToJournal,
 	processFleetingToTask,

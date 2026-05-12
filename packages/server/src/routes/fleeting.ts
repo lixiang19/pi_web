@@ -13,20 +13,14 @@ import {
 	storeFleetingAttachment,
 	getFleetingAttachments,
 	deleteFleetingAttachmentsForNote,
-	migrateFleetingAttachments,
+	copyFleetingAttachmentsToFormal,
+	deleteFleetingAttachmentRecords,
+	deleteFleetingTempFiles,
 } from "../fleeting-attachments.js";
 import type { RidgeDatabase } from "../db/index.js";
 
 // --- Task system helpers (direct DB access to avoid circular deps / async global DB) ---
 // These mirror task-system.ts logic but work with the injected db and workspaceDir.
-
-const TASK_STATUSES = [
-	"pending",
-	"in_progress",
-	"blocked",
-	"reviewing",
-	"completed",
-] as const;
 
 const TASK_PRIORITIES = ["normal", "important", "urgent"] as const;
 
@@ -37,23 +31,6 @@ const normalizeWorkspacePath = (workspaceDir: string): string =>
 	path.resolve(workspaceDir);
 
 const createId = (prefix: string): string => `${prefix}-${crypto.randomUUID()}`;
-
-const getMilestoneById = (
-	db: RidgeDatabase,
-	workspacePath: string,
-	milestoneId: string,
-) => {
-	const row = db
-		.prepare(
-			`SELECT m.*, COUNT(t.task_id) AS task_count
-       FROM workspace_milestones m
-       LEFT JOIN workspace_tasks t ON t.milestone_id = m.milestone_id
-       WHERE m.workspace_path = ? AND m.milestone_id = ?
-       GROUP BY m.milestone_id`,
-		)
-		.get(workspacePath, milestoneId) as Record<string, unknown> | undefined;
-	return row ?? null;
-};
 
 const ensureDefaultMilestone = (db: RidgeDatabase, workspaceDir: string) => {
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
@@ -500,15 +477,19 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			try {
 				getNoteOrThrow(db, req.params.noteId);
 				const payload = journalSchema.parse(req.body ?? {});
-				const journalPath = await appendToTodayJournal(workspaceDir, payload.content);
-				// 迁移附件到正式目录
-				const { migratedPaths, failed } = await migrateFleetingAttachments(
+				const { migratedPaths } = await copyFleetingAttachmentsToFormal(
 					db,
 					workspaceDir,
 					req.params.noteId,
 				);
-				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
-				res.json({ deleted: true, journalPath, migratedAttachments: migratedPaths, failedAttachments: failed });
+				const journalPath = await appendToTodayJournal(workspaceDir, payload.content);
+				const cleanup = db.transaction(() => {
+					deleteFleetingAttachmentRecords(db, req.params.noteId);
+					db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
+				});
+				cleanup();
+				await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
+				res.json({ deleted: true, journalPath, migratedAttachments: migratedPaths });
 			} catch (error) {
 				forwardError(error, next);
 			}
@@ -521,15 +502,15 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			try {
 				getNoteOrThrow(db, req.params.noteId);
 				const payload = clipSchema.parse(req.body ?? {});
-				const now = Date.now();
-				const clipId = makeId("clip");
-				// 先迁移附件
-				const { migratedPaths, failed } = await migrateFleetingAttachments(
+				const { migratedPaths } = await copyFleetingAttachmentsToFormal(
 					db,
 					workspaceDir,
 					req.params.noteId,
 				);
+				const now = Date.now();
+				const clipId = makeId("clip");
 				const createAndDelete = db.transaction(() => {
+					deleteFleetingAttachmentRecords(db, req.params.noteId);
 					db.prepare(
 						`INSERT INTO clips(
 						  clip_id, title, url, content, source, created_at, updated_at
@@ -548,6 +529,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					);
 				});
 				createAndDelete();
+				await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
 				res.json({
 					deleted: true,
 					clip: {
@@ -560,7 +542,6 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 						updatedAt: now,
 					},
 					migratedAttachments: migratedPaths,
-					failedAttachments: failed,
 				});
 			} catch (error) {
 				forwardError(error, next);
@@ -573,7 +554,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 		try {
 			getNoteOrThrow(db, req.params.noteId);
 			const payload = taskSchema.parse(req.body ?? {});
-			const { migratedPaths, failed } = await migrateFleetingAttachments(
+			const { migratedPaths } = await copyFleetingAttachmentsToFormal(
 				db,
 				workspaceDir,
 				req.params.noteId,
@@ -583,6 +564,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			const taskId = createId("task");
 
 			const createAndDelete = db.transaction(() => {
+				deleteFleetingAttachmentRecords(db, req.params.noteId);
 				db.prepare(
 					`INSERT INTO workspace_tasks(
 					  task_id, workspace_path, project_id, milestone_id, title, status, priority,
@@ -608,6 +590,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
 			});
 			createAndDelete();
+			await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
 
 			const row = db
 				.prepare("SELECT * FROM workspace_tasks WHERE task_id = ?")
@@ -631,7 +614,6 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					updatedAt: row.updated_at,
 				},
 				migratedAttachments: migratedPaths,
-				failedAttachments: failed,
 			});
 		} catch (error) {
 			forwardError(error, next);
@@ -643,7 +625,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 		try {
 			getNoteOrThrow(db, req.params.noteId);
 			const payload = milestoneSchema.parse(req.body ?? {});
-			const { migratedPaths, failed } = await migrateFleetingAttachments(
+			const { migratedPaths } = await copyFleetingAttachmentsToFormal(
 				db,
 				workspaceDir,
 				req.params.noteId,
@@ -652,6 +634,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			const milestoneId = createId("milestone");
 
 			const createAndDelete = db.transaction(() => {
+				deleteFleetingAttachmentRecords(db, req.params.noteId);
 				db.prepare(
 					`INSERT INTO workspace_milestones(
 					  milestone_id, workspace_path, project_id, title, goal, acceptance_criteria, status,
@@ -675,6 +658,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
 			});
 			createAndDelete();
+			await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
 
 			const row = db
 				.prepare("SELECT * FROM workspace_milestones WHERE milestone_id = ?")
@@ -697,7 +681,6 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					updatedAt: row.updated_at,
 				},
 				migratedAttachments: migratedPaths,
-				failedAttachments: failed,
 			});
 		} catch (error) {
 			forwardError(error, next);
@@ -708,18 +691,24 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 	router.post("/:noteId/process/attachment", async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			getNoteOrThrow(db, req.params.noteId);
-			const { migratedPaths, failed } = await migrateFleetingAttachments(
-				db,
-				workspaceDir,
-				req.params.noteId,
-			);
-			if (migratedPaths.length === 0 && failed.length === 0) {
+			const attachments = getFleetingAttachments(db, req.params.noteId);
+			if (attachments.length === 0) {
 				const error = new Error("该闪念没有附件") as HttpError;
 				error.statusCode = 400;
 				throw error;
 			}
-			db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
-			res.json({ deleted: true, migratedAttachments: migratedPaths, failedAttachments: failed });
+			const { migratedPaths } = await copyFleetingAttachmentsToFormal(
+				db,
+				workspaceDir,
+				req.params.noteId,
+			);
+			const cleanup = db.transaction(() => {
+				deleteFleetingAttachmentRecords(db, req.params.noteId);
+				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
+			});
+			cleanup();
+			await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
+			res.json({ deleted: true, migratedAttachments: migratedPaths });
 		} catch (error) {
 			forwardError(error, next);
 		}

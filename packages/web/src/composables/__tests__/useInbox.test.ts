@@ -31,8 +31,6 @@ import {
 	processFleetingToClip,
 	processFleetingToJournal,
 	processFleetingToTask,
-	processFleetingToMilestone,
-	processFleetingToAttachment,
 	getFleetingAttachments,
 	triggerFleetingAnalysis,
 } from "@/lib/api";
@@ -43,8 +41,6 @@ const mockDeleteFleetingNote = vi.mocked(deleteFleetingNote);
 const mockProcessFleetingToJournal = vi.mocked(processFleetingToJournal);
 const mockProcessFleetingToClip = vi.mocked(processFleetingToClip);
 const mockProcessFleetingToTask = vi.mocked(processFleetingToTask);
-const mockProcessFleetingToMilestone = vi.mocked(processFleetingToMilestone);
-const mockProcessFleetingToAttachment = vi.mocked(processFleetingToAttachment);
 const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
 const mockTriggerFleetingAnalysis = vi.mocked(triggerFleetingAnalysis);
 
@@ -88,8 +84,23 @@ describe("useWorkspaceInbox", () => {
 			},
 		});
 		mockProcessFleetingToTask.mockResolvedValue({
-			processed: false,
-			message: "任务系统正在接入中，暂不能从闪念创建任务",
+			deleted: true,
+			task: {
+				id: "task-1",
+				workspacePath: "/workspace",
+				projectId: null,
+				milestoneId: "milestone-1",
+				title: "整理任务系统",
+				status: "pending",
+				priority: "normal",
+				acceptanceCriteria: "完成",
+				dueDate: null,
+				blockedReason: null,
+				processingSessionId: null,
+				sortOrder: 0,
+				createdAt: 1000,
+				updatedAt: 1000,
+			},
 		});
 		mockDeleteFleetingNote.mockResolvedValue({ deleted: true });
 		mockTriggerFleetingAnalysis.mockResolvedValue({ triggered: true, note });
@@ -166,15 +177,12 @@ describe("useWorkspaceInbox", () => {
 		expect(store.count.value).toBe(0);
 	});
 
-	it("keeps a note when task processing reports pending integration", async () => {
-		mockProcessFleetingToTask.mockResolvedValue({
-			processed: false,
-			message: "任务系统正在接入中，暂不能从闪念创建任务",
-		});
+	it("creates a task from a note and removes it from queue", async () => {
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(store.count.value).toBe(1));
-		await store.processToTask("flash-1");
-		expect(store.count.value).toBe(1);
+		await store.processToTask("flash-1", { title: "整理任务系统", priority: "normal", acceptanceCriteria: "完成" });
+		expect(store.count.value).toBe(0);
+		expect(mockProcessFleetingToTask).toHaveBeenCalledWith("flash-1", { title: "整理任务系统", priority: "normal", acceptanceCriteria: "完成" });
 	});
 
 	it("restores a note when delete fails", async () => {

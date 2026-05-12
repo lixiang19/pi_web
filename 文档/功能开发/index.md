@@ -20,7 +20,7 @@
 | 13 闪念临时附件生命周期 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 14 桌面采集入口 | - | - | - | - | - | - | - |
 | 15 fleeting agent 分析建议 | ✅ | ✅ | ✅ | ✅ | ✅ | - | - |
-| 16 闪念处理为正式对象 | ◐ | ◐ | ◐ | ◐ | - | - | - |
+| 16 闪念处理为正式对象 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 17 文件页与正式附件目录 | ⚠️ | - | - | - | - | - | - |
 | 18 文件处理状态与临时文件边界 | - | - | - | - | - | - | - |
 | 19 PDF Word 标准化转换 | - | - | - | - | - | - | - |
@@ -49,7 +49,7 @@
 以下按**当前工作树静态证据**记录，未验证/未合并的其他 worktree 实现不标为已完成：
 
 - **13 闪念临时附件生命周期**：`.ridge/fleeting-attachments` 目录模板已在 `workspace-chat.ts` 的 `RIDGE_SYSTEM_SUBDIRS` / `ensureWorkspaceTemplate()` 中就位，但无闪念附件上传 API、无 DB 引用字段/关系、无删除清理、无迁移到正式附件目录，只能标为目录/基础设施部分完成。
-- **16 闪念处理为正式对象**：`routes/fleeting.ts` 已实现 `process/journal` 与 `process/clip`（写入日记/剪藏并删除闪念）；`process/task` 仅返回 202“任务系统正在接入中”并保留闪念；`process/milestone` 与 `process/attachment` 不存在。整体只能标 API/DB/前端“部分完成/未完整”。
+- **16 闪念处理为正式对象**：`routes/fleeting.ts` 已实现 `process/journal`、`process/clip`、`process/task`、`process/milestone`、`process/attachment` 全部五种处理路径。task 和 milestone 支持 `projectId` 参数，所有 process 路由使用 `db.transaction()` 包裹目标创建 + 闪念删除。附件迁移在事务外执行，失败时闪念保留。`fleeting-api.test.ts` 覆盖全部处理路径、失败保留、项目选择等场景。前端 `InboxView.vue` 提供任务/里程碑/剪藏/附件/日记处理按钮和对话框，`useInbox.ts` 封装处理函数。已标 ✅。
 - **24 全局搜索资产导航器**：左侧导航入口存在，但 `WorkspacePage.vue` 中 search 走 `WorkspaceFeaturePlaceholder`，真实搜索输入与结果未实现，只能标为入口/占位。
 - **34 通知与建议中心**：左侧导航入口存在，但同样走 `WorkspaceFeaturePlaceholder`，真实通知中心未实现，只能标为入口/占位。
 - **36 自动化规则运行与跳过**：`automation_rules` CRUD、调度器、手动 run API、UI 已有，但 `automation_runs` 无业务写入，跳过记录/失败通知/运行历史未闭环。只能标为自动化规则 CRUD/调度部分完成。

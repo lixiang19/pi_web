@@ -16,7 +16,6 @@ import {
 	RefreshCw,
 	Flag,
 	Archive,
-	ChevronDown,
 } from "lucide-vue-next";
 import { toast } from "vue-sonner";
 

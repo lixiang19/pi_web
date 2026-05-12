@@ -344,4 +344,87 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		const content = await fs.readFile(formalPath, "utf-8");
 		expect(content).toBe("task attachment");
 	});
+
+	it("keeps fleeting note and temp attachments when copy to formal directory fails", async () => {
+		const noteRes = await request(app)
+			.post("/api/fleeting")
+			.send({ content: "迁移失败闪念" });
+		const noteId = noteRes.body.note.id;
+
+		await request(app)
+			.post(`/api/fleeting/${noteId}/attachments`)
+			.attach("files", Buffer.from("content"), { filename: "doc.txt" });
+
+		// Make target directory read-only to force copy failure
+		const targetDir = path.join(workspaceDir, "附件");
+		await fs.mkdir(targetDir, { recursive: true });
+		await fs.chmod(targetDir, 0o500);
+
+		const res = await request(app)
+			.post(`/api/fleeting/${noteId}/process/task`)
+			.send({ title: "任务", priority: "normal", acceptanceCriteria: "完成" });
+
+		expect(res.status).toBe(500);
+
+		// Note must still exist
+		const list = await request(app).get("/api/fleeting");
+		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes[0].id).toBe(noteId);
+
+		// Temp attachment must still exist
+		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
+		expect(await fs.readdir(tempDir)).toHaveLength(1);
+
+		// DB record must still exist
+		const rows = db
+			.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
+			.all(noteId) as unknown[];
+		expect(rows).toHaveLength(1);
+
+		// Restore permission for cleanup
+		await fs.chmod(targetDir, 0o755);
+	});
+
+	it("keeps fleeting note and temp attachments when target INSERT fails after successful copy", async () => {
+		const noteRes = await request(app)
+			.post("/api/fleeting")
+			.send({ content: "事务失败闪念" });
+		const noteId = noteRes.body.note.id;
+
+		await request(app)
+			.post(`/api/fleeting/${noteId}/attachments`)
+			.attach("files", Buffer.from("content"), { filename: "doc.txt" });
+
+		// Monkey-patch db.prepare to throw on INSERT so the copy succeeds but transaction fails
+		const originalPrepare = db.prepare.bind(db);
+		(db as any).prepare = function(sql: string) {
+			if (sql.includes("INSERT INTO workspace_tasks")) {
+				throw new Error("Simulated DB failure");
+			}
+			return originalPrepare(sql);
+		};
+
+		const res = await request(app)
+			.post(`/api/fleeting/${noteId}/process/task`)
+			.send({ title: "任务", priority: "normal", acceptanceCriteria: "完成" });
+
+		expect(res.status).toBe(500);
+
+		// Restore db.prepare
+		(db as any).prepare = originalPrepare;
+
+		// Formal file was written but note must still exist because INSERT failed
+		const list = await request(app).get("/api/fleeting");
+		expect(list.body.notes).toHaveLength(1);
+
+		// Temp file must still exist
+		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
+		expect(await fs.readdir(tempDir)).toHaveLength(1);
+
+		// Temp DB record must still exist
+		const rows = db
+			.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
+			.all(noteId) as unknown[];
+		expect(rows).toHaveLength(1);
+	});
 });
