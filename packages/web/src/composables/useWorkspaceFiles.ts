@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { getWorkspaceFilesTree } from "@/lib/api";
+import { getWorkspaceFilesTree, retryFileProcessing } from "@/lib/api";
 import type { FileTreeEntry } from "@/lib/types";
 
 export function getParentPath(currentPath: string): string | null {
@@ -46,6 +46,17 @@ export function useWorkspaceFiles() {
 		await load(parent);
 	};
 
+	const retry = async (filePath: string) => {
+		error.value = "";
+		try {
+			await retryFileProcessing(filePath);
+			// Refresh current directory to show updated status
+			await load(currentPath.value);
+		} catch (err) {
+			error.value = err instanceof Error ? err.message : String(err);
+		}
+	};
+
 	return {
 		entries,
 		workspaceRoot,
@@ -55,5 +66,6 @@ export function useWorkspaceFiles() {
 		load,
 		navigate,
 		navigateBack,
+		retry,
 	};
 }

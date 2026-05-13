@@ -92,7 +92,6 @@ CREATE TABLE IF NOT EXISTS session_index (
   device_id TEXT,
   run_location TEXT NOT NULL DEFAULT 'server',
   archived INTEGER NOT NULL DEFAULT 0,
-  readonly INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0
 );
@@ -144,36 +143,6 @@ CREATE TABLE IF NOT EXISTS automation_rules (
 
 CREATE INDEX IF NOT EXISTS idx_automation_rules_next_run_at
   ON automation_rules(enabled, next_run_at);
-
-CREATE TABLE IF NOT EXISTS automations (
-  automation_id TEXT PRIMARY KEY,
-  name TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'active',
-  scope_type TEXT NOT NULL DEFAULT 'workspace',
-  project_id TEXT,
-  schedule_json TEXT NOT NULL DEFAULT '{}',
-  prompt TEXT NOT NULL DEFAULT '',
-  next_run_at INTEGER,
-  created_at INTEGER NOT NULL DEFAULT 0,
-  updated_at INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_automations_next_run_at
-  ON automations(status, next_run_at);
-
-CREATE TABLE IF NOT EXISTS automation_runs (
-  run_id TEXT PRIMARY KEY,
-  automation_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  started_at INTEGER,
-  finished_at INTEGER,
-  summary TEXT,
-  error TEXT,
-  created_at INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_automation_runs_automation
-  ON automation_runs(automation_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS background_jobs (
   job_id TEXT PRIMARY KEY,
@@ -329,6 +298,48 @@ CREATE INDEX IF NOT EXISTS idx_session_attachments_session
 CREATE INDEX IF NOT EXISTS idx_session_attachments_sha256
   ON session_attachments(sha256);
 
+CREATE TABLE IF NOT EXISTS clips (
+  clip_id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  url TEXT,
+  content TEXT NOT NULL,
+  source TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_clips_created_at
+  ON clips(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS fleeting_attachments (
+  attachment_id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  original_name TEXT NOT NULL DEFAULT '',
+  stored_name TEXT NOT NULL DEFAULT '',
+  stored_path TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size INTEGER NOT NULL DEFAULT 0,
+  sha256 TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
+  ON fleeting_attachments(note_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS file_processing_status (
+  file_path TEXT PRIMARY KEY,
+  workspace_path TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'converting', 'converted', 'indexed', 'convert_failed', 'index_failed')),
+  content_hash TEXT,
+  converted_at INTEGER,
+  indexed_at INTEGER,
+  error TEXT,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_processing_status_workspace
+  ON file_processing_status(workspace_path, status, updated_at);
+
 `;
 
 export interface RidgeDbMigration {
@@ -358,7 +369,6 @@ CREATE TABLE IF NOT EXISTS session_index (
   device_id TEXT,
   run_location TEXT NOT NULL DEFAULT 'server',
   archived INTEGER NOT NULL DEFAULT 0,
-  readonly INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0
 );
@@ -425,32 +435,6 @@ CREATE INDEX IF NOT EXISTS idx_workspace_tasks_due_date
     version: 4,
     name: 'automation and background jobs',
     sql: `
-CREATE TABLE IF NOT EXISTS automations (
-  automation_id TEXT PRIMARY KEY,
-  name TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'active',
-  scope_type TEXT NOT NULL DEFAULT 'workspace',
-  project_id TEXT,
-  schedule_json TEXT NOT NULL DEFAULT '{}',
-  prompt TEXT NOT NULL DEFAULT '',
-  next_run_at INTEGER,
-  created_at INTEGER NOT NULL DEFAULT 0,
-  updated_at INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_automations_next_run_at
-  ON automations(status, next_run_at);
-CREATE TABLE IF NOT EXISTS automation_runs (
-  run_id TEXT PRIMARY KEY,
-  automation_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  started_at INTEGER,
-  finished_at INTEGER,
-  summary TEXT,
-  error TEXT,
-  created_at INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_automation_runs_automation
-  ON automation_runs(automation_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS background_jobs (
   job_id TEXT PRIMARY KEY,
   job_type TEXT NOT NULL DEFAULT '',

@@ -1,15 +1,17 @@
 import { test, expect } from "@playwright/test";
 
+const PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
+
 test("task-09 workspace tasks detail and status flow", async ({ page }) => {
 	const uniqueTitle = `测试任务-09验收-${Date.now()}`;
 
 	await page.goto("/");
 
-	// Login with default password
-	await page.getByRole("textbox", { name: "密码" }).fill("ridge-admin");
+	// Login
+	await page.getByRole("textbox", { name: "密码" }).fill(PASSWORD);
 	await page.getByRole("textbox", { name: "密码" }).press("Enter");
 
-	// Wait for navigation to complete after login
+	// Wait for navigation
 	await page.waitForURL("/", { timeout: 10000 });
 
 	// Navigate to tasks page

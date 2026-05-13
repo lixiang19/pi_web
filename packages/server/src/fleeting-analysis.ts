@@ -1,11 +1,9 @@
 import {
-	createAgentSession,
-	SessionManager,
+	createAgentSession as realCreateAgentSession,
+	SessionManager as RealSessionManager,
 	AuthStorage,
 	ModelRegistry,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
-import type { Message } from "@mariozechner/pi-ai";
 import type { RidgeDatabase } from "./db/index.js";
 import { getFleetingAttachments } from "./fleeting-attachments.js";
 import type { createBackgroundJobQueue } from "./background-jobs.js";
@@ -24,6 +22,42 @@ export interface FleetingAnalysisResult {
 	requiresInput: boolean;
 }
 
+/**
+ * Minimal duck-type interface for the session object used by runAnalysis.
+ * Allows tests to inject lightweight mocks without needing the full AgentSession type.
+ */
+export interface PromptableSession {
+	prompt(prompt: string, options?: unknown): Promise<void>;
+	messages: Array<{ role: string; content: unknown }>;
+}
+
+/**
+ * Minimal duck-type interface for the session manager used by runAnalysis.
+ * Only requires shutdown() for cleanup.
+ */
+export interface ShutdownableSessionManager {
+	shutdown(): Promise<void>;
+}
+
+/**
+ * Options passed to the injected createAgentSession function.
+ */
+export interface InjectedCreateAgentSessionOptions {
+	cwd: string;
+	authStorage: unknown;
+	modelRegistry: unknown;
+	noTools: string;
+	sessionManager: ShutdownableSessionManager;
+}
+
+/**
+ * Dependency-injected createAgentSession replacement.
+ * Accepts PromptableSession in the result so tests don't need full AgentSession mocks.
+ */
+export type CreateAgentSessionFn = (
+	options: InjectedCreateAgentSessionOptions,
+) => Promise<{ session: PromptableSession; extensionsResult: unknown }>;
+
 interface FleetingAnalysisWorkerOptions {
 	db: RidgeDatabase;
 	jobQueue: BackgroundJobQueue;
@@ -32,6 +66,8 @@ interface FleetingAnalysisWorkerOptions {
 	workspaceDir: string;
 	pollIntervalMs?: number;
 	modelSpec?: string;
+	createAgentSessionFn?: CreateAgentSessionFn;
+	sessionManagerFactory?: (workspaceDir: string) => ShutdownableSessionManager;
 }
 
 const ANALYSIS_PROMPT_TEMPLATE = `你是一个闪念整理助手。请分析以下用户闪念，给出最合适的处理建议。
@@ -127,10 +163,8 @@ function toMessageText(content: unknown): string {
 		.join("\n");
 }
 
-function getLastAssistantText(session: AgentSession): string {
-	// AgentSession has messages at runtime but TypeScript declarations may not expose it.
-	// We use type assertion here because we know the runtime shape matches.
-	const messages = (session as unknown as { messages: Message[] }).messages;
+function getLastAssistantText(session: PromptableSession): string {
+	const messages = session.messages;
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
 		if (message.role !== "assistant") continue;
@@ -147,10 +181,19 @@ async function runAnalysis(
 		authStorage: AuthStorage;
 		workspaceDir: string;
 		modelSpec?: string;
+		createAgentSessionFn?: CreateAgentSessionFn;
+		sessionManagerFactory?: (workspaceDir: string) => ShutdownableSessionManager;
 	},
 	noteId: string,
 ): Promise<FleetingAnalysisResult> {
-	const { db, modelRegistry, authStorage, workspaceDir } = options;
+	const {
+		db,
+		modelRegistry,
+		authStorage,
+		workspaceDir,
+		createAgentSessionFn = realCreateAgentSession as unknown as CreateAgentSessionFn,
+		sessionManagerFactory = (dir: string) => RealSessionManager.inMemory(dir) as unknown as ShutdownableSessionManager,
+	} = options;
 
 	// 1. Read note
 	const note = db
@@ -174,8 +217,8 @@ async function runAnalysis(
 	const prompt = buildAnalysisPrompt(content, attachments);
 
 	// 4. Call LLM via lightweight session (no tools, in-memory)
-	const sessionManager = SessionManager.inMemory(workspaceDir);
-	const { session } = await createAgentSession({
+	const sessionManager = sessionManagerFactory(workspaceDir);
+	const { session } = await createAgentSessionFn({
 		cwd: workspaceDir,
 		authStorage,
 		modelRegistry,
@@ -272,6 +315,8 @@ export function createFleetingAnalysisWorker(
 		workspaceDir,
 		pollIntervalMs = 5000,
 		modelSpec,
+		createAgentSessionFn,
+		sessionManagerFactory,
 	} = options;
 
 	let timer: NodeJS.Timeout | null = null;
@@ -305,7 +350,7 @@ export function createFleetingAnalysisWorker(
 		let result: FleetingAnalysisResult;
 		try {
 			result = await runAnalysis(
-				{ db, modelRegistry, authStorage, workspaceDir, modelSpec },
+				{ db, modelRegistry, authStorage, workspaceDir, modelSpec, createAgentSessionFn, sessionManagerFactory },
 				noteId,
 			);
 		} catch (error) {

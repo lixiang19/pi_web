@@ -353,6 +353,7 @@ export interface FileTreeEntry {
 	modifiedAt: number;
 	extension: string;
 	processingStatus?: FileProcessingStatus;
+	processingError?: string;
 }
 
 export interface FileTreeResponse {

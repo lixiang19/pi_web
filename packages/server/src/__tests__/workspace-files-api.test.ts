@@ -44,7 +44,7 @@ beforeAll(async () => {
 afterAll(async () => {
 	await fs.rm(TEST_ROOT, { recursive: true, force: true });
 	const db = await getRidgeDb();
-	db.prepare("DELETE FROM file_processing_status WHERE workspace_path = ?").run(WORKSPACE);
+	db.prepare("DELETE FROM file_processing_status WHERE file_path LIKE ?").run(`${TEST_ROOT}%`);
 });
 
 describe("GET /api/workspace/files/tree", () => {

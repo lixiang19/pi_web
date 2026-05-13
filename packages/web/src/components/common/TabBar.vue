@@ -41,10 +41,14 @@ function onDragEnd() {
     class="flex shrink-0 items-center border-b border-border/40 bg-background px-1 pt-1"
   >
     <!-- 标签列表 -->
-    <div class="flex min-w-0 flex-1">
+    <div
+      role="tablist"
+      class="flex min-w-0 flex-1"
+    >
       <div
         v-for="tab in tabs"
         :key="tab.id"
+        role="tab"
         :draggable="true"
         class="group relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-t-md px-3 pb-1.5 pt-1.5 text-[13px] transition-colors"
         :class="
@@ -85,6 +89,7 @@ function onDragEnd() {
         <!-- Close button -->
         <button
           type="button"
+          data-test="close-tab-btn"
           class="ml-0.5 flex shrink-0 rounded-sm p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted/60"
           @mousedown.stop
           @click.stop="emit('close', tab.id)"

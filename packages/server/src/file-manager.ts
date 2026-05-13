@@ -4,7 +4,7 @@ import path from 'node:path';
 import trash from 'trash';
 
 import type { FileTreeEntry } from './types/index.js';
-import { toPosixPath } from './utils/paths.js';
+import { toPosixPath, validateSafePath } from './utils/paths.js';
 import { normalizeString } from './utils/strings.js';
 
 export interface HttpError extends Error {
@@ -282,6 +282,14 @@ export const createFileManager = (options: FileManagerOptions) => {
 
     if (!requestedPath && !locationOptions.fallbackToRoot) {
       throw toHttpError('File path is required', 400);
+    }
+
+    // Reject backslash at the earliest entry point to prevent toPosixPath
+    // from collapsing it into a forward slash, which would collide with
+    // real subdirectory semantics on POSIX.
+    validateSafePath(rootPath);
+    if (requestedPath) {
+      validateSafePath(requestedPath);
     }
 
     const targetPath = requestedPath || rootPath;

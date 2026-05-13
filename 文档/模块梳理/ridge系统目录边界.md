@@ -32,8 +32,13 @@
 入口：`packages/server/src/routes/workspace-files.ts`
 
 - `GET /api/workspace/files/tree` 在返回条目时，从 `file_processing_status` 表读取并附加 `processingStatus` 字段。
+- `PATCH /api/workspace/files/status` 更新文件处理状态，**强制流转**：`pending → converting → converted → indexed`；失败分支只能从执行中状态进入（`converting → convert_failed`、`converted → index_failed`）；`convert_failed`/`index_failed` 只能通过 retry 回到 `pending`；`indexed` 为终态不接受任何流转。非法流转返回 400。
+- `POST /api/workspace/files/retry` 将失败状态（`convert_failed` / `index_failed`）回退到 `pending`。
 - 状态枚举：`pending | converting | converted | indexed | convert_failed | index_failed`。
 - 目录节点不附加 `processingStatus`。
+- 上传文件到可见目录后自动创建 `pending` 记录（`POST /api/files/upload`）；`.ridge` 内文件跳过。
+- 删除文件时同步清理 `file_processing_status` 记录（`DELETE /api/files/entries`）；删除目录时清理前缀下全部记录，**LIKE 特殊字符 `%` `_` 已转义并配合 `ESCAPE '\'`**，防止误删相似路径。
+- 失败通知规则：转换失败生成 `file_processing.convert_failed`，索引失败生成 `file_processing.index_failed`，均写入 `notification_events`。
 
 ## 后续边界
 

@@ -163,9 +163,13 @@ const singletonFeatureEntries = [
 type SingletonFeatureId = (typeof singletonFeatureEntries)[number]["id"];
 
 const fixedEntries = [
-	...singletonFeatureEntries.slice(0, 5).map((entry) => ({ ...entry, type: "singleton" as const })),
+	...singletonFeatureEntries
+		.filter((e) => ["moments", "tasks", "files"].includes(e.id))
+		.map((entry) => ({ ...entry, type: "singleton" as const })),
 	{ id: "terminal", label: "终端", icon: TerminalSquare, type: "terminal" as const },
-	...singletonFeatureEntries.slice(5).map((entry) => ({ ...entry, type: "singleton" as const })),
+	...singletonFeatureEntries
+		.filter((e) => ["automation", "settings"].includes(e.id))
+		.map((entry) => ({ ...entry, type: "singleton" as const })),
 ] as const;
 
 const featureLabelMap: Record<SingletonFeatureId, string> = Object.fromEntries(
@@ -948,6 +952,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
 			  @navigate="workspaceFiles.navigate"
 			  @navigate-back="workspaceFiles.navigateBack"
+			  @retry="workspaceFiles.retry($event)"
 			/>
 			<AutomationTabContent v-else-if="tab.featureId === 'automation'" />
 			<SettingsTabContent v-else-if="tab.featureId === 'settings'" />

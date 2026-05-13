@@ -1,11 +1,13 @@
 import { test, expect } from "@playwright/test";
 
+const PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
+
 test.describe("工作台左侧导航任务04", () => {
 	test.beforeEach(async ({ page }) => {
 		// 登录流程
 		await page.goto("/");
 		await expect(page.getByRole("heading", { name: "输入访问密码" })).toBeVisible();
-		await page.getByRole("textbox", { name: "密码" }).fill("ridge-admin");
+		await page.getByRole("textbox", { name: "密码" }).fill(PASSWORD);
 		await page.getByRole("button", { name: "进入工作台" }).click();
 		// 等待工作台主内容可见
 		await expect(page.locator("main")).toBeVisible();
@@ -38,7 +40,7 @@ test.describe("工作台左侧导航任务04", () => {
 		const texts = await tabs.allTextContents();
 		expect(texts).toContain("终端");
 		// 终端区域应显示提示符文本
-		await expect(page.locator("main").locator("text=lixiang@lixiangdeMac-mini-3 ridge-workspace %").first()).toBeVisible();
+		await expect(page.locator("main").locator("text=%").first()).toBeVisible();
 	});
 
 	test("点击归档打开归档页面", async ({ page }) => {
@@ -53,8 +55,8 @@ test.describe("工作台左侧导航任务04", () => {
 	});
 
 	test("项目列表中可点击项目并激活", async ({ page }) => {
-		// 查找第一个项目按钮
-		const firstProject = page.getByRole("button", { name: /AuroraPlatformWeb/ }).first();
+		// 查找第一个项目按钮（不依赖具体项目名称）
+		const firstProject = page.locator("[data-test='project-label']").first();
 		if (await firstProject.isVisible()) {
 			await firstProject.click();
 			await page.waitForTimeout(1000);

@@ -173,41 +173,172 @@ describe("FilesView", () => {
 		expect(breadcrumb.text()).not.toContain(".ridge");
 	});
 
-	it("shows status badges in attachment subdirectory", async () => {
-		const entries: FileTreeEntry[] = [
-			makeEntry("paper.pdf", "file", "converted"),
-			makeEntry("draft.md", "file", "pending"),
-		];
+  it("shows retry button for failed files and emits retry on click", async () => {
+    const entries: FileTreeEntry[] = [
+      makeEntry("failed.pdf", "file", "convert_failed"),
+      makeEntry("ok.md", "file", "indexed"),
+    ];
 
-		const wrapper = mount(FilesView, {
-			props: {
-				workspaceRoot: "/ws",
-				entries,
-				currentPath: "/ws/附件",
-				loading: false,
-			},
-			global: {
-				stubs: {
-					Badge: {
-						props: ["variant"],
-						template: `<span class="badge-stub"><slot /></span>`,
-					},
-					ScrollArea: {
-						template: `<div class="scroll-area-stub"><slot /></div>`,
-					},
-				},
-			},
-		});
+    const wrapper = mount(FilesView, {
+      props: {
+        workspaceRoot: "/ws",
+        entries,
+        currentPath: "/ws",
+        loading: false,
+      },
+      global: {
+        stubs: {
+          Badge: {
+            props: ["variant"],
+            template: `<span class="badge-stub"><slot /></span>`,
+          },
+          ScrollArea: {
+            template: `<div class="scroll-area-stub"><slot /></div>`,
+          },
+        },
+      },
+    });
 
-		await nextTick();
+    await nextTick();
 
-		const rows = wrapper.findAll("[data-test='file-row']");
-		expect(rows.length).toBe(2);
+    const rows = wrapper.findAll("[data-test='file-row']");
+    expect(rows.length).toBe(2);
 
-		expect(rows[0]!.text()).toContain("paper.pdf");
-		expect(rows[0]!.text()).toContain("已转换");
+    // Failed file has retry button
+    const retryBtn = rows[0]!.find("button[title='重试处理']");
+    expect(retryBtn.exists()).toBe(true);
 
-		expect(rows[1]!.text()).toContain("draft.md");
-		expect(rows[1]!.text()).toContain("待处理");
-	});
+    // Indexed file has no retry button
+    expect(rows[1]!.find("button[title='重试处理']").exists()).toBe(false);
+
+    // Click retry button
+    await retryBtn.trigger("click");
+    expect(wrapper.emitted("retry")).toBeTruthy();
+    expect(wrapper.emitted("retry")![0]![0]).toBe("/ws/failed.pdf");
+
+    // Retry click should NOT also emit open-file
+    expect(wrapper.emitted("open-file")).toBeFalsy();
+  });
+
+  it("emits open-file when pressing Enter on a file row", async () => {
+    const entries: FileTreeEntry[] = [makeEntry("notes.md", "file")];
+
+    const wrapper = mount(FilesView, {
+      props: {
+        workspaceRoot: "/ws",
+        entries,
+        currentPath: "/ws",
+        loading: false,
+      },
+      global: {
+        stubs: {
+          Badge: {
+            props: ["variant"],
+            template: `<span class="badge-stub"><slot /></span>`,
+          },
+          ScrollArea: {
+            template: `<div class="scroll-area-stub"><slot /></div>`,
+          },
+        },
+      },
+    });
+
+    await nextTick();
+    const row = wrapper.find("[data-test='file-row']");
+    await row.trigger("keydown", { key: "Enter" });
+
+    expect(wrapper.emitted("open-file")).toBeTruthy();
+    expect(wrapper.emitted("open-file")![0]![0]).toBe("/ws/notes.md");
+  });
+
+  it("emits open-file when pressing Space on a file row", async () => {
+    const entries: FileTreeEntry[] = [makeEntry("notes.md", "file")];
+
+    const wrapper = mount(FilesView, {
+      props: {
+        workspaceRoot: "/ws",
+        entries,
+        currentPath: "/ws",
+        loading: false,
+      },
+      global: {
+        stubs: {
+          Badge: {
+            props: ["variant"],
+            template: `<span class="badge-stub"><slot /></span>`,
+          },
+          ScrollArea: {
+            template: `<div class="scroll-area-stub"><slot /></div>`,
+          },
+        },
+      },
+    });
+
+    await nextTick();
+    const row = wrapper.find("[data-test='file-row']");
+    await row.trigger("keydown", { key: " " });
+
+    expect(wrapper.emitted("open-file")).toBeTruthy();
+    expect(wrapper.emitted("open-file")![0]![0]).toBe("/ws/notes.md");
+  });
+
+  it("emits navigate when pressing Enter on a directory row", async () => {
+    const entries: FileTreeEntry[] = [makeEntry("附件", "directory")];
+
+    const wrapper = mount(FilesView, {
+      props: {
+        workspaceRoot: "/ws",
+        entries,
+        currentPath: "/ws",
+        loading: false,
+      },
+      global: {
+        stubs: {
+          Badge: {
+            props: ["variant"],
+            template: `<span class="badge-stub"><slot /></span>`,
+          },
+          ScrollArea: {
+            template: `<div class="scroll-area-stub"><slot /></div>`,
+          },
+        },
+      },
+    });
+
+    await nextTick();
+    const row = wrapper.find("[data-test='file-row']");
+    await row.trigger("keydown", { key: "Enter" });
+
+    expect(wrapper.emitted("navigate")).toBeTruthy();
+    expect(wrapper.emitted("navigate")![0]![0]).toBe("/ws/附件");
+  });
+
+  it("file row has role=button and tabindex=0 for accessibility", async () => {
+    const entries: FileTreeEntry[] = [makeEntry("notes.md", "file")];
+
+    const wrapper = mount(FilesView, {
+      props: {
+        workspaceRoot: "/ws",
+        entries,
+        currentPath: "/ws",
+        loading: false,
+      },
+      global: {
+        stubs: {
+          Badge: {
+            props: ["variant"],
+            template: `<span class="badge-stub"><slot /></span>`,
+          },
+          ScrollArea: {
+            template: `<div class="scroll-area-stub"><slot /></div>`,
+          },
+        },
+      },
+    });
+
+    await nextTick();
+    const row = wrapper.find("[data-test='file-row']");
+    expect(row.attributes("role")).toBe("button");
+    expect(row.attributes("tabindex")).toBe("0");
+  });
 });

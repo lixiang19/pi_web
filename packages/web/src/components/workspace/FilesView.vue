@@ -6,6 +6,7 @@ import {
 	FileText,
 	LoaderCircle,
 	ArrowLeft,
+	RefreshCw,
 } from "lucide-vue-next";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 	(e: "open-file", path: string): void;
 	(e: "navigate", path: string): void;
 	(e: "navigate-back"): void;
+	(e: "retry", path: string): void;
 }>();
 
 const statusLabelMap: Record<string, string> = {
@@ -68,18 +70,25 @@ const fileEntries = computed(() =>
 );
 
 const handleClick = (entry: FileTreeEntry) => {
-	if (entry.kind === "directory") {
-		emit("navigate", entry.path);
-	} else {
-		emit("open-file", entry.path);
-	}
+  if (entry.kind === "directory") {
+    emit("navigate", entry.path);
+  } else {
+    emit("open-file", entry.path);
+  }
+};
+
+const handleRowKeydown = (event: KeyboardEvent, entry: FileTreeEntry) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    handleClick(entry);
+  }
 };
 
 const navigateToSegment = (index: number) => {
-	const segments = breadcrumbSegments.value.slice(0, index + 1);
-	const ws = props.workspaceRoot.replace(/\\/g, "/").replace(/\/+$/, "");
-	const target = ws + (segments.length ? "/" + segments.join("/") : "");
-	emit("navigate", target);
+  const segments = breadcrumbSegments.value.slice(0, index + 1);
+  const ws = props.workspaceRoot.replace(/\\/g, "/").replace(/\/+$/, "");
+  const target = ws + (segments.length ? "/" + segments.join("/") : "");
+  emit("navigate", target);
 };
 </script>
 
@@ -135,22 +144,46 @@ const navigateToSegment = (index: number) => {
           data-test="file-row"
           class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
           @click="handleClick(entry)"
+          @keydown="(e) => handleRowKeydown(e, entry)"
         >
           <Folder class="size-4 shrink-0 text-muted-foreground" />
           <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ entry.name }}</span>
         </button>
 
         <!-- Files -->
-        <button
+        <div
           v-for="entry in fileEntries"
           :key="entry.path"
-          type="button"
+          role="button"
+          tabindex="0"
           data-test="file-row"
-          class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
+          class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           @click="handleClick(entry)"
+          @keydown="(e) => handleRowKeydown(e, entry)"
         >
           <FileText class="size-4 shrink-0 text-muted-foreground" />
           <span class="min-w-0 flex-1 truncate text-sm">{{ entry.name }}</span>
+          <div
+            v-if="entry.processingStatus === 'convert_failed' || entry.processingStatus === 'index_failed'"
+            class="flex items-center gap-1"
+          >
+            <span
+              v-if="entry.processingError"
+              class="max-w-[120px] truncate text-[10px] text-destructive"
+              :title="entry.processingError"
+            >
+              {{ entry.processingError }}
+            </span>
+            <button
+              type="button"
+              class="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="重试处理"
+              @click.stop="emit('retry', entry.path)"
+              @keydown.stop="(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }"
+            >
+              <RefreshCw class="size-3.5" />
+            </button>
+          </div>
           <Badge
             v-if="entry.processingStatus"
             :variant="statusVariantMap[entry.processingStatus] ?? 'secondary'"
@@ -158,7 +191,7 @@ const navigateToSegment = (index: number) => {
           >
             {{ statusLabelMap[entry.processingStatus] ?? entry.processingStatus }}
           </Badge>
-        </button>
+        </div>
       </div>
     </ScrollArea>
   </div>

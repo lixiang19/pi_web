@@ -30,6 +30,8 @@
 - [透明度] 用 `/95`、`/80`、`/20` 后缀，不用 `bg-white/[0.x]` 语法
 - [双Agent检查] 检查阶段两个 agent 必须互不可见结果，避免自查盲区
 - [P0修复] 审查发现的严重问题（安全/命名冲突）必须立即修复，不拖到下次迭代
+- [状态矩阵同步] 文档状态矩阵必须与代码真源同步；巡查发现脱节时立即修正，不能持续用 `-` 掩盖已实现代码
+- [废弃字段清理] 废弃字段（如 `session_index.readonly`、`automations`、`automation_runs`）应立即从 schema/migration/bootstrap/test 全链路移除；项目无用户时不需要兼容/迁移旧数据
 
 ## 功能实现经验
 
@@ -101,6 +103,7 @@
 - [前端类型收敛] 当后端 enum（如 priority `normal/important/urgent`）与前端遗留类型（含 `low/medium/high`）不一致时，必须同步清理前端类型声明和所有引用该类型的测试/组件/composable；只改后端 schema 不改前端类型会在运行时/类型检查时留下隐患。
 - [原生依赖安装契约] 仓库使用 `pnpm 10` 时，`better-sqlite3`、`node-pty` 这类原生包不能只写进 dependencies；必须在根 `package.json` 的 `pnpm.onlyBuiltDependencies` 中显式放行，否则 install 后会出现“包存在但 `.node` 绑定缺失”，server 在运行原生模块时直接失败
 - [包管理器一致性] 既然仓库已经锁定 `pnpm` 并依赖 `pnpm.onlyBuiltDependencies` 管原生包，README/开发文档里的安装命令也必须统一写成 `pnpm install`；继续写 `npm install` 会把“依赖声明正确但本地缺包/缺绑定”的问题伪装成代码故障。
+- [Vitest DB隔离] server 测试隔离目录不能用 `process.pid + Date.now()` 拼接；同 fork/同毫秒会碰撞并引发 SQLite `database is locked`。必须用 `mkdtempSync` 创建唯一 HOME/DB，并在 `resetRidgeDb()` 里关闭旧连接后再清空单例。
 - [终端重启竞态] PTY restart 不能让旧进程的 `onData/onExit` 继续写回共享 record；事件处理必须校验“当前活跃 PTY 实例”，否则旧进程退出会把新终端覆盖成 exited
 - [终端开发代理] 终端页面如果只有光标、没有 prompt 和输入回显，优先检查 WebSocket 是否真的附着到 PTY；Vite `/api` 代理必须显式 `ws: true`，否则 REST 正常但 `/api/terminals/:id/stream` 不通
 - [终端视口承载] `@wterm/dom` 会把 `.wterm` 类加到传入的 host 元素本身；不要让该元素依赖 Tailwind `absolute` 定位撑满高度，因为库样式会设置 `position: relative`
@@ -314,3 +317,56 @@
 - **schema version 必须与代码一致**：文档 `数据库与迁移.md` 写 `7` 但代码已 `10`，且 `file_processing_status`、`fleeting_attachments` 等表未列入核心表清单；模块梳理文档必须随代码同步更新。
 - **废弃 composable 立即删除**：`useFilesView.ts` 被 `useWorkspaceFiles.ts` 取代后未删除，会被后续开发者误引用；替换完成后立即清理旧文件。
 - **enum 类型不能只靠 TypeScript**：`file_processing_status.status` 在前端协议层定义为 `FileProcessingStatus` 并在后端 DB 增加 `CHECK` 约束，防止非法状态字符串进入系统。路由层做运行时校验再注入响应体。
+
+## 2026-05-12 任务 18 文件处理状态与临时文件边界
+
+### 实现要点
+
+- **状态机 API**：`PATCH /api/workspace/files/status` 更新文件处理状态（`pending | converting | converted | indexed | convert_failed | index_failed`），写入 `file_processing_status` 表，转换/索引失败时自动生成 `notification_events`。
+- **状态流转校验**：强制 `pending → converting → converted → indexed`，失败分支只能从执行中状态进入（`converting → convert_failed`、`converted → index_failed`）；`convert_failed`/`index_failed` 只能通过 `POST /retry` 回到 `pending`，`PATCH /status` 对失败状态直接设置 `pending` 返回 400；`indexed` 为终态不接受任何流转；非合法流转返回 400。
+- **时间戳保留**：`converted_at` 仅在首次进入 `converted` 时写入且后续保留；`indexed_at` 仅在进入 `indexed` 时写入且保留；已有 timestamp 不会因后续状态更新被覆盖为 `null`。
+- **失败必填错误**：`convert_failed` / `index_failed` 必须携带 `error` 字段，否则返回 400；通知事件 body 直接使用该错误原因，不兜底 `"Unknown error"`。
+- **原子事务**：状态更新和通知写入包裹在 `db.transaction()` 中，同成同败。
+- **重试 API**：`POST /api/workspace/files/retry` 将 `convert_failed` / `index_failed` 回退到 `pending`，清除 `error` 字段；非失败状态拒绝重试；路径通过 `fileManager.resolveManagedFileLocation` 校验，拒绝 `.ridge`/外部路径/符号链接逃逸。
+- **上传自动注册**：`POST /api/files/upload` 上传文件到可见目录后自动在 `file_processing_status` 插入 `pending` 记录；`.ridge` 内文件跳过注册。
+- **删除同步清理**：`DELETE /api/files/entries` 删除文件时同步删除对应的 `file_processing_status` 记录；删除目录时清理该目录前缀下全部状态记录。
+- **目录删除 LIKE 安全**：前缀匹配时转义 `%` 和 `_`（SQL LIKE 通配符），使用 `ESCAPE '\'` 语法，防止路径含特殊字符时误删无关记录。
+- **前端交互安全**：文件行改用 `<div>` 而非 `<button>` 包裹，避免嵌套 button；重试按钮用 `@click.stop` 阻止冒泡。
+
+### 测试覆盖
+
+- 后端 `file-processing-status.test.ts`（18 项）：
+  - 真实 `POST /api/files/upload` 后 DB 有 `pending` 记录
+  - `.ridge` 文件不创建处理记录（通过 tree API 拒绝 + DB 验证）
+  - `PATCH /status` 合法流转 `pending → converting → converted → indexed`，`converted_at` 和 `indexed_at` 均保留
+- 非法流转（`pending → indexed`）返回 400
+  - `indexed` 终态拒绝 `converting/converted/convert_failed/index_failed`
+  - `convert_failed` 拒绝任何 PATCH 流转（只能通过 `POST /retry` 回 `pending`）
+  - `index_failed` 拒绝任何 PATCH 流转（只能通过 `POST /retry` 回 `pending`）
+- 转换失败不带 `error` 返回 400
+  - 更新不存在的记录返回 404
+  - 转换失败保留原文件 + 错误原因 + 生成通知（原子事务验证）
+  - 索引失败保留转换产物 + 错误原因 + 生成通知
+  - `POST /retry` 将失败状态重置为 `pending`
+  - 重试拒绝 `.ridge` 路径（返回 400）
+  - 删除文件同步删除处理记录（真实 `DELETE /api/files/entries`）
+  - 删除目录同步清理目录前缀下全部状态记录（LIKE 特殊字符已转义）
+  - 删除 `safe_dir` 不误删 `safeXdir`（下划线 LIKE 转义验证）
+  - 删除 `percent%dir` 不误删 `percentXdir`（百分号 LIKE 转义验证）
+  - 非法状态值返回 400
+  - 非失败文件重试返回 400
+  - 文件树正确返回 `processingStatus` 和 `processingError`
+- 前端 `FilesView.test.ts`：失败文件展示重试按钮，点击后 emits `retry` 事件；非失败文件无重试按钮。
+- 前端 `useWorkspaceFiles.test.ts`：`retry()` 调用 API 并刷新目录，失败时写入 `error`。
+
+### 教训
+
+- **测试必须走真实 API**：不能为省事直接 `INSERT` DB；`supertest` 上传用 `.attach("files", buffer, filename)` 即可，不需要引入 `form-data` 包。
+- **测试间隔离**：`afterAll` 清理 `file_processing_status` 时不能只按 `workspace_path` 删（会误伤并行测试），应按 `file_path LIKE testRoot%` 精准清理。
+- **通知生成要原子**：状态更新和通知写入必须在同一 `db.transaction()` 中完成，否则通知可能丢失。
+- **时间戳不可覆盖**：状态更新 SQL 应读取当前 `converted_at`/`indexed_at`，仅在首次进入对应状态时写入，后续流转保留已有值。
+- **前端 retry 不阻塞导航**：重试按钮用 `@click.stop` 阻止冒泡，文件行外层用 `<div>` 避免嵌套 button 的 HTML 结构风险。
+- **状态变体映射要完整**：`statusVariantMap` 必须覆盖所有 6 种状态，缺失会导致 Badge 回退到 `secondary` 且用户无法区分。
+- **目录删除 LIKE 必须转义**：前缀匹配清理子文件时，路径中的 `%` 和 `_` 是 SQL LIKE 通配符，必须用 `ESCAPE '\'` 配合转义，否则 `safe_dir/` 会匹配 `safeXdir/`、`safe%dir/` 等无关路径。
+- **协议类型先行**：新增 `processingError` 字段需先在 `@pi/protocol` 的 `FileTreeEntry` 声明，再在前端使用；否则 `vue-tsc` 门禁直接失败。
+- **重试路径必须校验**：`retry` 不能直接信任请求中的 `path`，必须通过 `fileManager.resolveManagedFileLocation` 做 root/`.ridge`/realpath 边界校验。

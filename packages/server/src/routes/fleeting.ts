@@ -295,7 +295,9 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				) VALUES(?, ?, 'pending', 'unanalyzed', ?, ?)`,
 			).run(id, payload.content, now, now);
 			if (!payload.delayAnalysis) {
-				void Promise.resolve(getAnalysisRunner?.()?.run(id)).catch(() => undefined);
+				void Promise.resolve(getAnalysisRunner?.()?.run(id)).catch((err: unknown) => {
+					console.error(`[fleeting-analysis] noteId=${id} route=POST/`, err);
+				});
 			}
 			const note = getNoteOrThrow(db, id);
 			res.status(201).json({ note: toPublicNote(note) });
@@ -339,7 +341,9 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			// Only enqueue analysis after attachments are stored.
 			// If delayAnalysis is true, skip entirely (caller will trigger later).
 			if (!payload.delayAnalysis) {
-				void Promise.resolve(getAnalysisRunner?.()?.run(id)).catch(() => undefined);
+				void Promise.resolve(getAnalysisRunner?.()?.run(id)).catch((err: unknown) => {
+					console.error(`[fleeting-analysis] noteId=${id} route=POST/capture`, err);
+				});
 			}
 
 			const note = getNoteOrThrow(db, id);

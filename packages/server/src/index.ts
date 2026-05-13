@@ -328,40 +328,49 @@ const permissionActionSchema = z.object({
 });
 
 const fileTreeQuerySchema = z.object({
-	root: z.string().optional(),
-	path: z.string().optional(),
+	root: z.string().optional().refine((v) => v === undefined || !v.includes("\\"), "root must not contain backslash"),
+	path: z.string().optional().refine((v) => v === undefined || !v.includes("\\"), "path must not contain backslash"),
 });
 
 const fileContentQuerySchema = z.object({
-	root: z.string().optional(),
-	path: z.string().optional(),
+	root: z.string().optional().refine((v) => v === undefined || !v.includes("\\"), "root must not contain backslash"),
+	path: z.string().optional().refine((v) => v === undefined || !v.includes("\\"), "path must not contain backslash"),
 });
 
 const fileContentWindowQuerySchema = z.object({
-	root: z.string().optional(),
-	path: z.string().optional(),
+	root: z.string().optional().refine((v) => v === undefined || !v.includes("\\"), "root must not contain backslash"),
+	path: z.string().optional().refine((v) => v === undefined || !v.includes("\\"), "path must not contain backslash"),
 	startLine: z.coerce.number().int().min(1).default(1),
 	lineCount: z.coerce.number().int().min(1).max(1000).default(1000),
 });
 
+const fileOpenSchema = z.object({
+	root: z.string().min(1).refine((v) => !v.includes("\\"), "root must not contain backslash"),
+	path: z.string().min(1).refine((v) => !v.includes("\\"), "path must not contain backslash"),
+});
+
+const filesystemBrowseQuerySchema = z.object({
+	path: z.string().optional().refine((v) => v === undefined || !v.includes("\\"), "path must not contain backslash"),
+});
+
 const fileSaveSchema = z.object({
-	root: z.string().min(1),
-	path: z.string().min(1),
+	root: z.string().min(1).refine((v) => !v.includes("\\"), "root must not contain backslash"),
+	path: z.string().min(1).refine((v) => !v.includes("\\"), "Path must not contain backslash"),
 	content: z.string().max(5 * 1024 * 1024),
 });
 
 const fileEntryCreateSchema = z.object({
-	root: z.string().min(1),
-	directory: z.string().min(1),
+	root: z.string().min(1).refine((v) => !v.includes("\\"), "root must not contain backslash"),
+	directory: z.string().min(1).refine((v) => !v.includes("\\"), "directory must not contain backslash"),
 	name: z.string().min(1),
 	kind: z.enum(["file", "directory"]),
 });
 
 const fileEntryMoveSchema = z
 	.object({
-		root: z.string().min(1),
-		path: z.string().min(1),
-		targetDirectory: z.string().min(1).optional(),
+		root: z.string().min(1).refine((v) => !v.includes("\\"), "root must not contain backslash"),
+		path: z.string().min(1).refine((v) => !v.includes("\\"), "path must not contain backslash"),
+		targetDirectory: z.string().min(1).optional().refine((v) => v === undefined || !v.includes("\\"), "targetDirectory must not contain backslash"),
 		name: z.string().min(1).optional(),
 	})
 	.refine(
@@ -369,17 +378,8 @@ const fileEntryMoveSchema = z
 		"targetDirectory or name is required",
 	);
 
-const filesystemBrowseQuerySchema = z.object({
-	path: z.string().optional(),
-});
-
-const fileOpenSchema = z.object({
-	root: z.string().min(1),
-	path: z.string().min(1),
-});
-
 const createProjectSchema = z.object({
-	path: z.string().min(1),
+	path: z.string().min(1).refine((v) => !v.includes("\\"), "path must not contain backslash"),
 });
 
 // ===== Constants =====

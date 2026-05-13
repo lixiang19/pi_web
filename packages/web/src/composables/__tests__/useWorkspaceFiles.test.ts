@@ -72,6 +72,51 @@ describe("useWorkspaceFiles", () => {
 
 		spy.mockRestore();
 	});
+	it("retry calls retryFileProcessing and refreshes current directory", async () => {
+		const treeSpy = vi
+			.spyOn(api, "getWorkspaceFilesTree")
+			.mockResolvedValue({
+				root: "/workspace",
+				directory: "/workspace/notes",
+				entries: [],
+			} as Awaited<ReturnType<typeof api.getWorkspaceFilesTree>>);
+
+		const retrySpy = vi
+			.spyOn(api, "retryFileProcessing")
+			.mockResolvedValue({ ok: true });
+
+		const instance = useWorkspaceFiles();
+		await instance.load("/workspace/notes");
+
+		treeSpy.mockClear();
+		await instance.retry("/workspace/notes/failed.pdf");
+
+		expect(retrySpy).toHaveBeenCalledWith("/workspace/notes/failed.pdf");
+		expect(treeSpy).toHaveBeenCalledWith("/workspace/notes");
+		expect(instance.error.value).toBe("");
+
+		retrySpy.mockRestore();
+		treeSpy.mockRestore();
+	});
+
+	it("retry captures error on failure", async () => {
+		vi.spyOn(api, "getWorkspaceFilesTree").mockResolvedValue({
+			root: "/workspace",
+			directory: "/workspace/notes",
+			entries: [],
+		} as Awaited<ReturnType<typeof api.getWorkspaceFilesTree>>);
+
+		const retrySpy = vi
+			.spyOn(api, "retryFileProcessing")
+			.mockRejectedValue(new Error("Retry failed"));
+
+		const instance = useWorkspaceFiles();
+		await instance.load("/workspace/notes");
+		await instance.retry("/workspace/notes/failed.pdf");
+
+		expect(instance.error.value).toBe("Retry failed");
+		retrySpy.mockRestore();
+	});
 });
 
 describe("getParentPath", () => {

@@ -9,6 +9,8 @@ import type multer from "multer";
 import type { createFileManager } from "../file-manager.js";
 import type { HttpError } from "../types/index.js";
 import { normalizeString } from "../utils/strings.js";
+import { toPosixPath } from "../utils/paths.js";
+import { getRidgeDb } from "../db/index.js";
 
 export interface WorkspaceDataDeps {
 	defaultWorkspaceDir: string;
@@ -276,7 +278,32 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
 				const payload = fileEntryMoveSchema.parse(req.body ?? {});
+				// Resolve old path before move to know the original posix path
+				const { targetPath: oldTargetPath } = await fileManager.resolveManagedFileLocation({
+					root: payload.root,
+					path: payload.path,
+				});
 				const entry = await fileManager.moveEntry(payload);
+				const oldPosixPath = toPosixPath(oldTargetPath);
+				const newPosixPath = entry.path;
+
+				// Sync file_processing_status: file = exact update, directory = prefix batch update
+				const db = await getRidgeDb();
+				if (entry.kind === "file") {
+					db.prepare(
+						`UPDATE file_processing_status SET file_path = ?, updated_at = ? WHERE file_path = ?`,
+					).run(newPosixPath, Date.now(), oldPosixPath);
+				} else {
+					const oldPrefix = oldPosixPath.replace(/\/$/, "");
+					const newPrefix = newPosixPath.replace(/\/$/, "");
+					const likePrefix = (oldPrefix + "/").replace(/[%_\\]/g, (c) => `\\${c}`);
+					db.prepare(
+						`UPDATE file_processing_status
+						 SET file_path = ? || substr(file_path, length(?) + 1), updated_at = ?
+						 WHERE file_path LIKE ? ESCAPE '\\'`,
+					).run(newPrefix, oldPrefix, Date.now(), `${likePrefix}%`);
+				}
+
 				res.json({
 					entry,
 				});
@@ -292,6 +319,19 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 			try {
 				const query = fileContentQuerySchema.parse(req.query ?? {});
 				const payload = await fileManager.trashEntry(query.root, query.path);
+				// Sync delete file_processing_status records when file/directory is deleted
+				const db = await getRidgeDb();
+				// Determine if trashed path was a file or directory from filesystem state after trash
+				// (trash removes it, so we clean based on what we know)
+				const trashedPath = payload.path;
+				// Try to infer: if the path had an extension and no trailing slash, likely a file
+				// But to be safe, delete exact match AND prefix match (directory case)
+				db.prepare("DELETE FROM file_processing_status WHERE file_path = ?").run(trashedPath);
+				// Also delete any records for files inside this directory (directory deletion case)
+				// Escape LIKE special characters to prevent wildcard mis-match
+				const dirPrefix = trashedPath.replace(/\/$/, "") + "/";
+				const escapedPrefix = dirPrefix.replace(/[%_\\]/g, (c) => `\\${c}`);
+				db.prepare("DELETE FROM file_processing_status WHERE file_path LIKE ? ESCAPE '\\'").run(`${escapedPrefix}%`);
 				res.json(payload);
 			} catch (error) {
 				next(error);
@@ -312,6 +352,20 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 					directory,
 					files,
 				});
+
+				// Auto-create pending processing records for files in visible directories
+				const db = await getRidgeDb();
+				const now = Date.now();
+				for (const entry of entries) {
+					if (entry.kind !== "file") continue;
+					// Skip ridge system paths
+					if (entry.path.includes("/.ridge/") || entry.path.endsWith("/.ridge")) continue;
+					db.prepare(
+						`INSERT OR IGNORE INTO file_processing_status (
+							file_path, workspace_path, status, updated_at
+						) VALUES (?, ?, ?, ?)`,
+					).run(entry.path, defaultWorkspaceDir, "pending", now);
+				}
 
 				res.status(201).json({
 					entries,

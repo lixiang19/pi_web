@@ -13,10 +13,21 @@ type ColumnDefinition = {
 };
 
 let dbPromise: Promise<RidgeDatabase> | null = null;
+let dbConnection: RidgeDatabase | null = null;
 const CURRENT_WORKSPACE_META_KEY = 'current_workspace_dir';
 const DEFAULT_MILESTONE_ID = 'milestone-legacy';
 const DEFAULT_MILESTONE_TITLE = '未归属';
 const DEFAULT_MILESTONE_COLOR = '#64748b';
+
+/** Reset the cached DB promise so the next getRidgeDb() opens a fresh connection.
+ *  Primarily used by test setup to ensure per-test-file DB isolation. */
+export function resetRidgeDb(): void {
+  if (dbConnection?.open) {
+    dbConnection.close();
+  }
+  dbConnection = null;
+  dbPromise = null;
+}
 const WORKSPACE_MILESTONE_COLUMNS: ColumnDefinition[] = [
   { name: 'workspace_path', definition: "TEXT NOT NULL DEFAULT ''" },
   { name: 'title', definition: "TEXT NOT NULL DEFAULT ''" },
@@ -81,7 +92,6 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'device_id', definition: 'TEXT' },
     { name: 'run_location', definition: "TEXT NOT NULL DEFAULT 'server'" },
     { name: 'archived', definition: 'INTEGER NOT NULL DEFAULT 0' },
-    { name: 'readonly', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ],
@@ -113,28 +123,6 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'source', definition: 'TEXT' },
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
-  ],
-  automations: [
-    { name: 'automation_id', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'name', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'active'" },
-    { name: 'scope_type', definition: "TEXT NOT NULL DEFAULT 'workspace'" },
-    { name: 'project_id', definition: 'TEXT' },
-    { name: 'schedule_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
-    { name: 'prompt', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'next_run_at', definition: 'INTEGER' },
-    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
-    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
-  ],
-  automation_runs: [
-    { name: 'run_id', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'automation_id', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'pending'" },
-    { name: 'started_at', definition: 'INTEGER' },
-    { name: 'finished_at', definition: 'INTEGER' },
-    { name: 'summary', definition: 'TEXT' },
-    { name: 'error', definition: 'TEXT' },
-    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ],
   background_jobs: [
     { name: 'job_id', definition: "TEXT NOT NULL DEFAULT ''" },
@@ -203,18 +191,26 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
 const openDatabase = async (workspaceDir?: string): Promise<RidgeDatabase> => {
   const dbPath = await getRidgeDbPath();
   const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('busy_timeout = 5000');
-  db.pragma('foreign_keys = ON');
-  const migrate = db.transaction(() => {
-    ensureMigrationBookkeeping(db);
-    runPreBootstrapMigrations(db, workspaceDir);
-    applyMigrations(db);
-    repairKnownTableColumns(db);
-    ensureSchemaVersion(db);
-  });
-  migrate();
-  return db;
+  try {
+    db.pragma('busy_timeout = 5000');
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    const migrate = db.transaction(() => {
+      ensureMigrationBookkeeping(db);
+      runPreBootstrapMigrations(db, workspaceDir);
+      applyMigrations(db);
+      repairKnownTableColumns(db);
+      ensureSchemaVersion(db);
+    });
+    migrate();
+    dbConnection = db;
+    return db;
+  } catch (error) {
+    if (db.open) {
+      db.close();
+    }
+    throw error;
+  }
 };
 
 const ensureMigrationBookkeeping = (db: RidgeDatabase) => {

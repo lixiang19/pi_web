@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-const ADMIN_PASSWORD = "ridge-admin";
-const BASE_URL = "http://127.0.0.1:5175";
+const ADMIN_PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5175";
 
 test.describe("任务 05 会话附件后端 + 前端全链路", () => {
 	test.beforeEach(async ({ page }) => {
@@ -57,7 +57,7 @@ test.describe("任务 05 会话附件后端 + 前端全链路", () => {
 		// 使用 page.request 共享已登录的 cookie
 		// 创建一个测试会话
 		const createRes = await page.request.post(`${BASE_URL}/api/sessions`, {
-			data: { cwd: "/Users/lixiang/ridge-workspace", title: "附件测试" },
+			data: { cwd: process.env.RIDGE_TEST_CWD ?? "/tmp/ridge-test-workspace", title: "附件测试" },
 		});
 		expect(createRes.status()).toBe(201);
 		const sessionData = await createRes.json();

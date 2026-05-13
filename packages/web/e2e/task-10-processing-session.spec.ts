@@ -1,16 +1,19 @@
 import { test, expect } from "@playwright/test";
 
+const PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5175";
+
 test("task-10 processing session button presence in task detail", async ({ page }) => {
 	const uniqueTitle = `验收测试任务-10-${Date.now()}`;
 
-	await page.goto("/");
+	await page.goto(`${BASE_URL}/`);
 
-	// Login with default password
-	await page.getByRole("textbox", { name: "密码" }).fill("ridge-admin");
+	// Login
+	await page.getByRole("textbox", { name: "密码" }).fill(PASSWORD);
 	await page.getByRole("textbox", { name: "密码" }).press("Enter");
 
-	// Wait for navigation to complete after login
-	await page.waitForURL("/", { timeout: 10000 });
+	// Wait for navigation
+	await page.waitForURL(`${BASE_URL}/`, { timeout: 10000 });
 
 	// Navigate to tasks page
 	await page.getByRole("button", { name: "任务", exact: true }).click();
@@ -39,7 +42,7 @@ test("task-10 processing session button presence in task detail", async ({ page 
 		page.getByRole("dialog", { name: uniqueTitle }),
 	).toBeVisible({ timeout: 5000 });
 
-	// Scroll dialog to bottom to ensure all content is visible
+	// Scroll dialog to bottom
 	await page.evaluate(() => {
 		const dialog = document.querySelector('[role="dialog"]');
 		if (dialog) {
@@ -54,9 +57,7 @@ test("task-10 processing session button presence in task detail", async ({ page 
 	// Click "开始处理" button
 	await startProcessingBtn.click();
 
-	// Wait for a session tab to be opened (or a toast/error)
-	// The button click should trigger openProcessingSession
-	// which emits openSession event to WorkspacePage
+	// Wait for a session tab to be opened
 	await expect(
 		page.getByRole("button", { name: /继续处理/ }),
 	).toBeVisible({ timeout: 5000 });

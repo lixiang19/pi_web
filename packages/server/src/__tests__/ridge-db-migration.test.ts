@@ -88,7 +88,8 @@ describe("ridge db migrations", () => {
 		createLegacyDb(dbPath);
 		vi.stubEnv("RIDGE_DB_PATH", dbPath);
 
-		const { initializeRidgeDb } = await import("../db/index.js");
+		const { initializeRidgeDb, resetRidgeDb } = await import("../db/index.js");
+		resetRidgeDb();
 		const db = await initializeRidgeDb(workspaceDir);
 
 		expect(listColumns(db, "workspace_milestones")).toContain("workspace_path");
@@ -131,8 +132,6 @@ describe("ridge db migrations", () => {
 				"workspace_tasks",
 				"workspace_milestones",
 				"fleeting_notes",
-				"automations",
-				"automation_runs",
 				"background_jobs",
 				"search_index_status",
 				"notification_events",
@@ -153,7 +152,7 @@ describe("ridge db migrations", () => {
 				"project_id",
 				"task_id",
 				"device_id",
-				"readonly",
+				"archived",
 			]),
 		);
 		expect(listColumns(db, "background_jobs")).toEqual(

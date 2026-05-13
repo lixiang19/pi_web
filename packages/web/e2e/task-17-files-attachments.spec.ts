@@ -1,11 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+const ADMIN_PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
+
 test.describe("任务17 - 文件页与正式附件目录 E2E 测试", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto("/login");
 		await page.waitForLoadState("networkidle");
 		// 登录
-		await page.getByRole("textbox", { name: "密码" }).fill("ridge-admin");
+		await page.getByRole("textbox", { name: "密码" }).fill(ADMIN_PASSWORD);
 		await page.keyboard.press("Enter");
 		await page.waitForURL("/");
 		await page.waitForLoadState("networkidle");

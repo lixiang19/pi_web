@@ -24,4 +24,24 @@ export const getRidgeDbPath = async (): Promise<string> => {
   return path.join(storageDir, 'ridge.db');
 };
 
-export const toPosixPath = (value: string): string => value.split(path.sep).join('/');
+export const toPosixPath = (value: string): string => value.replace(/\\/g, '/');
+
+export interface HttpError extends Error {
+  statusCode?: number;
+}
+
+/**
+ * Validates that a path does not contain backslash characters.
+ * Backslashes are rejected because toPosixPath() converts them to forward
+ * slashes, which would collide with real subdirectory semantics on POSIX
+ * systems where backslash is a legal filename character.
+ */
+export function validateSafePath(value: string): void {
+	if (value.includes('\\')) {
+		const error = new Error(
+			`Path contains backslash which is not allowed: ${value}`,
+		) as HttpError;
+		error.statusCode = 400;
+		throw error;
+	}
+}

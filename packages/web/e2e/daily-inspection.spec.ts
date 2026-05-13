@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const ADMIN_PASSWORD = "ridge-admin";
+const ADMIN_PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
 
 test.describe("daily-inspection: Task project filter + home attachment flow", () => {
 	test.beforeEach(async ({ page }) => {

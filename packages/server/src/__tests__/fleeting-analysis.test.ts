@@ -24,23 +24,14 @@ const mockSession = {
 	messages: [] as Array<{ role: string; content: unknown }>,
 };
 
-vi.mock("@mariozechner/pi-coding-agent", async () => {
-	const actual = await vi.importActual("@mariozechner/pi-coding-agent");
-	return {
-		...actual,
-		createAgentSession: vi.fn(() =>
-			Promise.resolve({
-				session: mockSession,
-				extensionsResult: {},
-			}),
-		),
-		SessionManager: {
-			inMemory: () => ({
-				shutdown: vi.fn(() => Promise.resolve()),
-			}),
-		},
-	};
-});
+const mockCreateAgentSession = vi.fn(async (_opts: unknown) => ({
+	session: mockSession,
+	extensionsResult: {},
+})) as unknown as import("../fleeting-analysis.js").CreateAgentSessionFn;
+
+const mockSessionManagerFactory = vi.fn(() => ({
+	shutdown: vi.fn(() => Promise.resolve()),
+})) as unknown as (workspaceDir: string) => import("../fleeting-analysis.js").ShutdownableSessionManager;
 
 vi.mock("../fleeting-attachments.js", () => ({
 	getFleetingAttachments: vi.fn(() => []),
@@ -184,6 +175,8 @@ describe("fleeting analysis worker", () => {
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
+			createAgentSessionFn: mockCreateAgentSession,
+			sessionManagerFactory: mockSessionManagerFactory,
 		});
 
 		worker.start();
@@ -228,6 +221,8 @@ describe("fleeting analysis worker", () => {
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
+			createAgentSessionFn: mockCreateAgentSession,
+			sessionManagerFactory: mockSessionManagerFactory,
 		});
 
 		worker.start();
@@ -273,6 +268,8 @@ describe("fleeting analysis worker", () => {
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
+			createAgentSessionFn: mockCreateAgentSession,
+			sessionManagerFactory: mockSessionManagerFactory,
 		});
 
 		worker.start();
@@ -320,6 +317,8 @@ describe("fleeting analysis worker", () => {
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
+			createAgentSessionFn: mockCreateAgentSession,
+			sessionManagerFactory: mockSessionManagerFactory,
 		});
 
 		worker.start();
@@ -645,6 +644,8 @@ describe("fleeting router toPublicNote includes failure fields", () => {
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
+			createAgentSessionFn: mockCreateAgentSession,
+			sessionManagerFactory: mockSessionManagerFactory,
 		});
 
 		worker.start();
@@ -703,6 +704,8 @@ describe("fleeting router toPublicNote includes failure fields", () => {
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
+			createAgentSessionFn: mockCreateAgentSession,
+			sessionManagerFactory: mockSessionManagerFactory,
 		});
 
 		worker.start();

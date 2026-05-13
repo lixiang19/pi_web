@@ -14,7 +14,7 @@
 | 07 会话界面与右侧工作侧栏 | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
 | 08 任务里程碑数据模型 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 09 任务列表详情与状态流转 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
-| 10 任务处理会话与任务 Agent | - | - | - | - | - | - | - |
+| 10 任务处理会话与任务 Agent | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 11 规划工具与完成确认边界 | - | ✅ | - | - | ✅ | - | ✅ |
 | 12 闪念数据模型与 Web 入口 | ✅ | ✅ | ✅ | ✅ | ✅ | - | - |
 | 13 闪念临时附件生命周期 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
@@ -22,7 +22,7 @@
 | 15 fleeting agent 分析建议 | ✅ | ✅ | ✅ | ✅ | ✅ | - | - |
 | 16 闪念处理为正式对象 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 17 文件页与正式附件目录 | ⚠️ | - | - | - | - | - | - |
-| 18 文件处理状态与临时文件边界 | - | - | - | - | - | - | - |
+| 18 文件处理状态与临时文件边界 | - | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 19 PDF Word 标准化转换 | - | - | - | - | - | - | - |
 | 20 音频图片 Markdown 处理 | - | - | - | - | - | - | - |
 | 21 空间 HTML 作品私有预览 | - | - | - | - | - | - | - |
@@ -48,13 +48,14 @@
 
 以下按**当前工作树静态证据**记录，未验证/未合并的其他 worktree 实现不标为已完成：
 
-- **13 闪念临时附件生命周期**：`.ridge/fleeting-attachments` 目录模板已在 `workspace-chat.ts` 的 `RIDGE_SYSTEM_SUBDIRS` / `ensureWorkspaceTemplate()` 中就位，但无闪念附件上传 API、无 DB 引用字段/关系、无删除清理、无迁移到正式附件目录，只能标为目录/基础设施部分完成。
+- **13 闪念临时附件生命周期**：后端 `fleeting-attachments.ts` 含 store/get/delete/migrate；`fleeting.ts` 含上传/列表/清理/迁移全链路；前端 `InboxView.vue` 渲染附件列表（图标+文件名+大小）及附件处理按钮。`fleeting_attachments` 表在 migration v8。已标 ✅。
 - **16 闪念处理为正式对象**：`routes/fleeting.ts` 已实现 `process/journal`、`process/clip`、`process/task`、`process/milestone`、`process/attachment` 全部五种处理路径。task 和 milestone 支持 `projectId` 参数，所有 process 路由使用 `db.transaction()` 包裹目标创建 + 闪念删除。附件迁移在事务外执行，失败时闪念保留。`fleeting-api.test.ts` 覆盖全部处理路径、失败保留、项目选择等场景。前端 `InboxView.vue` 提供任务/里程碑/剪藏/附件/日记处理按钮和对话框，`useInbox.ts` 封装处理函数。已标 ✅。
 - **24 全局搜索资产导航器**：左侧导航入口存在，但 `WorkspacePage.vue` 中 search 走 `WorkspaceFeaturePlaceholder`，真实搜索输入与结果未实现，只能标为入口/占位。
 - **34 通知与建议中心**：左侧导航入口存在，但同样走 `WorkspaceFeaturePlaceholder`，真实通知中心未实现，只能标为入口/占位。
 - **36 自动化规则运行与跳过**：`automation_rules` CRUD、调度器、手动 run API、UI 已有，但 `automation_runs` 无业务写入，跳过记录/失败通知/运行历史未闭环。只能标为自动化规则 CRUD/调度部分完成。
 - **37 备份恢复设置主题收尾**：设置页真实实现只有主题/明暗模式、退出、偏好；没有备份恢复、数据路径、错误边界。只能标“设置基础部分完成”。
-- **17 文件页与正式附件目录**：左侧导航“文件”入口存在，但 `WorkspacePage.vue` 中该路由走 `WorkspaceFeaturePlaceholder`，真实文件页（列表、预览、上传、附件管理）未实现。不能把左侧文件树、会话附件或文件预览能力等同于文件页完成。
+- **17 文件页与正式附件目录**：左侧导航“文件”入口存在，`WorkspacePage.vue` 中已接入 `FilesView.vue` 真实文件页（文件树浏览、状态展示、文件预览），不再是占位。但上传功能走 `uploadFiles` API、`FilesView` 本身无上传按钮，附件管理（移动/重命名）未在前端完整实现。
+- **18 文件处理状态与临时文件边界**：`PATCH /status`、`POST /retry` API 完整实现，含状态流转校验、原子通知、错误可见。上传自动注册 pending、删除同步清理、.ridge 严格隔离均已实现且有测试覆盖。
 - **插件与扩展能力真实状态**：
   - **已真实接入**：Agent 注册/发现/选择（`/api/agents`、HomePage/WorkspaceChatTab agent 选择）、自动化规则（作为定时创建普通会话并发送消息的规则系统）、Pi resource catalog 后端可列 prompts/skills/extension commands（`/api/resources`、`buildResourceCatalog`）。
   - **未在当前工作空间主会话 UI 中完整接入**：Skill 独立功能页仍占位；`WorkspaceChatTab` 当前给 `WorkbenchChatPanel` 传 `commands=[]`、`prompts=[]`、`skills=[]`，因此主工作空间会话的资源选择器/Skill 注入没有真正可用；runtime bundle 与设备专属 Skill、workspace MCP 仍是 spec/未实现。

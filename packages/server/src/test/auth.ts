@@ -1,5 +1,4 @@
 import request from "supertest";
-import { authRuntime } from "../index.js";
 
 let testClientCounter = 0;
 
@@ -9,7 +8,11 @@ export function getTestClientKey(): string {
 }
 
 export async function createAuthenticatedAgent(app: Parameters<typeof request.agent>[0]) {
-	authRuntime.resetForTests();
+	// Do NOT reset authRuntime here. With Vitest pool:forks, test files
+	// may run concurrently in the same process; a global reset would
+	// invalidate sessions held by other test files, causing 401 races.
+	// Each call creates a brand-new agent and performs a fresh login,
+	// which is sufficient for isolation.
 	const clientKey = getTestClientKey();
 	const agent = request.agent(app);
 	await agent

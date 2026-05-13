@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-const ADMIN_PASSWORD = "ridge-admin";
-const BASE_URL = "http://[::1]:5175";
+const ADMIN_PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5175";
 
 test.describe("任务 05 工作空间主页与会话创建", () => {
 	test.beforeEach(async ({ page }) => {

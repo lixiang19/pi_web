@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-const BASE_URL = "http://127.0.0.1:5175";
-const PASSWORD = "ridge-admin";
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5175";
+const PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
 
 async function login(page) {
 	await page.goto(`${BASE_URL}/login`);

@@ -1,5 +1,5 @@
 import request from "supertest";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { app, authRuntime } from "../index.js";
 import { createAuthRuntime } from "../auth.js";
 import { getTestClientKey } from "../test/auth.js";
@@ -8,13 +8,14 @@ const api = request(app);
 const ADMIN_PASSWORD = "ridge-admin";
 
 describe("single-user auth", () => {
-	beforeEach(() => {
+	beforeAll(() => {
+		// Explicitly reset module-level auth singleton so this suite starts
+		// from a known clean state, regardless of fork isolation.
 		authRuntime.resetForTests();
 	});
 
 	it("rejects protected api requests without a session", async () => {
 		const res = await api.get("/api/system/info");
-
 		expect(res.status).toBe(401);
 	});
 

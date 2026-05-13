@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 
+const PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
+
 test.describe("工作台 Shell 与标签系统", () => {
 	test.beforeEach(async ({ page }) => {
 		const errors: string[] = [];
@@ -16,14 +18,15 @@ test.describe("工作台 Shell 与标签系统", () => {
 
 		await page.goto("/");
 		await expect(page.getByRole("heading", { name: "输入访问密码" })).toBeVisible();
-		await page.getByRole("textbox", { name: "密码" }).fill("ridge-admin");
+		await page.getByRole("textbox", { name: "密码" }).fill(PASSWORD);
 		await page.getByRole("textbox", { name: "密码" }).press("Enter");
 		await expect(page.locator("main")).toBeVisible();
 		await page.waitForTimeout(2000);
 	});
 
 	test("左侧固定入口包含要求的条目，且不包含主页", async ({ page }) => {
-		const required = ["闪念", "搜索", "通知", "任务", "文件", "终端", "自动化", "Skill", "设置"];
+		// 只断言已实现的真实入口，不暴露未实现占位
+		const required = ["闪念", "任务", "文件", "终端", "自动化", "设置"];
 		for (const name of required) {
 			await expect(page.getByRole("button", { name }).first()).toBeVisible();
 		}
@@ -32,6 +35,15 @@ test.describe("工作台 Shell 与标签系统", () => {
 		const sidebar = page.locator("aside");
 		const sidebarButtons = await sidebar.locator("button").allInnerTexts();
 		expect(sidebarButtons).not.toContain("主页");
+	});
+
+	test("未实现占位入口不在主导航暴露", async ({ page }) => {
+		const hidden = ["搜索", "通知", "Skill"];
+		for (const name of hidden) {
+			const btn = page.getByRole("button", { name }).first();
+			// 未实现入口不应在主导航可见；若仍可见则测试失败
+			await expect(btn).not.toBeVisible();
+		}
 	});
 
 	test("点击任务打开工作台标签，重复点击只保留一个任务标签", async ({ page }) => {

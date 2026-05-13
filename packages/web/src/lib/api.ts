@@ -438,6 +438,22 @@ export function getWorkspaceFilesRead(path: string) {
 	return request<FilePreviewPayload>(`/api/workspace/files/read?${params.toString()}`);
 }
 
+export function updateFileProcessingStatus(path: string, status: string, error?: string) {
+	return request<{ ok: true }>("/api/workspace/files/status", {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path, status, error }),
+	});
+}
+
+export function retryFileProcessing(path: string) {
+	return request<{ ok: true }>("/api/workspace/files/retry", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path }),
+	});
+}
+
 export function getFilePreviewWindow(
 	path: string,
 	root: string,

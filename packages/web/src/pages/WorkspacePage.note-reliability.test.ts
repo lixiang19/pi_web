@@ -100,7 +100,6 @@ const mountWorkspace = () =>
 					template: `<div data-test="content-area" />`,
 				}),
 				HomePage: true,
-				DashboardView: true,
 				TaskView: true,
 				CalendarView: true,
 				InboxView: true,

@@ -1,19 +1,18 @@
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 
-const httpTestHome = path.join(os.tmpdir(), "ridge-http-test-home");
-const httpTestDb = path.join(os.tmpdir(), "ridge-http-test", "ridge.db");
-fs.mkdirSync(httpTestHome, { recursive: true });
-fs.mkdirSync(path.dirname(httpTestDb), { recursive: true });
+const preloadPath = path.resolve(__dirname, "src/test/vitest-preload.cjs");
 
 export default defineConfig({
+	root: path.resolve(__dirname),
 	test: {
 		globals: true,
-		env: {
-			HOME: httpTestHome,
-			RIDGE_DB_PATH: httpTestDb,
+		pool: "forks",
+		poolOptions: {
+			forks: {
+				execArgv: ["-r", preloadPath],
+			},
 		},
+		setupFiles: ["./src/test/vitest-setup.ts"],
 	},
 });
