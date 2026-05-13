@@ -183,7 +183,7 @@ const toPublicAttachment = (row: Record<string, unknown>) => ({
 });
 
 const makeId = (prefix: string) =>
-	`${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+	`${prefix}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
 const forwardError = (error: unknown, next: NextFunction) => {
 	if (error instanceof z.ZodError) {

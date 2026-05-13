@@ -168,7 +168,35 @@ const fleetingRunnerRef: {
  * Do not use in production code.
  */
 export function setConversionEnabledForTesting(enabled: boolean): void {
+	if (!process.env.VITEST) {
+		throw new Error("setConversionEnabledForTesting is only allowed in test environment");
+	}
 	isConversionEnabled = () => enabled;
+}
+
+/**
+ * Test-only helper: inject a jobQueue into the module-level singleton
+ * so that routes using deps.getJobQueue() can observe real enqueues.
+ * Do not use in production code.
+ */
+export function setJobQueueForTesting(
+	q: ReturnType<typeof createBackgroundJobQueue> | undefined,
+): void {
+	if (!process.env.VITEST) {
+		throw new Error("setJobQueueForTesting is only allowed in test environment");
+	}
+	jobQueue = q;
+}
+
+/**
+ * Test-only helper: expose the module-level jobQueue singleton.
+ * Do not use in production code.
+ */
+export function getJobQueueForTesting(): ReturnType<typeof createBackgroundJobQueue> | undefined {
+	if (!process.env.VITEST) {
+		throw new Error("getJobQueueForTesting is only allowed in test environment");
+	}
+	return jobQueue;
 }
 
 export const getAutomationStore = (): AutomationStore => {

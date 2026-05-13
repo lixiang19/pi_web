@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -5,7 +6,8 @@ export const FILE_MODE = 0o600;
 
 export const atomicWriteFile = async (filePath: string, data: string): Promise<void> => {
   const dir = path.dirname(filePath);
-  const tmpFile = path.join(dir, `.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const randomSuffix = crypto.randomBytes(8).toString('hex');
+  const tmpFile = path.join(dir, `.tmp-${Date.now()}-${randomSuffix}`);
 
   try {
     await fs.writeFile(tmpFile, data, { mode: FILE_MODE, encoding: 'utf-8' });

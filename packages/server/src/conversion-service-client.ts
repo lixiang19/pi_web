@@ -617,23 +617,33 @@ export async function writeArtifactsToWorkspace(
   const ensureWithinWorkspace = async (target: string) => {
     let realResolved: string;
     let realWorkspaceDir: string;
-    try {
-      realResolved = await fs.realpath(path.resolve(workspaceDir, target));
-    } catch {
-      // 文件可能不存在（如尚未写入的目标产物路径），计算其相对于 workspaceDir 的假想 real path
-      try {
-        realWorkspaceDir = await fs.realpath(workspaceDir);
-      } catch {
-        realWorkspaceDir = workspaceDir;
-      }
-      const relFromWorkspace = path.relative(workspaceDir, path.resolve(workspaceDir, target));
-      realResolved = path.join(realWorkspaceDir, relFromWorkspace);
-    }
+
     try {
       realWorkspaceDir = await fs.realpath(workspaceDir);
     } catch {
       realWorkspaceDir = workspaceDir;
     }
+
+    const resolved = path.resolve(workspaceDir, target);
+    try {
+      realResolved = await fs.realpath(resolved);
+    } catch {
+      // 文件可能不存在，逐级解析已存在父目录
+      let current = resolved;
+      realResolved = resolved;
+      while (current !== path.dirname(current)) {
+        current = path.dirname(current);
+        try {
+          const realParent = await fs.realpath(current);
+          const suffix = path.relative(current, resolved);
+          realResolved = path.join(realParent, suffix);
+          break;
+        } catch {
+          // 继续向上
+        }
+      }
+    }
+
     const rel = path.relative(realWorkspaceDir, realResolved);
     if (rel.startsWith("..") || path.isAbsolute(rel)) {
       throw new Error(`Artifact path outside workspace: ${target} (real: ${realResolved})`);
@@ -658,6 +668,11 @@ export async function writeArtifactsToWorkspace(
   if (!hasMd) throw new Error("Missing required artifact: .md");
   if (!hasMeta) throw new Error("Missing required artifact: .metadata.json");
 
+  // 判断新产物是否包含 assets（非 md / metadata.json）
+  const hasNewAssets = downloaded.some(
+    (d) => !d.artifact.name.endsWith(".md") && !d.artifact.name.endsWith(".metadata.json"),
+  );
+
   let mdBuffer: Buffer | null = null;
   let metadataBuffer: Buffer | null = null;
 
@@ -678,14 +693,44 @@ export async function writeArtifactsToWorkspace(
   const oldMetaExists = await fs.stat(outputs.metadata).then((s) => s.isFile(), () => false);
   const oldAssetsExists = await fs.stat(outputs.assets).then((s) => s.isDirectory(), () => false);
 
-  if (oldMdExists) {
-    await fs.rename(outputs.md, path.join(stagingDir, `${outputs.baseName}.md.old`));
-  }
-  if (oldMetaExists) {
-    await fs.rename(outputs.metadata, path.join(stagingDir, `${outputs.baseName}.metadata.json.old`));
-  }
-  if (oldAssetsExists) {
-    await fs.rename(outputs.assets, path.join(stagingDir, `${outputs.baseName}.assets.old`));
+  // 跟踪实际被成功备份的文件，用于精确 rollback
+  const backedUp = { md: false, meta: false, assets: false };
+  const stage1Errors: Error[] = [];
+
+  try {
+    if (oldMdExists) {
+      await fs.rename(outputs.md, path.join(stagingDir, `${outputs.baseName}.md.old`));
+      backedUp.md = true;
+    }
+    if (oldMetaExists) {
+      await fs.rename(outputs.metadata, path.join(stagingDir, `${outputs.baseName}.metadata.json.old`));
+      backedUp.meta = true;
+    }
+    if (oldAssetsExists) {
+      await fs.rename(outputs.assets, path.join(stagingDir, `${outputs.baseName}.assets.old`));
+      backedUp.assets = true;
+    }
+  } catch (err) {
+    // Stage 1 任何 rename 失败立即回滚已经成功的备份
+    // 必须全部恢复成功才算成功；任一恢复失败都要记录并抛出
+    if (backedUp.md) {
+      try { await fs.rename(path.join(stagingDir, `${outputs.baseName}.md.old`), outputs.md); } catch (e) { stage1Errors.push(e as Error); }
+    }
+    if (backedUp.meta) {
+      try { await fs.rename(path.join(stagingDir, `${outputs.baseName}.metadata.json.old`), outputs.metadata); } catch (e) { stage1Errors.push(e as Error); }
+    }
+    if (backedUp.assets) {
+      try { await fs.rename(path.join(stagingDir, `${outputs.baseName}.assets.old`), outputs.assets); } catch (e) { stage1Errors.push(e as Error); }
+    }
+    try { await fs.rm(stagingDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    if (stage1Errors.length > 0) {
+      throw new Error(
+        `Stage 1 backup failed and partial restore encountered ${stage1Errors.length} error(s): ` +
+        stage1Errors.map((e) => e.message).join("; ") +
+        `; original error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    throw err;
   }
 
   // === Stage 2: 写入新产物到临时目录 ===
@@ -696,118 +741,137 @@ export async function writeArtifactsToWorkspace(
   const tmpMeta = path.join(tmpDir, `${outputs.baseName}.metadata.json`);
   const tmpAssets = path.join(tmpDir, `${outputs.baseName}.assets`);
 
-  await fs.writeFile(tmpMd, mdBuffer!, "utf-8");
-
-  // metadata：保留 Python 侧全部字段，只追加 _ridge
-  const meta = JSON.parse(metadataBuffer!.toString("utf-8")) as Record<string, unknown>;
-  const archivedAt = new Date().toISOString();
-  const mdHash = crypto.createHash("sha256").update(mdBuffer!).digest("hex");
-  meta._ridge = {
-    sourcePath: sourcePath,
-    workspacePath: outputs.md,
-    archivedAt,
-    archivedTo: path.join(outputs.originalsDir, outputs.originalName),
-    mdHash,
-  };
-  await fs.writeFile(tmpMeta, JSON.stringify(meta, null, 2), "utf-8");
-
-  // 图片等资源写入 tmp assets
-  await fs.mkdir(tmpAssets, { recursive: true });
-  for (const { artifact, buffer } of downloaded) {
-    if (artifact.name.endsWith(".md") || artifact.name.endsWith(".metadata.json")) {
-      continue;
-    }
-    const assetPath = path.join(tmpAssets, artifact.name);
-    await ensureWithinWorkspace(assetPath);
-    await fs.writeFile(assetPath, buffer);
-  }
-
-  // === Stage 3: 原子提交 ===
-  // 3a. 检查 sourcePath 是否存在。如果不存在，尝试 .originals/ fallback
-  let actualSourcePath = sourcePath;
-  let sourceExists = false;
-  try {
-    const st = await fs.stat(sourcePath);
-    sourceExists = st.isFile();
-  } catch {
-    // sourcePath (logical) 不存在，可能是已归档
-    const originalsFallback = path.join(outputs.originalsDir, outputs.originalName);
-    try {
-      const st = await fs.stat(originalsFallback);
-      if (st.isFile()) {
-        actualSourcePath = originalsFallback;
-        sourceExists = true; // .originals/ 中存在，无需再次归档
-      }
-    } catch {
-      // 两边都不存在，后续归档会报错
-    }
-  }
-
+  // 事务性状态，用于 rollback 判断
   let archivedTo: string | null = null;
 
-  // 3b. 归档原文件（仅在 sourceExists 且不是 already archived 时）
-  if (sourceExists && actualSourcePath === sourcePath) {
-    await fs.mkdir(outputs.originalsDir, { recursive: true });
-    archivedTo = path.join(outputs.originalsDir, outputs.originalName);
-
-    // 如果归档目标已存在，先删除
-    try {
-      await fs.rm(archivedTo, { force: true });
-    } catch {
-      // ignore
-    }
-    await fs.rename(sourcePath, archivedTo);
-  }
-
-  // 3c. 从 tmp 移动到最终位置
   try {
-    await fs.rename(tmpMd, outputs.md);
-    await fs.rename(tmpMeta, outputs.metadata);
-    // 清理旧 assets 目录（如果存在）—— 但应该已经被 stage1 备份了
-    if (!oldAssetsExists) {
+    await fs.writeFile(tmpMd, mdBuffer!, "utf-8");
+
+    // metadata：保留 Python 侧全部字段，只追加 _ridge
+    const meta = JSON.parse(metadataBuffer!.toString("utf-8")) as Record<string, unknown>;
+    const archivedAt = new Date().toISOString();
+    const mdHash = crypto.createHash("sha256").update(mdBuffer!).digest("hex");
+    meta._ridge = {
+      sourcePath: sourcePath,
+      workspacePath: outputs.md,
+      archivedAt,
+      archivedTo: path.join(outputs.originalsDir, outputs.originalName),
+      mdHash,
+    };
+    await fs.writeFile(tmpMeta, JSON.stringify(meta, null, 2), "utf-8");
+
+    // 图片等资源写入 tmp assets（仅当新产物实际包含 assets 时）
+    if (hasNewAssets) {
+      await fs.mkdir(tmpAssets, { recursive: true });
+      for (const { artifact, buffer } of downloaded) {
+        if (artifact.name.endsWith(".md") || artifact.name.endsWith(".metadata.json")) {
+          continue;
+        }
+        const assetPath = path.join(tmpAssets, artifact.name);
+        await ensureWithinWorkspace(assetPath);
+        await fs.writeFile(assetPath, buffer);
+      }
+    }
+
+    // === Stage 3: 原子提交 ===
+    // 3a. 检查 sourcePath 是否存在。如果不存在，尝试 .originals/ fallback
+    let actualSourcePath = sourcePath;
+    let sourceExists = false;
+    try {
+      const st = await fs.stat(sourcePath);
+      sourceExists = st.isFile();
+    } catch {
+      // sourcePath (logical) 不存在，可能是已归档
+      const originalsFallback = path.join(outputs.originalsDir, outputs.originalName);
       try {
-        await fs.rm(outputs.assets, { recursive: true, force: true });
+        const st = await fs.stat(originalsFallback);
+        if (st.isFile()) {
+          actualSourcePath = originalsFallback;
+          sourceExists = true; // .originals/ 中存在，无需再次归档
+        }
+      } catch {
+        // 两边都不存在
+      }
+    }
+
+    if (!sourceExists) {
+      throw new Error(`Source file not found at ${sourcePath} or in .originals/`);
+    }
+
+    // 3b. 归档原文件（仅在 sourceExists 且不是 already archived 时）
+    if (actualSourcePath === sourcePath) {
+      await fs.mkdir(outputs.originalsDir, { recursive: true });
+      archivedTo = path.join(outputs.originalsDir, outputs.originalName);
+
+      // 如果归档目标已存在，先删除
+      try {
+        await fs.rm(archivedTo, { force: true });
       } catch {
         // ignore
       }
+      await fs.rename(sourcePath, archivedTo);
     }
-    await fs.rename(tmpAssets, outputs.assets);
+
+    // 3c. 从 tmp 移动到最终位置
+    await fs.rename(tmpMd, outputs.md);
+    await fs.rename(tmpMeta, outputs.metadata);
+
+    // assets 契约：
+    // - 新产物有 assets → 替换旧 assets（旧已备份到 staging）
+    // - 新产物无 assets → 清理旧 assets（不创建空目录），防止残留/并发冲突
+    if (hasNewAssets) {
+      // 旧 assets 如果不存在，先清理可能的残留目录（防止并发/残留导致 ENOTEMPTY）
+      if (!oldAssetsExists) {
+        try { await fs.rm(outputs.assets, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+      await fs.rename(tmpAssets, outputs.assets);
+    } else {
+      // 新无 assets：清理旧 assets 残留（旧已备份到 staging，不恢复），不创建空目录
+      try { await fs.rm(outputs.assets, { recursive: true, force: true }); } catch { /* ignore */ }
+      // 清理未使用的空 tmpAssets
+      try { await fs.rm(tmpAssets, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+
     await fs.rm(tmpDir, { recursive: true, force: true });
     // 清理 staging 目录（成功提交后不再需要）
     await fs.rm(stagingDir, { recursive: true, force: true });
   } catch (err) {
-    // === Rollback ===
-    // 1. 尝试恢复旧产物
-    try {
-      if (oldMdExists) {
-        await fs.rename(path.join(stagingDir, `${outputs.baseName}.md.old`), outputs.md);
-      }
-    } catch { /* ignore */ }
-    try {
-      if (oldMetaExists) {
-        await fs.rename(path.join(stagingDir, `${outputs.baseName}.metadata.json.old`), outputs.metadata);
-      }
-    } catch { /* ignore */ }
-    try {
-      if (oldAssetsExists) {
-        await fs.rename(path.join(stagingDir, `${outputs.baseName}.assets.old`), outputs.assets);
-      }
-    } catch { /* ignore */ }
+    // === Rollback：任何步骤失败都恢复旧产物和原文件 ===
+    // 顺序至关重要：先移除新产物（释放名称），再恢复旧产物，再恢复源文件
+    const rollbackErrors: Error[] = [];
 
-    // 2. 如果刚才归档了原文件，尝试从 .originals/ 移回
-    if (archivedTo) {
-      try {
-        await fs.rename(archivedTo, sourcePath);
-      } catch { /* ignore */ }
+    // 1. 移除可能已落位的新产物
+    try { await fs.rm(outputs.md, { force: true }); } catch (e) { rollbackErrors.push(e as Error); }
+    try { await fs.rm(outputs.metadata, { force: true }); } catch (e) { rollbackErrors.push(e as Error); }
+    try { await fs.rm(outputs.assets, { recursive: true, force: true }); } catch (e) { rollbackErrors.push(e as Error); }
+
+    // 2. 恢复旧产物（只恢复真正被成功备份的）
+    if (backedUp.md) {
+      try { await fs.rename(path.join(stagingDir, `${outputs.baseName}.md.old`), outputs.md); } catch (e) { rollbackErrors.push(e as Error); }
+    }
+    if (backedUp.meta) {
+      try { await fs.rename(path.join(stagingDir, `${outputs.baseName}.metadata.json.old`), outputs.metadata); } catch (e) { rollbackErrors.push(e as Error); }
+    }
+    if (backedUp.assets) {
+      try { await fs.rename(path.join(stagingDir, `${outputs.baseName}.assets.old`), outputs.assets); } catch (e) { rollbackErrors.push(e as Error); }
     }
 
-    // 3. 清理临时目录
-    try {
-      await fs.rm(tmpDir, { recursive: true, force: true });
-    } catch { /* ignore */ }
-    try {
-      await fs.rm(stagingDir, { recursive: true, force: true });
-    } catch { /* ignore */ }
+    // 3. 如果刚才归档了原文件，尝试从 .originals/ 移回
+    if (archivedTo) {
+      try { await fs.rename(archivedTo, sourcePath); } catch (e) { rollbackErrors.push(e as Error); }
+    }
+
+    // 4. 清理临时目录
+    try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { await fs.rm(stagingDir, { recursive: true, force: true }); } catch { /* ignore */ }
+
+    if (rollbackErrors.length > 0) {
+      throw new Error(
+        `Rollback failed with ${rollbackErrors.length} error(s) after ` +
+        `original error: ${err instanceof Error ? err.message : String(err)}; ` +
+        `rollback details: ${rollbackErrors.map((e) => e.message).join("; ")}`,
+      );
+    }
 
     throw err;
   }

@@ -1,5 +1,5 @@
 import request from "supertest";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { app, authRuntime } from "../index.js";
 import { createAuthRuntime } from "../auth.js";
 import { getTestClientKey } from "../test/auth.js";
@@ -11,6 +11,14 @@ describe("single-user auth", () => {
 	beforeAll(() => {
 		// Explicitly reset module-level auth singleton so this suite starts
 		// from a known clean state, regardless of fork isolation.
+		authRuntime.resetForTests();
+	});
+
+	beforeEach(() => {
+		// Reset between individual tests within this file so that
+		// rate-limiting / session state from one test does not leak
+		// into the next (test order is not guaranteed to be declaration
+		// order under all vitest configurations).
 		authRuntime.resetForTests();
 	});
 

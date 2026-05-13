@@ -1,0 +1,108 @@
+- generic [ref=e2]:
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - button "闪念" [ref=e16]:
+          - img [ref=e17]
+          - generic [ref=e20]: 闪念
+        - button "任务" [ref=e21]:
+          - img [ref=e22]
+          - generic [ref=e25]: 任务
+        - button "文件" [ref=e26]:
+          - img [ref=e27]
+          - generic [ref=e31]: 文件
+        - button "终端" [ref=e32]:
+          - img [ref=e33]
+          - generic [ref=e36]: 终端
+        - button "自动化" [ref=e37]:
+          - img [ref=e38]
+          - generic [ref=e41]: 自动化
+        - button "设置" [ref=e42]:
+          - img [ref=e43]
+          - generic [ref=e46]: 设置
+      - generic [ref=e47]:
+        - generic [ref=e48]: 项目
+        - button "AuroraPlatformWeb /Users/lixiang/Documents/myCode/AuroraPlatformWeb 外部仓库 本地文件夹 离线" [ref=e51]:
+          - img [ref=e52]
+          - generic [ref=e54]: AuroraPlatformWeb
+          - generic [ref=e55]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+          - generic [ref=e56]: 外部仓库
+          - generic [ref=e57]: 本地文件夹
+          - generic [ref=e58]: 离线
+        - button "openchamber /Users/lixiang/Documents/myCode/openchamber 外部仓库 本地文件夹 离线" [ref=e61]:
+          - img [ref=e62]
+          - generic [ref=e64]: openchamber
+          - generic [ref=e65]: /Users/lixiang/Documents/myCode/openchamber
+          - generic [ref=e66]: 外部仓库
+          - generic [ref=e67]: 本地文件夹
+          - generic [ref=e68]: 离线
+      - generic [ref=e70]:
+        - button "新建" [ref=e71]:
+          - img [ref=e72]
+          - text: 新建
+        - button "文件夹" [ref=e75]:
+          - img [ref=e76]
+          - text: 文件夹
+        - button "Canvas" [ref=e78]:
+          - img [ref=e79]
+          - text: Canvas
+        - button "Base" [ref=e84]:
+          - img [ref=e85]
+          - text: Base
+      - generic [ref=e91]:
+        - tablist [ref=e92]:
+          - tab [selected] [ref=e93]:
+            - img
+          - tab [ref=e94]:
+            - img
+          - tab [ref=e95]:
+            - img
+          - tab [ref=e96]:
+            - img
+        - tabpanel [ref=e97]:
+          - button [ref=e99]:
+            - img [ref=e100]
+      - button "归档" [ref=e110]:
+        - img [ref=e111]
+        - generic [ref=e114]: 归档
+    - main [ref=e115]:
+      - generic [ref=e116]:
+        - generic [ref=e118]:
+          - tablist [ref=e119]:
+            - tab "主页" [ref=e120] [cursor=pointer]:
+              - generic [ref=e122]: 主页
+              - button [ref=e123]:
+                - img [ref=e124]
+            - tab "文件" [ref=e183] [cursor=pointer]:
+              - generic [ref=e185]: 文件
+              - button [ref=e186]:
+                - img [ref=e187]
+          - button [ref=e127]:
+            - img [ref=e128]
+        - generic [ref=e191]:
+          - generic [ref=e193]:
+            - button [ref=e325]:
+              - img [ref=e326]
+            - generic [ref=e194]: 文件
+            - img [ref=e195]
+            - button "附件" [ref=e328]
+          - generic [ref=e329]:
+            - button "test-attachment-79001f.txt" [ref=e330] [cursor=pointer]:
+              - img [ref=e331]
+              - generic [ref=e334]: test-attachment-79001f.txt
+            - button "test-attachment-dd5d04.txt" [ref=e335] [cursor=pointer]:
+              - img [ref=e336]
+              - generic [ref=e339]: test-attachment-dd5d04.txt
+            - button "test-attachment-de5f86.txt" [ref=e340] [cursor=pointer]:
+              - img [ref=e341]
+              - generic [ref=e344]: test-attachment-de5f86.txt
+            - button "test-attachment.txt 已转换" [ref=e345] [cursor=pointer]:
+              - img [ref=e346]
+              - generic [ref=e349]: test-attachment.txt
+              - button "重新转换" [ref=e351]:
+                - img [ref=e352]
+              - generic [ref=e357]: 已转换
+  - button "打开闪念捕捉" [ref=e182]:
+    - img
+  - region "Notifications alt+T":
+    - list

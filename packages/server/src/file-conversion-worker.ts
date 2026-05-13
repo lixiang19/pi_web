@@ -46,32 +46,44 @@ const sleep = (ms: number): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * 校验 workspace 安全：realpath 解 symlink 后检查在 workspace 内、不是 .ridge、不越界
+ * 校验 workspace 安全：realpath 解 symlink 后检查在 workspace 内、不是 .ridge、不越界。
+ * 对不存在路径逐级解析已存在父目录，防止父级 symlink 绕过。
  */
 async function assertWorkspaceSafe(
 	filePath: string,
 	workspaceDir: string,
 ): Promise<void> {
-	let realResolved: string;
+	// 先 realpath workspaceDir 本身，确保比较基准正确
 	let realWorkspaceDir: string;
-	try {
-		realResolved = await fs.realpath(path.resolve(workspaceDir, filePath));
-	} catch {
-		// 文件可能不存在（如 .originals fallback 或尚未写入的目标文件）
-		// 计算其相对于 workspaceDir 的假想 real path
-		try {
-			realWorkspaceDir = await fs.realpath(workspaceDir);
-		} catch {
-			realWorkspaceDir = workspaceDir;
-		}
-		const relFromWorkspace = path.relative(workspaceDir, path.resolve(workspaceDir, filePath));
-		realResolved = path.join(realWorkspaceDir, relFromWorkspace);
-	}
 	try {
 		realWorkspaceDir = await fs.realpath(workspaceDir);
 	} catch {
 		realWorkspaceDir = workspaceDir;
 	}
+
+	// 尝试 realpath 完整路径
+	const resolved = path.resolve(workspaceDir, filePath);
+	let realResolved: string;
+	try {
+		realResolved = await fs.realpath(resolved);
+	} catch {
+		// 文件可能不存在，逐级解析已存在父目录
+		let current = resolved;
+		realResolved = resolved;
+		while (current !== path.dirname(current)) {
+			current = path.dirname(current);
+			try {
+				const realParent = await fs.realpath(current);
+				// 将 resolved 中未解析的后缀拼接到 realParent 上
+				const suffix = path.relative(current, resolved);
+				realResolved = path.join(realParent, suffix);
+				break;
+			} catch {
+				// 继续向上
+			}
+		}
+	}
+
 	const rel = path.relative(realWorkspaceDir, realResolved);
 	if (rel.startsWith("..") || path.isAbsolute(rel)) {
 		throw new Error(`Path outside workspace: ${filePath} (real: ${realResolved})`);
@@ -264,34 +276,41 @@ function failConversion(
 	const updatedAt = Date.now();
 	const fileName = filePath.split("/").pop() || filePath;
 
-	// Atomic transaction: update status + insert notification
-	const tx = db.transaction(() => {
-		db.prepare(
-			"UPDATE file_processing_status SET status = ?, error = ?, updated_at = ? WHERE file_path = ?",
-		).run("convert_failed", errorMessage, updatedAt, filePath);
-		db.prepare(
-			`INSERT INTO notification_events(
-				event_id, event_type, severity, title, body,
-				payload_json, status, created_at, read_at
-			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		).run(
-			`notification-${crypto.randomUUID()}`,
-			"file_processing.convert_failed",
-			"error",
-			`文件转换失败: ${fileName}`,
-			errorMessage,
-			JSON.stringify({ filePath, error: errorMessage }),
-			"unread",
-			updatedAt,
-			null,
-		);
-	});
-	tx();
+	// 先检查是否有对应的 file_processing_status 记录
+	const statusRow = db
+		.prepare("SELECT status FROM file_processing_status WHERE file_path = ?")
+		.get(filePath) as { status: string } | undefined;
 
-	// 更新 python_conversion_jobs 为终态失败
-	db.prepare(
-		"UPDATE python_conversion_jobs SET status = ?, updated_at = ? WHERE file_path = ?",
-	).run("failed", updatedAt, filePath);
+	if (statusRow) {
+		// Atomic transaction: update status + insert notification
+		const tx = db.transaction(() => {
+			db.prepare(
+				"UPDATE file_processing_status SET status = ?, error = ?, updated_at = ? WHERE file_path = ?",
+			).run("convert_failed", errorMessage, updatedAt, filePath);
+			db.prepare(
+				`INSERT INTO notification_events(
+					event_id, event_type, severity, title, body,
+					payload_json, status, created_at, read_at
+				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			).run(
+				`notification-${crypto.randomUUID()}`,
+				"file_processing.convert_failed",
+				"error",
+				`文件转换失败: ${fileName}`,
+				errorMessage,
+				JSON.stringify({ filePath, error: errorMessage }),
+				"unread",
+				updatedAt,
+				null,
+			);
+		});
+		tx();
+
+		// 更新 python_conversion_jobs 为终态失败
+		db.prepare(
+			"UPDATE python_conversion_jobs SET status = ?, updated_at = ? WHERE file_path = ?",
+		).run("failed", updatedAt, filePath);
+	}
 
 	// Fail the background job if it exists and is running
 	const jobRow = db
@@ -342,7 +361,12 @@ export function createFileConversionWorker(options: FileConversionWorkerOptions)
 			| undefined;
 		const logicalPath = payload?.sourcePath ?? job.relatedId;
 		if (!logicalPath || typeof logicalPath !== "string") {
-			jobQueue.fail(job.jobId, "Missing sourcePath in job payload");
+			failConversion(
+				db,
+				jobQueue,
+				job.relatedId,
+				"Missing sourcePath in job payload",
+			);
 			return;
 		}
 
@@ -353,7 +377,7 @@ export function createFileConversionWorker(options: FileConversionWorkerOptions)
 			await assertWorkspaceSafe(posixPath, workspaceDir);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
-			jobQueue.fail(job.jobId, new Error(msg));
+			failConversion(db, jobQueue, posixPath, msg);
 			return;
 		}
 
@@ -371,22 +395,28 @@ export function createFileConversionWorker(options: FileConversionWorkerOptions)
 
 		const currentStatus = statusRow.status;
 		if (currentStatus !== "pending") {
-			jobQueue.fail(
-				job.jobId,
-				new Error(
-					`Cannot convert from status ${currentStatus}. ` +
-						(currentStatus === "convert_failed" || currentStatus === "index_failed"
-							? "Use POST /api/workspace/files/retry to retry."
-							: ""),
-				),
-			);
+			// 已终态（convert_failed / index_failed 等）不得破坏既有 status 和 error
+			const isTerminalFailed =
+				currentStatus === "convert_failed" || currentStatus === "index_failed";
+			const msg =
+				`Cannot convert from status ${currentStatus}. ` +
+				(isTerminalFailed
+					? "Use POST /api/workspace/files/retry to retry."
+					: "");
+			// 仅 fail background job，不覆盖 file_processing_status
+			jobQueue.fail(job.jobId, new Error(msg));
 			return;
 		}
 
 		const ext = path.extname(posixPath).toLowerCase();
 		const task = deriveTaskFromExtension(ext);
 		if (!task) {
-			jobQueue.fail(job.jobId, new Error(`Unsupported file type: ${ext}`));
+			failConversion(
+				db,
+				jobQueue,
+				posixPath,
+				`Unsupported file type: ${ext}`,
+			);
 			return;
 		}
 
@@ -397,7 +427,12 @@ export function createFileConversionWorker(options: FileConversionWorkerOptions)
 			actualSourcePath = await resolveActualSourcePath(posixPath);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			jobQueue.fail(job.jobId, new Error(message));
+			failConversion(
+				db,
+				jobQueue,
+				posixPath,
+				message,
+			);
 			return;
 		}
 
@@ -406,7 +441,12 @@ export function createFileConversionWorker(options: FileConversionWorkerOptions)
 			await assertWorkspaceSafe(actualSourcePath, workspaceDir);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
-			jobQueue.fail(job.jobId, new Error(msg));
+			failConversion(
+				db,
+				jobQueue,
+				posixPath,
+				msg,
+			);
 			return;
 		}
 

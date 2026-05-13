@@ -247,6 +247,10 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		await request(app)
 			.post(`/api/fleeting/${first.body.note.id}/process/clip`)
 			.send({ title: "第一条", content: "第一条剪藏" });
+
+		// Ensure distinct created_at timestamps so ORDER BY is deterministic
+		await new Promise((r) => setTimeout(r, 5));
+
 		await request(app)
 			.post(`/api/fleeting/${second.body.note.id}/process/clip`)
 			.send({ title: "第二条", content: "第二条剪藏" });
