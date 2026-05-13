@@ -4,7 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { app } from "../index.js";
+import { app, setConversionEnabledForTesting } from "../index.js";
 import { createAuthenticatedAgent } from "../test/auth.js";
 import { getRidgeDb } from "../db/index.js";
 
@@ -14,6 +14,7 @@ const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
 const TEST_ROOT = path.join(WORKSPACE, "manual-convert-test");
 
 beforeAll(async () => {
+	setConversionEnabledForTesting(true);
 	api = await createAuthenticatedAgent(app);
 	await fs.mkdir(TEST_ROOT, { recursive: true });
 });

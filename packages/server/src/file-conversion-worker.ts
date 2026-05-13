@@ -214,34 +214,41 @@ export async function handleConversionResult(
 	);
 
 	if (mapped.shouldRetry && mapped.retryCount && mapped.retryCount > 0) {
-		// transient retry：不将 file_processing_status 写死为 convert_failed
-		// 而是让 background job 自然 retry，状态回到 pending
-		const now = Date.now();
-		db.prepare(
-			"UPDATE file_processing_status SET status = ?, error = NULL, updated_at = ? WHERE file_path = ?",
-		).run("pending", now, filePath);
-
-		db.prepare(
-			"UPDATE python_conversion_jobs SET status = ?, retry_count = retry_count + 1, updated_at = ? WHERE file_path = ?",
-		).run("failed", now, filePath);
-
-		// fail 该 background job 触发 retry 机制
-		const jobRow = db
+		// transient retry：检查 background_jobs 是否已耗尽 maxAttempts
+		const runningJobRow = db
 			.prepare(
-				"SELECT job_id FROM background_jobs WHERE related_type = 'file' AND related_id = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1",
+				"SELECT job_id, attempt_count, max_attempts FROM background_jobs WHERE related_type = 'file' AND related_id = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1",
 			)
-			.get(filePath) as { job_id: string } | undefined;
-		if (jobRow) {
-			jobQueue.fail(
-				jobRow.job_id,
-				new Error(`${errorMessage} (will retry, left: ${mapped.retryCount})`),
-			);
-		}
+			.get(filePath) as { job_id: string; attempt_count: number; max_attempts: number } | undefined;
 
-		return {
-			success: false,
-			error: `${errorMessage} (retry scheduled, left: ${mapped.retryCount})`,
-		};
+		// 如果 running job 的 attempt_count >= max_attempts，说明即将耗尽重试，直接失败
+		const willExhaust = runningJobRow && runningJobRow.attempt_count >= runningJobRow.max_attempts;
+
+		if (!willExhaust) {
+			// 未耗尽：让 background job 自然 retry，状态回到 pending
+			const now = Date.now();
+			db.prepare(
+				"UPDATE file_processing_status SET status = ?, error = NULL, updated_at = ? WHERE file_path = ?",
+			).run("pending", now, filePath);
+
+			db.prepare(
+				"UPDATE python_conversion_jobs SET status = ?, retry_count = retry_count + 1, updated_at = ? WHERE file_path = ?",
+			).run("failed", now, filePath);
+
+			// fail 该 background job 触发 retry 机制
+			if (runningJobRow) {
+				jobQueue.fail(
+					runningJobRow.job_id,
+					new Error(`${errorMessage} (will retry, left: ${mapped.retryCount})`),
+				);
+			}
+
+			return {
+				success: false,
+				error: `${errorMessage} (retry scheduled, left: ${mapped.retryCount})`,
+			};
+		}
+		// 耗尽后继续走到最终 failConversion
 	}
 
 	// 最终失败

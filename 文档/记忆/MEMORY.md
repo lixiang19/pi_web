@@ -718,13 +718,14 @@
 
 ### 测试覆盖
 
-- `conversion-service-client.test.ts`：类型校验、Fake HTTP Server 全端点交互（health/capabilities/create/get/cancel/download/list/inline+non-inline）、401 错误、配置读写。26 项通过。
-- `file-conversion-worker.test.ts`：worker 成功路径（mock Python 服务 → 落盘 → `converted`）、失败路径（`failed` → `convert_failed` + notification）、无 status 记录跳过、非 `pending` 状态拒绝、`handleConversionResult` 幂等、retry enqueue 去重。6 项通过。
-- `file-upload-convert-trigger.test.ts`：PDF/DOCX/TXT 上传均 enqueue `file.convert`。3 项通过。
+- `conversion-service-client.test.ts`：类型校验、Fake HTTP Server 全端点交互、401 错误、配置读写。26 项通过。
+- `file-conversion-worker.test.ts`：worker 成功/失败路径、无 status 记录跳过、非 `pending` 拒绝、幂等、retry 去重。**6 项通过。**
+- `conversion-comprehensive.test.ts`（新增）：transient retry 耗尽后进入 `convert_failed`、staging + rollback 保护旧产物、already-archived source 支持（logical source 不存在但 `.originals/` 存在）、downloadArtifact timeout 约束、webhook 空 token 拒绝。**5 项通过。**
+- `file-upload-convert-trigger.test.ts`：未配置时不 enqueue。**1 项通过。**
 - `file-conversion-e2e.test.ts`、`manual-convert-api.test.ts`、`pdf-word-conversion.test.ts`：保留旧手动转换 API 测试，54 项通过。
 
 ### 全量状态
 
-- `npm run check`：0 errors，21 warnings（历史 `any`）。
-- `pnpm test` 后端：349 passed / 1 failed（flaky `workspace-tasks.test.ts` 排序非确定性，单跑通过），转换相关测试 100% 通过。
-- `pnpm test` 前端：253 passed。
+- `npm run check`：0 errors，22 warnings（历史 `any`）。
+- `pnpm test` 后端：352 passed（含新增 comprehensive 测试），转换相关测试 100% 通过。
+- `pnpm test` 前端：256 passed。

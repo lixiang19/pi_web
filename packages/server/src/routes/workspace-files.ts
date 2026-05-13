@@ -23,6 +23,7 @@ export interface WorkspaceFilesDeps {
 	fileManager: ReturnType<typeof createFileManager>;
 	getRidgeDb: () => Promise<RidgeDatabase>;
 	getJobQueue?: () => ReturnType<typeof createBackgroundJobQueue> | undefined;
+	isConversionEnabled?: () => boolean;
 }
 
 const VALID_STATUS_SET = new Set<string>(FILE_PROCESSING_STATUS_VALUES);
@@ -287,6 +288,12 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 		"/api/workspace/files/retry",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
+				// Gate: Python conversion service must be enabled
+				if (!deps.isConversionEnabled || !deps.isConversionEnabled()) {
+					res.status(503).json({ error: "Python conversion service not configured" });
+					return;
+				}
+
 				const { path: filePath } = req.body ?? {};
 				if (!filePath || typeof filePath !== "string") {
 					throw toHttpError("path is required", 400);
@@ -333,7 +340,7 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 							type: "file.convert",
 							relatedType: "file",
 							relatedId: posixPath,
-							payload: { sourcePath: posixPath, workspaceDir: defaultWorkspaceDir },
+							payload: { workspaceDir: defaultWorkspaceDir },
 							maxAttempts: 3,
 							notifyOnFailure: true,
 						});
@@ -352,6 +359,12 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 		"/api/workspace/files/convert",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
+				// Gate: Python conversion service must be enabled
+				if (!deps.isConversionEnabled || !deps.isConversionEnabled()) {
+					res.status(503).json({ error: "Python conversion service not configured" });
+					return;
+				}
+
 				const { path: filePath, force } = req.body ?? {};
 				if (!filePath || typeof filePath !== "string") {
 					throw toHttpError("path is required", 400);
@@ -381,29 +394,6 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 				if (row.status === "pending") {
 					res.json({ ok: true, note: "File is already pending conversion" });
 					return;
-				}
-
-				// Determine the actual source file path for conversion.
-				let sourceTargetPath = logicalTarget;
-				try {
-					const st = await fs.stat(sourceTargetPath);
-					if (!st.isFile()) {
-						throw toHttpError("Requested path is not a file", 400);
-					}
-				} catch {
-					// Original not found; try .originals/ fallback
-					const dir = path.dirname(logicalTarget);
-					const name = path.basename(logicalTarget);
-					const originalsFallback = path.join(dir, ".originals", name);
-					try {
-						const st = await fs.stat(originalsFallback);
-						if (!st.isFile()) {
-							throw toHttpError("Fallback in .originals is not a file", 400);
-						}
-						sourceTargetPath = originalsFallback;
-					} catch {
-						throw toHttpError("File not found at original path or in .originals", 404);
-					}
 				}
 
 				// Check for edit guard: if already converted and force=false,
@@ -458,7 +448,7 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 							type: "file.convert",
 							relatedType: "file",
 							relatedId: logicalPosix,
-							payload: { sourcePath: toPosixPath(sourceTargetPath), workspaceDir: defaultWorkspaceDir },
+							payload: { workspaceDir: defaultWorkspaceDir },
 							maxAttempts: 3,
 							notifyOnFailure: true,
 						});

@@ -163,6 +163,14 @@ const fleetingRunnerRef: {
 	value?: ReturnType<typeof createFleetingAnalysisRunner>;
 } = {};
 
+/**
+ * Test-only helper: override the conversion enabled flag.
+ * Do not use in production code.
+ */
+export function setConversionEnabledForTesting(enabled: boolean): void {
+	isConversionEnabled = () => enabled;
+}
+
 export const getAutomationStore = (): AutomationStore => {
 	if (!automationStore) {
 		const error = new Error("自动化服务尚未初始化") as HttpError;
@@ -619,6 +627,7 @@ const workspaceFilesRouter = createWorkspaceFilesRouter({
 	fileManager: getFileManager(),
 	getRidgeDb,
 	getJobQueue: () => jobQueue,
+	isConversionEnabled: () => isConversionEnabled?.() ?? false,
 });
 app.use(workspaceFilesRouter);
 app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(ensureSessionRecord));
@@ -1393,8 +1402,8 @@ export async function startServer() {
 
 	// Only start conversion worker and register webhook if Python service is configured
 	if (conversionClient && conversionConfig) {
-		const callbackBaseUrl = conversionConfig.callbackBaseUrl
-			?? `http://127.0.0.1:${port}/api/webhooks/conversion`;
+		// callbackBaseUrl is only passed if explicitly configured; otherwise pure polling mode
+		const callbackBaseUrl = conversionConfig.callbackBaseUrl;
 
 		const fileConversionWorker = createFileConversionWorker({
 			db,

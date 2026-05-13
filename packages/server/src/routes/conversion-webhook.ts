@@ -55,20 +55,45 @@ const webhookPayloadSchema = z.object({
 });
 
 /**
- * 校验 webhook 路径的 workspace 安全（realpath + symlink）
+ * 校验 webhook 路径的 workspace 安全（realpath + symlink）。
+ * 对不存在目标：逐级解析已存在父目录，防止父级 symlink 绕过。
  */
 async function assertWebhookPathSafe(
 	filePath: string,
 	workspaceDir: string,
 ): Promise<void> {
+	// 先 realpath workspaceDir 本身，确保比较基准正确
+	let realWorkspaceDir: string;
+	try {
+		realWorkspaceDir = await fs.realpath(workspaceDir);
+	} catch {
+		realWorkspaceDir = workspaceDir;
+	}
+
+	// 尝试 realpath 完整路径
 	const resolved = path.resolve(workspaceDir, filePath);
 	let realResolved: string;
 	try {
 		realResolved = await fs.realpath(resolved);
 	} catch {
+		// 文件可能不存在，逐级解析已存在父目录
+		let current = resolved;
 		realResolved = resolved;
+		while (current !== path.dirname(current)) {
+			current = path.dirname(current);
+			try {
+				const realParent = await fs.realpath(current);
+				// 将 resolved 中未解析的后缀拼接到 realParent 上
+				const suffix = path.relative(current, resolved);
+				realResolved = path.join(realParent, suffix);
+				break;
+			} catch {
+				// 继续向上
+			}
+		}
 	}
-	const rel = path.relative(workspaceDir, realResolved);
+
+	const rel = path.relative(realWorkspaceDir, realResolved);
 	if (rel.startsWith("..") || path.isAbsolute(rel)) {
 		throw new Error(`Webhook path outside workspace: ${filePath}`);
 	}

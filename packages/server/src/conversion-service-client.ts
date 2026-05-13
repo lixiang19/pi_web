@@ -296,36 +296,53 @@ export class ConversionServiceClient {
     return this.request("POST", `/conversions/${encodeURIComponent(jobId)}/cancel`);
   }
 
-  async downloadArtifact(jobId: string, artifactId: string): Promise<Buffer> {
+  async downloadArtifact(jobId: string, artifactId: string, opts: DownloadArtifactsOptions = {}): Promise<Buffer> {
     const url = `${this.baseUrl}/conversions/${encodeURIComponent(jobId)}/artifacts/${encodeURIComponent(artifactId)}`;
-    const response = await this.fetchImpl(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 60_000);
+    try {
+      const response = await this.fetchImpl(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
 
-    if (!response.ok) {
-      let errorBody: unknown;
-      try {
-        errorBody = await response.json();
-      } catch {
-        errorBody = { error: { code: "unknown", message: await response.text() } };
+      if (!response.ok) {
+        let errorBody: unknown;
+        try {
+          errorBody = await response.json();
+        } catch {
+          errorBody = { error: { code: "unknown", message: await response.text() } };
+        }
+        const detail = (errorBody as { error?: ErrorDetail }).error ?? {
+          code: "unknown",
+          message: `HTTP ${response.status}`,
+        };
+        throw new ConversionServiceError(
+          detail.message,
+          detail.code,
+          response.status,
+          detail.details,
+        );
       }
-      const detail = (errorBody as { error?: ErrorDetail }).error ?? {
-        code: "unknown",
-        message: `HTTP ${response.status}`,
-      };
-      throw new ConversionServiceError(
-        detail.message,
-        detail.code,
-        response.status,
-        detail.details,
-      );
-    }
 
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+      const arrayBuffer = await response.arrayBuffer();
+      const buf = Buffer.from(arrayBuffer);
+      if (opts.maxSizeBytes && buf.length > opts.maxSizeBytes) {
+        throw new ConversionServiceError(
+          `Artifact exceeds max size ${opts.maxSizeBytes}`,
+          "file_too_large",
+          413,
+        );
+      }
+      return buf;
+    } catch (err) {
+      clearTimeout(timeout);
+      throw err;
+    }
   }
 
   async listArtifacts(jobId: string): Promise<Artifact[]> {
@@ -397,8 +414,8 @@ export class ConversionServiceClient {
       }
     }
 
-    // fallback：通过 artifactId 下载
-    return this.downloadArtifact(jobId, artifact.artifactId);
+    // fallback：通过 artifactId 下载，同样传递 opts 保持约束一致
+    return this.downloadArtifact(jobId, artifact.artifactId, opts);
   }
 }
 
@@ -580,7 +597,9 @@ export function isSafeArtifactName(name: string): boolean {
 
 /** 将 Python 产物写入 workspace。
  * 原子性保证：先写入临时目录，验证通过后再归档原文件并移动到最终位置。
- * 如果后续步骤失败，原文件不会被破坏（因为 fs.rename 是可逆的）。
+ * 支持 already-archived 场景：如果 sourcePath（logical）不存在但 .originals/ 中存在，
+ * 则跳过归档步骤，直接移动产物。
+ * 如果中途失败， rollback 恢复旧产物和原文件。
  */
 export async function writeArtifactsToWorkspace(
   sourcePath: string,
@@ -590,7 +609,7 @@ export async function writeArtifactsToWorkspace(
   mdPath: string;
   assetsDir: string;
   metadataPath: string;
-  archivedTo: string;
+  archivedTo: string | null;
 }> {
   const outputs = deriveConversionOutputPaths(sourcePath);
 
@@ -651,7 +670,25 @@ export async function writeArtifactsToWorkspace(
     }
   }
 
-  // 第二遍：写入产物到受控临时目录
+  // === Stage 1: 备份旧产物（如果存在） ===
+  const stagingDir = path.join(path.dirname(outputs.md), `.ridge-staging-${outputs.baseName}-${Date.now()}`);
+  await fs.mkdir(stagingDir, { recursive: true });
+
+  const oldMdExists = await fs.stat(outputs.md).then((s) => s.isFile(), () => false);
+  const oldMetaExists = await fs.stat(outputs.metadata).then((s) => s.isFile(), () => false);
+  const oldAssetsExists = await fs.stat(outputs.assets).then((s) => s.isDirectory(), () => false);
+
+  if (oldMdExists) {
+    await fs.rename(outputs.md, path.join(stagingDir, `${outputs.baseName}.md.old`));
+  }
+  if (oldMetaExists) {
+    await fs.rename(outputs.metadata, path.join(stagingDir, `${outputs.baseName}.metadata.json.old`));
+  }
+  if (oldAssetsExists) {
+    await fs.rename(outputs.assets, path.join(stagingDir, `${outputs.baseName}.assets.old`));
+  }
+
+  // === Stage 2: 写入新产物到临时目录 ===
   const tmpDir = path.join(path.dirname(outputs.md), `.tmp-${outputs.baseName}-${Date.now()}`);
   await fs.mkdir(tmpDir, { recursive: true });
 
@@ -685,39 +722,93 @@ export async function writeArtifactsToWorkspace(
     await fs.writeFile(assetPath, buffer);
   }
 
-  // === 原子提交阶段 ===
-  // 1. 先归档原文件到 .originals/
-  await fs.mkdir(outputs.originalsDir, { recursive: true });
-  const archivedTo = path.join(outputs.originalsDir, outputs.originalName);
-
-  // 如果归档目标已存在，先删除
+  // === Stage 3: 原子提交 ===
+  // 3a. 检查 sourcePath 是否存在。如果不存在，尝试 .originals/ fallback
+  let actualSourcePath = sourcePath;
+  let sourceExists = false;
   try {
-    await fs.rm(archivedTo, { force: true });
+    const st = await fs.stat(sourcePath);
+    sourceExists = st.isFile();
   } catch {
-    // ignore
-  }
-  await fs.rename(sourcePath, archivedTo);
-
-  // 2. 从 tmp 移动到最终位置
-  try {
-    await fs.rename(tmpMd, outputs.md);
-    await fs.rename(tmpMeta, outputs.metadata);
-    // 清理旧 assets 目录（如果存在）
+    // sourcePath (logical) 不存在，可能是已归档
+    const originalsFallback = path.join(outputs.originalsDir, outputs.originalName);
     try {
-      await fs.rm(outputs.assets, { recursive: true, force: true });
+      const st = await fs.stat(originalsFallback);
+      if (st.isFile()) {
+        actualSourcePath = originalsFallback;
+        sourceExists = true; // .originals/ 中存在，无需再次归档
+      }
+    } catch {
+      // 两边都不存在，后续归档会报错
+    }
+  }
+
+  let archivedTo: string | null = null;
+
+  // 3b. 归档原文件（仅在 sourceExists 且不是 already archived 时）
+  if (sourceExists && actualSourcePath === sourcePath) {
+    await fs.mkdir(outputs.originalsDir, { recursive: true });
+    archivedTo = path.join(outputs.originalsDir, outputs.originalName);
+
+    // 如果归档目标已存在，先删除
+    try {
+      await fs.rm(archivedTo, { force: true });
     } catch {
       // ignore
     }
+    await fs.rename(sourcePath, archivedTo);
+  }
+
+  // 3c. 从 tmp 移动到最终位置
+  try {
+    await fs.rename(tmpMd, outputs.md);
+    await fs.rename(tmpMeta, outputs.metadata);
+    // 清理旧 assets 目录（如果存在）—— 但应该已经被 stage1 备份了
+    if (!oldAssetsExists) {
+      try {
+        await fs.rm(outputs.assets, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    }
     await fs.rename(tmpAssets, outputs.assets);
     await fs.rm(tmpDir, { recursive: true, force: true });
+    // 清理 staging 目录（成功提交后不再需要）
+    await fs.rm(stagingDir, { recursive: true, force: true });
   } catch (err) {
-    // 如果移动失败，尝试 rollback：将原文件从 .originals/ 移回原位置
-    // 注意：这不能保证 100% 成功（如原位置已被其他进程占用），但能减少不一致窗口
+    // === Rollback ===
+    // 1. 尝试恢复旧产物
     try {
-      await fs.rename(archivedTo, sourcePath);
-    } catch {
-      // rollback 失败，记录错误但继续抛出原始错误
+      if (oldMdExists) {
+        await fs.rename(path.join(stagingDir, `${outputs.baseName}.md.old`), outputs.md);
+      }
+    } catch { /* ignore */ }
+    try {
+      if (oldMetaExists) {
+        await fs.rename(path.join(stagingDir, `${outputs.baseName}.metadata.json.old`), outputs.metadata);
+      }
+    } catch { /* ignore */ }
+    try {
+      if (oldAssetsExists) {
+        await fs.rename(path.join(stagingDir, `${outputs.baseName}.assets.old`), outputs.assets);
+      }
+    } catch { /* ignore */ }
+
+    // 2. 如果刚才归档了原文件，尝试从 .originals/ 移回
+    if (archivedTo) {
+      try {
+        await fs.rename(archivedTo, sourcePath);
+      } catch { /* ignore */ }
     }
+
+    // 3. 清理临时目录
+    try {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    } catch { /* ignore */ }
+    try {
+      await fs.rm(stagingDir, { recursive: true, force: true });
+    } catch { /* ignore */ }
+
     throw err;
   }
 
