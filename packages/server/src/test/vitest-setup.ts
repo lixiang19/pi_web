@@ -15,15 +15,11 @@ process.env.RIDGE_DB_PATH = path.join(baseDir, "ridge.db");
 // directory. We do NOT override HOME here.
 resetRidgeDb();
 
-// Reset the global auth singleton so each test file starts from a clean state.
-try {
-	const { authRuntime } = await import("../index.js");
-	if (authRuntime?.resetForTests) {
-		authRuntime.resetForTests();
-	}
-} catch {
-	// index.ts may not have been loaded yet; ignore
-}
+// Do NOT reset the global auth singleton here.
+// With Vitest pool:forks, a single worker process may run multiple test files
+// sequentially. A global reset would invalidate sessions from the previous test
+// file in the same worker, causing 401 races. Each test file that needs auth
+// should call createAuthenticatedAgent(), which resets + logs in atomically.
 
 // Cleanup previously-used directories from this PID to prevent disk bloat.
 // We only clean directories older than 5 minutes.

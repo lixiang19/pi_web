@@ -142,7 +142,7 @@ describe("ridge db migrations", () => {
 			expect.arrayContaining(["device_id", "name", "device_type", "status", "last_seen_at"]),
 		);
 		expect(listColumns(db, "projects")).toEqual(
-			expect.arrayContaining(["project_type", "source", "workspace_path", "device_id", "archived_at"]),
+			expect.arrayContaining(["project_type", "external_origin", "workspace_path", "device_id", "archived_at"]),
 		);
 		expect(listColumns(db, "session_index")).toEqual(
 			expect.arrayContaining([
@@ -217,7 +217,7 @@ CREATE TABLE background_jobs (
 			expect.arrayContaining(["device_type", "status", "capabilities_json", "updated_at"]),
 		);
 		expect(listColumns(db, "projects")).toEqual(
-			expect.arrayContaining(["project_type", "source", "workspace_path", "archived_at"]),
+			expect.arrayContaining(["project_type", "external_origin", "workspace_path", "archived_at"]),
 		);
 		expect(listColumns(db, "background_jobs")).toEqual(
 			expect.arrayContaining(["job_type", "payload_json", "attempt_count", "last_error"]),

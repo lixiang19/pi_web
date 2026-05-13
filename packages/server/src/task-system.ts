@@ -402,7 +402,7 @@ export const listTasks = async (
 			params.push(projectId);
 		}
 	}
-	sql += ` ORDER BY created_at DESC`;
+	sql += ` ORDER BY created_at DESC, task_id DESC`;
 
 	const rows = db.prepare(sql).all(...params) as TaskRow[];
 	return rows.map(mapTask);

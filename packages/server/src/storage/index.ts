@@ -31,7 +31,7 @@ const createProjectRecord = (projectPath: string, isGit: boolean): Project => ({
   addedAt: Date.now(),
   isGit,
   projectType: 'external',
-  source: 'server-folder',
+  externalOrigin: 'folder',
   isOnline: false,
   updatedAt: Date.now(),
 });
@@ -65,7 +65,7 @@ const mapProjectRow = (row: {
   added_at: number;
   is_git: number;
   project_type: string;
-  source: string;
+  external_origin: string | null;
   device_id: string | null;
   device_name: string | null;
   device_status: string | null;
@@ -78,7 +78,7 @@ const mapProjectRow = (row: {
   addedAt: row.added_at,
   isGit: Boolean(row.is_git),
   projectType: (row.project_type as Project['projectType']) || 'external',
-  source: (row.source as Project['source']) || 'server-folder',
+  externalOrigin: (row.external_origin === 'github' || row.external_origin === 'folder') ? (row.external_origin as Project['externalOrigin']) : null,
   deviceId: row.device_id || undefined,
   deviceName: row.device_name || undefined,
   isOnline: row.device_status === 'online',
@@ -143,7 +143,7 @@ export const getFavorites = async (): Promise<FavoritesState> => {
     .prepare(
       `SELECT favorite_id, name, type, data_json, created_at
        FROM favorites
-       ORDER BY created_at DESC`,
+       ORDER BY created_at DESC, favorite_id DESC`,
     )
     .all() as Array<{
       favorite_id: string;
@@ -218,7 +218,7 @@ export const getProjects = async (): Promise<ProjectsState> => {
          p.is_git,
          p.added_at,
          p.project_type,
-         p.source,
+         p.external_origin,
          p.device_id,
          COALESCE(d.name, '') AS device_name,
          COALESCE(d.status, 'offline') AS device_status,
@@ -235,7 +235,7 @@ export const getProjects = async (): Promise<ProjectsState> => {
       is_git: number;
       added_at: number;
       project_type: string;
-      source: string;
+      external_origin: string | null;
       device_id: string | null;
       device_name: string;
       device_status: string;
@@ -258,7 +258,7 @@ export const addProject = async (
   const existing = db
     .prepare(
       `SELECT project_id, name, path, is_git, added_at,
-              project_type, source, device_id, device_name, device_status,
+              project_type, external_origin, device_id, device_name, device_status,
               archived_at, updated_at
        FROM projects
        WHERE path = ?`,
@@ -271,7 +271,7 @@ export const addProject = async (
         is_git: number;
         added_at: number;
         project_type: string;
-        source: string;
+        external_origin: string | null;
         device_id: string | null;
         device_name: string | null;
         device_status: string | null;
@@ -288,7 +288,7 @@ export const addProject = async (
   db.prepare(
     `INSERT INTO projects(
       project_id, name, path, is_git, added_at,
-      project_type, source, device_id, archived_at, updated_at
+      project_type, external_origin, device_id, archived_at, updated_at
     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     nextProject.id,
@@ -297,7 +297,7 @@ export const addProject = async (
     nextProject.isGit ? 1 : 0,
     nextProject.addedAt,
     nextProject.projectType,
-    nextProject.source,
+    nextProject.externalOrigin,
     null,
     null,
     nextProject.updatedAt,

@@ -1,0 +1,128 @@
+- generic [ref=e2]:
+  - generic [ref=e15]:
+    - complementary [ref=e16]:
+      - generic [ref=e17]:
+        - button "闪念" [ref=e18]:
+          - img [ref=e19]
+          - generic [ref=e22]: 闪念
+        - button "任务" [ref=e23]:
+          - img [ref=e24]
+          - generic [ref=e27]: 任务
+        - button "文件" [ref=e28]:
+          - img [ref=e29]
+          - generic [ref=e33]: 文件
+        - button "终端" [ref=e34]:
+          - img [ref=e35]
+          - generic [ref=e38]: 终端
+        - button "自动化" [ref=e39]:
+          - img [ref=e40]
+          - generic [ref=e43]: 自动化
+        - button "设置" [ref=e44]:
+          - img [ref=e45]
+          - generic [ref=e48]: 设置
+      - generic [ref=e49]:
+        - generic [ref=e50]: 项目
+        - button "AuroraPlatformWeb /Users/lixiang/Documents/myCode/AuroraPlatformWeb 外部仓库 本地文件夹 离线" [active] [ref=e53]:
+          - img [ref=e185]
+          - generic [ref=e56]: AuroraPlatformWeb
+          - generic [ref=e57]: /Users/lixiang/Documents/myCode/AuroraPlatformWeb
+          - generic [ref=e58]: 外部仓库
+          - generic [ref=e59]: 本地文件夹
+          - generic [ref=e60]: 离线
+        - button "openchamber /Users/lixiang/Documents/myCode/openchamber 外部仓库 本地文件夹 离线" [ref=e63]:
+          - img [ref=e64]
+          - generic [ref=e66]: openchamber
+          - generic [ref=e67]: /Users/lixiang/Documents/myCode/openchamber
+          - generic [ref=e68]: 外部仓库
+          - generic [ref=e69]: 本地文件夹
+          - generic [ref=e70]: 离线
+      - generic [ref=e72]:
+        - button "新建" [ref=e73]:
+          - img [ref=e74]
+          - text: 新建
+        - button "文件夹" [ref=e77]:
+          - img [ref=e78]
+          - text: 文件夹
+        - button "Canvas" [ref=e80]:
+          - img [ref=e81]
+          - text: Canvas
+        - button "Base" [ref=e86]:
+          - img [ref=e87]
+          - text: Base
+      - generic [ref=e93]:
+        - tablist [ref=e94]:
+          - tab [selected] [ref=e95]:
+            - img
+          - tab [ref=e96]:
+            - img
+          - tab [ref=e97]:
+            - img
+          - tab [ref=e98]:
+            - img
+        - tabpanel [ref=e99]:
+          - button [ref=e101]:
+            - img [ref=e102]
+      - button "归档" [ref=e112]:
+        - img [ref=e113]
+        - generic [ref=e116]: 归档
+    - main [ref=e117]:
+      - generic [ref=e118]:
+        - generic [ref=e120]:
+          - tablist [ref=e121]:
+            - tab "主页" [ref=e122] [cursor=pointer]:
+              - generic [ref=e124]: 主页
+              - button [ref=e125]:
+                - img [ref=e126]
+          - button [ref=e129]:
+            - img [ref=e130]
+        - generic [ref=e137]:
+          - generic [ref=e138]:
+            - paragraph [ref=e139]: 开始对话
+            - generic [ref=e141]:
+              - generic [ref=e142]:
+                - button "处理闪念" [ref=e143]:
+                  - img [ref=e144]
+                  - text: 处理闪念
+                - button "规划任务" [ref=e146]:
+                  - img [ref=e147]
+                  - text: 规划任务
+                - button "总结最近文件" [ref=e150]:
+                  - img [ref=e151]
+                  - text: 总结最近文件
+              - generic [ref=e153]:
+                - textbox "问我任何事…" [ref=e154]
+                - button [disabled]:
+                  - img
+              - generic [ref=e155]:
+                - button "附件" [ref=e156]:
+                  - img [ref=e157]
+                  - text: 附件
+                - combobox [ref=e159]:
+                  - img
+                  - generic: 模型
+                  - img
+                - combobox [ref=e160]:
+                  - img
+                  - generic: 无 Agent（直接对话）
+                  - img
+                - combobox [ref=e161]:
+                  - img
+                  - generic: Medium
+                  - img
+          - generic [ref=e162]:
+            - generic [ref=e163]:
+              - heading "最近事情" [level=3] [ref=e165]
+              - generic [ref=e167]: 暂无最近活动
+            - generic [ref=e168]:
+              - generic [ref=e169]:
+                - heading "最近文件" [level=3] [ref=e171]
+                - generic [ref=e173]: 暂无文件
+              - generic [ref=e174]:
+                - generic [ref=e176]:
+                  - img [ref=e177]
+                  - heading "AI 建议" [level=3] [ref=e180]
+                - paragraph [ref=e182]: AI 建议功能即将推出，届时会根据你的工作习惯给出智能推荐。
+  - button "打开闪念捕捉" [ref=e184]:
+    - img
+  - region "Notifications alt+T":
+    - list

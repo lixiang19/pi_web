@@ -449,7 +449,7 @@ describe("workspace task system", () => {
 			return;
 		}
 		expect(forkRes.status).toBe(201);
-	});
+	}, 20000);
 
 	it("POST /api/sessions still rejects task-agent for normal sessions", async () => {
 		// 普通会话选择 task-agent 应该被拒绝

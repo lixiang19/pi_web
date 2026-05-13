@@ -33,10 +33,10 @@ export type SessionProjectView = {
   groups: SessionGroupView[];
   isGit: boolean;
   source: SessionProjectSource;
-  origin: 'github' | 'server-folder' | 'internal';
+  externalOrigin: 'github' | 'folder' | null;
   isOnline: boolean;
   archivedAt?: number;
-  projectType: 'internal' | 'external';
+  projectType: 'internal' | 'external' | 'workspace';
   deviceName?: string;
 };
 
@@ -66,9 +66,9 @@ type SessionProjectConfig = {
   source: SessionProjectSource;
   isOnline: boolean;
   archivedAt?: number;
-  projectType: 'internal' | 'external';
+  projectType: 'internal' | 'external' | 'workspace';
   deviceName?: string;
-  origin: 'github' | 'server-folder' | 'internal';
+  externalOrigin: 'github' | 'folder' | null;
 };
 
 const normalizePath = (value: string) =>
@@ -312,7 +312,7 @@ const buildProjectView = (options: {
     groups,
     isGit,
     source: project.source,
-    origin: project.origin,
+    externalOrigin: project.externalOrigin,
     isOnline: project.isOnline,
     archivedAt: project.archivedAt,
     projectType: project.projectType,
@@ -391,7 +391,7 @@ export const buildSidebarProjects = (options: BuildSidebarOptions) => {
           archivedAt: project.archivedAt,
           projectType: project.projectType,
           deviceName: project.deviceName,
-          origin: project.source,
+          externalOrigin: project.externalOrigin,
         },
         sessions: sessionsByProjectId.get(project.id) ?? [],
         availableWorktreesByProject: options.availableWorktreesByProject,
@@ -413,8 +413,8 @@ export const buildSidebarProjects = (options: BuildSidebarOptions) => {
           isGit: false,
           source: "workspace-chat",
           isOnline: true,
-          projectType: 'internal',
-          origin: 'internal',
+          projectType: 'workspace',
+          externalOrigin: null,
         },
         sessions: workspaceChatSessions,
         normalizedQuery,

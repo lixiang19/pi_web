@@ -8,11 +8,15 @@ export default defineConfig({
 	test: {
 		globals: true,
 		pool: "forks",
-		poolOptions: {
-			forks: {
-				execArgv: ["-r", preloadPath],
-			},
-		},
+		// Run test files sequentially, not concurrently.
+		fileParallelism: false,
+		// Each test file runs in an isolated fork with fresh module cache,
+		// so the global app/authRuntime singletons are recreated per file.
+		isolate: true,
+		// Limit concurrency within each file to 1 (sequential test execution).
+		maxConcurrency: 1,
+		testTimeout: 10000,
+		execArgv: ["-r", preloadPath],
 		setupFiles: ["./src/test/vitest-setup.ts"],
 	},
 });

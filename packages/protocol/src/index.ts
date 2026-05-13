@@ -451,8 +451,8 @@ export interface ProjectItem {
 	path: string;
 	addedAt: number;
 	isGit: boolean;
-	projectType: 'internal' | 'external';
-	source: 'github' | 'server-folder' | 'internal';
+	projectType: "internal" | "external" | "workspace";
+	externalOrigin: "github" | "folder" | null;
 	deviceId?: string;
 	deviceName?: string;
 	isOnline: boolean;

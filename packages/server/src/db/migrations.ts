@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 10;
+export const RIDGE_DB_SCHEMA_VERSION = 11;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS projects (
   is_git INTEGER NOT NULL,
   added_at INTEGER NOT NULL,
   project_type TEXT NOT NULL DEFAULT 'external',
-  source TEXT NOT NULL DEFAULT 'server-folder',
+  external_origin TEXT DEFAULT 'folder',
   workspace_path TEXT NOT NULL DEFAULT '',
   device_id TEXT,
   archived_at INTEGER,
@@ -601,6 +601,14 @@ CREATE TABLE IF NOT EXISTS file_processing_status (
 
 CREATE INDEX IF NOT EXISTS idx_file_processing_status_workspace
   ON file_processing_status(workspace_path, status, updated_at);
+`,
+  },
+  {
+    version: 11,
+    name: 'rename source to external_origin for clarity',
+    sql: `
+-- Column rename is handled in pre-bootstrap repair (ensureRenamedProjectSourceColumn).
+-- This migration is retained for version tracking but is a no-op.
 `,
   },
 ];

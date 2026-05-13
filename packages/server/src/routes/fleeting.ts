@@ -255,7 +255,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 	router.get("/", (_req: Request, res: Response, next: NextFunction) => {
 		try {
 			const rows = db
-				.prepare("SELECT * FROM fleeting_notes ORDER BY created_at DESC")
+				.prepare("SELECT * FROM fleeting_notes ORDER BY created_at DESC, note_id DESC")
 				.all() as Record<string, unknown>[];
 			res.json({ notes: rows.map(toPublicNote) });
 		} catch (error) {
@@ -266,7 +266,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 	router.get("/clips", (_req: Request, res: Response, next: NextFunction) => {
 		try {
 			const rows = db
-				.prepare("SELECT * FROM clips ORDER BY created_at DESC")
+				.prepare("SELECT * FROM clips ORDER BY created_at DESC, clip_id DESC")
 				.all() as Record<string, unknown>[];
 			res.json({
 				clips: rows.map((row) => ({
@@ -779,7 +779,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					sql += " WHERE analysis_status = ?";
 					params.push(status);
 				}
-				sql += " ORDER BY created_at DESC";
+				sql += " ORDER BY created_at DESC, note_id DESC";
 				const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
 				res.json({ notes: rows.map(toPublicNote) });
 			} catch (error) {

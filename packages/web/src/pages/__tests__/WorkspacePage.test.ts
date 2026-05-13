@@ -66,7 +66,7 @@ const {
 		],
 	},
 	mockSessions: { value: [] as Array<{ id: string; title: string; updatedAt?: number; archived?: boolean; projectId?: string; contextId?: string }> },
-	mockProjects: { value: [] as Array<{ id: string; name: string; path: string; isOnline: boolean; archivedAt?: number; source?: string; projectType?: string; isGit?: boolean; deviceName?: string }> },
+	mockProjects: { value: [] as Array<{ id: string; name: string; path: string; isOnline: boolean; archivedAt?: number; externalOrigin?: 'github' | 'folder' | null; projectType?: 'internal' | 'external' | 'workspace'; isGit?: boolean; deviceName?: string }> },
 	mockRefreshSessions: vi.fn(),
 	mockRefreshSessionContexts: vi.fn(),
 	mockUploadSessionAttachments: vi.fn(),
@@ -397,7 +397,7 @@ describe("WorkspacePage - 会话列表", () => {
 				name: "proj",
 				path: "/p",
 				isOnline: true,
-				source: "server-folder",
+				externalOrigin: "folder",
 				projectType: "external",
 				isGit: false,
 			},
@@ -713,15 +713,15 @@ describe("WorkspacePage - 项目相关", () => {
 		expect(mockCreateSession).not.toHaveBeenCalled();
 	});
 
-	it("项目元信息可见（路径、设备、内部/外部、来源、Git）", () => {
+	it("项目元信息可见（路径、设备、类型、来源、Git）", () => {
 		mockProjects.value = [
 			{
 				id: "proj-1",
 				name: "MyProject",
 				path: "/home/user/MyProject",
 				isOnline: true,
-				projectType: "internal",
-				source: "github",
+				projectType: "external",
+				externalOrigin: "github",
 				isGit: true,
 				deviceName: "server-1",
 			},
@@ -730,7 +730,7 @@ describe("WorkspacePage - 项目相关", () => {
 		const projectItem = wrapper.find('[data-test="project-item-proj-1"]');
 		expect(projectItem.exists()).toBe(true);
 		expect(projectItem.text()).toContain("MyProject");
-		expect(projectItem.text()).toContain("内部");
+		expect(projectItem.text()).toContain("外部仓库");
 		expect(projectItem.text()).toContain("GitHub");
 		expect(projectItem.text()).toContain("Git");
 		expect(projectItem.text()).toContain("server-1");
@@ -797,6 +797,62 @@ describe("WorkspacePage - 项目相关", () => {
 		expect(projectItem.find('[data-test="project-new-session"]').exists()).toBe(false);
 	});
 
+	it("内部项目新建会话使用 workspaceDir 作为 cwd", () => {
+		mockProjects.value = [
+			{
+				id: "proj-internal",
+				name: "内部项目",
+				path: "/home/user/ridge-workspace/项目/内部项目",
+				isOnline: true,
+				projectType: "internal",
+				externalOrigin: null,
+				isGit: false,
+			},
+		];
+		const wrapper = mountWorkspace();
+		const newBtn = wrapper.find('[data-test="project-new-session"]');
+		expect(newBtn.exists()).toBe(true);
+		newBtn.trigger("click");
+
+		// 内部项目应使用 workspaceDir（"/ws"）而非项目路径
+		expect(mockOpenTab).toHaveBeenCalledWith(
+			"pane-1",
+			expect.objectContaining({
+				kind: "home",
+				cwd: "/ws",
+				contextLabel: "内部项目",
+			}),
+		);
+	});
+
+	it("外部仓库新建会话使用外部仓库路径作为 cwd", () => {
+		mockProjects.value = [
+			{
+				id: "proj-external",
+				name: "外部仓库",
+				path: "/home/user/repos/external-repo",
+				isOnline: true,
+				projectType: "external",
+				externalOrigin: "folder",
+				isGit: true,
+			},
+		];
+		const wrapper = mountWorkspace();
+		const newBtn = wrapper.find('[data-test="project-new-session"]');
+		expect(newBtn.exists()).toBe(true);
+		newBtn.trigger("click");
+
+		// 外部仓库应使用项目路径作为 cwd
+		expect(mockOpenTab).toHaveBeenCalledWith(
+			"pane-1",
+			expect.objectContaining({
+				kind: "home",
+				cwd: "/home/user/repos/external-repo",
+				contextLabel: "外部仓库",
+			}),
+		);
+	});
+
 	it("项目新建会话的 home tab 携带项目 cwd", () => {
 		mockProjects.value = [
 			{
@@ -804,6 +860,9 @@ describe("WorkspacePage - 项目相关", () => {
 				name: "proj",
 				path: "/project/foo",
 				isOnline: true,
+				projectType: "external",
+				externalOrigin: "folder",
+				isGit: false,
 			},
 		];
 		const wrapper = mountWorkspace();

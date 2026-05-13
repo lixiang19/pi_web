@@ -257,7 +257,10 @@ function handleOpenProjectHome(project: SessionProjectView) {
 	if (isProjectOffline(project) || isProjectArchived(project)) {
 		return;
 	}
-	const tab = createHomeTab({ cwd: project.projectRoot, contextLabel: project.label });
+	const cwd = project.projectType === 'internal'
+		? (workspaceDir.value || project.projectRoot)
+		: project.projectRoot;
+	const tab = createHomeTab({ cwd, contextLabel: project.label });
 	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
 }
 
@@ -731,13 +734,20 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
 							data-test="project-type"
 						>
-							{{ project.projectType === 'internal' ? '内部' : '外部' }}
+							{{
+								project.projectType === 'workspace'
+									? '工作空间'
+									: project.projectType === 'external'
+										? '外部仓库'
+										: '项目'
+							}}
 						</span>
 						<span
+							v-if="project.externalOrigin"
 							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
 							data-test="project-source"
 						>
-							{{ project.origin === 'github' ? 'GitHub' : project.origin === 'internal' ? '内部' : '服务器文件夹' }}
+							{{ project.externalOrigin === 'github' ? 'GitHub' : '本地文件夹' }}
 						</span>
 						<span
 							v-if="project.isGit"

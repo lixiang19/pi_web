@@ -75,7 +75,7 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'is_git', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'added_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'project_type', definition: "TEXT NOT NULL DEFAULT 'external'" },
-    { name: 'source', definition: "TEXT NOT NULL DEFAULT 'server-folder'" },
+    { name: 'external_origin', definition: "TEXT DEFAULT 'folder'" },
     { name: 'workspace_path', definition: "TEXT NOT NULL DEFAULT ''" },
     { name: 'device_id', definition: 'TEXT' },
     { name: 'archived_at', definition: 'INTEGER' },
@@ -256,10 +256,38 @@ const runPreBootstrapMigrations = (
 ) => {
   const workspacePath = workspaceDir ? path.resolve(workspaceDir) : null;
 
+  ensureRenamedProjectSourceColumn(db);
   repairKnownTableColumns(db);
   ensureLegacyWorkspacePath(db, 'workspace_milestones', workspacePath);
   ensureLegacyWorkspacePath(db, 'workspace_tasks', workspacePath);
   ensureLegacyTaskMilestone(db, workspacePath);
+};
+
+const ensureRenamedProjectSourceColumn = (db: RidgeDatabase) => {
+  const columns = getColumnNames(db, 'projects');
+  if (columns.length === 0) {
+    return;
+  }
+  if (columns.includes('source') && !columns.includes('external_origin')) {
+    // SQLite ALTER TABLE RENAME COLUMN is unreliable in some environments;
+    // use the safer ADD + UPDATE + DROP sequence instead.
+    db.prepare("ALTER TABLE projects ADD COLUMN external_origin TEXT DEFAULT 'folder'").run();
+    db.prepare(`
+      UPDATE projects
+      SET external_origin = CASE
+        WHEN source = 'server-folder' THEN 'folder'
+        WHEN source = 'internal' THEN NULL
+        ELSE source
+      END
+    `).run();
+    db.prepare("ALTER TABLE projects DROP COLUMN source").run();
+  }
+  // Also handle the case where a previous rename succeeded but left stale values
+  const currentColumns = getColumnNames(db, 'projects');
+  if (currentColumns.includes('external_origin')) {
+    db.prepare("UPDATE projects SET external_origin = 'folder' WHERE external_origin = 'server-folder'").run();
+    db.prepare("UPDATE projects SET external_origin = NULL WHERE external_origin = 'internal'").run();
+  }
 };
 
 const repairKnownTableColumns = (db: RidgeDatabase) => {

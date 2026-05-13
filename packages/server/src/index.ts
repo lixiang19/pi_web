@@ -972,6 +972,22 @@ app.post(
 				throw error;
 			}
 
+			// 内部项目是组织/关注对象，不作为 pi 运行目录；拦截内部项目路径及其子路径
+			const projectsState = await getProjects();
+			const internalProjects = projectsState.projects.filter(
+				(p) => p.projectType === 'internal',
+			);
+			const normalizedSessionCwd = normalizeFsPath(sessionCwd);
+			for (const internalProject of internalProjects) {
+				const projectRoot = normalizeFsPath(internalProject.path);
+				const relative = path.relative(projectRoot, normalizedSessionCwd);
+				if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+					const error = new Error("Internal project cannot be used as a session working directory") as HttpError;
+					error.statusCode = 400;
+					throw error;
+				}
+			}
+
 			await ensureManagedProjectScope(sessionCwd);
 			const record = await createSessionRecord({
 				cwd: sessionCwd,

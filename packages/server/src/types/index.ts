@@ -238,7 +238,7 @@ export interface Project {
   addedAt: ProtocolProjectItem['addedAt'];
   isGit: ProtocolProjectItem['isGit'];
   projectType: ProtocolProjectItem['projectType'];
-  source: ProtocolProjectItem['source'];
+  externalOrigin: ProtocolProjectItem['externalOrigin'];
   deviceId?: ProtocolProjectItem['deviceId'];
   deviceName?: ProtocolProjectItem['deviceName'];
   isOnline: ProtocolProjectItem['isOnline'];

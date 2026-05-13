@@ -230,7 +230,8 @@ const loadManagedProjectScopes = async (
   const state = await getProjects();
   const projects = [
     createWorkspaceChatProject(workspaceChatConfig),
-    ...state.projects,
+    // 内部项目是组织/关注对象，不作为 pi 运行目录，不纳入 managed scope
+    ...state.projects.filter((p) => p.projectType !== 'internal'),
   ];
   return Promise.all(
     projects.map(async (project) => {

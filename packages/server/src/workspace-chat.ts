@@ -93,8 +93,8 @@ export const createWorkspaceChatProject = (
 	path: config.chatProjectPath,
 	addedAt: 0,
 	isGit: false,
-	projectType: 'external',
-	source: 'server-folder',
+	projectType: 'workspace',
+	externalOrigin: null,
 	isOnline: false,
 	updatedAt: 0,
 });

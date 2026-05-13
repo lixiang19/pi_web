@@ -32,7 +32,7 @@ const createProject = (overrides: Partial<ProjectItem> = {}): ProjectItem => ({
   addedAt: 1,
   isGit: false,
   projectType: "external",
-  source: "server-folder",
+  externalOrigin: "folder",
   isOnline: true,
   updatedAt: 1,
   ...overrides,
@@ -223,7 +223,7 @@ describe("getRecentProjectSessions", () => {
       groups: [],
       isGit: false,
       source: "stored-project",
-      origin: "server-folder",
+      externalOrigin: "folder",
       isOnline: true,
       projectType: "external",
     };

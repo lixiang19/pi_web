@@ -131,7 +131,7 @@ vi.mock("@/composables/useWorkspaceTasks", () => ({
 vi.mock("@/composables/useProjects", () => ({
 	useProjects: () => ({
 		projects: ref([
-			{ id: "project-1", name: "Project A", path: "/p/a", isGit: true, updatedAt: 1, projectType: "git", source: "local" },
+			{ id: "project-1", name: "Project A", path: "/p/a", isGit: true, updatedAt: 1, projectType: "external", externalOrigin: "folder" },
 		]),
 		load: mockLoadProjects,
 		isLoading: ref(false),
