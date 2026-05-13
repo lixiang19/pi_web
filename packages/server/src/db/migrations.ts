@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 11;
+export const RIDGE_DB_SCHEMA_VERSION = 12;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -326,6 +326,21 @@ CREATE TABLE IF NOT EXISTS fleeting_attachments (
 CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
   ON fleeting_attachments(note_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS python_conversion_jobs (
+  file_path TEXT PRIMARY KEY,
+  python_job_id TEXT NOT NULL,
+  client_job_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted', 'running', 'succeeded', 'failed', 'canceled')),
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_status
+  ON python_conversion_jobs(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_python_job_id
+  ON python_conversion_jobs(python_job_id);
+
 CREATE TABLE IF NOT EXISTS file_processing_status (
   file_path TEXT PRIMARY KEY,
   workspace_path TEXT NOT NULL DEFAULT '',
@@ -609,6 +624,26 @@ CREATE INDEX IF NOT EXISTS idx_file_processing_status_workspace
     sql: `
 -- Column rename is handled in pre-bootstrap repair (ensureRenamedProjectSourceColumn).
 -- This migration is retained for version tracking but is a no-op.
+`,
+  },
+  {
+    version: 12,
+    name: 'python_conversion_jobs table for async conversion tracking',
+    sql: `
+CREATE TABLE IF NOT EXISTS python_conversion_jobs (
+  file_path TEXT PRIMARY KEY,
+  python_job_id TEXT NOT NULL,
+  client_job_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted', 'running', 'succeeded', 'failed', 'canceled')),
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_status
+  ON python_conversion_jobs(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_python_job_id
+  ON python_conversion_jobs(python_job_id);
 `,
   },
 ];

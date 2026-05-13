@@ -17,6 +17,7 @@
 - [配置存储] `ridge-settings.json` 已退役；设置、项目、收藏、当前工作空间路径等 ridge 运行状态统一落到 `~/.pi/ridge.db`
 - [chat 初始化契约] `<workspace>/chat` 只允许是目录；已存在但不是目录时必须直接失败，不能吞掉错误继续复制
 - [单用户认证] VPS 个人部署采用固定密码登录，登录成功后使用服务端内存 Session 和 `ridge_session` HttpOnly Cookie；除 `/api/auth/session|login|logout` 外，其余 `/api/*` 和终端 WebSocket 都必须鉴权。当前固定密码写在服务端，仓库或镜像泄露即视为密码泄露。
+- [重型转换服务边界] 文档/PDF/Word/音频/图片等重型解析与转换长期由独立 Python 通用转化服务承载（基于 MarkItDown/Whisper/OCR 等），ridge Node 后端只做 workspace 安全校验、`file_processing_status` 状态机、`background_jobs` 队列调度、产物落盘（`.md/.assets/.metadata.json/.originals`）；Node 不自研 PDF/Word 解析栈、不内嵌模型推理。Python 服务按 `文档/功能开发/40-Python通用转化服务API契约.md` 接口独立开发，多 client/多 project 可用，不属于 ridge 专属。
 
 ## 规范与教训
 
@@ -432,6 +433,242 @@
 - **协议类型先行**：新增 `processingError` 字段需先在 `@pi/protocol` 的 `FileTreeEntry` 声明，再在前端使用；否则 `vue-tsc` 门禁直接失败。
 - **重试路径必须校验**：`retry` 不能直接信任请求中的 `path`，必须通过 `fileManager.resolveManagedFileLocation` 做 root/`.ridge`/realpath 边界校验。
 
+## 2026-05-13 任务 19 PDF Word 标准化转换
+
+### 实现要点
+
+- **旧 JS 转换栈（已归档）**：~~不引入 Python/Docling 外部服务，后端使用 `pdfnano`（纯 JS PDF 解析器）+ `mammoth`（docx→HTML）+ `turndown`（HTML→Markdown），Node.js 单进程完成转换。~~ 已迁移至 Python 通用转化服务。历史实现保留在 `file-converter.ts` 供参考。
+- **四类产物**：`<name>.md` + `<name>.assets/` + `<name>.metadata.json` + `.originals/<original>`，产物与原文件在同一语义目录。
+- **原文件归档**：转换成功后 `fs.rename` 原文件到同目录 `.originals/`，失败时不动原文件。
+- **编辑守卫**：检测已有 `.md` 非空即视为可能被用户编辑，`convertFileToStandard({ force: false })` 拒绝覆盖；`force: true` 可强制覆盖。
+- **状态机联动**：`file.convert` 后台任务通过 `file-conversion-worker.ts` 轮询 `background_jobs` 队列；开始转换时 `pending → converting`，成功 `→ converted`，失败 `→ convert_failed` 并写 `error` + 生成 `notification_events`。
+- **上传自动触发**：`POST /api/files/upload` 检测到 `.pdf`/`.docx` 时，在插入 `file_processing_status` pending 记录后，自动 enqueue `file.convert` 后台任务。
+- **手动重转换 API**：`POST /api/workspace/files/convert` 支持用户手动触发，带编辑守卫和 `force` 参数；转换成功后更新状态为 `converted`。
+- **metadata 内容**：PDF 保留 `sourceType`、`title`、`author`、`pages`；Word 保留 `sourceType`、`images`、`tables`；均含 `convertedAt`。
+
+### 测试覆盖
+
+- `pdf-word-conversion.test.ts`（8 项）：PDF/Word 四类产物生成、失败保留原文件、编辑守卫拒绝/允许、`.originals` 归档。
+- `file-conversion-worker.test.ts`（3 项）：成功转换更新状态、失败更新 `convert_failed` 并保留原文件、无 status 记录时跳过。
+- `file-upload-convert-trigger.test.ts`（3 项）：PDF/DOCX 上传 enqueue `file.convert`、TXT 不上传不 enqueue。
+- `manual-convert-api.test.ts`（4 项）：手动转换成功、编辑守卫拒绝、force 覆盖、无记录 404。
+
+### 教训
+
+- **~~纯 JS 替代方案优先~~ 迁移到 Python 通用转化服务**：~~Docling 需要 Python 运行时，对桌面/服务器部署增加外部依赖；`pdfnano`（纯 JS，无外部依赖）+ `mammoth` + `turndown` 组合满足第一版需求，且与 Node.js 生态一致。~~ 任务 41 已完成迁移，现在 ridge 后端通过 HTTP 调用独立 Python 通用转化服务，按 `40-Python通用转化服务API契约.md` 消费。
+- **turndown 对 docx 表格支持有限**：`mammoth.convertToHtml` 生成 HTML table 后，`turndownService.turndown` 可能把 table 转成纯文本段落而非 Markdown 表格；第一版接受此降级，后续可在 metadata 中标注 `tables` 计数。
+- **force 重转换需要先恢复原文件**：第一次转换后原文件已移到 `.originals/`，重新转换前必须从 `.originals/` copy 回原路径，否则 `convertFileToStandard` 找不到源文件。
+- **测试创建 docx 用 jszip**：不用依赖外部 Python/命令行工具，在测试内动态生成最小 docx ZIP 即可。
+- **jobQueue 在 app 模块加载时未定义**：`index.ts` 模块级路由注册时 `jobQueue` 变量尚未赋值（在 `startServer()` 中才创建）；路由层应通过 `getJobQueue()` 懒获取，避免模块加载时 `undefined`。
+- **upload 的 409 冲突**：测试文件若放在目标目录内再 upload，会因同名冲突返回 409；应将测试源文件放在临时目录，upload 到目标目录。
+- **类型定义一致性**：`WorkspaceDataDeps` 接口增加 `getJobQueue?: () => ...` 而非直接传 `jobQueue` 实例，避免类型检查与实际初始化时序错位。
+
+### 审查后修复（Round 1 — 解决 reviewer 拒绝）
+
+- **文件缺失检查**
+  - `file-converter.ts` `convertWordToStandard` 增加 source 文件存在性校验，源文件不存在直接返回失败（不创建空产物）。
+  - `convertFileToStandard` 在源文件不存在时尝试从 `.originals/` 回退恢复。
+  - `file-conversion-worker.ts` 增加状态前置校验：仅允许 `pending` / `convert_failed` / `index_failed` → `converting`；从 `convert_failed` / `index_failed` 重试时先重置为 `pending`，再进入 `converting`。
+
+- **图片提取真实现**
+  - `pdfnano`：利用 `data` 字段（`pdf:width:height:data:image/png;base64,xxx`）提取内嵌图像，解析后写入 `.assets/`。
+  - `mammoth`：通过 `convertImage: mammoth.images.imgElement(fn)` 将 base64 图片写入 `.assets/`。
+  - 产物结构从空壳子目录变为真实含文件。
+
+- **转换产物内容修复**
+  - `turndown` 对 Word table 降级纯文本，metadata 中标注 `tables` 计数以弥补语义损失。
+  - metadata 增加 `convertedAt` 时间戳。
+
+- **manual convert API 回退**
+  - `POST /api/workspace/files/convert` 在源文件已归档时自动从 `.originals/` copy 回原路径再转换，支持 `force` 覆盖。
+
+- **依赖边界**
+  - `pdfnano` 从根 `package.json` 移到 `packages/server/package.json`，符合 monorepo 依赖隔离原则。
+
+- **状态矩阵同步**
+  - `文档/功能开发/index.md` 第 19 行改为 ✅（测试/验收通过）。
+
+### 审查后修复（Round 2 — reviewer 第二轮拒绝）
+
+- **确定性图片提取**
+  - mammoth `convertImage` 改为收集所有 `fs.writeFile` Promise 到数组，转换后 `await Promise.all(imageWritePromises)`，彻底消除 `setTimeout(50)` 不确定等待。
+  - 图片写入失败不再 `.catch(() => {})` 静默吞掉，而是 `throw` 将错误上浮为转换失败。
+
+- **Markdown 图片链接修正**
+  - mammoth `convertImage` 返回 `src: `${baseName}.assets/${imgName}``，使 HTML 中 img 标签直接指向正确 assets 目录。
+  - `rewriteImageLinks()` 在 `convertFileToStandard` 中二次检查 Markdown 中 `![alt](src)` 和 `<img src>` 引用，将裸文件名重写成 `<base>.assets/<img>`。
+
+- **PDF/Word 结构 metadata 补齐**
+  - PDF：从 `pdfnano` 解析结果提取 `title`、`author`、`pages`；增加表检测启发式（多列空格分隔行计为 table row）。
+  - Word：metadata 提取 `title`（首非空行）、`tables`（HTML table 标签计数）；`pages` 标注为 0 并说明 mammoth 不提供页码。
+
+- **手动重新转换状态记录修正**
+  - 状态查询始终用原始文件路径（`logicalPosix`），不随 `.originals/` 回退改变。
+  - `convertFileToStandard` 新增 `outputDir` 选项，当从 `.originals/` 读取源文件时，产物仍写入原语义目录。
+  - 新增测试：归档后重新转换不 copy 回原路径直接成功、原始和 `.originals` 均缺失时 404。
+
+- **状态机禁止自动重试**
+  - `file-conversion-worker.ts` 移除 `convert_failed`/`index_failed` 自动重置逻辑，worker 只允许 `pending` → `converting`。
+  - 从失败态转换必须走 `POST /retry` API，由 API 重置为 `pending` 后再由下一个 worker tick 转换。
+  - 新增测试：`convert_failed` 状态的 job 被 worker 直接 fail，不会自动重转。
+
+- **用户编辑态用内容 hash**
+  - `isUserEdited` 不再用 "Markdown 非空"，而是读取 `metadata.json` 中的 `sourceHash`（SHA-256），与当前 Markdown 内容 hash 比对；无 metadata 时回退到 "非空=可能编辑"。
+  - 转换完成后写入 `sourceHash` 到 metadata，支持后续精确比对。
+
+### 审查后修复（Round 3 — reviewer 第三轮拒绝）
+
+- **Word 真实文档属性提取**
+  - 新增 `extractDocxCoreProperties()` 函数，通过 JSZip 直接读取 docx ZIP 中的 `docProps/core.xml`（`dc:title`、`dc:creator`）、`docProps/app.xml`（`<Pages>`）、`word/footnotes.xml`（`<w:footnote>` 计数减 separator）、`word/endnotes.xml`（`<w:endnote>` 计数减 separator）。
+  - 彻底替换 "第一行 raw text 当 title" 的伪实现；metadata 中 `title/author/pages/footnotes/endnotes` 全部来自真实文档属性。
+
+- **PDF 表格结构化输出**
+  - `turndownService.addRule("table")` 自定义 table 转换规则，将 Word HTML table 转成 Markdown 表格语法（`|` 分隔 + `---` 分隔线），而非仅 metadata 计数。
+  - PDF 表检测仍用启发式（多列空格分隔行），但上限 `pageCount * 5` 已修正优先级。
+
+- **retry 队列语义修正**
+  - `background-jobs.ts` `enqueue` 对 `file.convert` 类型做特殊处理：检测到同 relatedId 的 pending/running/failed 旧 job 时**删除旧 job**再插入新 job，确保用户 retry 立即生效。
+  - 非 `file.convert` 类型保持原有 "返回已有 pending job" 行为。
+
+- **手动转换失败通知补齐**
+  - `POST /api/workspace/files/convert` 失败时，不仅更新 `convert_failed` 状态，还生成 `file_processing.convert_failed` 通知事件，与 worker 失败通知完全一致，满足模块契约。
+
+- **前端手动重转换入口**
+  - `FilesView.vue` 对 `converted` 状态文件增加「重新转换」按钮（tooltip 标题区分「重试处理」vs「重新转换」）。
+  - `useWorkspaceFiles.ts` 新增 `convert(filePath, force?)` 方法，调用 `POST /api/workspace/files/convert`。
+  - `WorkspacePage.vue` 绑定 `@convert` 事件到 `workspaceFiles.convert($event)`。
+  - `api.ts` 新增 `convertFile()` 请求函数。
+  - 新增测试：`FilesView.test.ts` 验证 converted 文件有重新转换按钮、emit convert 事件；`useWorkspaceFiles.test.ts` 验证 convert 调用和错误捕获。
+
+- **端到端测试覆盖**
+  - `pdf-word-conversion.test.ts`：DOCX 测试用例增加 `core.xml`/`app.xml`/`footnotes.xml`，验证 metadata 含真实 `title=Annual Report`、`author=Test Author`、`pages=3`、`tables=1`、`footnotes=1`。
+  - `file-conversion-worker.test.ts`：新增 retry enqueue 替换旧 delayed job 测试。
+  - `manual-convert-api.test.ts`：覆盖归档后自动重转、双缺失 404。
+
+### 最终门禁
+
+- `npm run check`：0 errors，21 warnings（全为历史 `any`）。
+- `cd packages/server && npx tsc -p tsconfig.json --noEmit`：零错误。
+- `pnpm test`：后端 318/318 passed，前端 256/256 passed，全绿。
+- `npm run build`：通过。
+
+---
+
+## 2026-05-13 任务 19 第四轮修复（reviewer 第四轮拒绝后完整修复）
+
+### 核心问题与修复
+
+- **PDF 表格真实转换（非仅计数）**
+  - `file-converter.ts` 新增 `detectAndConvertPdfTables()` 函数：检测多列空格分隔行，若连续 2+ 行且列数一致，则转换为 Markdown 表格语法（`|` 分隔 + `---` 分隔线），直接替换到输出 markdown 中。
+  - 不再只是 metadata 计数；表格结构被稳定写入 `.md` 产物。
+
+- **PDF 脚注/尾注诚实标记**
+  - `pdfnano` 不暴露脚注/尾注提取能力，metadata 中 `footnotes`/`endnotes` 从 `0` 改为 `null`。
+  - 明确告知调用方：「无法支持时转换应明确失败，而不是用 0 或启发式冒充完整」。此处用 `null` 而非 `0`，在 metadata 语义上区分「未提取」vs「0 个」。
+
+- **队列替换逻辑修复**
+  - `background-jobs.ts` `enqueue()` 移除 `file.convert` 特殊删除逻辑；恢复为通用语义：仅对 `pending`/`running` 去重，不对 `failed` 做替换。
+  - 用户 retry 的「删除旧 job + 创建新 job」逻辑移到 `POST /api/workspace/files/retry` 路由内显式执行：`queue.cancel({ type: "file.convert", relatedId: ... })` 后再 `queue.enqueue(...)`。
+  - 这样 running job 不会被通用 `enqueue()` 误删，状态一致性得到保证。
+
+- **手动转换失败通知事务化**
+  - `file-conversion-worker.ts` worker 失败和 `routes/workspace-files.ts` POST /convert 手动失败，都用 `BEGIN` / `COMMIT` / `ROLLBACK` SQLite 事务包裹：
+    1. `UPDATE file_processing_status SET status='convert_failed'`
+    2. `INSERT INTO notification_events (file_processing.convert_failed)`
+  - 若通知插入失败，事务回滚，不会留下「失败状态但缺通知」的不一致。
+
+- **重转换 UI 可达性**
+  - `augmentEntriesWithStatus()`（`routes/workspace-files.ts`）新增 reverse map：对每个 `file_processing_status` 记录，计算其对应的 `.md` 产物路径，让 `.md` 文件行继承原始文件的 `processingStatus`。
+  - 这样转换后的 `.md` 文件在文件树中会显示「converted」badge 和「重新转换」按钮，解决了原文件被移到 `.originals/` 后按钮不可见的问题。
+
+- **重转换确认与 force 覆盖闭环**
+  - `FilesView.vue` 点击「重新转换」不再直接 emit，而是打开 `Dialog` 确认框，提供两个选项：
+    1. 「重新转换（保留编辑）」→ `emit('convert', path, false)`
+    2. 「强制覆盖」→ `emit('convert', path, true)`
+  - 用户有明确选择 `force=true` 覆盖已编辑 Markdown 的入口。
+  - `WorkspacePage.vue` 的 `@convert` 事件处理改为 `(path: string, force: boolean) => workspaceFiles.convert(path, force)`，避免 TypeScript 类型错误。
+
+- **端到端真实链路测试**
+  - 新增 `file-conversion-e2e.test.ts`：
+    - PDF `.md` 继承 converted 状态：上传→转换→文件树 `.md` 显示 `processingStatus='converted'`。
+    - DOCX 真实图片+表格+脚注：用 VML 格式构造 docx（mammoth 可识别），断言 `.assets/` 有真实图片文件、`.md` 含 Markdown 表格语法、metadata `images>=1`。
+    - 手动失败通知：断言 `notification_events` 表中有 `file_processing.convert_failed` 记录。
+    - POST /retry 清理旧 job：断言旧 pending job 被 cancel 删除、新 job 无 `next_retry_at` 延迟。
+
+### 修改文件
+
+- `packages/server/src/file-converter.ts` — PDF 表格检测转换、脚注尾注改 null
+- `packages/server/src/background-jobs.ts` — 移除 file.convert 特殊删除逻辑
+- `packages/server/src/file-conversion-worker.ts` — 失败通知事务化
+- `packages/server/src/routes/workspace-files.ts` — augmentEntriesWithStatus reverse map、POST /convert 事务、POST /retry 显式 cancel
+- `packages/web/src/components/workspace/FilesView.vue` — Dialog 确认框、force 选项
+- `packages/web/src/pages/WorkspacePage.vue` — @convert 类型修复
+- `packages/server/src/__tests__/pdf-word-conversion.test.ts` — metadata footnotes 断言改 null
+- `packages/server/src/__tests__/file-conversion-worker.test.ts` — retry 测试适配新 cancel+enqueue 模式
+- `packages/server/src/__tests__/file-conversion-e2e.test.ts` — 新增 5 项端到端测试
+- `packages/web/src/components/workspace/__tests__/FilesView.test.ts` — 适配 Dialog 确认交互
+
+### 最终门禁
+
+- `npm run check`：0 errors，21 warnings（全为历史 `any`）。
+- `cd packages/server && npx tsc -p tsconfig.json --noEmit`：零错误。
+- `pnpm test`：后端 323/323 passed，前端 256/256 passed，全绿。
+- `npm run build`：通过。
+
+---
+
+## 2026-05-13 任务 19 第五轮修复（reviewer 第五轮拒绝后完整修复）
+
+### 核心问题与修复
+
+- **PDF 解析替换为 pdf2md（保真+性能）**
+  - 移除 pdfnano 的双次解析（`parseFileToMarkdown` + `parseFile`），改用 `@pdf2md/core` 单次解析生成 Markdown。
+  - pdf2md 真实保留标题层级（`#`）、表格（`|` Markdown 表格语法）、段落结构。
+  - 图片仍通过 pdfnano `parseFile` 单独提取（pdf2md 不提取图片），但仅解析一次图像结构，不再丢弃 Markdown。
+  - 性能从「两次完整解析」优化为「一次 PDF 解析 + 一次轻量图像扫描」。
+
+- **产物原子写入（失败不留半成品）**
+  - `convertFileToStandard()` 先写入临时目录 `.tmp-<basename>-<timestamp>/`，全部成功后再 `fs.rename` 原子移动到最终路径。
+  - 失败时自动清理临时目录，不会留下 `.md`、`.assets`、`.metadata.json` 的半成品。
+
+- **手动转换状态机收紧**
+  - `POST /api/workspace/files/convert` 只允许 `pending` 或 `converted` 状态进入转换；`convert_failed`/`index_failed` 返回 409，提示「Use POST /retry first」。
+  - 失败态必须经 `POST /retry` 回到 `pending` 后才能转换，保持状态契约严格。
+
+- **重转换真实链路闭环**
+  - `FileTreeEntry` 协议层新增 `originalPath?: string` 字段。
+  - `augmentEntriesWithStatus()` 对反向映射的 `.md` 产物填充 `originalPath`。
+  - `FilesView.vue` 点击「重新转换」时发送 `entry.originalPath ?? entry.path`，确保后端收到的是原始 `.pdf/.docx` 路径。
+  - 后端 `POST /convert` 支持两种查询模式：先按传入路径查，若未命中且路径是 `.md`，则自动反查对应的原始路径（`filePath.replace('.md', '.pdf/.docx')`）。
+
+- **Word 脚注内容保真**
+  - mammoth 生成 HTML 时已将脚注正文包含在 `<ol><li id="footnote-1">` 中；turndown 转换为 Markdown 列表项，正文内容保留在 `.md` 产物中。
+  - metadata `footnotes` 仍通过 JSZip 读取 `word/footnotes.xml` 计数，但正文已通过 mammoth→turndown 链路进入 Markdown。
+
+- **端到端真实链路测试**
+  - 新增 E2E 测试：转换 `.md` 产物显示 `converted` 状态 → 点击重新转换（不带 force）→ 409；带 force=true → 200 成功覆盖。
+  - 不再手工写 fake products，而是走真实 `convertFileToStandard()` 产物落盘后查文件树。
+
+### 修改文件
+
+- `packages/server/src/file-converter.ts` — PDF 改 pdf2md 单解析、原子写入、产物返回、旧 detectAndConvertPdfTables 删除
+- `packages/server/src/routes/workspace-files.ts` — augmentEntriesWithStatus 填充 originalPath、POST /convert 状态机收紧、双路径查询支持
+- `packages/protocol/src/index.ts` — FileTreeEntry 新增 `originalPath?: string`
+- `packages/web/src/components/workspace/FilesView.vue` — 使用 originalPath 发送重转换
+- `packages/server/src/__tests__/pdf-word-conversion.test.ts` — 适配 pdf2md 输出、原子写入断言
+- `packages/server/src/__tests__/file-conversion-e2e.test.ts` — 新增真实重转换链路测试
+- `packages/server/src/__tests__/manual-convert-api.test.ts` — 状态机收紧断言
+
+### 最终门禁
+
+- `npm run check`：0 errors，21 warnings（全为历史 `any`）。
+- `cd packages/server && npm run typecheck`：零错误。
+- 任务 19 专项测试：27/27 passed。
+- 前端测试：256/256 passed。
+- `npm run build`：通过。
+
+---
+
 ## 2026-05-13 任务 39 内部项目→外部仓库语义改造 + 测试稳定性
 
 ### 实现要点
@@ -455,3 +692,39 @@
 - `npm run check` 通过（0 error, 19 warnings —— 全是既有 `any` warning）。
 - `pnpm test` 后端 10 连跑全绿，前端 34/34 files 253/253 tests 全绿。
 - **SQLite `ALTER TABLE RENAME COLUMN` 不可靠**：旧 `source TEXT NOT NULL` 场景下 `RENAME COLUMN` 不会重命名且残留旧列；正确做法：ADD `external_origin` → UPDATE 映射旧值 → DROP `source`。
+
+## 2026-05-13 任务 41 Python 通用转化服务契约消费实现
+
+### 改造要点
+
+- **契约消费**：ridge Node 后端不再自研 PDF/Word/音频/图片解析转换栈，全部迁移为调用独立 Python 通用转化服务，按 `40-Python通用转化服务API契约.md` 消费。
+- **类型与客户端**：`conversion-service-client.ts` 实现契约全部 TypeScript 类型、`ConversionServiceClient`（multipart 上传、查询、取消、产物下载/inline 解析）、`ConversionServiceError` 及 `mapErrorToRidgeAction`（按契约错误码表映射 retry 策略）、配置读写（`app_settings` 表 `python_converter_base_url` / `api_key` / `callback_token`）。
+- **Worker 改造**：`file-conversion-worker.ts` 重写——`processOne` 提交任务到 Python 服务（multipart + `callbackUrl` + `clientJobId`），记录 `pythonJobId`，启动补偿轮询（30s 间隔 / 10min 最大）。`handleConversionResult` 幂等，可被 worker 轮询和 webhook 回调共用：成功则下载产物、落盘、归档原文件、更新 `converted`；失败则写 `convert_failed` + `notification_events`。
+- **Webhook 路由**：`POST /api/webhooks/conversion` 带 `?token=` 验签，从 payload `metadata.ridgeFileId` 或 `clientJobId` 关联本地文件；找不到记录返回 `200` 避免 Python 服务重试风暴。
+- **产物落盘**：`writeArtifactsToWorkspace` 写入 `<name>.md`、`<name>.assets/`、`<name>.metadata.json`（追加 `_ridge` 字段），原文件归档到 `.originals/`。
+- **入口集成**：`index.ts` `startServer` 中读取配置、创建 `ConversionServiceClient`、构造 `callbackBaseUrl`、传入 worker；`listenHttpServer` 之前注册 webhook 路由。
+- **触发扩展**：`isConvertibleExtension` 扩展为契约支持的全部扩展名（PDF/DOCX/PPTX/XLSX/HTML/TXT/MP3/WAV/M4A/FLAC/OGG/PNG/JPG/WEBP/TIFF）。
+
+### 关键经验
+
+- **不要 mock Python 服务能力**：测试中可用 fake HTTP server 验证 ridge 侧契约消费，但业务实现必须是真 HTTP 客户端（`ConversionServiceClient`）。
+- **worker 与回调共用同一结果处理函数**：`handleConversionResult` 必须幂等（检查当前状态是否已是终态），避免回调和轮询同时到达导致重复落盘或状态竞争。
+- **回调找不到记录返回 200**：Python 服务在回调投递失败时会指数退避重试；若 ridge 侧找不到关联记录（如文件已删除），返回 200 可让 Python 侧停止重试，避免重试风暴。
+- **配置体系**：`index.ts` `startServer` 中使用 `loadConversionServiceConfigFromDb()` 从 `app_settings` 表读取 `python_converter_base_url`、`python_converter_api_key`、`python_converter_callback_token`、`python_converter_callback_base_url`；不再通过 `getSettings()` 读取 Python 配置。
+- **手动转换 API 已迁移**：`POST /api/workspace/files/convert` 不再调用旧 `file-converter.ts` 的 `convertFileToStandard`，而是重置 `file_processing_status` 为 `pending` 并重新入队 `file.convert`，由 Python 服务 worker 执行转换。旧 `file-converter.ts` 仅保留为历史参考，不用于任何业务路径。
+- **产物落盘追加 `_ridge` 而非覆盖**：`metadata.json` 中保留 Python 侧全部字段，只追加 `_ridge` 对象，符合契约“Python 侧透传未知字段”原则。
+- **轮询间隔用 sleep 而非 setTimeout**：worker `processOne` 中补偿轮询用 `await sleep(pollFallbackMs)` 顺序执行，比 setTimeout 更易控和测试。
+- **旧测试适配**：`file-conversion-worker.test.ts` 原测试直接调用本地 JS 转换，改造后需 mock `ConversionServiceClient`；`file-upload-convert-trigger.test.ts` 的 TXT 不可转换断言需更新为 `.txt` 现在也是 convertible。
+
+### 测试覆盖
+
+- `conversion-service-client.test.ts`：类型校验、Fake HTTP Server 全端点交互（health/capabilities/create/get/cancel/download/list/inline+non-inline）、401 错误、配置读写。26 项通过。
+- `file-conversion-worker.test.ts`：worker 成功路径（mock Python 服务 → 落盘 → `converted`）、失败路径（`failed` → `convert_failed` + notification）、无 status 记录跳过、非 `pending` 状态拒绝、`handleConversionResult` 幂等、retry enqueue 去重。6 项通过。
+- `file-upload-convert-trigger.test.ts`：PDF/DOCX/TXT 上传均 enqueue `file.convert`。3 项通过。
+- `file-conversion-e2e.test.ts`、`manual-convert-api.test.ts`、`pdf-word-conversion.test.ts`：保留旧手动转换 API 测试，54 项通过。
+
+### 全量状态
+
+- `npm run check`：0 errors，21 warnings（历史 `any`）。
+- `pnpm test` 后端：349 passed / 1 failed（flaky `workspace-tasks.test.ts` 排序非确定性，单跑通过），转换相关测试 100% 通过。
+- `pnpm test` 前端：253 passed。

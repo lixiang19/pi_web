@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 import express, {
 	type NextFunction,
 	type Request,
@@ -15,10 +16,13 @@ import {
 } from "../file-preview.js";
 import { FILE_PROCESSING_STATUS_VALUES } from "@pi/protocol";
 
+import type { createBackgroundJobQueue } from "../background-jobs.js";
+
 export interface WorkspaceFilesDeps {
 	defaultWorkspaceDir: string;
 	fileManager: ReturnType<typeof createFileManager>;
 	getRidgeDb: () => Promise<RidgeDatabase>;
+	getJobQueue?: () => ReturnType<typeof createBackgroundJobQueue> | undefined;
 }
 
 const VALID_STATUS_SET = new Set<string>(FILE_PROCESSING_STATUS_VALUES);
@@ -61,19 +65,47 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 			statusByPath.set(toPosixPath(row.file_path), { status: row.status, error: row.error });
 		}
 
+		// Also build a reverse map: original_path -> status, so .md files created
+		// by conversion can inherit the original file's processing status.
+		// This makes "重新转换" reachable on the .md output.
+		const mdToOriginalPath = new Map<string, string>();
+		for (const row of rows) {
+			const originalPath = toPosixPath(row.file_path);
+			const dir = path.dirname(originalPath);
+			const base = path.basename(originalPath, path.extname(originalPath));
+			const mdPath = `${dir}/${base}.md`;
+			mdToOriginalPath.set(mdPath, originalPath);
+		}
+
 		const statusSet = new Set<string>(FILE_PROCESSING_STATUS_VALUES);
 		return entries.map((entry) => {
 			if (entry.kind !== "file") return entry;
-			const info = statusByPath.get(toPosixPath(entry.path));
-			if (!info) return entry;
-			if (!statusSet.has(info.status)) {
-				return entry;
+
+			// 1. Direct match: entry path exactly matches a tracked original
+			const directInfo = statusByPath.get(toPosixPath(entry.path));
+			if (directInfo && statusSet.has(directInfo.status)) {
+				return {
+					...entry,
+					processingStatus: directInfo.status as FileTreeEntry["processingStatus"],
+					processingError: directInfo.error ?? undefined,
+				};
 			}
-			return {
-				...entry,
-				processingStatus: info.status as FileTreeEntry["processingStatus"],
-				processingError: info.error ?? undefined,
-			};
+
+				// 2. Reverse match: this .md file was produced by converting some tracked original
+				const originalPath = mdToOriginalPath.get(toPosixPath(entry.path));
+				if (originalPath) {
+					const info = statusByPath.get(originalPath);
+					if (info && statusSet.has(info.status)) {
+						return {
+							...entry,
+							processingStatus: info.status as FileTreeEntry["processingStatus"],
+							processingError: info.error ?? undefined,
+							originalPath,
+						};
+					}
+				}
+
+			return entry;
 		});
 	};
 
@@ -290,7 +322,150 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 					 WHERE file_path = ?`,
 				).run("pending", Date.now(), posixPath);
 
+				// Re-enqueue conversion job if queue is available.
+				// Explicitly cancel any old pending/failed convert jobs for this file
+				// so the new retry job is immediately runnable.
+				if (deps.getJobQueue) {
+					const queue = deps.getJobQueue();
+					if (queue) {
+						queue.cancel({ type: "file.convert", relatedType: "file", relatedId: posixPath });
+						queue.enqueue({
+							type: "file.convert",
+							relatedType: "file",
+							relatedId: posixPath,
+							payload: { sourcePath: posixPath, workspaceDir: defaultWorkspaceDir },
+							maxAttempts: 3,
+							notifyOnFailure: true,
+						});
+					}
+				}
+
 				res.json({ ok: true });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
+
+	// POST /api/workspace/files/convert — manual re-convert via Python service
+	router.post(
+		"/api/workspace/files/convert",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const { path: filePath, force } = req.body ?? {};
+				if (!filePath || typeof filePath !== "string") {
+					throw toHttpError("path is required", 400);
+				}
+				validateSafePath(filePath);
+
+				// Resolve the logical path within workspace
+				const { targetPath: logicalTarget } = await fileManager.resolveManagedFileLocation({
+					root: defaultWorkspaceDir,
+					path: filePath,
+				});
+				const logicalPosix = toPosixPath(logicalTarget);
+
+				// The status record always lives at the ORIGINAL file path, even after
+				// the original has been moved to .originals/.
+				const db = await getRidgeDb();
+				const row = db
+					.prepare("SELECT status FROM file_processing_status WHERE file_path = ?")
+					.get(logicalPosix) as { status: string } | undefined;
+
+				if (!row) {
+					throw toHttpError("File processing record not found", 404);
+				}
+
+				// Can only re-convert files that are in a terminal or converting state
+				// pending files will naturally be picked up by the worker
+				if (row.status === "pending") {
+					res.json({ ok: true, note: "File is already pending conversion" });
+					return;
+				}
+
+				// Determine the actual source file path for conversion.
+				let sourceTargetPath = logicalTarget;
+				try {
+					const st = await fs.stat(sourceTargetPath);
+					if (!st.isFile()) {
+						throw toHttpError("Requested path is not a file", 400);
+					}
+				} catch {
+					// Original not found; try .originals/ fallback
+					const dir = path.dirname(logicalTarget);
+					const name = path.basename(logicalTarget);
+					const originalsFallback = path.join(dir, ".originals", name);
+					try {
+						const st = await fs.stat(originalsFallback);
+						if (!st.isFile()) {
+							throw toHttpError("Fallback in .originals is not a file", 400);
+						}
+						sourceTargetPath = originalsFallback;
+					} catch {
+						throw toHttpError("File not found at original path or in .originals", 404);
+					}
+				}
+
+				// Check for edit guard: if already converted and force=false,
+				// verify that the .md output hasn't been manually edited.
+				if (row.status === "converted" && force !== true) {
+					const mdPath = logicalPosix.replace(/\.[^.]+$/, ".md");
+					let mdExists = false;
+					try {
+						await fs.stat(mdPath);
+						mdExists = true;
+					} catch {
+						mdExists = false;
+					}
+					if (mdExists) {
+						// Compute hash of the current .md file
+						const currentMdContent = await fs.readFile(mdPath, "utf-8");
+						const currentMdHash = crypto.createHash("sha256").update(currentMdContent).digest("hex");
+
+						// Check if we have a stored hash in the metadata
+						const metaPath = mdPath.replace(/\.md$/, ".metadata.json");
+						let storedMdHash: string | null = null;
+						try {
+							const metaContent = await fs.readFile(metaPath, "utf-8");
+						const meta = JSON.parse(metaContent) as Record<string, unknown>;
+						const ridgeMeta = meta._ridge as Record<string, unknown> | undefined;
+						storedMdHash = (ridgeMeta?.mdHash as string) ?? null;
+						} catch {
+							storedMdHash = null;
+						}
+
+						if (storedMdHash && currentMdHash !== storedMdHash) {
+							throw toHttpError(
+								"Markdown output has been edited. Use force=true to overwrite.",
+								409,
+							);
+						}
+					}
+				}
+
+				// Reset status to pending and enqueue a new conversion job
+				const now = Date.now();
+				db.prepare(
+					"UPDATE file_processing_status SET status = ?, error = NULL, updated_at = ? WHERE file_path = ?",
+				).run("pending", now, logicalPosix);
+
+				if (deps.getJobQueue) {
+					const queue = deps.getJobQueue();
+					if (queue) {
+						// Cancel any existing convert jobs for this file
+						queue.cancel({ type: "file.convert", relatedType: "file", relatedId: logicalPosix });
+						queue.enqueue({
+							type: "file.convert",
+							relatedType: "file",
+							relatedId: logicalPosix,
+							payload: { sourcePath: toPosixPath(sourceTargetPath), workspaceDir: defaultWorkspaceDir },
+							maxAttempts: 3,
+							notifyOnFailure: true,
+						});
+					}
+				}
+
+				res.json({ ok: true, enqueued: true });
 			} catch (error) {
 				next(error);
 			}

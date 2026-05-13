@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import {
 	ChevronRight,
 	Folder,
@@ -11,6 +11,15 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import type { FileTreeEntry } from "@/lib/types";
 
 const props = defineProps<{
@@ -25,7 +34,29 @@ const emit = defineEmits<{
 	(e: "navigate", path: string): void;
 	(e: "navigate-back"): void;
 	(e: "retry", path: string): void;
+	(e: "convert", path: string, force: boolean): void;
 }>();
+
+const convertDialogOpen = ref(false);
+const convertTargetPath = ref("");
+const convertTargetName = ref("");
+
+const showConvertDialog = (entry: FileTreeEntry) => {
+	// Use originalPath for conversion products (.md files), otherwise use the entry's own path
+	convertTargetPath.value = entry.originalPath ?? entry.path;
+	convertTargetName.value = entry.name;
+	convertDialogOpen.value = true;
+};
+
+const handleConvertConfirmed = () => {
+	convertDialogOpen.value = false;
+	emit("convert", convertTargetPath.value, false);
+};
+
+const handleForceConvert = () => {
+	convertDialogOpen.value = false;
+	emit("convert", convertTargetPath.value, true);
+};
 
 const statusLabelMap: Record<string, string> = {
 	pending: "待处理",
@@ -184,6 +215,20 @@ const navigateToSegment = (index: number) => {
               <RefreshCw class="size-3.5" />
             </button>
           </div>
+          <div
+            v-else-if="entry.processingStatus === 'converted'"
+            class="flex items-center gap-1"
+          >
+            <button
+              type="button"
+              class="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="重新转换"
+              @click.stop="showConvertDialog(entry)"
+              @keydown.stop="(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }"
+            >
+              <RefreshCw class="size-3.5" />
+            </button>
+          </div>
           <Badge
             v-if="entry.processingStatus"
             :variant="statusVariantMap[entry.processingStatus] ?? 'secondary'"
@@ -194,5 +239,22 @@ const navigateToSegment = (index: number) => {
         </div>
       </div>
     </ScrollArea>
+
+    <!-- Re-convert confirmation dialog -->
+    <Dialog v-model:open="convertDialogOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>重新转换</DialogTitle>
+          <DialogDescription>
+            将重新转换 <strong>{{ convertTargetName }}</strong>。如果 Markdown 已被用户编辑，强制覆盖会丢失修改。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2 sm:justify-end">
+          <Button variant="outline" @click="convertDialogOpen = false">取消</Button>
+          <Button variant="secondary" @click="handleConvertConfirmed">重新转换（保留编辑）</Button>
+          <Button variant="default" @click="handleForceConvert">强制覆盖</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

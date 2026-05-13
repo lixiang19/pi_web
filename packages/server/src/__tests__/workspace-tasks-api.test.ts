@@ -333,7 +333,7 @@ describe("workspace tasks processing session api", () => {
 	it("POST creates project session when task has projectId", async () => {
 		const deps = createMockDeps();
 		deps.getProjects = vi.fn(async () => ({
-			projects: [{ id: "proj-1", path: "/projects/alpha", deviceId: undefined, isOnline: false }],
+			projects: [{ id: "proj-1", path: "/projects/alpha", projectType: "external" as const, deviceId: undefined, isOnline: false }],
 		}));
 
 		const app = createApp(workspaceDir, deps);
@@ -360,7 +360,7 @@ describe("workspace tasks processing session api", () => {
 	it("POST rejects when bound project is offline (has deviceId and isOnline=false)", async () => {
 		const deps = createMockDeps();
 		deps.getProjects = vi.fn(async () => ({
-			projects: [{ id: "proj-offline", path: "/projects/offline", deviceId: "device-1", isOnline: false }],
+			projects: [{ id: "proj-offline", path: "/projects/offline", projectType: "external" as const, deviceId: "device-1", isOnline: false }],
 		}));
 
 		const app = createApp(workspaceDir, deps);
@@ -383,7 +383,7 @@ describe("workspace tasks processing session api", () => {
 	it("POST allows local server-folder project without deviceId even if isOnline=false", async () => {
 		const deps = createMockDeps();
 		deps.getProjects = vi.fn(async () => ({
-			projects: [{ id: "proj-local", path: "/projects/local", deviceId: undefined, isOnline: false }],
+			projects: [{ id: "proj-local", path: "/projects/local", projectType: "external" as const, deviceId: undefined, isOnline: false }],
 		}));
 
 		const app = createApp(workspaceDir, deps);
@@ -496,7 +496,7 @@ describe("workspace tasks processing session api", () => {
 	it("POST returns 409 when project is offline even if task already has processingSessionId", async () => {
 		const deps = createMockDeps();
 		deps.getProjects = vi.fn(async () => ({
-			projects: [{ id: "proj-offline", path: "/projects/offline", deviceId: "device-1", isOnline: false }],
+			projects: [{ id: "proj-offline", path: "/projects/offline", projectType: "external" as const, deviceId: "device-1", isOnline: false }],
 		}));
 
 		const app = createApp(workspaceDir, deps);
@@ -527,7 +527,7 @@ describe("workspace tasks processing session api", () => {
 	it("GET returns 409 when project is offline and task has processingSessionId", async () => {
 		const deps = createMockDeps();
 		deps.getProjects = vi.fn(async () => ({
-			projects: [{ id: "proj-offline", path: "/projects/offline", deviceId: "device-1", isOnline: false }],
+			projects: [{ id: "proj-offline", path: "/projects/offline", projectType: "external" as const, deviceId: "device-1", isOnline: false }],
 		}));
 
 		const app = createApp(workspaceDir, deps);

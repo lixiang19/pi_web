@@ -220,6 +220,86 @@ describe("FilesView", () => {
     expect(wrapper.emitted("open-file")).toBeFalsy();
   });
 
+  it("shows re-convert button for converted files and emits convert on click", async () => {
+    const entries: FileTreeEntry[] = [
+      makeEntry("converted.pdf", "file", "converted"),
+      makeEntry("pending.pdf", "file", "pending"),
+    ];
+
+    const wrapper = mount(FilesView, {
+      props: {
+        workspaceRoot: "/ws",
+        entries,
+        currentPath: "/ws",
+        loading: false,
+      },
+      global: {
+        stubs: {
+          Badge: {
+            props: ["variant"],
+            template: `<span class="badge-stub"><slot /></span>`,
+          },
+          ScrollArea: {
+            template: `<div class="scroll-area-stub"><slot /></div>`,
+          },
+          Dialog: {
+            props: ["open"],
+            template: `<div class="dialog-stub"><slot /></div>`,
+          },
+          DialogContent: {
+            template: `<div class="dialog-content-stub"><slot /></div>`,
+          },
+          DialogHeader: {
+            template: `<div class="dialog-header-stub"><slot /></div>`,
+          },
+          DialogTitle: {
+            template: `<div class="dialog-title-stub"><slot /></div>`,
+          },
+          DialogDescription: {
+            template: `<div class="dialog-description-stub"><slot /></div>`,
+          },
+          DialogFooter: {
+            template: `<div class="dialog-footer-stub"><slot /></div>`,
+          },
+        },
+      },
+    });
+
+    await nextTick();
+
+    const rows = wrapper.findAll("[data-test='file-row']");
+    expect(rows.length).toBe(2);
+
+    // Converted file has re-convert button
+    const convertBtn = rows[0]!.find("button[title='重新转换']");
+    expect(convertBtn.exists()).toBe(true);
+
+    // Pending file has no re-convert button
+    expect(rows[1]!.find("button[title='重新转换']").exists()).toBe(false);
+
+    // Click re-convert button — opens dialog (doesn't emit convert directly)
+    await convertBtn.trigger("click");
+    expect(wrapper.emitted("convert")).toBeFalsy();
+
+    // Dialog should be open with confirm buttons
+    const dialogFooter = wrapper.find(".dialog-footer-stub");
+    expect(dialogFooter.exists()).toBe(true);
+
+    // Click "重新转换（保留编辑）" to confirm
+    const confirmBtn = dialogFooter.findAll("button").find((b) =>
+      b.text().includes("重新转换")
+    );
+    expect(confirmBtn).toBeTruthy();
+    await confirmBtn!.trigger("click");
+
+    expect(wrapper.emitted("convert")).toBeTruthy();
+    expect(wrapper.emitted("convert")![0]![0]).toBe("/ws/converted.pdf");
+    expect(wrapper.emitted("convert")![0]![1]).toBe(false);
+
+    // Convert click should NOT also emit open-file
+    expect(wrapper.emitted("open-file")).toBeFalsy();
+  });
+
   it("emits open-file when pressing Enter on a file row", async () => {
     const entries: FileTreeEntry[] = [makeEntry("notes.md", "file")];
 

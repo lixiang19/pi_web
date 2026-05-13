@@ -72,13 +72,23 @@ const createMockDeps = (): WorkspaceTasksRouterDeps => ({
 	projectContextResolver: {
 		resolveContext: vi.fn(async (cwd) => ({
 			isGit: false,
+			projectId: "",
 			projectRoot: cwd,
+			projectLabel: "",
 			worktreeRoot: cwd,
+			worktreeLabel: "",
 			worktrees: [],
 		})),
 		isPathInsideRoot: vi.fn((candidate, root) =>
 			candidate === root || candidate.startsWith(root + path.sep),
 		),
+		invalidateContext: vi.fn(),
+	},
+	workspaceChatConfig: {
+		workspaceDir: WORKSPACE,
+		chatProjectId: "",
+		chatProjectPath: "",
+		chatProjectLabel: "",
 	},
 });
 

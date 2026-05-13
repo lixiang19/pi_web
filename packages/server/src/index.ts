@@ -66,6 +66,12 @@ import {
 	createFleetingAnalysisRunner,
 	createFleetingAnalysisWorker,
 } from "./fleeting-analysis.js";
+import { createConversionWebhookRouter } from "./routes/conversion-webhook.js";
+import {
+	ConversionServiceClient,
+	loadConversionServiceConfigFromDb,
+} from "./conversion-service-client.js";
+import { createFileConversionWorker } from "./file-conversion-worker.js";
 import {
 	getIndexedSessionTree,
 	invalidateManagedProjectScopes,
@@ -151,6 +157,8 @@ const worktreeService = createWorktreeService(gitService);
 
 let automationStore: AutomationStore | undefined;
 let automationScheduler: ReturnType<typeof createAutomationScheduler> | undefined;
+let jobQueue: ReturnType<typeof createBackgroundJobQueue> | undefined;
+let isConversionEnabled: (() => boolean) | undefined;
 const fleetingRunnerRef: {
 	value?: ReturnType<typeof createFleetingAnalysisRunner>;
 } = {};
@@ -598,6 +606,8 @@ const workspaceDataRouter = createWorkspaceDataRouter({
 	fileManager: getFileManager(),
 	openWithDefaultApp,
 	upload,
+	getJobQueue: () => jobQueue,
+	isConversionEnabled: () => isConversionEnabled?.() ?? false,
 	fileEntryCreateSchema,
 	fileEntryMoveSchema,
 	fileContentQuerySchema,
@@ -608,6 +618,7 @@ const workspaceFilesRouter = createWorkspaceFilesRouter({
 	defaultWorkspaceDir,
 	fileManager: getFileManager(),
 	getRidgeDb,
+	getJobQueue: () => jobQueue,
 });
 app.use(workspaceFilesRouter);
 app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(ensureSessionRecord));
@@ -1360,7 +1371,7 @@ export async function startServer() {
 
 	await ensureWorkspaceTemplate(defaultWorkspaceDir);
 	const db = await initializeRidgeDb(defaultWorkspaceDir);
-	const jobQueue = createBackgroundJobQueue(db);
+	jobQueue = createBackgroundJobQueue(db);
 	fleetingRunnerRef.value = createFleetingAnalysisRunner({ db, jobQueue });
 	const fleetingAnalysisWorker = createFleetingAnalysisWorker({
 		db,
@@ -1370,6 +1381,40 @@ export async function startServer() {
 		workspaceDir: defaultWorkspaceDir,
 	});
 	fleetingAnalysisWorker.start();
+	const conversionConfig = await loadConversionServiceConfigFromDb();
+	const conversionClient = conversionConfig
+		? new ConversionServiceClient({
+			baseUrl: conversionConfig.baseUrl,
+			apiKey: conversionConfig.apiKey,
+		})
+		: null;
+
+	isConversionEnabled = () => conversionClient !== null && conversionConfig !== null;
+
+	// Only start conversion worker and register webhook if Python service is configured
+	if (conversionClient && conversionConfig) {
+		const callbackBaseUrl = conversionConfig.callbackBaseUrl
+			?? `http://127.0.0.1:${port}/api/webhooks/conversion`;
+
+		const fileConversionWorker = createFileConversionWorker({
+			db,
+			jobQueue,
+			workspaceDir: defaultWorkspaceDir,
+			conversionClient,
+			config: { ...conversionConfig, callbackBaseUrl },
+		});
+		fileConversionWorker.start();
+
+		const webhookRouter = createConversionWebhookRouter({
+			getRidgeDb,
+			getJobQueue: () => jobQueue,
+			conversionClient,
+			workspaceDir: defaultWorkspaceDir,
+			callbackToken: conversionConfig.callbackToken,
+		});
+		app.use(webhookRouter);
+	}
+
 	automationStore = createAutomationStore(db);
 	automationScheduler = createAutomationScheduler({
 		store: automationStore,

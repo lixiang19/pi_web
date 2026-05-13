@@ -117,6 +117,52 @@ describe("useWorkspaceFiles", () => {
 		expect(instance.error.value).toBe("Retry failed");
 		retrySpy.mockRestore();
 	});
+
+	it("convert calls convertFile and refreshes current directory", async () => {
+		const treeSpy = vi
+			.spyOn(api, "getWorkspaceFilesTree")
+			.mockResolvedValue({
+				root: "/workspace",
+				directory: "/workspace/notes",
+				entries: [],
+			} as Awaited<ReturnType<typeof api.getWorkspaceFilesTree>>);
+
+		const convertSpy = vi
+			.spyOn(api, "convertFile")
+			.mockResolvedValue({ ok: true });
+
+		const instance = useWorkspaceFiles();
+		await instance.load("/workspace/notes");
+
+		treeSpy.mockClear();
+		await instance.convert("/workspace/notes/old.pdf", true);
+
+		expect(convertSpy).toHaveBeenCalledWith("/workspace/notes/old.pdf", true);
+		expect(treeSpy).toHaveBeenCalledWith("/workspace/notes");
+		expect(instance.error.value).toBe("");
+
+		convertSpy.mockRestore();
+		treeSpy.mockRestore();
+	});
+
+	it("convert captures error on failure", async () => {
+		vi.spyOn(api, "getWorkspaceFilesTree").mockResolvedValue({
+			root: "/workspace",
+			directory: "/workspace/notes",
+			entries: [],
+		} as Awaited<ReturnType<typeof api.getWorkspaceFilesTree>>);
+
+		const convertSpy = vi
+			.spyOn(api, "convertFile")
+			.mockRejectedValue(new Error("Convert failed"));
+
+		const instance = useWorkspaceFiles();
+		await instance.load("/workspace/notes");
+		await instance.convert("/workspace/notes/old.pdf");
+
+		expect(instance.error.value).toBe("Convert failed");
+		convertSpy.mockRestore();
+	});
 });
 
 describe("getParentPath", () => {

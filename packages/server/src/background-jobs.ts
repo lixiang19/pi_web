@@ -151,10 +151,12 @@ export const createBackgroundJobQueue = (
 		const relatedType = input.relatedType ?? "";
 		const relatedId = input.relatedId ?? "";
 		if (relatedType && relatedId) {
+			// For all job types, only deduplicate pending/running (not failed).
+			// Job replacement is caller responsibility (e.g. retry route cancels first).
 			const existing = db
 				.prepare(
 					`SELECT * FROM background_jobs
-				 WHERE job_type = ? AND related_type = ? AND related_id = ?
+					 WHERE job_type = ? AND related_type = ? AND related_id = ?
 					   AND status IN ('pending', 'running')
 					 ORDER BY created_at ASC
 					 LIMIT 1`,

@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { getWorkspaceFilesTree, retryFileProcessing } from "@/lib/api";
+import { getWorkspaceFilesTree, retryFileProcessing, convertFile } from "@/lib/api";
 import type { FileTreeEntry } from "@/lib/types";
 
 export function getParentPath(currentPath: string): string | null {
@@ -57,6 +57,22 @@ export function useWorkspaceFiles() {
 		}
 	};
 
+	/**
+	 * Manual re-convert a file (with force option to overwrite user-edited markdown).
+	 * This provides the "重新转换" product-level entry point for files whose
+	 * original has already been moved to .originals/.
+	 */
+	const convert = async (filePath: string, force = false) => {
+		error.value = "";
+		try {
+			await convertFile(filePath, force);
+			// Refresh current directory to show updated status
+			await load(currentPath.value);
+		} catch (err) {
+			error.value = err instanceof Error ? err.message : String(err);
+		}
+	};
+
 	return {
 		entries,
 		workspaceRoot,
@@ -67,5 +83,6 @@ export function useWorkspaceFiles() {
 		navigate,
 		navigateBack,
 		retry,
+		convert,
 	};
 }

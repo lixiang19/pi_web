@@ -963,6 +963,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			  @navigate="workspaceFiles.navigate"
 			  @navigate-back="workspaceFiles.navigateBack"
 			  @retry="workspaceFiles.retry($event)"
+			  @convert="(path: string, force: boolean) => workspaceFiles.convert(path, force)"
 			/>
 			<AutomationTabContent v-else-if="tab.featureId === 'automation'" />
 			<SettingsTabContent v-else-if="tab.featureId === 'settings'" />

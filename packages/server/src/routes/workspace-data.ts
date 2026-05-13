@@ -11,12 +11,17 @@ import type { HttpError } from "../types/index.js";
 import { normalizeString } from "../utils/strings.js";
 import { toPosixPath } from "../utils/paths.js";
 import { getRidgeDb } from "../db/index.js";
+import type { createBackgroundJobQueue } from "../background-jobs.js";
+import { isConvertibleExtension } from "../conversion-service-client.js";
 
 export interface WorkspaceDataDeps {
 	defaultWorkspaceDir: string;
 	fileManager: ReturnType<typeof createFileManager>;
 	openWithDefaultApp: (targetPath: string) => Promise<void>;
 	upload: multer.Multer;
+	getJobQueue?: () => ReturnType<typeof createBackgroundJobQueue> | undefined;
+	/** Whether the Python conversion service is configured; when false, skip auto-enqueue. */
+	isConversionEnabled?: () => boolean;
 	fileEntryCreateSchema: {
 		parse: (data: unknown) => {
 			root: unknown;
@@ -365,6 +370,21 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 							file_path, workspace_path, status, updated_at
 						) VALUES (?, ?, ?, ?)`,
 					).run(entry.path, defaultWorkspaceDir, "pending", now);
+					// Enqueue conversion job for PDF/DOCX files ONLY when Python service is configured
+					const ext = path.extname(entry.path).toLowerCase();
+					if (isConvertibleExtension(ext) && deps.getJobQueue && deps.isConversionEnabled?.() === true) {
+						const queue = deps.getJobQueue();
+						if (queue) {
+							queue.enqueue({
+								type: "file.convert",
+								relatedType: "file",
+								relatedId: entry.path,
+								payload: { sourcePath: entry.path, workspaceDir: defaultWorkspaceDir },
+								maxAttempts: 3,
+								notifyOnFailure: true,
+							});
+						}
+					}
 				}
 
 				res.status(201).json({

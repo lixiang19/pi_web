@@ -354,6 +354,8 @@ export interface FileTreeEntry {
 	extension: string;
 	processingStatus?: FileProcessingStatus;
 	processingError?: string;
+	/** If this entry is a conversion product (.md), the original file path it was converted from */
+	originalPath?: string;
 }
 
 export interface FileTreeResponse {

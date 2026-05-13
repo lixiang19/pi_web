@@ -80,8 +80,11 @@ describe("session indexer — refreshSessionCatalog internal project exclusion",
 				path: "/tmp/refresh-session.json",
 				created: new Date(),
 				modified: new Date(),
+				messageCount: 0,
+				firstMessage: null,
+				allMessagesText: "",
 			},
-		]);
+		] as any);
 
 		try {
 			await refreshSessionCatalog({
@@ -140,8 +143,11 @@ describe("session indexer — refreshSessionCatalog internal project exclusion",
 				path: "/tmp/internal-session.json",
 				created: new Date(),
 				modified: new Date(),
+				messageCount: 0,
+				firstMessage: null,
+				allMessagesText: "",
 			},
-		]);
+		] as any);
 
 		try {
 			await refreshSessionCatalog({

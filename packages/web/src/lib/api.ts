@@ -454,6 +454,14 @@ export function retryFileProcessing(path: string) {
 	});
 }
 
+export function convertFile(path: string, force = false) {
+	return request<{ ok: true }>("/api/workspace/files/convert", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path, force }),
+	});
+}
+
 export function getFilePreviewWindow(
 	path: string,
 	root: string,
