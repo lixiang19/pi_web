@@ -115,14 +115,15 @@ export const ensureWorkspaceTemplate = async (workspaceDir: string) => {
 		workspaceDir,
 		"Workspace path",
 	);
-	await Promise.all(
-		WORKSPACE_TEMPLATE_DIRS.map((directory) =>
-			ensureDirectory(
-				path.join(workspaceDir, directory),
-				"Workspace template path",
-			),
-		),
-	);
+	// Validate all directories first (sequential) to avoid partial creation on error.
+	// Parallel creation can leave orphaned directories when one path fails (e.g., a file
+	// exists where a directory is expected), causing subsequent cleanup to fail.
+	for (const directory of WORKSPACE_TEMPLATE_DIRS) {
+		await ensureDirectory(
+			path.join(workspaceDir, directory),
+			"Workspace template path",
+		);
+	}
 	await Promise.all([
 		...RIDGE_SYSTEM_SUBDIRS.map((directory) =>
 			ensureDirectory(

@@ -30,7 +30,7 @@ export interface AudioTranscriptionOptions {
   modelSize?: "tiny" | "base" | "small" | "medium" | "large";
   segmentDuration?: number;
   diarization?: boolean;
-  format?: "srt" | "vtt" | "json" | "txt";
+  format?: "srt" | "vtt" | "json" | "txt" | "markdown";
 }
 
 export interface ImageOcrOptions {

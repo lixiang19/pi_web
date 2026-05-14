@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { FileImage, FileSearch, FileX2, LoaderCircle } from "lucide-vue-next";
+import { FileAudio, FileImage, FileSearch, FileX2, LoaderCircle } from "lucide-vue-next";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,8 @@ const previewTitle = computed(() => {
   switch (props.previewKind) {
     case "image":
       return "图片预览";
+    case "audio":
+      return "音频预览";
     case "text":
       return "文本预览";
     default:
@@ -51,6 +53,8 @@ const previewIcon = computed(() => {
   switch (props.previewKind) {
     case "image":
       return FileImage;
+    case "audio":
+      return FileAudio;
     case "text":
       return FileSearch;
     default:
@@ -95,6 +99,22 @@ const previewIcon = computed(() => {
                 alt="文件预览"
                 class="max-h-full max-w-full rounded-xl border border-border/40 bg-card object-contain shadow-sm"
               />
+            </div>
+          </ScrollArea>
+
+          <ScrollArea v-else-if="previewKind === 'audio'" class="h-full">
+            <div class="flex min-h-full flex-col items-center justify-center gap-4 p-6">
+              <FileAudio class="size-16 text-muted-foreground/40" />
+              <div class="w-full max-w-md rounded-xl border border-border/40 bg-card p-4 shadow-sm">
+                <audio
+                  controls
+                  class="w-full"
+                  :src="blobUrl"
+                >
+                  您的浏览器不支持音频播放。
+                </audio>
+              </div>
+              <p class="text-xs text-muted-foreground">{{ fileName }}</p>
             </div>
           </ScrollArea>
 

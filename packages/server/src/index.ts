@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
 	AuthStorage,
@@ -72,6 +73,7 @@ import {
 	loadConversionServiceConfigFromDb,
 } from "./conversion-service-client.js";
 import { createFileConversionWorker } from "./file-conversion-worker.js";
+import { createRagWorker } from "./rag-worker.js";
 import {
 	getIndexedSessionTree,
 	invalidateManagedProjectScopes,
@@ -197,6 +199,23 @@ export function getJobQueueForTesting(): ReturnType<typeof createBackgroundJobQu
 		throw new Error("getJobQueueForTesting is only allowed in test environment");
 	}
 	return jobQueue;
+}
+
+/**
+ * Test-only helper: reset all module-level singleton state so that each
+ * test file starts with a clean slate when Vitest reuses fork workers.
+ * Do not use in production code.
+ */
+export function resetModuleStateForTests(): void {
+	if (!process.env.VITEST) {
+		throw new Error("resetModuleStateForTests is only allowed in test environment");
+	}
+	authRuntime.resetForTests();
+	activeSessions.clear();
+	openingSessionRecords.clear();
+	projectContextResolver.invalidateContext();
+	setConversionEnabledForTesting(false);
+	setJobQueueForTesting(undefined);
 }
 
 export const getAutomationStore = (): AutomationStore => {
@@ -435,6 +454,7 @@ import {
 	buildFilePreviewWindowPayload,
 	ensureFileForPreview,
 	imageMimeTypesByExtension,
+	audioMimeTypesByExtension,
 	openWithDefaultApp,
 	resolveDiscoveryCwd,
 	toFileSize,
@@ -704,11 +724,11 @@ app.get(
 			const query = fileContentQuerySchema.parse(req.query ?? {});
 			const { targetPath } = await ensureFileForPreview(query);
 			const extension = path.extname(targetPath).toLowerCase();
-			const mimeType = imageMimeTypesByExtension.get(extension);
+			const mimeType = imageMimeTypesByExtension.get(extension) ?? audioMimeTypesByExtension.get(extension);
 
 			if (!mimeType) {
 				const error = new Error(
-					"Only image previews are available through this endpoint",
+					"Only image and audio previews are available through this endpoint",
 				) as HttpError;
 				error.statusCode = 400;
 				throw error;
@@ -741,6 +761,34 @@ app.put(
 
 			await atomicWriteFile(targetPath, payload.content);
 			const nextStats = await fs.stat(targetPath);
+
+			// Markdown edit: mark search_index_status as pending so RAG will re-index with current content
+			if (markdownExtensions.has(extension)) {
+				const db = await getRidgeDb();
+				const posixPath = toPosixPath(targetPath);
+				const contentHash = crypto.createHash("sha256").update(payload.content).digest("hex");
+				const now = Date.now();
+				db.prepare(
+					`INSERT INTO search_index_status (target_path, target_type, status, content_hash, updated_at)
+					 VALUES (?, 'file', 'pending', ?, ?)
+					 ON CONFLICT(target_path) DO UPDATE SET
+						status = excluded.status,
+						content_hash = excluded.content_hash,
+						updated_at = excluded.updated_at`,
+				).run(posixPath, contentHash, now);
+
+				// Enqueue RAG indexing job so worker will chunk and store new content
+				const q = jobQueue;
+				if (q) {
+					q.enqueue({
+						type: "rag.index",
+						relatedType: "file",
+						relatedId: posixPath,
+						payload: { targetPath: posixPath },
+						maxAttempts: 3,
+					});
+				}
+			}
 
 			const response: FileSaveResponse = {
 				root: toPosixPath(rootPath),
@@ -1462,6 +1510,10 @@ export async function startServer() {
 	});
 	automationScheduler.start();
 	await refreshSessionCatalogIndex();
+
+	// Start RAG worker (always runs, even without Python conversion service)
+	const ragWorker = createRagWorker({ jobQueue });
+	ragWorker.start();
 
 	await listenHttpServer(httpServer, port);
 	console.warn(`Pi server listening on http://127.0.0.1:${port}`);

@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 12;
+export const RIDGE_DB_SCHEMA_VERSION = 13;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -265,6 +265,20 @@ CREATE TABLE IF NOT EXISTS search_index_status (
 
 CREATE INDEX IF NOT EXISTS idx_search_index_status_state
   ON search_index_status(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS search_chunks (
+  chunk_id TEXT PRIMARY KEY,
+  target_path TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  chunk_text TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_chunks_target
+  ON search_chunks(target_path, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_search_chunks_text
+  ON search_chunks(chunk_text);
 
 CREATE TABLE IF NOT EXISTS notification_events (
   event_id TEXT PRIMARY KEY,
@@ -644,6 +658,25 @@ CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_status
   ON python_conversion_jobs(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_python_job_id
   ON python_conversion_jobs(python_job_id);
+`,
+  },
+  {
+    version: 13,
+    name: 'search_chunks table for RAG content indexing',
+    sql: `
+CREATE TABLE IF NOT EXISTS search_chunks (
+  chunk_id TEXT PRIMARY KEY,
+  target_path TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  chunk_text TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_chunks_target
+  ON search_chunks(target_path, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_search_chunks_text
+  ON search_chunks(chunk_text);
 `,
   },
 ];

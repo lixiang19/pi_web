@@ -10,6 +10,7 @@ import {
 	generateClientJobId,
 	writeArtifactsToWorkspace,
 	type ConversionJob,
+	type ConversionOptions,
 	type ConversionServiceConfig,
 } from "./conversion-service-client.js";
 import type { createBackgroundJobQueue } from "./background-jobs.js";
@@ -177,6 +178,28 @@ export async function handleConversionResult(
 			db.prepare(
 				"UPDATE file_processing_status SET status = ?, converted_at = ?, updated_at = ? WHERE file_path = ?",
 			).run("converted", now, now, filePath);
+
+			// 写入 search_index_status 作为 RAG 入口（图片 OCR / 音频转写 / 文档 Markdown）
+			const mdPath = filePath.replace(/\.[^.]+$/, ".md");
+			const mdBuffer = downloaded.find((d) => d.artifact.name.endsWith(".md"))?.buffer ?? null;
+			const mdHash = mdBuffer ? crypto.createHash("sha256").update(mdBuffer).digest("hex") : "";
+			db.prepare(
+				`INSERT INTO search_index_status (target_path, target_type, status, content_hash, updated_at)
+				 VALUES (?, 'file', 'pending', ?, ?)
+				 ON CONFLICT(target_path) DO UPDATE SET
+					status = excluded.status,
+					content_hash = excluded.content_hash,
+					updated_at = excluded.updated_at`,
+			).run(mdPath, mdHash, now);
+
+			// Enqueue RAG indexing job so worker will chunk the converted content
+			jobQueue.enqueue({
+				type: "rag.index",
+				relatedType: "file",
+				relatedId: mdPath,
+				payload: { targetPath: mdPath },
+				maxAttempts: 3,
+			});
 
 			// 更新 python_conversion_jobs 为终态
 			db.prepare(
@@ -463,6 +486,26 @@ export function createFileConversionWorker(options: FileConversionWorkerOptions)
 
 		let pythonJob: ConversionJob;
 		try {
+			let options: ConversionOptions = {};
+			if (task === "document.markdown") {
+				options = {
+					engine: "markitdown",
+					extractImages: true,
+					extractTables: true,
+				};
+			} else if (task === "audio.transcription") {
+				options = {
+					language: "auto",
+					segmentDuration: 30,
+					format: "markdown",
+				};
+			} else if (task === "image.ocr") {
+				options = {
+					language: "auto",
+					outputBlocks: true,
+				};
+			}
+
 			pythonJob = await conversionClient.createConversionWithFile(
 				actualSourcePath,
 				{
@@ -473,11 +516,7 @@ export function createFileConversionWorker(options: FileConversionWorkerOptions)
 						ridgeFileId: posixPath,
 						ridgeWorkspacePath: posixPath,
 					},
-					options: {
-						engine: "markitdown",
-						extractImages: true,
-						extractTables: true,
-					},
+					options,
 				},
 			);
 		} catch (err) {

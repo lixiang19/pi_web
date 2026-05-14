@@ -31,6 +31,17 @@ export const imageMimeTypesByExtension = new Map<string, string>([
 	[".webp", "image/webp"],
 ]);
 
+export const audioMimeTypesByExtension = new Map<string, string>([
+	[".mp3", "audio/mpeg"],
+	[".wav", "audio/wav"],
+	[".m4a", "audio/mp4"],
+	[".flac", "audio/flac"],
+	[".ogg", "audio/ogg"],
+	[".oga", "audio/ogg"],
+	[".webm", "audio/webm"],
+	[".weba", "audio/webm"],
+]);
+
 const markdownExtensions = new Set([".md", ".markdown"]);
 const htmlExtensions = new Set([".htm", ".html"]);
 const codeExtensions = new Set([
@@ -209,6 +220,10 @@ const resolvePreviewKind = (
 		return "image";
 	}
 
+	if (audioMimeTypesByExtension.has(extension)) {
+		return "audio";
+	}
+
 	if (!isTextReadable) {
 		return "unsupported";
 	}
@@ -251,6 +266,12 @@ const resolvePreviewMimeType = (
 	if (previewKind === "image") {
 		return (
 			imageMimeTypesByExtension.get(extension) || "application/octet-stream"
+		);
+	}
+
+	if (previewKind === "audio") {
+		return (
+			audioMimeTypesByExtension.get(extension) || "application/octet-stream"
 		);
 	}
 
@@ -330,6 +351,7 @@ export const buildFilePreviewPayload = async (
 	const extension = path.extname(targetPath).toLowerCase();
 	const name = path.basename(targetPath);
 	const imageMimeType = imageMimeTypesByExtension.get(extension);
+	const audioMimeType = audioMimeTypesByExtension.get(extension);
 	const size = toFileSize(stats.size);
 
 	if (imageMimeType) {
@@ -341,6 +363,19 @@ export const buildFilePreviewPayload = async (
 			mimeType: imageMimeType,
 			size,
 			previewKind: "image",
+			readOnly: true,
+		};
+	}
+
+	if (audioMimeType) {
+		return {
+			root: toPosixPath(rootPath),
+			path: toPosixPath(targetPath),
+			name,
+			extension,
+			mimeType: audioMimeType,
+			size,
+			previewKind: "audio",
 			readOnly: true,
 		};
 	}

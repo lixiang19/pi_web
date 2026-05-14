@@ -196,24 +196,12 @@ export const ensureDefaultMilestone = async (
 ): Promise<WorkspaceMilestone> => {
 	const db = await getRidgeDb();
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
-	const existing = db
-		.prepare(
-			`SELECT m.*, COUNT(t.task_id) AS task_count
-       FROM workspace_milestones m
-       LEFT JOIN workspace_tasks t ON t.milestone_id = m.milestone_id
-       WHERE m.workspace_path = ? AND m.is_system = 1 AND m.title = ?
-       GROUP BY m.milestone_id`,
-		)
-		.get(workspacePath, DEFAULT_MILESTONE_TITLE) as MilestoneRow | undefined;
 
-	if (existing) {
-		return mapMilestone(existing);
-	}
-
+	// Race-safe: use INSERT OR IGNORE so concurrent callers don't crash on unique index
 	const now = Date.now();
 	const id = createId("milestone");
 	db.prepare(
-		`INSERT INTO workspace_milestones(
+		`INSERT OR IGNORE INTO workspace_milestones(
       milestone_id, workspace_path, title, goal, acceptance_criteria, status,
       due_date, is_system, color, sort_order, created_at, updated_at
     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -232,7 +220,17 @@ export const ensureDefaultMilestone = async (
 		now,
 	);
 
-	return getMilestoneById(db, workspacePath, id)!;
+	const row = db
+		.prepare(
+			`SELECT m.*, COUNT(t.task_id) AS task_count
+       FROM workspace_milestones m
+       LEFT JOIN workspace_tasks t ON t.milestone_id = m.milestone_id
+       WHERE m.workspace_path = ? AND m.is_system = 1 AND m.title = ?
+       GROUP BY m.milestone_id`,
+		)
+		.get(workspacePath, DEFAULT_MILESTONE_TITLE) as MilestoneRow | undefined;
+
+	return mapMilestone(row!);
 };
 
 export const listMilestones = async (

@@ -370,6 +370,7 @@ export type FilePreviewKind =
 	| "text"
 	| "html"
 	| "image"
+	| "audio"
 	| "base"
 	| "canvas"
 	| "unsupported";

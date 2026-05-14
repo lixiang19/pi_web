@@ -45,7 +45,7 @@ const tabBarItems = computed<TabItem[]>(() =>
 );
 
 const activeBlobUrl = computed(() => {
-	if (!activeTab.value || activeTab.value.previewKind !== "image") {
+	if (!activeTab.value || (activeTab.value.previewKind !== "image" && activeTab.value.previewKind !== "audio")) {
 		return "";
 	}
 	return getFileBlobUrl(activeTab.value.path, activeTab.value.root);

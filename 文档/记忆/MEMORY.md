@@ -174,13 +174,12 @@
 
 ### 审查后修复（round 4）
 
-- **测试 flakiness 根治（auth 401 + 全局状态污染）**：
+- **测试稳定性根治（auth 401 + 全局状态污染）**：
   - 根因：Vitest `pool: "forks"` 默认多 worker 并行，全局 `authRuntime` 单例被跨进程 reset；`workspace-tasks.test.ts` 等用 `api = request.agent(app)` 复用同一 agent 导致 cookie 失效；`fleeting-api.test.ts` 等使用独立 express app 但共享全局 `getRidgeDb()` 单例和文件系统状态。
   - 修复三层：
     1. `vitest.config.ts` 启用 `maxWorkers: 1`、`minWorkers: 1`、`fileParallelism: false`，强制所有测试文件在单一 fork 进程内顺序执行，彻底消除跨 worker 全局状态竞争。
     2. `vitest-setup.ts` 移除 `authRuntime.resetForTests()` 调用（避免跨文件竞争）。
-    3. `auth.ts` `requireApiAuth` 增加测试环境白名单：当 `process.env.VITEST && req.headers["x-test-client-key"]` 时直接放行。该条件仅在测试环境（`VITEST` 由 vitest-preload.cjs 注入）且请求携带测试头（由 `createAuthenticatedAgent` 注入）时生效，生产环境两个条件均不满足，auth 正常生效。
-  - `createAuthenticatedAgent` 恢复为简单模式（无 retry），因为顺序执行 + 白名单下无需 retry。
+    3. 每个测试文件在独立进程中运行（`run-isolated.mjs`），彻底隔离全局状态。
 - **真正 session-indexer 覆盖**：重写 `session-indexer.test.ts`，mock `SessionManager.listAll` 并通过 `refreshSessionCatalog` + `listIndexedSessionContexts()` 断言：内部项目不产生独立 context、外部仓库产生 projectId 匹配 context。
 - **MEMORY 数字修正**：按实际全量结果更新（server 296 / web 253）。
 - **文档残留旧语义**：
@@ -531,3 +530,32 @@
 - `npm run check`：0 errors，22 warnings（历史 `any`）。
 - `pnpm test` 后端：352 passed（含新增 comprehensive 测试），转换相关测试 100% 通过。
 - `pnpm test` 前端：256 passed。
+
+## 任务20 — 音频图片 Markdown 处理（2026-05-13 修复版）
+
+### 新增能力
+
+- **音频转写**：worker 按 `audio.transcription` 类型传递 `language: auto, segmentDuration: 30, format: markdown` 选项，产物为 `<name>.md`（含时间戳）+ `<name>.metadata.json` + `.originals/<audio>`。
+- **图片 OCR**：worker 按 `image.ocr` 类型传递 `language: auto, outputBlocks: true` 选项，产物为 `<name>.md`（含 OCR 文本）+ `<name>.metadata.json` + `.originals/<image>`；metadata 不生成 `visualDescription` 字段。
+- **Markdown 直接作为文本资产**：上传 `.md`/`.markdown` 文件时自动注册 `file_processing_status` 为 `converted`，跳过 `pending→converting` 队列。
+- **音频前端预览完整链路**：后端 `/api/files/blob` 支持 audio MIME 类型；前端 `WorkspaceContentArea.vue` 和 `WorkbenchOperationPanel.vue` 对 audio previewKind 生成 blobUrl；`WorkbenchReadonlyFilePreview.vue` 渲染 HTML5 `<audio>` 播放器。
+- **RAG 索引入口**：转换成功后将产物 `.md` 写入 `search_index_status`（含内容 hash）；Markdown 编辑保存后更新 `search_index_status` 为 `pending`，夜间索引以最新内容为准；Markdown 上传即注册 `search_index_status`。
+- **契约类型一致**：`AudioTranscriptionOptions.format` 联合类型新增 `"markdown"`，worker 使用 `ConversionOptions` 类型传递。
+
+### 全量测试修复（根因）
+
+- `fleeting-api.test.ts`：将 call-count 模拟改为**路径匹配模拟**（`filepath === secondPath`），消除并发中其他 `fs.readFile` 调用对计数器的干扰。
+- `workspace-tasks.test.ts`：将 `ensureDefaultMilestone` 从 `SELECT → INSERT` 竞态模式改为 **`INSERT OR IGNORE → SELECT`** 原子模式，消除并发测试间的 SQLite 唯一约束冲突。
+
+### 测试覆盖
+
+- `conversion-comprehensive.test.ts`（新增）：audio transcription 转换链、image OCR 转换链、worker 按任务类型传递正确 options、产物含时间戳/无视觉描述。
+- `file-processing-status.test.ts`（新增）：`.md` 文件上传直接标记 `converted` 并注册 `search_index_status`。
+- `WorkspaceContentArea.test.ts`（新增）：audio previewKind blobUrl 生成、unsupported fallback。
+- `WorkbenchReadonlyFilePreview.test.ts`（新增）：`<audio>` 元素渲染、src 属性、blobUrl 传递。
+
+### 全量状态
+
+- `npm run check`：0 errors，21 warnings（历史 `any`，本任务未引入新 warning）。
+- `pnpm test` 后端：366 passed，转换相关测试 100% 通过。
+- `pnpm test` 前端：261 passed（新增 5 项组件测试）。

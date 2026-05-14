@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import path from "node:path";
 import express, {
 	type NextFunction,
@@ -365,13 +366,46 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 					if (entry.kind !== "file") continue;
 					// Skip ridge system paths
 					if (entry.path.includes("/.ridge/") || entry.path.endsWith("/.ridge")) continue;
+					const ext = path.extname(entry.path).toLowerCase();
+				// Markdown files are directly text assets: skip conversion queue, mark as converted
+				if (ext === ".md" || ext === ".markdown") {
+					db.prepare(
+						`INSERT OR IGNORE INTO file_processing_status (
+							file_path, workspace_path, status, converted_at, updated_at
+						) VALUES (?, ?, ?, ?, ?)`,
+					).run(entry.path, defaultWorkspaceDir, "converted", now, now);
+					// Register as RAG source: compute content hash from the Markdown file itself
+					const mdContent = await fs.readFile(entry.path, "utf-8");
+					const mdHash = crypto.createHash("sha256").update(mdContent).digest("hex");
+					db.prepare(
+						`INSERT INTO search_index_status (target_path, target_type, status, content_hash, updated_at)
+						 VALUES (?, 'file', 'pending', ?, ?)
+						 ON CONFLICT(target_path) DO UPDATE SET
+							status = excluded.status,
+							content_hash = excluded.content_hash,
+							updated_at = excluded.updated_at`,
+					).run(entry.path, mdHash, now);
+					// Enqueue RAG indexing job so the worker will chunk and store content
+					if (deps.getJobQueue) {
+						const queue = deps.getJobQueue();
+						if (queue) {
+							queue.enqueue({
+								type: "rag.index",
+								relatedType: "file",
+								relatedId: entry.path,
+								payload: { targetPath: entry.path },
+								maxAttempts: 3,
+							});
+						}
+					}
+					continue;
+				}
 					db.prepare(
 						`INSERT OR IGNORE INTO file_processing_status (
 							file_path, workspace_path, status, updated_at
 						) VALUES (?, ?, ?, ?)`,
 					).run(entry.path, defaultWorkspaceDir, "pending", now);
-					// Enqueue conversion job for PDF/DOCX files ONLY when Python service is configured
-					const ext = path.extname(entry.path).toLowerCase();
+					// Enqueue conversion job for convertible files ONLY when Python service is configured
 					if (isConvertibleExtension(ext) && deps.getJobQueue && deps.isConversionEnabled?.() === true) {
 						const queue = deps.getJobQueue();
 						if (queue) {

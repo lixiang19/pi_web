@@ -27,6 +27,8 @@ import type {
 	SessionRecord,
 } from "../types/index.js";
 
+import { searchContent } from "../rag-indexer.js";
+
 export interface CoreDeps {
 	app?: unknown;
 	defaultWorkspaceDir: string;
@@ -505,6 +507,23 @@ export function createCoreRouter(deps: CoreDeps) {
 
 				await searchDir(rootPath, 0);
 				res.json({ entries: results });
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
+
+	router.get(
+		"/api/search/content",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const schema = z.object({
+					q: z.string().min(1).max(200),
+					limit: z.coerce.number().int().min(1).max(100).optional(),
+				});
+				const parsed = schema.parse(req.query ?? {});
+				const results = await searchContent(parsed.q, parsed.limit ?? 20);
+				res.json({ results });
 			} catch (error) {
 				next(error);
 			}

@@ -21,7 +21,7 @@ const emit = defineEmits<{
 }>();
 
 const activeBlobUrl = computed(() => {
-	if (!props.tab || props.tab.previewKind !== "image") return "";
+	if (!props.tab || (props.tab.previewKind !== "image" && props.tab.previewKind !== "audio")) return "";
 	return getFileBlobUrl(props.tab.path, props.tab.root);
 });
 

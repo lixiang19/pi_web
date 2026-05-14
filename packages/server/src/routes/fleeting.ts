@@ -215,27 +215,36 @@ const getTodayJournalPath = (workspaceDir: string) => {
 	return path.join(workspaceDir, "日记", year, month, `${date}.md`);
 };
 
+const journalWriteQueues = new Map<string, Promise<void>>();
+
 const appendToTodayJournal = async (workspaceDir: string, content: string) => {
 	const journalPath = getTodayJournalPath(workspaceDir);
-	await fs.mkdir(path.dirname(journalPath), { recursive: true });
-	let existing = "";
-	try {
-		existing = await fs.readFile(journalPath, "utf-8");
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-			throw error;
+	// Serialize all writes to the same journal file to prevent read-modify-write
+	// races when multiple requests append concurrently.
+	const previous = journalWriteQueues.get(journalPath) ?? Promise.resolve();
+	const current = previous.then(async () => {
+		await fs.mkdir(path.dirname(journalPath), { recursive: true });
+		let existing = "";
+		try {
+			existing = await fs.readFile(journalPath, "utf-8");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				throw error;
+			}
 		}
-	}
 
-	const now = new Date();
-	const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-	const entry = `- ${time}  \n  ${content}\n`;
-	const hasFleetingHeading = /^## 闪念$/m.test(existing);
-	const prefix = existing.trim() ? "\n\n" : "";
-	const next = hasFleetingHeading
-		? `${existing.trimEnd()}\n${entry}`
-		: `${existing}${prefix}## 闪念\n\n${entry}`;
-	await atomicWriteFile(journalPath, next);
+		const now = new Date();
+		const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+		const entry = `- ${time}  \n  ${content}\n`;
+		const hasFleetingHeading = /^## 闪念$/m.test(existing);
+		const prefix = existing.trim() ? "\n\n" : "";
+		const next = hasFleetingHeading
+			? `${existing.trimEnd()}\n${entry}`
+			: `${existing}${prefix}## 闪念\n\n${entry}`;
+		await atomicWriteFile(journalPath, next);
+	});
+	journalWriteQueues.set(journalPath, current);
+	await current;
 	return journalPath;
 };
 

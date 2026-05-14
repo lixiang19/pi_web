@@ -14,7 +14,16 @@ vi.mock("@/components/workspace/WorkspaceMarkdownEditor.vue", () => ({
 vi.mock("@/components/workbench/file-preview/WorkbenchReadonlyFilePreview.vue", () => ({
 	default: {
 		name: "WorkbenchReadonlyFilePreview",
-		template: `<div data-test="readonly-preview" />`,
+		props: ["blobUrl"],
+		template: `<div data-test="readonly-preview" :data-blob="blobUrl" />`,
+	},
+}));
+
+vi.mock("@/components/workspace/OpenWithDefaultApp.vue", () => ({
+	default: {
+		name: "OpenWithDefaultApp",
+		props: ["fileName", "filePath"],
+		template: `<div data-test="open-with-default" />`,
 	},
 }));
 
@@ -61,5 +70,46 @@ describe("WorkspaceContentArea markdown routing", () => {
 		});
 		expect(wrapper.find('[data-test="markdown-editor"]').exists()).toBe(false);
 		expect(wrapper.find('[data-test="readonly-preview"]').exists()).toBe(true);
+	});
+});
+
+describe("WorkspaceContentArea audio routing", () => {
+	it("generates blobUrl for audio preview tabs", () => {
+		const wrapper = mount(WorkspaceContentArea, {
+			props: {
+				tab: createTab({
+					id: "/workspace/audio.mp3",
+					path: "/workspace/audio.mp3",
+					title: "audio.mp3",
+					extension: ".mp3",
+					mimeType: "audio/mpeg",
+					previewKind: "audio",
+				}),
+				rootDir: "/workspace",
+			},
+		});
+		const readonly = wrapper.find('[data-test="readonly-preview"]');
+		expect(readonly.exists()).toBe(true);
+		expect(readonly.attributes("data-blob")).toContain("/api/files/blob");
+		expect(readonly.attributes("data-blob")).toContain("audio.mp3");
+	});
+
+	it("does not generate blobUrl for unsupported preview kinds", () => {
+		const wrapper = mount(WorkspaceContentArea, {
+			props: {
+				tab: createTab({
+					id: "/workspace/data.bin",
+					path: "/workspace/data.bin",
+					title: "data.bin",
+					extension: ".bin",
+					mimeType: "application/octet-stream",
+					previewKind: "unsupported",
+				}),
+				rootDir: "/workspace",
+			},
+		});
+		// Unsupported files render OpenWithDefaultApp, not the readonly preview
+		expect(wrapper.find('[data-test="readonly-preview"]').exists()).toBe(false);
+		expect(wrapper.find('[data-test="open-with-default"]').exists()).toBe(true);
 	});
 });
