@@ -84,7 +84,7 @@ export interface WorkspaceTasksRouterDeps {
 	persistSessionRecordMetadata: (record: SessionRecord) => Promise<void>;
 	upsertIndexedSessionRecord: (record: SessionRecord, deps: { projectContextResolver: ProjectContextResolver; workspaceChatConfig: WorkspaceChatConfig }) => Promise<void>;
 	toSessionSnapshot: (record: SessionRecord, options: { rounds?: number }) => Promise<SessionSnapshot>;
-	getProjects: () => Promise<{ projects: Array<{ id: string; path: string; projectType: 'internal' | 'external' | 'workspace'; deviceId?: string; isOnline: boolean }> }>;
+	getProjects: () => Promise<{ projects: Array<{ id: string; path: string; projectType: 'internal' | 'external' | 'workspace'; deviceId?: string; isOnline: boolean; archivedAt?: number }> }>;
 	getDefaultModel: () => Promise<string>;
 	getDefaultThinkingLevel: () => Promise<ThinkingLevel>;
 	projectContextResolver: ProjectContextResolver;
@@ -219,6 +219,12 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 					if (project.deviceId && !project.isOnline) {
 						const error = new Error("项目离线，无法启动处理会话") as import("../types/index.js").HttpError;
 						error.statusCode = 409;
+						throw error;
+					}
+					// 归档项目禁止启动处理会话
+					if (project.archivedAt) {
+						const error = new Error("项目已归档，无法启动处理会话") as import("../types/index.js").HttpError;
+						error.statusCode = 403;
 						throw error;
 					}
 				}

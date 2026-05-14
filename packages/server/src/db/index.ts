@@ -62,6 +62,7 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'device_id', definition: "TEXT NOT NULL DEFAULT ''" },
     { name: 'name', definition: "TEXT NOT NULL DEFAULT ''" },
     { name: 'device_type', definition: "TEXT NOT NULL DEFAULT 'server'" },
+    { name: 'token', definition: 'TEXT' },
     { name: 'status', definition: "TEXT NOT NULL DEFAULT 'offline'" },
     { name: 'capabilities_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
     { name: 'last_seen_at', definition: 'INTEGER' },

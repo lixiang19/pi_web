@@ -28,11 +28,6 @@ export const WORKSPACE_TEMPLATE_DIRS = [
 	...WORKSPACE_SYSTEM_DIRS,
 ] as const;
 
-const isNotFoundError = (error: unknown): error is NodeJS.ErrnoException =>
-	error instanceof Error &&
-	"code" in error &&
-	(error as NodeJS.ErrnoException).code === "ENOENT";
-
 const ensureDirectory = async (targetPath: string, label: string) => {
 	try {
 		const stat = await fs.stat(targetPath);
@@ -40,10 +35,26 @@ const ensureDirectory = async (targetPath: string, label: string) => {
 			throw new Error(`${label} exists but is not a directory: ${targetPath}`);
 		}
 	} catch (error) {
-		if (!isNotFoundError(error)) {
+		if (error instanceof Error && error.message.includes("exists but is not a directory")) {
 			throw error;
 		}
-		await fs.mkdir(targetPath, { recursive: true });
+		// ENOENT or other stat errors → attempt to create the directory.
+		// fs.mkdir with recursive: true is idempotent and handles races.
+		// Retry once on transient errors (EBUSY/ENOTEMPTY from concurrent cleanup).
+		try {
+			await fs.mkdir(targetPath, { recursive: true });
+		} catch (mkdirError) {
+			if (
+				(mkdirError instanceof Error && 'code' in mkdirError) &&
+				((mkdirError as NodeJS.ErrnoException).code === "EBUSY" ||
+					(mkdirError as NodeJS.ErrnoException).code === "ENOTEMPTY")
+			) {
+				await new Promise((resolve) => setTimeout(resolve, 50));
+				await fs.mkdir(targetPath, { recursive: true });
+			} else {
+				throw mkdirError;
+			}
+		}
 	}
 };
 
@@ -59,9 +70,10 @@ const ensureInitialMarkdownFile = async (
 			);
 		}
 	} catch (error) {
-		if (!isNotFoundError(error)) {
+		if (error instanceof Error && error.message.includes("exists but is not a file")) {
 			throw error;
 		}
+		// Any stat error (ENOENT, EPERM, etc.) → write the file.
 		await fs.writeFile(filePath, initialContent, "utf8");
 	}
 };

@@ -13,6 +13,7 @@ import { toPosixPath } from "../utils/paths.js";
 import { getRidgeDb } from "../db/index.js";
 import type { createBackgroundJobQueue } from "../background-jobs.js";
 import { isConvertibleExtension } from "../conversion-service-client.js";
+import { getProjects } from "../storage/index.js";
 
 export interface WorkspaceDataDeps {
 	defaultWorkspaceDir: string;
@@ -365,6 +366,11 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 					if (entry.kind !== "file") continue;
 					// Skip ridge system paths
 					if (entry.path.includes("/.ridge/") || entry.path.endsWith("/.ridge")) continue;
+					// Skip external project paths (do not index external repos)
+					const isExternalProjectPath = (await getProjects()).projects.some(
+						(p) => p.projectType === "external" && entry.path.startsWith(p.path),
+					);
+					if (isExternalProjectPath) continue;
 					db.prepare(
 						`INSERT OR IGNORE INTO file_processing_status (
 							file_path, workspace_path, status, updated_at

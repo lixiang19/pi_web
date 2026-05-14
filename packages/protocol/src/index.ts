@@ -466,6 +466,21 @@ export interface ProjectsResponse {
 	projects: ProjectItem[];
 }
 
+export interface DeviceItem {
+	deviceId: string;
+	name: string;
+	deviceType: "server" | "desktop";
+	status: "online" | "offline";
+	capabilities: Record<string, boolean>;
+	lastSeenAt: number | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface DevicesResponse {
+	devices: DeviceItem[];
+}
+
 export interface SessionMutationResponse {
 	ok: true;
 	sessionIds: string[];

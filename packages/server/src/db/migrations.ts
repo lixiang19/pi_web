@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 12;
+export const RIDGE_DB_SCHEMA_VERSION = 17;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS devices (
   device_id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
   device_type TEXT NOT NULL DEFAULT 'server',
+  token TEXT,
   status TEXT NOT NULL DEFAULT 'offline',
   capabilities_json TEXT NOT NULL DEFAULT '{}',
   last_seen_at INTEGER,
@@ -35,7 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_devices_status
 CREATE TABLE IF NOT EXISTS projects (
   project_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  path TEXT NOT NULL UNIQUE,
+  path TEXT NOT NULL,
   is_git INTEGER NOT NULL,
   added_at INTEGER NOT NULL,
   project_type TEXT NOT NULL DEFAULT 'external',
@@ -644,6 +645,69 @@ CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_status
   ON python_conversion_jobs(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_python_job_id
   ON python_conversion_jobs(python_job_id);
+`,
+  },
+  {
+    version: 13,
+    name: 'device token and project device_path unique constraint',
+    sql: `
+-- token column addition is handled by repairKnownTableColumns (CORE_TABLE_COLUMNS)
+-- Ensure existing projects have device_id as NULL rather than empty string
+UPDATE projects SET device_id = NULL WHERE device_id = '';
+
+-- Add unique constraint on (device_id, path) for projects via a unique index
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_device_path
+  ON projects(COALESCE(device_id, 'server'), path);
+`,
+  },
+  {
+    version: 14,
+    name: 'device bundle ack tracking for runtime sync',
+    sql: `
+CREATE TABLE IF NOT EXISTS device_bundle_acks (
+  device_id TEXT PRIMARY KEY,
+  bundle_id TEXT NOT NULL,
+  acked_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+`,
+  },
+  {
+    version: 15,
+    name: 'enhance bundle ack with hash, version and sync status',
+    sql: `
+ALTER TABLE device_bundle_acks ADD COLUMN updated_at INTEGER;
+ALTER TABLE device_bundle_acks ADD COLUMN content_hash TEXT;
+ALTER TABLE device_bundle_acks ADD COLUMN bundle_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE device_bundle_acks ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'acked';
+ALTER TABLE device_bundle_acks ADD COLUMN sync_error TEXT;
+ALTER TABLE device_bundle_acks ADD COLUMN sync_attempts INTEGER NOT NULL DEFAULT 0;
+
+-- Served bundle record for strict ack validation (device_id scoped, with project context)
+CREATE TABLE IF NOT EXISTS device_bundle_served (
+  device_id TEXT PRIMARY KEY,
+  bundle_id TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  bundle_version INTEGER NOT NULL DEFAULT 1,
+  project_id TEXT,
+  project_path TEXT,
+  served_at INTEGER NOT NULL
+);
+`,
+  },
+  {
+    version: 16,
+    name: 'bundle served materialize status',
+    sql: `
+-- Add materialize status column for tracking desktop bundle materialization
+ALTER TABLE device_bundle_served ADD COLUMN materialized INTEGER NOT NULL DEFAULT 0;
+`,
+  },
+  {
+    version: 17,
+    name: 'bundle served materialized hash for ack validation',
+    sql: `
+ALTER TABLE device_bundle_served ADD COLUMN materialized_hash TEXT;
 `,
   },
 ];

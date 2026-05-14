@@ -154,7 +154,7 @@ export function createAuthRuntime(options: { adminPassword: string }) {
 		// the x-test-client-key header (injected by createAuthenticatedAgent),
 		// bypass auth so sequential test execution isn't broken by session resets.
 		// Both conditions are required; production has neither.
-		if (process.env.VITEST && typeof req.headers["x-test-client-key"] === "string") {
+		if (process.env.VITEST === "true" && typeof req.headers["x-test-client-key"] === "string") {
 			next();
 			return;
 		}

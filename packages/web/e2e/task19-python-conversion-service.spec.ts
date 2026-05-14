@@ -5,8 +5,6 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5175";
 
 test.describe("任务19 — Python通用转化服务契约集成验收", () => {
 	let workspaceDir: string | null = null;
-	let apiBase: string | null = null;
-	let sessionCookie: string | null = null;
 
 	test.beforeEach(async ({ page }) => {
 		await page.goto(`${BASE_URL}/login`);
@@ -22,14 +20,6 @@ test.describe("任务19 — Python通用转化服务契约集成验收", () => {
 				return r.ok ? await r.json() : null;
 			});
 			workspaceDir = info?.workspaceDir ?? null;
-			apiBase = info?.apiBase ?? "http://127.0.0.1:3000";
-		}
-
-		// Get session cookie for API calls
-		const cookies = await page.context().cookies();
-		const session = cookies.find((c) => c.name.includes("session") || c.name.includes("ridge"));
-		if (session) {
-			sessionCookie = `${session.name}=${session.value}`;
 		}
 	});
 
