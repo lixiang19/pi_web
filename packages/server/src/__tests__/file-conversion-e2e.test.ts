@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { app, setConversionEnabledForTesting } from "../index.js";
+import { app, setConversionEnabledForTesting, setJobQueueForTesting } from "../index.js";
 import { createAuthenticatedAgent } from "../test/auth.js";
 import { getRidgeDb } from "../db/index.js";
+import { createBackgroundJobQueue } from "../background-jobs.js";
 
 let api: ReturnType<typeof request.agent>;
 
@@ -14,6 +15,7 @@ const TEST_ROOT = path.join(WORKSPACE, "e2e-convert-test");
 
 beforeAll(async () => {
 	setConversionEnabledForTesting(true);
+	setJobQueueForTesting(createBackgroundJobQueue(await getRidgeDb()));
 	api = await createAuthenticatedAgent(app);
 	await fs.mkdir(TEST_ROOT, { recursive: true });
 });

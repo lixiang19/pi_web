@@ -50,6 +50,14 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 
 	const { defaultWorkspaceDir, fileManager, getRidgeDb } = deps;
 
+	const getRequiredJobQueue = () => {
+		const queue = deps.getJobQueue?.();
+		if (!queue) {
+			throw toHttpError("Background job queue is not available", 503);
+		}
+		return queue;
+	};
+
 	const augmentEntriesWithStatus = async (
 		entries: FileTreeEntry[],
 		workspacePath: string,
@@ -258,18 +266,25 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 
 						db.prepare(
 							`INSERT INTO notification_events(
-								event_id, event_type, severity, title, body,
-								payload_json, status, created_at, read_at
-							) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+								event_id, event_type, source, severity, title, body,
+								related_type, related_id, actions_json, payload_json,
+								status, created_at, updated_at, read_at, handled_at
+							) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 						).run(
 							`notification-${crypto.randomUUID()}`,
 							eventType,
+							"file_processing",
 							"error",
 							title,
 							errorMessage,
+							"file",
+							posixPath,
+							JSON.stringify([{ id: "retry", label: "重试" }, { id: "open_related", label: "打开对象" }]),
 							JSON.stringify({ filePath: posixPath, error: errorMessage }),
 							"unread",
 							now,
+							now,
+							null,
 							null,
 						);
 					}
@@ -323,29 +338,26 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 					throw toHttpError("Only failed files can be retried", 400);
 				}
 
-				db.prepare(
-					`UPDATE file_processing_status
-					 SET status = ?, error = NULL, updated_at = ?
-					 WHERE file_path = ?`,
-				).run("pending", Date.now(), posixPath);
+				const queue = getRequiredJobQueue();
+				db.transaction(() => {
+					db.prepare(
+						`UPDATE file_processing_status
+						 SET status = ?, error = NULL, updated_at = ?
+						 WHERE file_path = ?`,
+					).run("pending", Date.now(), posixPath);
 
-				// Re-enqueue conversion job if queue is available.
-				// Explicitly cancel any old pending/failed convert jobs for this file
-				// so the new retry job is immediately runnable.
-				if (deps.getJobQueue) {
-					const queue = deps.getJobQueue();
-					if (queue) {
-						queue.cancel({ type: "file.convert", relatedType: "file", relatedId: posixPath });
-						queue.enqueue({
-							type: "file.convert",
-							relatedType: "file",
-							relatedId: posixPath,
-							payload: { workspaceDir: defaultWorkspaceDir },
-							maxAttempts: 3,
-							notifyOnFailure: true,
-						});
-					}
-				}
+					// Explicitly cancel any old pending/failed convert jobs for this file
+					// so the new retry job is immediately runnable.
+					queue.cancel({ type: "file.convert", relatedType: "file", relatedId: posixPath });
+					queue.enqueue({
+						type: "file.convert",
+						relatedType: "file",
+						relatedId: posixPath,
+						payload: { workspaceDir: defaultWorkspaceDir },
+						maxAttempts: 3,
+						notifyOnFailure: true,
+					});
+				})();
 
 				res.json({ ok: true });
 			} catch (error) {
@@ -433,27 +445,24 @@ export function createWorkspaceFilesRouter(deps: WorkspaceFilesDeps) {
 					}
 				}
 
-				// Reset status to pending and enqueue a new conversion job
 				const now = Date.now();
-				db.prepare(
-					"UPDATE file_processing_status SET status = ?, error = NULL, updated_at = ? WHERE file_path = ?",
-				).run("pending", now, logicalPosix);
+				const queue = getRequiredJobQueue();
+				db.transaction(() => {
+					db.prepare(
+						"UPDATE file_processing_status SET status = ?, error = NULL, updated_at = ? WHERE file_path = ?",
+					).run("pending", now, logicalPosix);
 
-				if (deps.getJobQueue) {
-					const queue = deps.getJobQueue();
-					if (queue) {
-						// Cancel any existing convert jobs for this file
-						queue.cancel({ type: "file.convert", relatedType: "file", relatedId: logicalPosix });
-						queue.enqueue({
-							type: "file.convert",
-							relatedType: "file",
-							relatedId: logicalPosix,
-							payload: { workspaceDir: defaultWorkspaceDir },
-							maxAttempts: 3,
-							notifyOnFailure: true,
-						});
-					}
-				}
+					// Cancel any existing convert jobs for this file
+					queue.cancel({ type: "file.convert", relatedType: "file", relatedId: logicalPosix });
+					queue.enqueue({
+						type: "file.convert",
+						relatedType: "file",
+						relatedId: logicalPosix,
+						payload: { workspaceDir: defaultWorkspaceDir },
+						maxAttempts: 3,
+						notifyOnFailure: true,
+					});
+				})();
 
 				res.json({ ok: true, enqueued: true });
 			} catch (error) {

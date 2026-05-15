@@ -92,6 +92,48 @@ type HttpError = Error & { statusCode?: number };
 const DEFAULT_MILESTONE_TITLE = "未归属";
 const DEFAULT_MILESTONE_COLOR = "#64748b";
 
+export interface CreateMilestoneInput {
+	title: string;
+	goal: string;
+	acceptanceCriteria: string;
+	dueDate?: number | null;
+	color?: string;
+	projectId?: string | null;
+}
+
+export type UpdateMilestoneInput = Partial<{
+	title: string;
+	goal: string;
+	acceptanceCriteria: string;
+	status: TaskStatus;
+	dueDate: number | null;
+	color: string;
+	projectId: string | null;
+	actor: TaskActor;
+}>;
+
+export interface CreateTaskInput {
+	title: string;
+	priority: TaskPriority;
+	acceptanceCriteria: string;
+	dueDate?: number | null;
+	milestoneId?: string | null;
+	projectId?: string | null;
+}
+
+export type UpdateTaskInput = Partial<{
+	title: string;
+	status: TaskStatus;
+	priority: TaskPriority;
+	acceptanceCriteria: string;
+	dueDate: number | null;
+	milestoneId: string;
+	projectId: string | null;
+	blockedReason: string | null;
+	sortOrder: number;
+	actor: TaskActor;
+}>;
+
 const createHttpError = (message: string, statusCode: number): HttpError => {
 	const error = new Error(message) as HttpError;
 	error.statusCode = statusCode;
@@ -191,10 +233,10 @@ const getMilestoneById = (
 	return row ? mapMilestone(row) : null;
 };
 
-export const ensureDefaultMilestone = async (
+export const ensureDefaultMilestoneInDb = (
+	db: RidgeDatabase,
 	workspaceDir: string,
-): Promise<WorkspaceMilestone> => {
-	const db = await getRidgeDb();
+): WorkspaceMilestone => {
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
 
 	// Race-safe: use INSERT OR IGNORE so concurrent callers don't crash on unique index
@@ -233,6 +275,13 @@ export const ensureDefaultMilestone = async (
 	return mapMilestone(row!);
 };
 
+export const ensureDefaultMilestone = async (
+	workspaceDir: string,
+): Promise<WorkspaceMilestone> => {
+	const db = await getRidgeDb();
+	return ensureDefaultMilestoneInDb(db, workspaceDir);
+};
+
 export const listMilestones = async (
 	workspaceDir: string,
 ): Promise<WorkspaceMilestone[]> => {
@@ -254,16 +303,17 @@ export const listMilestones = async (
 
 export const createMilestone = async (
 	workspaceDir: string,
-	input: {
-		title: string;
-		goal: string;
-		acceptanceCriteria: string;
-		dueDate?: number | null;
-		color?: string;
-		projectId?: string | null;
-	},
+	input: CreateMilestoneInput,
 ): Promise<WorkspaceMilestone> => {
 	const db = await getRidgeDb();
+	return createMilestoneInDb(db, workspaceDir, input);
+};
+
+export const createMilestoneInDb = (
+	db: RidgeDatabase,
+	workspaceDir: string,
+	input: CreateMilestoneInput,
+): WorkspaceMilestone => {
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
 	const now = Date.now();
 	const id = createId("milestone");
@@ -309,18 +359,18 @@ export const getMilestone = async (
 export const updateMilestone = async (
 	workspaceDir: string,
 	milestoneId: string,
-	input: Partial<{
-		title: string;
-		goal: string;
-		acceptanceCriteria: string;
-		status: TaskStatus;
-		dueDate: number | null;
-		color: string;
-		projectId: string | null;
-		actor: TaskActor;
-	}>,
+	input: UpdateMilestoneInput,
 ): Promise<WorkspaceMilestone> => {
 	const db = await getRidgeDb();
+	return updateMilestoneInDb(db, workspaceDir, milestoneId, input);
+};
+
+export const updateMilestoneInDb = (
+	db: RidgeDatabase,
+	workspaceDir: string,
+	milestoneId: string,
+	input: UpdateMilestoneInput,
+): WorkspaceMilestone => {
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
 	const current = getMilestoneById(db, workspacePath, milestoneId);
 	if (!current) {
@@ -352,7 +402,7 @@ export const updateMilestone = async (
 		workspacePath,
 		milestoneId,
 	);
-	return getMilestone(workspaceDir, milestoneId);
+	return getMilestoneById(db, workspacePath, milestoneId)!;
 };
 
 export const deleteMilestone = async (
@@ -412,28 +462,38 @@ export const getTask = async (
 ): Promise<WorkspaceTask> => {
 	const db = await getRidgeDb();
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
+	const task = getTaskById(db, workspacePath, taskId);
+	if (!task) {
+		throw createHttpError(`Task not found: ${taskId}`, 404);
+	}
+	return task;
+};
+
+const getTaskById = (
+	db: RidgeDatabase,
+	workspacePath: string,
+	taskId: string,
+): WorkspaceTask | null => {
 	const row = db
 		.prepare(`SELECT * FROM workspace_tasks WHERE workspace_path = ? AND task_id = ?`)
 		.get(workspacePath, taskId) as TaskRow | undefined;
-	if (!row) {
-		throw createHttpError(`Task not found: ${taskId}`, 404);
-	}
-	return mapTask(row);
+	return row ? mapTask(row) : null;
 };
 
 export const createTask = async (
 	workspaceDir: string,
-	input: {
-		title: string;
-		priority: TaskPriority;
-		acceptanceCriteria: string;
-		dueDate?: number | null;
-		milestoneId?: string | null;
-		projectId?: string | null;
-	},
+	input: CreateTaskInput,
 ): Promise<WorkspaceTask> => {
-	const defaultMilestone = await ensureDefaultMilestone(workspaceDir);
 	const db = await getRidgeDb();
+	return createTaskInDb(db, workspaceDir, input);
+};
+
+export const createTaskInDb = (
+	db: RidgeDatabase,
+	workspaceDir: string,
+	input: CreateTaskInput,
+): WorkspaceTask => {
+	const defaultMilestone = ensureDefaultMilestoneInDb(db, workspaceDir);
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
 	const milestoneId = input.milestoneId || defaultMilestone.id;
 	const milestone = getMilestoneById(db, workspacePath, milestoneId);
@@ -465,28 +525,29 @@ export const createTask = async (
 		now,
 		now,
 	);
-	return getTask(workspaceDir, id);
+	return getTaskById(db, workspacePath, id)!;
 };
 
 export const updateTask = async (
 	workspaceDir: string,
 	taskId: string,
-	input: Partial<{
-		title: string;
-		status: TaskStatus;
-		priority: TaskPriority;
-		acceptanceCriteria: string;
-		dueDate: number | null;
-		milestoneId: string;
-		projectId: string | null;
-		blockedReason: string | null;
-		sortOrder: number;
-		actor: TaskActor;
-	}>,
+	input: UpdateTaskInput,
 ): Promise<WorkspaceTask> => {
-	const current = await getTask(workspaceDir, taskId);
 	const db = await getRidgeDb();
+	return updateTaskInDb(db, workspaceDir, taskId, input);
+};
+
+export const updateTaskInDb = (
+	db: RidgeDatabase,
+	workspaceDir: string,
+	taskId: string,
+	input: UpdateTaskInput,
+): WorkspaceTask => {
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
+	const current = getTaskById(db, workspacePath, taskId);
+	if (!current) {
+		throw createHttpError(`Task not found: ${taskId}`, 404);
+	}
 	if (input.status !== undefined) {
 		assertStatusAllowed({
 			currentStatus: current.status,
@@ -519,7 +580,7 @@ export const updateTask = async (
 		workspacePath,
 		taskId,
 	);
-	return getTask(workspaceDir, taskId);
+	return getTaskById(db, workspacePath, taskId)!;
 };
 
 /** 内部专用：原子/条件设置任务的 processingSessionId。

@@ -312,18 +312,25 @@ function failConversion(
 			).run("convert_failed", errorMessage, updatedAt, filePath);
 			db.prepare(
 				`INSERT INTO notification_events(
-					event_id, event_type, severity, title, body,
-					payload_json, status, created_at, read_at
-				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					event_id, event_type, source, severity, title, body,
+					related_type, related_id, actions_json, payload_json,
+					status, created_at, updated_at, read_at, handled_at
+				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			).run(
 				`notification-${crypto.randomUUID()}`,
 				"file_processing.convert_failed",
+				"file_processing",
 				"error",
 				`文件转换失败: ${fileName}`,
 				errorMessage,
+				"file",
+				filePath,
+				JSON.stringify([{ id: "retry", label: "重试" }, { id: "open_related", label: "打开对象" }]),
 				JSON.stringify({ filePath, error: errorMessage }),
 				"unread",
 				updatedAt,
+				updatedAt,
+				null,
 				null,
 			);
 		});

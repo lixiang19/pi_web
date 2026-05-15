@@ -38,7 +38,7 @@
 | 31 设备注册在线状态与调度 | - | - | - | - | - | - | - |
 | 32 runtime bundle 与设备专属 Skill | - | - | - | - | - | - | - |
 | 33 workspace MCP 查读工具 | - | ✅ | ✅ | - | ✅ | - | ✅ |
-| 34 通知与建议中心 | ⚠️ | - | - | - | - | - | - |
+| 34 通知与建议中心 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 35 task review agent 任务回顾 | - | - | - | - | - | - | - |
 | 36 自动化规则运行与跳过 | ◐ | ◐ | ◐ | ◐ | - | - | - |
 | 37 备份恢复设置主题收尾 | ◐ | - | - | ◐ | - | - | - |
@@ -56,7 +56,7 @@
 - **26 summary agent daily 会话记忆**：`POST /api/sessions/:sessionId/end` 结束会话并排队 `summary.daily`；关闭会话 tab 会调用该入口；summary agent 只读 session 文件，服务端追加 `记忆/daily/YYYY/MM/YYYY-MM-DD.md`，不生成单会话摘要文件；同一 daily date 串行写入，不同 session 不误去重。`workspace-memory.test.ts` 与 `background-jobs.test.ts` 覆盖。
 - **27 memory agent MEMORY 维护与注入**：`memory.maintain` 在 summary 后维护 `记忆/MEMORY.md`；消息入口支持显式“记住/忘掉”立即改写；服务端过滤敏感信息；新会话启动和 resource reload 注入 `MEMORY.md` 与 `Wiki/index.md` XML 块，空文件不注入，并包含“记忆可能过时，当前用户最新话语和当前文件事实优先”提醒。`workspace-memory.test.ts` 覆盖。
 - **28 Kuzu 图谱存储与抽取**：`graph-store.ts` 使用 Kuzu Node.js 客户端写入 `.ridge/graph.kuzu/database.kuzu`，初始化写 `.ridge/graph.kuzu/schema.cypher`；schema 包含 Project/File/Task/Person/Org/Concept/Tech/Source/Decision 节点和带 `evidence/source_path/confidence/updated_at` 的 EvidenceRelation，证据统一截断为 80 字以内。`graph-agent.ts` 只从已索引 Markdown 标准产物、daily 和内部项目 Markdown 收集输入，排除外部项目、`.ridge`、`.originals` 和非 Markdown 原件；直接读取来源前校验 `realpath`，防止内部项目根目录符号链接越界；`rag-worker.ts` 夜间链路在 deferred RAG 后触发 graph runner；`POST /api/workspace/graph/corrections` 支持用户自然语言纠错后由 graph agent 写回，并有 HTTP 集成测试。`GET /api/workspace/backup` 生成真实备份 ZIP，包含 `.ridge/graph.kuzu`，排除可重建缓存并跳过符号链接；隐藏 Git exclude 包含 `.ridge`。测试覆盖真实 Kuzu 写入读回、graph store/schema/纠错、source 边界与 symlink 防护、夜间顺序、纠错 API、备份 ZIP/API、隐藏 Git exclude 和初始化 schema 文件。
-- **34 通知与建议中心**：左侧导航入口存在，但同样走 `WorkspaceFeaturePlaceholder`，真实通知中心未实现，只能标为入口/占位。
+- **34 通知与建议中心**：左侧「通知」固定入口已接入 `NotificationCenterView.vue`，展示未处理数、筛选、列表和动作；`GET /api/notifications` 与 `POST /api/notifications/:eventId/actions` 支持忽略、标记已处理、重试、接受/拒绝建议、打开关联对象。`notification_events` 扩展 source/related/actions/handled 字段；文件处理失败、RAG 失败、后台任务最终失败写入关联对象和动作。新增通知 API 与前端组件测试，并通过全量测试。
 - **36 自动化规则运行与跳过**：`automation_rules` CRUD、调度器、手动 run API、UI 已有，但 `automation_runs` 无业务写入，跳过记录/失败通知/运行历史未闭环。只能标为自动化规则 CRUD/调度部分完成。
 - **37 备份恢复设置主题收尾**：设置页真实实现只有主题/明暗模式、退出、偏好；没有备份恢复、数据路径、错误边界。只能标“设置基础部分完成”。
 - **17 文件页与正式附件目录**：左侧导航“文件”入口存在，`WorkspacePage.vue` 中已接入 `FilesView.vue` 真实文件页（文件树浏览、状态展示、文件预览），不再是占位。但上传功能走 `uploadFiles` API、`FilesView` 本身无上传按钮，附件管理（移动/重命名）未在前端完整实现。

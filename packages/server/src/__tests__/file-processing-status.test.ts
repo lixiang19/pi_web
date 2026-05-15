@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { app, setConversionEnabledForTesting } from "../index.js";
+import { app, getJobQueueForTesting, setConversionEnabledForTesting, setJobQueueForTesting } from "../index.js";
 import { createAuthenticatedAgent } from "../test/auth.js";
 import { getRidgeDb } from "../db/index.js";
 import { toPosixPath } from "../utils/paths.js";
+import { createBackgroundJobQueue } from "../background-jobs.js";
 
 let api: ReturnType<typeof request.agent>;
 
@@ -15,6 +16,7 @@ const TEST_ROOT = path.join(WORKSPACE, "file-processing-test");
 
 beforeAll(async () => {
 	setConversionEnabledForTesting(true);
+	setJobQueueForTesting(createBackgroundJobQueue(await getRidgeDb()));
 	api = await createAuthenticatedAgent(app);
 	await fs.mkdir(TEST_ROOT, { recursive: true });
 });
@@ -294,6 +296,29 @@ describe("File Processing Status Lifecycle", () => {
 			.get(filePath) as { status: string; error: string | null } | undefined;
 		expect(row!.status).toBe("pending");
 		expect(row!.error).toBeNull();
+	});
+
+	it("retry requires queue and preserves failed status when queue is unavailable", async () => {
+		const originalQueue = getJobQueueForTesting();
+		setJobQueueForTesting(undefined);
+		const fileName = `retry-no-queue-${Date.now()}.pdf`;
+		const filePath = path.join(TEST_ROOT, "附件", fileName);
+		await fs.writeFile(filePath, "%PDF-1.4");
+		await seedStatus(filePath, "convert_failed", WORKSPACE, { error: "Old error" });
+
+		try {
+			const res = await api.post("/api/workspace/files/retry").send({ path: filePath });
+			expect(res.status).toBe(503);
+			expect(res.text).toContain("Background job queue is not available");
+
+			const db = await getRidgeDb();
+			const row = db
+				.prepare("SELECT status, error FROM file_processing_status WHERE file_path = ?")
+				.get(filePath) as { status: string; error: string | null } | undefined;
+			expect(row).toEqual({ status: "convert_failed", error: "Old error" });
+		} finally {
+			setJobQueueForTesting(originalQueue);
+		}
 	});
 
 	it("retry rejects .ridge and external paths", async () => {

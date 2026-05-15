@@ -455,17 +455,25 @@ async function insertFailureNotification(targetPath: string, error: string): Pro
 	const fileName = path.basename(targetPath);
 	db.prepare(
 		`INSERT INTO notification_events(
-			event_id, event_type, severity, title, body, payload_json, status, created_at, read_at
-		) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			event_id, event_type, source, severity, title, body,
+			related_type, related_id, actions_json, payload_json,
+			status, created_at, updated_at, read_at, handled_at
+		) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	).run(
 		`notification-${crypto.randomUUID()}`,
 		"rag.index_failed",
+		"rag",
 		"error",
 		`RAG 索引失败: ${fileName}`,
 		error,
+		"file",
+		targetPath,
+		JSON.stringify([{ id: "retry", label: "重试" }, { id: "open_related", label: "打开对象" }]),
 		JSON.stringify({ filePath: targetPath, error }),
 		"unread",
 		now,
+		now,
+		null,
 		null,
 	);
 }

@@ -71,6 +71,7 @@ import {
 	createDeviceRegistrationRouter,
 	createRuntimeBundleRouter,
 } from "./routes/runtime-bundle.js";
+import { createNotificationsRouter } from "./routes/notifications.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
@@ -779,6 +780,15 @@ app.use("/api/devices", createServerDeviceRouter());
 app.use("/api/devices", createDesktopForwardRouter());
 // ===== Bundle Router (Task 32) =====
 app.use("/api/devices", createBundleRouter(defaultWorkspaceDir));
+app.use(
+	"/api/notifications",
+	createNotificationsRouter({
+		defaultWorkspaceDir,
+		getRidgeDb,
+		getJobQueue: () => jobQueue,
+		isConversionEnabled: () => isConversionEnabled?.() ?? false,
+	}),
+);
 // ===== Workspace Data Routes =====
 // ===== Workspace Data Routes =====
 const workspaceDataRouter = createWorkspaceDataRouter({
