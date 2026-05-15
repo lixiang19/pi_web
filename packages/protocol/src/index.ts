@@ -99,6 +99,34 @@ export interface AutomationRunNowResponse {
 	sessionId: string;
 }
 
+export interface RuntimeMcpServerConfig {
+	transport: "streamable_http";
+	url: string;
+	headers: {
+		Authorization: string;
+		"x-ridge-device-token": string;
+	};
+	tools: Array<"rag_search" | "graph_search" | "file_search" | "read_workspace_file">;
+}
+
+export interface RidgeRuntimeBundle {
+	bundleId: string;
+	deviceId: string;
+	version: number;
+	workspaceDir: string;
+	generatedAt: number;
+	mcp: {
+		servers: {
+			ridge_workspace: RuntimeMcpServerConfig;
+		};
+	};
+	startupContext: {
+		workspaceDir: string;
+		memoryPath: string;
+		wikiIndexPath: string;
+	};
+}
+
 export interface ResourceSourceInfo {
 	path: string;
 	source: string;

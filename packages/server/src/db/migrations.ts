@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 15;
+export const RIDGE_DB_SCHEMA_VERSION = 16;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS devices (
   device_type TEXT NOT NULL DEFAULT 'server',
   status TEXT NOT NULL DEFAULT 'offline',
   capabilities_json TEXT NOT NULL DEFAULT '{}',
+  token_hash TEXT,
   last_seen_at INTEGER,
   created_at INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0
@@ -722,6 +723,15 @@ CREATE INDEX IF NOT EXISTS idx_search_index_status_workspace
 -- Column repair adds search_chunks.embedding_vector for existing databases.
 CREATE INDEX IF NOT EXISTS idx_search_chunks_embedding
   ON search_chunks(embedding_id);
+`,
+  },
+  {
+    version: 16,
+    name: 'device token hash for runtime MCP auth',
+    sql: `
+-- Column repair adds devices.token_hash for existing databases.
+CREATE INDEX IF NOT EXISTS idx_devices_token_hash
+  ON devices(token_hash);
 `,
   },
 ];

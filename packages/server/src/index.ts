@@ -59,6 +59,11 @@ import { createWorktreeRouter } from "./routes/worktrees.js";
 import { createWorkspaceFilesRouter } from "./routes/workspace-files.js";
 import { createWorkspaceSpaceRouter } from "./routes/workspace-space.js";
 import { createWorkspaceSearchRouter } from "./routes/workspace-search.js";
+import { createWorkspaceMcpRouter } from "./routes/workspace-mcp.js";
+import {
+	createDeviceRegistrationRouter,
+	createRuntimeBundleRouter,
+} from "./routes/runtime-bundle.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
@@ -524,7 +529,10 @@ initSessionPayload({
 app.get("/api/auth/session", authRuntime.session);
 app.post("/api/auth/login", authRuntime.login);
 app.post("/api/auth/logout", authRuntime.logout);
+app.use(createRuntimeBundleRouter({ defaultWorkspaceDir, getRidgeDb }));
+app.use(createWorkspaceMcpRouter({ defaultWorkspaceDir, getRidgeDb }));
 app.use(authRuntime.requireApiAuth);
+app.use(createDeviceRegistrationRouter({ defaultWorkspaceDir, getRidgeDb }));
 
 app.use("/api/fleeting", createFleetingRouter({
 	db: await initializeRidgeDb(defaultWorkspaceDir),
