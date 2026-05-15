@@ -19,10 +19,14 @@ import {
 	updateMilestone,
 	updateTask,
 } from "../task-system.js";
+import type { createBackgroundJobQueue } from "../background-jobs.js";
+import { enqueueTaskReviewJob } from "../task-review.js";
 import type { SessionRecord, SessionSnapshot } from "../types/index.js";
 import type { ProjectContextResolver } from "../project-context.js";
 import type { WorkspaceChatConfig } from "../workspace-chat.js";
 import type { ThinkingLevel } from "../types/index.js";
+
+type BackgroundJobQueue = ReturnType<typeof createBackgroundJobQueue>;
 
 const actorSchema = z.enum(["user", "agent"]).default("user");
 
@@ -79,17 +83,42 @@ const updateTaskSchema = z
 	});
 
 export interface WorkspaceTasksRouterDeps {
-	createSessionRecord: (params: { cwd: string; title?: string; model?: string }) => Promise<SessionRecord>;
-	applyTaskSessionAgentSelection: (record: SessionRecord, selection: { agentName?: string; model?: string; thinkingLevel?: ThinkingLevel | null }) => Promise<void>;
-	persistSessionRecordMetadata: (record: SessionRecord) => Promise<void>;
-	upsertIndexedSessionRecord: (record: SessionRecord, deps: { projectContextResolver: ProjectContextResolver; workspaceChatConfig: WorkspaceChatConfig }) => Promise<void>;
-	toSessionSnapshot: (record: SessionRecord, options: { rounds?: number }) => Promise<SessionSnapshot>;
-	getProjects: () => Promise<{ projects: Array<{ id: string; path: string; projectType: 'internal' | 'external' | 'workspace'; deviceId?: string; isOnline: boolean; archivedAt?: number }> }>;
-	getDefaultModel: () => Promise<string>;
-	getDefaultThinkingLevel: () => Promise<ThinkingLevel>;
-	projectContextResolver: ProjectContextResolver;
-	workspaceChatConfig: WorkspaceChatConfig;
+	createSessionRecord?: (params: { cwd: string; title?: string; model?: string }) => Promise<SessionRecord>;
+	applyTaskSessionAgentSelection?: (record: SessionRecord, selection: { agentName?: string; model?: string; thinkingLevel?: ThinkingLevel | null }) => Promise<void>;
+	persistSessionRecordMetadata?: (record: SessionRecord) => Promise<void>;
+	upsertIndexedSessionRecord?: (record: SessionRecord, deps: { projectContextResolver: ProjectContextResolver; workspaceChatConfig: WorkspaceChatConfig }) => Promise<void>;
+	toSessionSnapshot?: (record: SessionRecord, options: { rounds?: number }) => Promise<SessionSnapshot>;
+	getProjects?: () => Promise<{ projects: Array<{ id: string; path: string; projectType: 'internal' | 'external' | 'workspace'; deviceId?: string; isOnline: boolean; archivedAt?: number }> }>;
+	getDefaultModel?: () => Promise<string>;
+	getDefaultThinkingLevel?: () => Promise<ThinkingLevel>;
+	projectContextResolver?: ProjectContextResolver;
+	workspaceChatConfig?: WorkspaceChatConfig;
+	getJobQueue?: () => BackgroundJobQueue | undefined;
 }
+
+type ProcessingSessionDeps = Required<Omit<WorkspaceTasksRouterDeps, "getJobQueue">>;
+
+const requireProcessingSessionDeps = (
+	deps: WorkspaceTasksRouterDeps | undefined,
+): ProcessingSessionDeps => {
+	if (
+		!deps?.createSessionRecord ||
+		!deps.applyTaskSessionAgentSelection ||
+		!deps.persistSessionRecordMetadata ||
+		!deps.upsertIndexedSessionRecord ||
+		!deps.toSessionSnapshot ||
+		!deps.getProjects ||
+		!deps.getDefaultModel ||
+		!deps.getDefaultThinkingLevel ||
+		!deps.projectContextResolver ||
+		!deps.workspaceChatConfig
+	) {
+		const error = new Error("处理会话服务尚未初始化") as import("../types/index.js").HttpError;
+		error.statusCode = 503;
+		throw error;
+	}
+	return deps as ProcessingSessionDeps;
+};
 
 export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: WorkspaceTasksRouterDeps) {
 	const router = express.Router();
@@ -109,6 +138,24 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 			const payload = createTaskSchema.parse(req.body ?? {});
 			const task = await createTask(defaultWorkspaceDir, payload);
 			res.status(201).json({ task });
+		} catch (error) {
+			next(error);
+		}
+	});
+
+	router.post("/review", async (_req: Request, res: Response, next: NextFunction) => {
+		try {
+			const queue = deps?.getJobQueue?.();
+			if (!queue) {
+				const error = new Error("后台任务队列尚未初始化") as import("../types/index.js").HttpError;
+				error.statusCode = 503;
+				throw error;
+			}
+			const job = enqueueTaskReviewJob(queue, {
+				workspaceDir: defaultWorkspaceDir,
+				trigger: "manual",
+			});
+			res.status(202).json({ job });
 		} catch (error) {
 			next(error);
 		}
@@ -155,11 +202,7 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 		"/:taskId/processing-session",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				if (!deps) {
-					const error = new Error("处理会话服务尚未初始化") as import("../types/index.js").HttpError;
-					error.statusCode = 503;
-					throw error;
-				}
+				const processingDeps = requireProcessingSessionDeps(deps);
 
 				const task = await getTask(defaultWorkspaceDir, req.params.taskId);
 				if (!task.processingSessionId) {
@@ -170,7 +213,7 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 
 				// 返回已有会话前也要检查绑定项目离线状态
 				if (task.projectId) {
-					const projectsState = await deps.getProjects();
+					const projectsState = await processingDeps.getProjects();
 					const project = projectsState.projects.find((p) => p.id === task.projectId);
 					if (project && project.deviceId && !project.isOnline) {
 						const error = new Error("项目离线，无法继续处理会话") as import("../types/index.js").HttpError;
@@ -190,18 +233,14 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 		"/:taskId/processing-session",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				if (!deps) {
-					const error = new Error("处理会话服务尚未初始化") as import("../types/index.js").HttpError;
-					error.statusCode = 503;
-					throw error;
-				}
+				const processingDeps = requireProcessingSessionDeps(deps);
 
 				const task = await getTask(defaultWorkspaceDir, req.params.taskId);
 
 				// 确定 cwd 并检查项目离线状态（无论是否已有会话都要检查）
 				let cwd = defaultWorkspaceDir;
 				if (task.projectId) {
-					const projectsState = await deps.getProjects();
+					const projectsState = await processingDeps.getProjects();
 					const project = projectsState.projects.find((p) => p.id === task.projectId);
 					if (!project) {
 						const error = new Error(`项目不存在: ${task.projectId}`) as import("../types/index.js").HttpError;
@@ -236,24 +275,24 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 				}
 
 				// 创建会话
-				const record = await deps.createSessionRecord({
+				const record = await processingDeps.createSessionRecord({
 					cwd,
 					title: task.title,
 				});
 
 				// 强制选择任务 Agent（mode=task 且 enabled）
-				const defaultModel = await deps.getDefaultModel();
-				const defaultThinkingLevel = await deps.getDefaultThinkingLevel();
-				await deps.applyTaskSessionAgentSelection(record, {
+				const defaultModel = await processingDeps.getDefaultModel();
+				const defaultThinkingLevel = await processingDeps.getDefaultThinkingLevel();
+				await processingDeps.applyTaskSessionAgentSelection(record, {
 					agentName: "task-agent",
 					model: defaultModel || undefined,
 					thinkingLevel: defaultThinkingLevel || undefined,
 				});
 
-				await deps.persistSessionRecordMetadata(record);
-				await deps.upsertIndexedSessionRecord(record, {
-					projectContextResolver: deps.projectContextResolver,
-					workspaceChatConfig: deps.workspaceChatConfig,
+				await processingDeps.persistSessionRecordMetadata(record);
+				await processingDeps.upsertIndexedSessionRecord(record, {
+					projectContextResolver: processingDeps.projectContextResolver,
+					workspaceChatConfig: processingDeps.workspaceChatConfig,
 				});
 
 				// 原子/条件记录 processing_session_id
@@ -264,7 +303,7 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 					return;
 				}
 
-				const snapshot = await deps.toSessionSnapshot(record, {});
+				const snapshot = await processingDeps.toSessionSnapshot(record, {});
 				res.status(201).json({ sessionId: record.id, created: true, snapshot });
 			} catch (error) {
 				next(error);

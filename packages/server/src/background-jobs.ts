@@ -110,6 +110,9 @@ const serialScope = (job: BackgroundJob): string | null => {
 	if (job.type === "summary.daily" && job.relatedType === "daily" && job.relatedId) {
 		return `${job.type}:${job.relatedType}:${job.relatedId}`;
 	}
+	if (job.type === "task.review" && job.relatedType === "workspace" && job.relatedId) {
+		return `${job.type}:${job.relatedType}:${job.relatedId}`;
+	}
 	return null;
 };
 

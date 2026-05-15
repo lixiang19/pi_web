@@ -39,7 +39,7 @@
 | 32 runtime bundle 与设备专属 Skill | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 33 workspace MCP 查读工具 | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 34 通知与建议中心 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
-| 35 task review agent 任务回顾 | - | - | - | - | - | - | - |
+| 35 task review agent 任务回顾 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 36 自动化规则运行与跳过 | ◐ | ◐ | ◐ | ◐ | - | - | - |
 | 37 备份恢复设置主题收尾 | ◐ | - | - | ◐ | - | - | - |
 | 38 AI 对话主线闭环 | - | - | - | - | - | - | - |
@@ -58,6 +58,7 @@
 - **28 Kuzu 图谱存储与抽取**：`graph-store.ts` 使用 Kuzu Node.js 客户端写入 `.ridge/graph.kuzu/database.kuzu`，初始化写 `.ridge/graph.kuzu/schema.cypher`；schema 包含 Project/File/Task/Person/Org/Concept/Tech/Source/Decision 节点和带 `evidence/source_path/confidence/updated_at` 的 EvidenceRelation，证据统一截断为 80 字以内。`graph-agent.ts` 只从已索引 Markdown 标准产物、daily 和内部项目 Markdown 收集输入，排除外部项目、`.ridge`、`.originals` 和非 Markdown 原件；直接读取来源前校验 `realpath`，防止内部项目根目录符号链接越界；`rag-worker.ts` 夜间链路在 deferred RAG 后触发 graph runner；`POST /api/workspace/graph/corrections` 支持用户自然语言纠错后由 graph agent 写回，并有 HTTP 集成测试。`GET /api/workspace/backup` 生成真实备份 ZIP，包含 `.ridge/graph.kuzu`，排除可重建缓存并跳过符号链接；隐藏 Git exclude 包含 `.ridge`。测试覆盖真实 Kuzu 写入读回、graph store/schema/纠错、source 边界与 symlink 防护、夜间顺序、纠错 API、备份 ZIP/API、隐藏 Git exclude 和初始化 schema 文件。
 - **29 Wiki 夜间维护与 index 注入**：`wiki-agent.ts` 收集当前 `Wiki/**/*.md`、`记忆/MEMORY.md`、daily、已索引 Markdown RAG chunk 和 Kuzu 图谱快照；Wiki agent 严格返回 JSON，只允许相对 `Wiki/` 的 `.md` 路径，拒绝绝对路径、`..`、`Wiki/` 前缀、隐藏路径和符号链接写入路径。`rag-worker.ts` 夜间链路为 deferred RAG -> graph -> Wiki -> immediate RAG，保证 Wiki 写入或未索引保留页在本轮进入 RAG；删除 Wiki 页同步清理 RAG target。`runtime-bundle.ts` 和普通会话注入均读取当前真源 `记忆/MEMORY.md` 与 `Wiki/index.md`，空 index 不注入。`wiki-agent.test.ts`、`graph-worker.test.ts`、`task30-31-32.test.ts` 覆盖。
 - **34 通知与建议中心**：左侧「通知」固定入口已接入 `NotificationCenterView.vue`，展示未处理数、筛选、列表和动作；`GET /api/notifications` 与 `POST /api/notifications/:eventId/actions` 支持忽略、标记已处理、重试、接受/拒绝建议、打开关联对象。`notification_events` 扩展 source/related/actions/handled 字段；文件处理失败、RAG 失败、后台任务最终失败写入关联对象和动作。新增通知 API 与前端组件测试，并通过全量测试。
+- **35 task review agent 任务回顾**：`task-review.ts` 扫描任务、里程碑、任务绑定处理会话、未绑定任务的最新未归档处理会话索引和最近 daily，生成过期任务、长期阻塞、审核确认、处理会话无进展、daily 不一致、可拆分任务、里程碑延期风险等 `task_review.suggestion` 通知；不直接修改正式任务或里程碑。`POST /api/workspace/tasks/review` 手动入队，服务启动后 `task.review` worker 处理队列，scheduler 每 6 小时定期入队并依赖队列去重。任务页可触发回顾，短周期自动刷新等待异步建议落库，并在任务/里程碑详情显示关联建议；接受建议通过事务内 claim 防重复，且只有用户接受后才写正式对象。`task-review.test.ts` 和 `TaskView.test.ts` 覆盖。
 - **36 自动化规则运行与跳过**：`automation_rules` CRUD、调度器、手动 run API、UI 已有，但 `automation_runs` 无业务写入，跳过记录/失败通知/运行历史未闭环。只能标为自动化规则 CRUD/调度部分完成。
 - **37 备份恢复设置主题收尾**：设置页真实实现只有主题/明暗模式、退出、偏好；没有备份恢复、数据路径、错误边界。只能标“设置基础部分完成”。
 - **17 文件页与正式附件目录**：左侧导航“文件”入口存在，`WorkspacePage.vue` 中已接入 `FilesView.vue` 真实文件页（文件树浏览、状态展示、文件预览），不再是占位。但上传功能走 `uploadFiles` API、`FilesView` 本身无上传按钮，附件管理（移动/重命名）未在前端完整实现。

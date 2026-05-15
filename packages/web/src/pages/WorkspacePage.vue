@@ -1080,6 +1080,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 				:workspace-dir="workspaceDir"
 				@open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
 				@open-session="handleOpenSession($event)"
+				@notifications-updated="notificationsStore.load()"
 			/>
 			<InboxView
 			  v-else-if="tab.featureId === 'moments'"

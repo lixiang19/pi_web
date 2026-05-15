@@ -3,6 +3,13 @@ import { computed, ref } from "vue";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import TaskView from "@/components/workspace/TaskView.vue";
 import type { MilestoneItem, TaskItem } from "@/composables/useWorkspaceTasks";
+import type { NotificationEvent } from "@/lib/api";
+
+const { requestTaskReview } = vi.hoisted(() => ({
+	requestTaskReview: vi.fn(() =>
+		Promise.resolve({ job: { jobId: "job-review", type: "task.review" } }),
+	),
+}));
 
 const openProcessingSession = vi.fn(() =>
 	Promise.resolve({ success: true, sessionId: "session-123", created: true }) as Promise<Record<string, unknown>>,
@@ -40,8 +47,36 @@ const mockAddMilestone = vi.fn(() =>
 	}),
 );
 const mockLoadProjects = vi.fn();
+const mockLoadTasks = vi.fn(() => Promise.resolve());
+const mockLoadNotifications = vi.fn(() => Promise.resolve());
+const mockRunNotificationAction = vi.fn(() => Promise.resolve({ success: true }));
+const createDefaultNotifications = (): NotificationEvent[] => [
+	{
+		id: "notification-review-1",
+		eventType: "task_review.suggestion",
+		type: "suggestion",
+		source: "task_review",
+		severity: "info",
+		status: "pending",
+		title: "任务已过期：任务一",
+		body: "截止日期早于今天\n建议动作：将任务优先级调整为紧急",
+		payload: {
+			suggestionType: "overdue_task",
+			relatedTaskId: "task-1",
+			proposedAction: "将任务优先级调整为紧急",
+		},
+		related: { type: "task", id: "task-1" },
+		actions: [
+			{ id: "accept_suggestion", label: "接受建议", kind: "accept_suggestion" },
+			{ id: "reject_suggestion", label: "拒绝建议", kind: "reject_suggestion" },
+		],
+		createdAt: 1000,
+		updatedAt: 1000,
+		handledAt: null,
+	},
+];
 
-const milestones = ref<MilestoneItem[]>([
+const createDefaultMilestones = (): MilestoneItem[] => [
 	{
 		id: "milestone-1",
 		workspacePath: "/workspace",
@@ -58,9 +93,9 @@ const milestones = ref<MilestoneItem[]>([
 		updatedAt: 1,
 		taskCount: 1,
 	},
-]);
+];
 
-const tasks = ref<TaskItem[]>([
+const createDefaultTasks = (): TaskItem[] => [
 	{
 		id: "task-1",
 		workspacePath: "/workspace",
@@ -93,7 +128,11 @@ const tasks = ref<TaskItem[]>([
 		createdAt: 2,
 		updatedAt: 2,
 	},
-]);
+];
+
+const notifications = ref<NotificationEvent[]>(createDefaultNotifications());
+const milestones = ref<MilestoneItem[]>(createDefaultMilestones());
+const tasks = ref<TaskItem[]>(createDefaultTasks());
 
 vi.mock("@/composables/useWorkspaceTasks", () => ({
 	useWorkspaceTasks: () => ({
@@ -116,6 +155,7 @@ vi.mock("@/composables/useWorkspaceTasks", () => ({
 		tasksByMilestone: computed(() => [
 			{ milestone: milestones.value[0], tasks: tasks.value },
 		]),
+		tasks,
 		isLoading: ref(false),
 		addTask: mockAddTask,
 		addMilestone: mockAddMilestone,
@@ -125,6 +165,7 @@ vi.mock("@/composables/useWorkspaceTasks", () => ({
 		openProcessingSession,
 		removeMilestone: vi.fn(),
 		projectFilter: ref<string | null | undefined>(undefined),
+		load: mockLoadTasks,
 	}),
 }));
 
@@ -137,6 +178,23 @@ vi.mock("@/composables/useProjects", () => ({
 		isLoading: ref(false),
 		error: ref(""),
 	}),
+}));
+
+vi.mock("@/composables/useNotifications", () => ({
+	useNotifications: () => ({
+		notifications,
+		counts: ref({ unhandled: 1, all: 1, failed: 0, suggestions: 1, handled: 0 }),
+		filter: ref("suggestions"),
+		isLoading: ref(false),
+		error: ref(""),
+		unhandledCount: computed(() => 1),
+		load: mockLoadNotifications,
+		runAction: mockRunNotificationAction,
+	}),
+}));
+
+vi.mock("@/lib/api", () => ({
+	requestTaskReview,
 }));
 
 const mountTaskView = () =>
@@ -174,6 +232,9 @@ const mountTaskView = () =>
 
 	describe("TaskView", () => {
 	beforeEach(() => {
+		notifications.value = createDefaultNotifications();
+		milestones.value = createDefaultMilestones();
+		tasks.value = createDefaultTasks();
 		updateTask.mockClear();
 		mockAddTask.mockClear();
 		mockAddTask.mockImplementation(() =>
@@ -184,6 +245,10 @@ const mountTaskView = () =>
 			Promise.resolve({ success: true, milestone: { id: "new-ms", title: "新里程碑" } }),
 		);
 		mockLoadProjects.mockClear();
+		mockLoadTasks.mockClear();
+		mockLoadNotifications.mockClear();
+		mockRunNotificationAction.mockClear();
+		requestTaskReview.mockClear();
 		openProcessingSession.mockClear();
 		openProcessingSession.mockImplementation(() =>
 			Promise.resolve({ success: true, sessionId: "session-123", created: true }),
@@ -191,6 +256,7 @@ const mountTaskView = () =>
 	});
 
 	afterEach(() => {
+		vi.useRealTimers();
 		// Reset to default success implementation so other tests don't inherit failures
 		mockAddTask.mockImplementation(() =>
 			Promise.resolve({ success: true, task: { id: "new-task", title: "新任务" } }),
@@ -420,5 +486,103 @@ const mountTaskView = () =>
 		// calendar has no tasks in this mock because all tasks have null dueDate
 		// just check it renders
 		expect(wrapper.text()).toContain("无截止日期");
+	});
+
+	it("triggers task review from the task page", async () => {
+		vi.useFakeTimers();
+		const wrapper = mountTaskView();
+
+		const reviewBtn = wrapper.findAll("button").find((button) => button.text().includes("任务回顾"));
+		expect(reviewBtn).toBeDefined();
+		await reviewBtn!.trigger("click");
+
+		expect(requestTaskReview).toHaveBeenCalled();
+		expect(mockLoadNotifications).toHaveBeenCalledWith("suggestions");
+		expect(wrapper.emitted("notificationsUpdated")).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(mockLoadNotifications).toHaveBeenCalledTimes(2);
+		wrapper.unmount();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(mockLoadNotifications).toHaveBeenCalledTimes(2);
+	});
+
+	it("shows related task review suggestions in task detail and applies actions", async () => {
+		mockRunNotificationAction.mockImplementationOnce(async () => {
+			tasks.value[0] = { ...tasks.value[0]!, status: "in_progress", updatedAt: 3 };
+			return { success: true };
+		});
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+		vm["selectedTask"] = tasks.value[0];
+		await wrapper.vm.$nextTick();
+
+		expect(wrapper.text()).toContain("任务已过期：任务一");
+		const acceptBtn = wrapper.findAll("button").find((button) => button.text().includes("接受建议"));
+		expect(acceptBtn).toBeDefined();
+		await acceptBtn!.trigger("click");
+
+		expect(mockRunNotificationAction).toHaveBeenCalledWith("notification-review-1", "accept_suggestion");
+		expect(mockLoadTasks).toHaveBeenCalled();
+		expect(vm["selectedTask"]).toMatchObject({ status: "in_progress", updatedAt: 3 });
+		expect(wrapper.emitted("notificationsUpdated")).toHaveLength(1);
+	});
+
+	it("rejects related task review suggestions and refreshes notifications", async () => {
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+		vm["selectedTask"] = tasks.value[0];
+		await wrapper.vm.$nextTick();
+
+		const rejectBtn = wrapper.findAll("button").find((button) => button.text().includes("拒绝建议"));
+		expect(rejectBtn).toBeDefined();
+		await rejectBtn!.trigger("click");
+
+		expect(mockRunNotificationAction).toHaveBeenCalledWith("notification-review-1", "reject_suggestion");
+		expect(mockLoadTasks).toHaveBeenCalled();
+		expect(mockLoadNotifications).toHaveBeenCalledWith("suggestions");
+		expect(wrapper.emitted("notificationsUpdated")).toHaveLength(1);
+	});
+
+	it("shows related milestone review suggestions and refreshes selected milestone after action", async () => {
+		notifications.value = [
+			{
+				id: "notification-milestone-1",
+				eventType: "task_review.suggestion",
+				type: "suggestion",
+				source: "task_review",
+				severity: "info",
+				status: "pending",
+				title: "里程碑存在延期风险：M1",
+				body: "里程碑已过期\n建议动作：将里程碑推进为进行中",
+				payload: {
+					suggestionType: "milestone_risk",
+					relatedMilestoneId: "milestone-1",
+					proposedAction: "将里程碑推进为进行中",
+				},
+				related: { type: "milestone", id: "milestone-1" },
+				actions: [
+					{ id: "accept_suggestion", label: "接受建议", kind: "accept_suggestion" },
+				],
+				createdAt: 1000,
+				updatedAt: 1000,
+				handledAt: null,
+			},
+		];
+		mockRunNotificationAction.mockImplementationOnce(async () => {
+			milestones.value[0] = { ...milestones.value[0]!, status: "in_progress", updatedAt: 4 };
+			return { success: true };
+		});
+		const wrapper = mountTaskView();
+		const vm = wrapper.vm as unknown as Record<string, unknown>;
+		vm["selectedMilestone"] = milestones.value[0];
+		await wrapper.vm.$nextTick();
+
+		expect(wrapper.text()).toContain("里程碑存在延期风险：M1");
+		const acceptBtn = wrapper.findAll("button").find((button) => button.text().includes("接受建议"));
+		expect(acceptBtn).toBeDefined();
+		await acceptBtn!.trigger("click");
+
+		expect(mockRunNotificationAction).toHaveBeenCalledWith("notification-milestone-1", "accept_suggestion");
+		expect(vm["selectedMilestone"]).toMatchObject({ status: "in_progress", updatedAt: 4 });
 	});
 });

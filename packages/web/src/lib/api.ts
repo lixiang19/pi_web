@@ -1257,6 +1257,12 @@ export function deleteWorkspaceTask(taskId: string) {
 	});
 }
 
+export function requestTaskReview() {
+	return request<{ job: { jobId: string; type: string; status: string } }>("/api/workspace/tasks/review", {
+		method: "POST",
+	});
+}
+
 export function getWorkspaceMilestones() {
 	return request<MilestonesListResponse>("/api/workspace/milestones");
 }

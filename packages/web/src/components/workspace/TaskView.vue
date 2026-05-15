@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import {
 	CalendarDays,
+	CheckCircle2,
+	CircleSlash2,
 	LoaderCircle,
 	Plus,
+	RefreshCcw,
+	Sparkles,
 	Trash2,
 } from "lucide-vue-next";
+import { toast } from "vue-sonner";
 
 import {
 	useWorkspaceTasks,
@@ -13,6 +18,7 @@ import {
 	type TaskItem,
 } from "@/composables/useWorkspaceTasks";
 import { useProjects } from "@/composables/useProjects";
+import { useNotifications } from "@/composables/useNotifications";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -40,13 +46,22 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { WorkspaceTaskPriority, WorkspaceTaskStatus } from "@/lib/api";
+import {
+	requestTaskReview,
+	type NotificationEvent,
+	type WorkspaceTaskPriority,
+	type WorkspaceTaskStatus,
+} from "@/lib/api";
 
-const emit = defineEmits<{ openSession: [sessionId: string] }>();
+const emit = defineEmits<{
+	openSession: [sessionId: string];
+	notificationsUpdated: [];
+}>();
 
-defineProps<{ workspaceDir: string }>();
+const props = defineProps<{ workspaceDir: string }>();
 
 const {
+	tasks,
 	milestones,
 	stats,
 	tasksByStatus,
@@ -60,9 +75,11 @@ const {
 	removeMilestone,
 	openProcessingSession,
 	projectFilter,
+	load,
 } = useWorkspaceTasks();
 
 const { projects, load: loadProjects } = useProjects();
+const notificationsStore = useNotifications(() => props.workspaceDir);
 
 const viewMode = ref<"kanban" | "list" | "calendar" | "milestones">("kanban");
 const newTaskTitle = ref("");
@@ -82,6 +99,10 @@ const draggedTask = ref<TaskItem | null>(null);
 const kanbanMilestoneFilter = ref("all");
 const pendingDeleteTask = ref<TaskItem | null>(null);
 const pendingDeleteMilestone = ref<MilestoneItem | null>(null);
+const isReviewingTasks = ref(false);
+const pendingReviewActionKeys = ref(new Set<string>());
+const reviewRefreshTimer = ref<ReturnType<typeof setTimeout> | null>(null);
+const isMounted = ref(true);
 const currentMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
 const editTaskTitle = ref("");
@@ -184,6 +205,35 @@ const selectedMilestoneTasks = computed(() => {
 			(group) => group.milestone.id === selectedMilestone.value?.id,
 		)?.tasks ?? []
 	);
+});
+
+const taskReviewNotifications = computed(() =>
+	notificationsStore.notifications.value.filter(
+		(notification) =>
+			notification.eventType === "task_review.suggestion" &&
+			notification.status !== "handled" &&
+			notification.status !== "dismissed",
+	),
+);
+
+const selectedReviewNotifications = computed(() => {
+	const task = selectedTask.value;
+	if (task) {
+		return taskReviewNotifications.value.filter(
+			(notification) =>
+				notification.related?.type === "task" &&
+				notification.related.id === task.id,
+		);
+	}
+	const milestone = selectedMilestone.value;
+	if (milestone) {
+		return taskReviewNotifications.value.filter(
+			(notification) =>
+				notification.related?.type === "milestone" &&
+				notification.related.id === milestone.id,
+		);
+	}
+	return [];
 });
 
 const calendarCells = computed(() => {
@@ -445,6 +495,101 @@ const handleOpenProcessingSession = async () => {
 		emit("openSession", result.sessionId);
 	}
 };
+
+const refreshSelection = () => {
+	if (selectedTask.value) {
+		selectedTask.value = tasks.value.find((task) => task.id === selectedTask.value?.id) ?? selectedTask.value;
+	}
+	if (selectedMilestone.value) {
+		selectedMilestone.value =
+			milestones.value.find((milestone) => milestone.id === selectedMilestone.value?.id) ??
+			selectedMilestone.value;
+	}
+};
+
+const clearReviewRefreshTimer = () => {
+	if (reviewRefreshTimer.value) {
+		clearTimeout(reviewRefreshTimer.value);
+		reviewRefreshTimer.value = null;
+	}
+};
+
+const scheduleReviewSuggestionRefresh = (remainingAttempts = 8) => {
+	clearReviewRefreshTimer();
+	const tick = async (remaining: number) => {
+		if (!isMounted.value) return;
+		await notificationsStore.load("suggestions");
+		if (!isMounted.value) return;
+		emit("notificationsUpdated");
+		if (remaining <= 1) {
+			reviewRefreshTimer.value = null;
+			return;
+		}
+		reviewRefreshTimer.value = setTimeout(() => {
+			void tick(remaining - 1);
+		}, 1500);
+	};
+	reviewRefreshTimer.value = setTimeout(() => {
+		void tick(remainingAttempts);
+	}, 1000);
+};
+
+const handleRunTaskReview = async () => {
+	if (isReviewingTasks.value) return;
+	isReviewingTasks.value = true;
+	try {
+		await requestTaskReview();
+		await notificationsStore.load("suggestions");
+		emit("notificationsUpdated");
+		scheduleReviewSuggestionRefresh();
+		toast.success("任务回顾已进入后台队列");
+	} catch (error) {
+		toast.error("触发任务回顾失败", {
+			description: error instanceof Error ? error.message : String(error),
+		});
+	} finally {
+		isReviewingTasks.value = false;
+	}
+};
+
+const reviewActionKey = (notification: NotificationEvent, actionId: string) =>
+	`${notification.id}:${actionId}`;
+
+const isReviewActionPending = (notification: NotificationEvent, actionId: string) =>
+	pendingReviewActionKeys.value.has(reviewActionKey(notification, actionId));
+
+const setReviewActionPending = (
+	notification: NotificationEvent,
+	actionId: string,
+	pending: boolean,
+) => {
+	const next = new Set(pendingReviewActionKeys.value);
+	const key = reviewActionKey(notification, actionId);
+	if (pending) next.add(key);
+	else next.delete(key);
+	pendingReviewActionKeys.value = next;
+};
+
+const handleReviewAction = async (notification: NotificationEvent, actionId: string) => {
+	if (isReviewActionPending(notification, actionId)) return;
+	setReviewActionPending(notification, actionId, true);
+	try {
+		const result = await notificationsStore.runAction(notification.id, actionId);
+		if (result.success) {
+			await load();
+			refreshSelection();
+			await notificationsStore.load("suggestions");
+			emit("notificationsUpdated");
+		}
+	} finally {
+		setReviewActionPending(notification, actionId, false);
+	}
+};
+
+onBeforeUnmount(() => {
+	isMounted.value = false;
+	clearReviewRefreshTimer();
+});
 </script>
 
 <template>
@@ -490,6 +635,10 @@ const handleOpenProcessingSession = async () => {
             </SelectContent>
           </Select>
           <Input v-model="newTaskDueDate" type="date" class="h-8 w-32 text-xs" />
+          <Button variant="outline" size="sm" class="h-8 gap-1 text-xs" :disabled="isReviewingTasks" @click="handleRunTaskReview">
+            <LoaderCircle v-if="isReviewingTasks" class="size-3 animate-spin" />
+            <RefreshCcw v-else class="size-3" />任务回顾
+          </Button>
           <Button size="sm" class="h-8 gap-1 text-xs" :disabled="!newTaskTitle.trim() || !newTaskAcceptanceCriteria.trim()" @click="handleAddTask">
             <Plus class="size-3" />新建任务
           </Button>
@@ -644,6 +793,32 @@ const handleOpenProcessingSession = async () => {
         <SheetHeader>
           <SheetTitle class="text-base">{{ selectedTask.title }}</SheetTitle>
         </SheetHeader>
+        <div v-if="selectedReviewNotifications.length" class="space-y-2">
+          <article v-for="notification in selectedReviewNotifications" :key="notification.id" class="rounded-md border border-border bg-muted/30 p-3">
+            <div class="flex items-start gap-2">
+              <Sparkles class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold">{{ notification.title }}</p>
+                <p class="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-muted-foreground">{{ notification.body }}</p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    v-for="action in notification.actions.filter((item) => item.id === 'accept_suggestion' || item.id === 'reject_suggestion')"
+                    :key="action.id"
+                    size="sm"
+                    :variant="action.id === 'accept_suggestion' ? 'default' : 'outline'"
+                    class="h-7 gap-1 text-[11px]"
+                    :disabled="isReviewActionPending(notification, action.id)"
+                    @click="handleReviewAction(notification, action.id)"
+                  >
+                    <CheckCircle2 v-if="action.id === 'accept_suggestion'" class="size-3" />
+                    <CircleSlash2 v-else class="size-3" />
+                    {{ action.label }}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
         <div class="space-y-3">
           <Input v-model="editTaskTitle" class="h-8 text-xs" placeholder="标题" />
           <Textarea v-model="editTaskAcceptanceCriteria" class="min-h-24 text-xs" placeholder="完成标准" />
@@ -696,6 +871,32 @@ const handleOpenProcessingSession = async () => {
         <SheetHeader>
           <SheetTitle class="text-base">{{ selectedMilestone.title }}</SheetTitle>
         </SheetHeader>
+        <div v-if="selectedReviewNotifications.length" class="space-y-2">
+          <article v-for="notification in selectedReviewNotifications" :key="notification.id" class="rounded-md border border-border bg-muted/30 p-3">
+            <div class="flex items-start gap-2">
+              <Sparkles class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold">{{ notification.title }}</p>
+                <p class="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-muted-foreground">{{ notification.body }}</p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    v-for="action in notification.actions.filter((item) => item.id === 'accept_suggestion' || item.id === 'reject_suggestion')"
+                    :key="action.id"
+                    size="sm"
+                    :variant="action.id === 'accept_suggestion' ? 'default' : 'outline'"
+                    class="h-7 gap-1 text-[11px]"
+                    :disabled="isReviewActionPending(notification, action.id)"
+                    @click="handleReviewAction(notification, action.id)"
+                  >
+                    <CheckCircle2 v-if="action.id === 'accept_suggestion'" class="size-3" />
+                    <CircleSlash2 v-else class="size-3" />
+                    {{ action.label }}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
         <div class="space-y-3">
           <Input v-model="editMilestoneTitle" class="h-8 text-xs" placeholder="标题" :disabled="selectedMilestone.isSystem" />
           <Textarea v-model="editMilestoneGoal" class="min-h-20 text-xs" placeholder="目标" />
