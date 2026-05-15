@@ -101,6 +101,12 @@ const serialScope = (job: BackgroundJob): string | null => {
 	if (job.type === "memory.maintain") {
 		return "memory.maintain";
 	}
+	if (job.type === "summary.daily") {
+		const payload = job.payload as { dailyDate?: unknown } | null;
+		if (typeof payload?.dailyDate === "string" && payload.dailyDate.trim()) {
+			return `${job.type}:daily:${payload.dailyDate.trim()}`;
+		}
+	}
 	if (job.type === "summary.daily" && job.relatedType === "daily" && job.relatedId) {
 		return `${job.type}:${job.relatedType}:${job.relatedId}`;
 	}

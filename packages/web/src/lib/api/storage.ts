@@ -14,6 +14,8 @@ export interface Settings {
   defaultModel: string;
   defaultAgent: string;
   defaultThinkingLevel: ThinkingLevel;
+  backgroundAgentModel: string;
+  backgroundAgentThinkingLevel: ThinkingLevel;
 }
 
 export interface FavoriteItem {
@@ -37,6 +39,8 @@ const DEFAULT_SETTINGS: Settings = {
   defaultModel: "",
   defaultAgent: "",
   defaultThinkingLevel: "medium",
+  backgroundAgentModel: "",
+  backgroundAgentThinkingLevel: "low",
 };
 
 const DEFAULT_FAVORITES: Favorites = {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { MoonStar, Palette, SunMedium, Monitor, Sparkles, Bell, PanelLeftClose, Languages, LogOut } from "lucide-vue-next";
 import type { AcceptableValue } from "reka-ui";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { themeOptions, type ThemeName } from "@/assets/registry";
 import { Button } from "@/components/ui/button";
@@ -15,13 +16,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useThemePreferences } from "@/composables/useThemePreferences";
+import { getProviders } from "@/lib/api";
 import { logoutAuth } from "@/lib/auth";
 import type { ThemeMode } from "@/stores/settings";
 import { useSettingsStore } from "@/stores/settings";
+import type { ProviderGroup, ThinkingLevel } from "@/lib/types";
 
 const router = useRouter();
 const { mode, setMode, setTheme, themeName } = useThemePreferences();
 const settingsStore = useSettingsStore();
+const providerGroups = ref<ProviderGroup[]>([]);
+const DEFAULT_BACKGROUND_MODEL_VALUE = "__ridge-default-background-model__";
 
 const modeOptions: Array<{
   label: string;
@@ -48,6 +53,50 @@ const handleLanguageChange = async (value: AcceptableValue) => {
     await settingsStore.setLanguage(value);
   }
 };
+
+const modelOptions = computed(() =>
+  providerGroups.value.flatMap((provider) =>
+    Object.values(provider.models).map((model) => ({
+      value: `${provider.id}/${model.id}`,
+      label: `${provider.name} / ${model.name || model.id}`,
+    })),
+  ),
+);
+
+const backgroundModelValue = computed(
+  () => settingsStore.backgroundAgentModel || DEFAULT_BACKGROUND_MODEL_VALUE,
+);
+
+const thinkingOptions: Array<{ label: string; value: ThinkingLevel }> = [
+  { label: "关闭", value: "off" },
+  { label: "最小", value: "minimal" },
+  { label: "低", value: "low" },
+  { label: "中", value: "medium" },
+  { label: "高", value: "high" },
+  { label: "极高", value: "xhigh" },
+];
+
+const handleBackgroundModelChange = async (value: AcceptableValue) => {
+  if (typeof value !== "string") return;
+  await settingsStore.setBackgroundAgentModel(
+    value === DEFAULT_BACKGROUND_MODEL_VALUE ? "" : value,
+  );
+};
+
+const handleBackgroundThinkingChange = async (value: AcceptableValue) => {
+  if (typeof value === "string") {
+    await settingsStore.setBackgroundAgentThinkingLevel(value as ThinkingLevel);
+  }
+};
+
+onMounted(async () => {
+  try {
+    const response = await getProviders();
+    providerGroups.value = response.providers;
+  } catch {
+    providerGroups.value = [];
+  }
+});
 
 const handleLogout = async () => {
   await logoutAuth();
@@ -230,6 +279,65 @@ const themePreviewColors: Record<string, string> = {
                 <SelectContent>
                   <SelectItem value="zh-CN">简体中文</SelectItem>
                   <SelectItem value="en">English</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div class="flex items-center justify-between gap-4 px-5 py-4">
+              <div class="flex items-center gap-3">
+                <div class="flex size-8 items-center justify-center rounded-md bg-muted">
+                  <Sparkles class="size-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <div class="text-sm font-medium">后台整理模型</div>
+                  <div class="text-[11px] text-muted-foreground">summary / memory agent 使用</div>
+                </div>
+              </div>
+              <Select
+                :model-value="backgroundModelValue"
+                @update:model-value="handleBackgroundModelChange"
+              >
+                <SelectTrigger class="w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem :value="DEFAULT_BACKGROUND_MODEL_VALUE">Pi 默认模型</SelectItem>
+                  <SelectItem
+                    v-for="model in modelOptions"
+                    :key="model.value"
+                    :value="model.value"
+                  >
+                    {{ model.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div class="flex items-center justify-between gap-4 px-5 py-4">
+              <div class="flex items-center gap-3">
+                <div class="flex size-8 items-center justify-center rounded-md bg-muted">
+                  <Sparkles class="size-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <div class="text-sm font-medium">后台思考强度</div>
+                  <div class="text-[11px] text-muted-foreground">后台整理任务默认使用低强度</div>
+                </div>
+              </div>
+              <Select
+                :model-value="settingsStore.backgroundAgentThinkingLevel"
+                @update:model-value="handleBackgroundThinkingChange"
+              >
+                <SelectTrigger class="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="thinking in thinkingOptions"
+                    :key="thinking.value"
+                    :value="thinking.value"
+                  >
+                    {{ thinking.label }}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -298,6 +298,12 @@ export function deleteSession(sessionId: string) {
 	});
 }
 
+export function endSession(sessionId: string) {
+	return request<{ ok: true; jobId: string }>(`/api/sessions/${sessionId}/end`, {
+		method: "POST",
+	});
+}
+
 export function sendMessage(sessionId: string, payload: SendMessagePayload) {
 	return request<{ ok: true }>(`/api/sessions/${sessionId}/messages`, {
 		method: "POST",

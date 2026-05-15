@@ -1,5 +1,7 @@
 # 26 summary agent daily 会话记忆
 
+> 状态：已完成并归档（2026-05-15）
+
 ## 目标
 
 实现会话结束后 summary agent 追加 daily 会话记忆。
@@ -64,3 +66,23 @@
 - 同一天多会话追加多个段落。
 - 旧日期 daily 不被修改。
 - 单会话摘要文件不会生成。
+
+## 实现记录
+
+- 后端模块：`packages/server/src/workspace-memory.ts`
+- 会话结束入口：`POST /api/sessions/:sessionId/end`
+- 前端触发：关闭会话 tab、页面卸载和 `pagehide` 时调用 `endSession(sessionId)`
+- 后台 job：`summary.daily`
+- daily 路径：`记忆/daily/YYYY/MM/YYYY-MM-DD.md`
+- 串行规则：按 payload `dailyDate` 串行；不同 session 不误去重。
+- 幂等规则：同一 session 已有未 failed/cancelled 的 `summary.daily` job 时，`/end` 返回原 job，不重复入队。
+- 跨日规则：只写 `payload.dailyDate` 对应文件，不改旧日期 daily。
+- 产物路径：服务端把外部项目绝对路径归一为 `项目名: 项目内相对路径`；非 active session 从 `session_contexts` 补项目上下文。
+- 后台模型：使用独立 settings `backgroundAgentModel` / `backgroundAgentThinkingLevel`，未配置时交给 Pi SDK 默认选择。
+
+## 验收证据
+
+- `pnpm --filter @pi/server test -- src/__tests__/workspace-memory.test.ts`
+- `pnpm --filter @pi/server test -- src/__tests__/background-jobs.test.ts`
+- `pnpm --filter @pi/server test -- src/__tests__/security-guards.test.ts`
+- `pnpm --filter @pi/web test -- src/pages/__tests__/WorkspacePage.test.ts`

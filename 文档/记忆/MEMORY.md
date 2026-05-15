@@ -614,3 +614,27 @@
 - `workspace-search-api.test.ts` 覆盖聚合、类型筛选、项目内 file/RAG、目录边界、缺失空间 `index.html` 不抛错、符号链接越界和外部项目内容排除。
 - `rag-consumer.test.ts` 覆盖默认工作空间 RAG 消费链路。
 - `WorkspaceSearchView.test.ts` 覆盖文件打开、RAG 刷新、项目结果打开项目主页事件。
+
+## 2026-05-15 任务 26/27 summary daily 与 MEMORY 维护注入
+
+### 契约
+
+- 会话结束入口是 `POST /api/sessions/:sessionId/end`；前端关闭会话 tab、页面卸载和 `pagehide` 时都会尝试调用该入口。
+- `/api/sessions/:sessionId/end` 对同一 session 的 `summary.daily` 做幂等保护；已有 pending/running/completed 且未 failed/cancelled 的 job 时返回原 job，不重复入队。
+- `summary.daily` job 以 session 为去重键，以 payload `dailyDate` 为串行 scope；同一天不同会话都能排队，但 daily 写入不会并发。
+- summary agent 只读 `sessionFile`，返回结构化 JSON；服务端把结果追加到 `记忆/daily/YYYY/MM/YYYY-MM-DD.md`，不生成单会话摘要文件。
+- summary agent 产物路径由服务端二次归一：工作空间产物写 workspace 相对路径；外部项目绝对路径写成 `项目名: 项目内相对路径`，避免 daily 泄露本机绝对路径。
+- 非 active session 的 `/end` 会从 `session_contexts` 补 `projectLabel/projectRoot`，避免外部项目路径归一化降级。
+- 后台 summary/memory agent 使用独立设置 `backgroundAgentModel` / `backgroundAgentThinkingLevel`；模型通过 Pi `ModelRegistry.find(provider, model)` 解析，未配置模型时交给 Pi SDK 默认选择；设置页提供可见配置入口。
+- summary 完成后排队 `memory.maintain`；memory agent 只读当天 daily 和 `记忆/MEMORY.md`，不读原始会话。
+- `MEMORY.md` 只保存短句长期记忆；服务端过滤 token、密码、私钥、密钥等敏感内容，并按长度预算写回。
+- 用户显式说“记住/请记住”时，消息入口在发送给 Pi 前立即写入 `MEMORY.md`；显式说“忘掉/别再记/不要再记”时立即删除匹配记忆。
+- 新会话启动和 resource reload 时同步读取 `记忆/MEMORY.md` 与 `Wiki/index.md` 注入 XML 块；只有标题的空文件不注入；注入含“记忆可能过时，当前用户最新话语和当前文件事实优先”提醒。
+
+### 测试
+
+- `workspace-memory.test.ts` 覆盖 daily 生成、禁止单会话摘要、summary→memory 排队、跨日不改旧 daily、外部产物路径归一、后台模型配置、空内容不注入、注入提醒、显式记住/忘掉、敏感信息过滤。
+- `background-jobs.test.ts` 覆盖 session 级 summary job 不误去重，以及同一天 daily 串行。
+- `security-guards.test.ts` 覆盖 `/end` 入队、完成后重复结束幂等、非 active 外部 session 保留 project context。
+- `WorkspacePage.test.ts` 覆盖页面卸载时结束仍打开的会话标签，以及 `pagehide` 下优先使用 `sendBeacon`。
+- `SettingsTabContent.test.ts` 覆盖后台整理模型/思考强度入口渲染和保存。

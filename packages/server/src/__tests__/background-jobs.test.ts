@@ -76,6 +76,29 @@ describe("background job queue", () => {
 		db.close();
 	});
 
+	it("serializes session summary jobs by payload daily date without deduping different sessions", () => {
+		const db = createDb();
+		const queue = createBackgroundJobQueue(db);
+		queue.enqueue({
+			type: "summary.daily",
+			relatedType: "session",
+			relatedId: "session-1",
+			payload: { dailyDate: "2026-05-10" },
+		});
+		queue.enqueue({
+			type: "summary.daily",
+			relatedType: "session",
+			relatedId: "session-2",
+			payload: { dailyDate: "2026-05-10" },
+		});
+
+		expect(queue.list()).toHaveLength(2);
+		expect(queue.claimNext("worker-a")?.relatedId).toBe("session-1");
+		expect(queue.claimNext("worker-b")).toBeNull();
+
+		db.close();
+	});
+
 	it("retries with backoff and emits a notification after max attempts", () => {
 		const db = createDb();
 		let currentTime = 1_000;

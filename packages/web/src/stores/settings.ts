@@ -32,6 +32,10 @@ export const useSettingsStore = defineStore("settings", () => {
   const defaultThinkingLevel = computed<ThinkingLevel>(
     () => settings.value?.defaultThinkingLevel ?? "medium",
   );
+  const backgroundAgentModel = computed(() => settings.value?.backgroundAgentModel ?? "");
+  const backgroundAgentThinkingLevel = computed<ThinkingLevel>(
+    () => settings.value?.backgroundAgentThinkingLevel ?? "low",
+  );
 
   const resolvedThemeMode = computed<"light" | "dark">(() => {
     const mode = theme.value;
@@ -109,6 +113,14 @@ export const useSettingsStore = defineStore("settings", () => {
     await save({ defaultThinkingLevel: level });
   }
 
+  async function setBackgroundAgentModel(model: string): Promise<void> {
+    await save({ backgroundAgentModel: model });
+  }
+
+  async function setBackgroundAgentThinkingLevel(level: ThinkingLevel): Promise<void> {
+    await save({ backgroundAgentThinkingLevel: level });
+  }
+
   function toggleSidebar(): void {
     setSidebarCollapsed(!sidebarCollapsed.value);
   }
@@ -127,6 +139,8 @@ export const useSettingsStore = defineStore("settings", () => {
     defaultModel,
     defaultAgent,
     defaultThinkingLevel,
+    backgroundAgentModel,
+    backgroundAgentThinkingLevel,
     resolvedThemeMode,
     load,
     save,
@@ -138,6 +152,8 @@ export const useSettingsStore = defineStore("settings", () => {
     setDefaultModel,
     setDefaultAgent,
     setDefaultThinkingLevel,
+    setBackgroundAgentModel,
+    setBackgroundAgentThinkingLevel,
     toggleSidebar,
   };
 });

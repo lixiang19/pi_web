@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WorkspacePage from "@/pages/WorkspacePage.vue";
 
 // ===== Mocks =====
@@ -32,6 +32,7 @@ const {
 	mockRefreshSessions,
 	mockRefreshSessionContexts,
 	mockUploadSessionAttachments,
+	mockEndSession,
 } = vi.hoisted(() => ({
 	mockCreateFileEntry: vi.fn(),
 	mockCreateBase: vi.fn(),
@@ -76,6 +77,7 @@ const {
 	mockRefreshSessions: vi.fn(),
 	mockRefreshSessionContexts: vi.fn(),
 	mockUploadSessionAttachments: vi.fn(),
+	mockEndSession: vi.fn().mockResolvedValue({ ok: true, jobId: "job-1" }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -85,6 +87,7 @@ vi.mock("@/lib/api", () => ({
 	createNote: vi.fn(),
 	getRecentFiles: mockGetRecentFiles,
 	createSession: mockCreateSession,
+	endSession: mockEndSession,
 	uploadSessionAttachments: mockUploadSessionAttachments,
 }));
 
@@ -276,8 +279,10 @@ vi.mock("@/stores/settings", () => ({
 
 // ===== Helpers =====
 
+const mountedWrappers: Array<ReturnType<typeof mount>> = [];
+
 function mountWorkspace() {
-	return mount(WorkspacePage, {
+	const wrapper = mount(WorkspacePage, {
 		global: {
 			stubs: {
 				FileTreePanel: true,
@@ -290,7 +295,15 @@ function mountWorkspace() {
 			},
 		},
 	});
+	mountedWrappers.push(wrapper);
+	return wrapper;
 }
+
+afterEach(() => {
+	for (const wrapper of mountedWrappers.splice(0)) {
+		wrapper.unmount();
+	}
+});
 
 // ===== Tests =====
 
@@ -407,6 +420,78 @@ describe("WorkspacePage - 固定入口", () => {
 				title: "demo",
 			}),
 		);
+	});
+
+	it("页面卸载时结束仍打开的会话标签", async () => {
+		mockAllPaneGroups.value = [
+			{
+				id: "pane-1",
+				tabs: [
+					{ id: "chat-tab-1", kind: "conversation", title: "会话", sessionId: "session-open-1" },
+					{ id: "home-1", kind: "home", title: "主页", sessionId: undefined },
+				],
+				activeTabId: "chat-tab-1",
+			},
+		];
+
+		const wrapper = mountWorkspace();
+		wrapper.unmount();
+
+		await vi.waitFor(() => {
+			expect(mockEndSession).toHaveBeenCalledWith("session-open-1");
+		});
+	});
+
+	it("pagehide 时优先用 sendBeacon 结束打开的会话标签", async () => {
+		const sendBeacon = vi.fn(() => true);
+		Object.defineProperty(navigator, "sendBeacon", {
+			configurable: true,
+			value: sendBeacon,
+		});
+		mockAllPaneGroups.value = [
+			{
+				id: "pane-1",
+				tabs: [
+					{ id: "chat-tab-1", kind: "conversation", title: "会话", sessionId: "session-beacon-1" },
+					{ id: "home-1", kind: "home", title: "主页", sessionId: undefined },
+				],
+				activeTabId: "chat-tab-1",
+			},
+		];
+
+		const wrapper = mountWorkspace();
+		window.dispatchEvent(new Event("pagehide"));
+		wrapper.unmount();
+
+		expect(sendBeacon).toHaveBeenCalledWith("/api/sessions/session-beacon-1/end", "");
+		expect(mockEndSession).not.toHaveBeenCalledWith("session-beacon-1");
+	});
+
+	it("pagehide 与 unmount 同一轮触发时不会重复结束会话", async () => {
+		Object.defineProperty(navigator, "sendBeacon", {
+			configurable: true,
+			value: vi.fn(() => false),
+		});
+		mockAllPaneGroups.value = [
+			{
+				id: "pane-1",
+				tabs: [
+					{ id: "chat-tab-1", kind: "conversation", title: "会话", sessionId: "session-pagehide-1" },
+				],
+				activeTabId: "chat-tab-1",
+			},
+		];
+
+		const wrapper = mountWorkspace();
+		window.dispatchEvent(new Event("pagehide"));
+		wrapper.unmount();
+
+		await vi.waitFor(() => {
+			expect(mockEndSession).toHaveBeenCalledWith("session-pagehide-1");
+		});
+		expect(
+			mockEndSession.mock.calls.filter(([sessionId]) => sessionId === "session-pagehide-1"),
+		).toHaveLength(1);
 	});
 });
 

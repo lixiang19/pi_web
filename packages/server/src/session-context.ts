@@ -59,6 +59,7 @@ import { normalizeString } from "./utils/strings.js";
 import type { WorkspaceChatConfig } from "./workspace-chat.js";
 import { createWorkspaceChatProject } from "./workspace-chat.js";
 import { createPlanningToolsExtension } from "./planning-tools.js";
+import { buildWorkspaceMemoryInjectionSync } from "./workspace-memory.js";
 
 // ===== Dependency injection =====
 export interface SessionContextDeps {
@@ -499,6 +500,12 @@ export const createSessionResourceLoader = (record: SessionRecord) =>
 		settingsManager: createPiAgentScopeSettingsManager(record.cwd),
 		appendSystemPromptOverride: (base: string[]) => {
 			const sections = [...base];
+			const memoryInjection = buildWorkspaceMemoryInjectionSync(
+				deps.defaultWorkspaceDir,
+			);
+			if (memoryInjection) {
+				sections.push(memoryInjection);
+			}
 			const systemPrompt = normalizeString(
 				record.selectedAgentConfig?.systemPrompt,
 			);
@@ -1006,6 +1013,7 @@ export const destroySessionRecord = (record: SessionRecord): void => {
 	cancelPendingAsks(record, "Session closed");
 	cancelPendingPermissions(record, "Session closed");
 	record.unsubscribe?.();
+	record.session.dispose();
 	closeClients(record);
 	deps.activeSessions.delete(record.id);
 	deps.openingSessionRecords.delete(record.id);

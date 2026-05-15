@@ -77,6 +77,12 @@ import { createFileConversionWorker } from "./file-conversion-worker.js";
 import { createRagWorker } from "./rag-worker.js";
 import { markRagTargetPending } from "./rag-indexer.js";
 import {
+	applyExplicitMemoryCommand,
+	createWorkspaceMemoryWorkers,
+	enqueueSessionSummaryJob,
+} from "./workspace-memory.js";
+import {
+	getIndexedSessionContext,
 	getIndexedSessionTree,
 	invalidateManagedProjectScopes,
 	listIndexedSessionContexts,
@@ -238,6 +244,75 @@ const refreshSessionCatalogIndex = async () =>
 		activeSessions,
 		workspaceChatConfig,
 	});
+
+const findExistingSessionSummaryJob = (sessionId: string) =>
+	jobQueue
+		?.list()
+		.find(
+			(job) =>
+				job.type === "summary.daily" &&
+				job.relatedType === "session" &&
+				job.relatedId === sessionId &&
+				job.status !== "failed" &&
+				job.status !== "cancelled",
+		) ?? null;
+
+const enqueueEndedSessionSummary = async (sessionId: string) => {
+	if (!jobQueue) {
+		const error = new Error("后台任务队列尚未初始化") as HttpError;
+		error.statusCode = 503;
+		throw error;
+	}
+
+	const activeRecord = activeSessions.get(sessionId);
+	if (activeRecord) {
+		if (activeRecord.status === "streaming") {
+			const error = new Error("会话仍在运行，不能结束整理") as HttpError;
+			error.statusCode = 409;
+			throw error;
+		}
+		const existing = findExistingSessionSummaryJob(sessionId);
+		if (existing) {
+			return existing;
+		}
+		await persistSessionRecordMetadata(activeRecord);
+		await upsertIndexedSessionRecord(activeRecord, {
+			projectContextResolver,
+			workspaceChatConfig,
+		});
+		const summary = await resolveSessionSummary(activeRecord);
+		const job = enqueueSessionSummaryJob(jobQueue, {
+			sessionId,
+			sessionFile: activeRecord.sessionFile || summary.sessionFile,
+			title: summary.title,
+			cwd: summary.cwd,
+			workspaceDir: defaultWorkspaceDir,
+			projectLabel: summary.projectLabel,
+			projectRoot: summary.projectRoot,
+		});
+		destroySessionRecord(activeRecord);
+		return job;
+	}
+
+	const existing = findExistingSessionSummaryJob(sessionId);
+	if (existing) {
+		return existing;
+	}
+
+	const lookup = await getIndexedSessionLookupOrThrow(sessionId);
+	const context = lookup.contextId
+		? await getIndexedSessionContext(lookup.contextId)
+		: null;
+	return enqueueSessionSummaryJob(jobQueue, {
+		sessionId,
+		sessionFile: lookup.sessionFile,
+		title: lookup.title,
+		cwd: lookup.cwd,
+		workspaceDir: defaultWorkspaceDir,
+		projectLabel: context?.projectLabel,
+		projectRoot: context?.projectRoot,
+	});
+};
 
 // ===== Zod Schemas =====
 const createSessionSchema = z.object({
@@ -491,6 +566,7 @@ import {
 	getStoredSessionMessagesPayload,
 	getStoredSessionRuntimePayload,
 	initSessionPayload,
+	resolveSessionSummary,
 	terminalManager,
 	toSessionMessagesPayload,
 	toSessionRuntimePayload,
@@ -1158,6 +1234,18 @@ app.post(
 	},
 );
 
+app.post(
+	"/api/sessions/:sessionId/end",
+	async (req: Request, res: Response, next: NextFunction) => {
+		try {
+			const job = await enqueueEndedSessionSummary(String(req.params.sessionId));
+			res.json({ ok: true, jobId: job.jobId });
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
 app.delete(
 	"/api/sessions/:sessionId",
 	async (req: Request, res: Response, next: NextFunction) => {
@@ -1214,6 +1302,8 @@ app.post(
 				error.statusCode = 400;
 				throw error;
 			}
+
+			await applyExplicitMemoryCommand(defaultWorkspaceDir, payload.prompt);
 
 			await applySessionAgentSelection(record, {
 				agentName:
@@ -1500,6 +1590,22 @@ export async function startServer() {
 	// Start RAG worker (always runs, even without Python conversion service)
 	const ragWorker = createRagWorker({ jobQueue, workspaceDir: defaultWorkspaceDir });
 	ragWorker.start();
+
+	const workspaceMemoryWorkers = createWorkspaceMemoryWorkers({
+		jobQueue,
+		workspaceDir: defaultWorkspaceDir,
+		modelRegistry,
+		authStorage,
+		resolveBackgroundModel: async () => {
+			const settings = await getSettings();
+			return settings.backgroundAgentModel || undefined;
+		},
+		resolveBackgroundThinkingLevel: async () => {
+			const settings = await getSettings();
+			return settings.backgroundAgentThinkingLevel;
+		},
+	});
+	workspaceMemoryWorkers.start();
 
 	await listenHttpServer(httpServer, port);
 	console.warn(`Pi server listening on http://127.0.0.1:${port}`);

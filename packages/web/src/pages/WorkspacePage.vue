@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
 import {
 	BookOpen,
 	Bell,
@@ -66,7 +66,7 @@ import {
 	isProjectArchived,
 } from "@/lib/session-sidebar";
 import type { SessionProjectView } from "@/lib/session-sidebar";
-import { createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem, uploadSessionAttachments, deleteSession } from "@/lib/api";
+import { createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem, uploadSessionAttachments, deleteSession, endSession } from "@/lib/api";
 import { createSession as createSessionApi } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -131,6 +131,63 @@ const workspaceSpace = useWorkspaceSpace();
 
 // 分屏管理
 const splitPanes = useSplitPanes();
+
+const endingSessionIds = new Set<string>();
+
+const isConversationTab = (tab: SplitTabItem | undefined): tab is SplitTabItem & { sessionId: string } =>
+	(tab?.kind === "conversation" || tab?.kind === "chat" || tab?.kind === "session") &&
+	typeof tab.sessionId === "string" &&
+	tab.sessionId.length > 0;
+
+const collectOpenSessionIds = () => {
+	const sessionIds = new Set<string>();
+	for (const pane of splitPanes.allPaneGroups.value) {
+		for (const tab of pane.tabs) {
+			if (isConversationTab(tab)) {
+				sessionIds.add(tab.sessionId);
+			}
+		}
+	}
+	return [...sessionIds];
+};
+
+const endSessionOnce = async (sessionId: string) => {
+	if (endingSessionIds.has(sessionId)) return;
+	endingSessionIds.add(sessionId);
+	try {
+		await endSession(sessionId);
+	} catch (error) {
+		endingSessionIds.delete(sessionId);
+		throw error;
+	}
+};
+
+const endOpenConversationTabs = async () => {
+	await Promise.allSettled(collectOpenSessionIds().map((sessionId) => endSessionOnce(sessionId)));
+};
+
+const handlePageHide = () => {
+	for (const sessionId of collectOpenSessionIds()) {
+		if (endingSessionIds.has(sessionId)) continue;
+		endingSessionIds.add(sessionId);
+		const endpoint = `/api/sessions/${encodeURIComponent(sessionId)}/end`;
+		if (typeof navigator.sendBeacon === "function" && navigator.sendBeacon(endpoint, "")) {
+			continue;
+		}
+		void endSession(sessionId).catch(() => {
+			endingSessionIds.delete(sessionId);
+		});
+	}
+};
+
+onMounted(() => {
+	window.addEventListener("pagehide", handlePageHide);
+});
+
+onBeforeUnmount(() => {
+	window.removeEventListener("pagehide", handlePageHide);
+	void endOpenConversationTabs();
+});
 
 // 主页发送中状态（按 tabId）
 const homeSubmittingTabIds = ref<Set<string>>(new Set());
@@ -468,7 +525,7 @@ function handleSetActiveTab(payload: { paneGroupId: string; tabId: string }) {
 	splitPanes.setActiveTab(payload.paneGroupId, payload.tabId);
 }
 
-function handleCloseTab(payload: { paneGroupId: string; tabId: string }) {
+async function handleCloseTab(payload: { paneGroupId: string; tabId: string }) {
 	// 同步关闭文件预览
 	const tab = splitPanes.findTabAcrossPanes(payload.tabId)?.tab;
 	if (tab?.kind === "file") {
@@ -480,6 +537,16 @@ function handleCloseTab(payload: { paneGroupId: string; tabId: string }) {
 			return;
 		}
 		preview.closeTab(payload.tabId);
+	}
+	if (isConversationTab(tab)) {
+		try {
+			await endSessionOnce(tab.sessionId);
+		} catch (err) {
+			toast.error("会话结束整理失败", {
+				description: err instanceof Error ? err.message : String(err),
+			});
+			return;
+		}
 	}
 	splitPanes.closeTab(payload.paneGroupId, payload.tabId);
 }

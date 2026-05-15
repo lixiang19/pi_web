@@ -19,6 +19,8 @@ const DEFAULT_SETTINGS: Settings = {
   defaultModel: '',
   defaultAgent: '',
   defaultThinkingLevel: 'medium',
+  backgroundAgentModel: '',
+  backgroundAgentThinkingLevel: 'low',
 };
 
 const normalizeProjectPath = (projectPath: string): string =>

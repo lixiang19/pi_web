@@ -255,6 +255,8 @@ export interface Settings {
   defaultModel: string;
   defaultAgent: string;
   defaultThinkingLevel: ThinkingLevel;
+  backgroundAgentModel: string;
+  backgroundAgentThinkingLevel: ThinkingLevel;
 }
 
 export const SETTINGS_KEYS = [
@@ -266,6 +268,8 @@ export const SETTINGS_KEYS = [
   'defaultModel',
   'defaultAgent',
   'defaultThinkingLevel',
+  'backgroundAgentModel',
+  'backgroundAgentThinkingLevel',
 ] as const satisfies ReadonlyArray<keyof Settings>;
 export type FavoritesState = { items: FavoriteItem[] };
 export type ProjectsState = { version: number; projects: Project[] };
