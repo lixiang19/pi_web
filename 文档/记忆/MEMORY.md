@@ -79,6 +79,7 @@
 - [导航去重] 会话侧栏不要再维护“最近访问”这类二次导航；标签页已承担最近工作集语义，侧栏应只保留稳定信息架构（项目/搜索），否则状态重复、localStorage 重复、认知也重复
 - [搜索入口] 左侧"搜索"只负责进入独立搜索页；真实搜索输入与结果必须放主内容区，侧栏搜索框只是本地过滤器（两者全存在会造成职责混淆，侧栏过滤器应删除统一入口）
 - [RAG刷新契约] RAG 上传和普通编辑不是同一触发语义：Markdown 上传要同步可检索；普通 Markdown 编辑只标记 `refresh_policy=deferred` 并保留旧 chunk，直到手动刷新或夜间索引再重建；删除/移动文件必须同步清理或改写 RAG metadata。
+- [Wiki维护契约] 夜间维护顺序固定为 RAG deferred 索引 -> graph -> Wiki -> Wiki immediate RAG；Wiki agent 必须读取当前 `Wiki/**/*.md` 作为用户可编辑真源，只维护少量 canonical Markdown 页面，拒绝隐藏/越界/符号链接写入路径，空 `Wiki/index.md` 不注入。
 - [RAG向量契约] RAG embedding 使用 SiliconFlow `Qwen/Qwen3-VL-Embedding-8B`；配置从 `app_settings` 的 `siliconflow_embedding_*` 或 `SILICONFLOW_*` 环境变量读取。索引阶段缺 Key/远端失败必须写 `index_failed` 和通知；搜索阶段只允许旧 chunk 做精确文本命中，不能把历史 96 维本地 hash 向量继续混入语义相似度。
 - [图片RAG契约] 图片原文件是 RAG 一等源：上传 `.png/.jpg/.jpeg/.webp/.bmp/.gif/.tif/.tiff` 后直接用 Qwen3-VL 图片 embedding 入库；图片 OCR 转换产物 `.md` 仍作为独立文本 RAG 源入库，二者互补，不能只依赖 OCR 代表图片 RAG。
 - [全局搜索边界] 全局搜索聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间和 RAG，但不搜索外部项目文件内容，也不读取 Pi 会话正文；项目注册信息可以出现，外部项目文件路径不能作为 file/RAG 结果泄露。
@@ -653,7 +654,7 @@
 - Kuzu schema 包含 `Project`、`File`、`Task`、`Person`、`Org`、`Concept`、`Tech`、`Source`、`Decision` 九类节点；关系统一为 `EvidenceRelation`，必须带 `evidence`、`source_path`、`confidence`、`updated_at`。
 - graph agent 输入只来自标准化来源：已索引 Markdown 标准产物、`记忆/daily/**/*.md`、内部项目 Markdown 文档；排除外部项目、`.ridge`、`.originals`、非 Markdown 原件和图片/音频/PDF 原文件。
 - 直接读取 daily 或内部项目 Markdown 前校验 `realpath` 仍在 workspace 内；内部项目根目录如果是指向 workspace 外的符号链接，会被跳过。
-- 夜间维护顺序为 RAG deferred 索引完成后再运行 graph agent。
+- 夜间维护顺序为 RAG deferred 索引完成后运行 graph agent，再运行 Wiki agent，并在 Wiki 写入后立即补一次 non-deferred RAG 索引。
 - 用户自然语言纠错入口为 `POST /api/workspace/graph/corrections`，服务端让 graph agent 解析纠错并写回 Kuzu，用户不直接编辑图谱。
 - 关系证据按 prompt 和存储层统一截断为 80 字以内，避免 graph agent 输出和 Kuzu 写入契约分裂。
 - `GET /api/workspace/backup` 生成服务器备份 ZIP，包含 `ridge.db`、工作空间文件和 `.ridge/graph.kuzu`；排除 `.ridge/rag`、`.ridge/cache`、`.ridge/runtime`、`.ridge/fleeting-attachments`；隐藏 Git exclude 包含 `.ridge`，图谱不进隐藏版本管理。

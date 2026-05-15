@@ -173,7 +173,8 @@ export async function searchContent(
 - 后台 jobQueue 消费者，claim `rag.index` 类型的 job
 - 显式 `rag.index` job 默认按 `manual` 事件执行，deferred 目标也会真实重建
 - 普通补偿扫描只处理非 deferred pending
-- 每天 03:00 运行夜间入口 `indexAllPending({ includeDeferred: true, event: "nightly" })`
+- 每天 03:00 运行夜间入口，顺序为 `indexAllPending({ includeDeferred: true, event: "nightly" })` -> `graphRunner.runNightlyOnce()` -> `wikiRunner.runNightlyOnce()` -> `indexAllPending({ event: "nightly" })`
+- Wiki agent 写入或保留但未索引的 `Wiki/*.md` 会以 `refresh_policy=immediate`、`last_event=nightly` 标记为 pending，并在本轮 Wiki 后的 non-deferred RAG 扫描中消费。
 
 ### 5.3 检索 API：`/api/search/content`
 

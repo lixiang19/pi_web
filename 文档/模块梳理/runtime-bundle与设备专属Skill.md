@@ -32,7 +32,7 @@ interface BundleManifest {
 1. **全局 Agents**：`~/ridge-workspace/.pi/agents/*`
 2. **全局 Skills**：`~/ridge-workspace/.pi/skills/*`
 3. **项目级覆盖**：`{projectPath}/.pi/agents/*`、`{projectPath}/.pi/skills/*`
-4. **启动上下文**：`~/ridge-workspace/文档/记忆/MEMORY.md`、`~/ridge-workspace/文档/记忆/Wiki/index.md`
+4. **启动上下文**：`~/ridge-workspace/记忆/MEMORY.md`、`~/ridge-workspace/Wiki/index.md`
 5. **配置已校验**：MCP / Tools / Permissions / Models 均通过 Zod schema 验证，非法 JSON 抛 400，缺失返回 {}
 
 ## 设备专属 Skill 过滤

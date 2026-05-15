@@ -86,6 +86,10 @@ import {
 	createPiGraphExtractor,
 	type GraphMaintenanceRunner,
 } from "./graph-agent.js";
+import {
+	createPiWikiMaintainer,
+	createWikiMaintenanceRunner,
+} from "./wiki-agent.js";
 import { createConversionWebhookRouter } from "./routes/conversion-webhook.js";
 import {
 	ConversionServiceClient,
@@ -1812,6 +1816,15 @@ export async function startServer() {
 			modelRegistry,
 		}),
 	});
+	const wikiRunner = createWikiMaintenanceRunner({
+		db,
+		workspaceDir: defaultWorkspaceDir,
+		maintain: createPiWikiMaintainer({
+			workspaceDir: defaultWorkspaceDir,
+			authStorage,
+			modelRegistry,
+		}),
+	});
 	fleetingRunnerRef.value = createFleetingAnalysisRunner({ db, jobQueue });
 	const fleetingAnalysisWorker = createFleetingAnalysisWorker({
 		db,
@@ -1867,7 +1880,7 @@ export async function startServer() {
 	await refreshSessionCatalogIndex();
 
 	// Start RAG worker (always runs, even without Python conversion service)
-	const ragWorker = createRagWorker({ jobQueue, workspaceDir: defaultWorkspaceDir, graphRunner });
+	const ragWorker = createRagWorker({ jobQueue, workspaceDir: defaultWorkspaceDir, graphRunner, wikiRunner });
 	ragWorker.start();
 
 	const workspaceMemoryWorkers = createWorkspaceMemoryWorkers({

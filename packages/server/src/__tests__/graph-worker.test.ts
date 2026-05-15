@@ -11,8 +11,8 @@ const createDb = () => {
 	return db;
 };
 
-describe("RAG and graph nightly worker chain", () => {
-	it("runs graph maintenance after the nightly deferred RAG pass", async () => {
+describe("RAG, graph and Wiki nightly worker chain", () => {
+	it("runs graph and Wiki maintenance after the nightly deferred RAG pass", async () => {
 		const db = createDb();
 		const jobQueue = createBackgroundJobQueue(db);
 		const calls: string[] = [];
@@ -30,11 +30,17 @@ describe("RAG and graph nightly worker chain", () => {
 					return { sources: 1, entities: 1, relations: 1 };
 				},
 			},
+			wikiRunner: {
+				runNightlyOnce: async () => {
+					calls.push("wiki");
+					return { sources: 1, pagesWritten: 1, pagesDeleted: 0 };
+				},
+			},
 		});
 
 		await worker.runNightlyOnce();
 
-		expect(calls).toEqual(["rag:deferred:nightly", "graph"]);
+		expect(calls).toEqual(["rag:deferred:nightly", "graph", "wiki", "rag:immediate:nightly"]);
 		db.close();
 	});
 });

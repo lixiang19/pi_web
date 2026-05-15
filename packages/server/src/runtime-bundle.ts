@@ -177,8 +177,8 @@ export async function generateRuntimeBundle(
 
   // 7. Startup context
   const startupContext: BundleManifest['startupContext'] = {};
-  const memoryPath = path.join(workspaceDir, '文档', '记忆', 'MEMORY.md');
-  const wikiPath = path.join(workspaceDir, '文档', '记忆', 'Wiki', 'index.md');
+  const memoryPath = path.join(workspaceDir, '记忆', 'MEMORY.md');
+  const wikiPath = path.join(workspaceDir, 'Wiki', 'index.md');
 
   try {
     const memContent = await fs.readFile(memoryPath, 'utf-8');

@@ -33,10 +33,10 @@
 | 26 summary agent daily 会话记忆 | - | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 27 memory agent MEMORY 维护与注入 | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 28 Kuzu 图谱存储与抽取 | - | ✅ | ✅ | - | ✅ | - | ✅ |
-| 29 Wiki 夜间维护与 index 注入 | - | - | - | - | - | - | - |
+| 29 Wiki 夜间维护与 index 注入 | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 30 项目注册与内部项目外部仓库 | - | - | - | - | - | - | - |
 | 31 设备注册在线状态与调度 | - | - | - | - | - | - | - |
-| 32 runtime bundle 与设备专属 Skill | - | - | - | - | - | - | - |
+| 32 runtime bundle 与设备专属 Skill | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 33 workspace MCP 查读工具 | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 34 通知与建议中心 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 35 task review agent 任务回顾 | - | - | - | - | - | - | - |
@@ -56,6 +56,7 @@
 - **26 summary agent daily 会话记忆**：`POST /api/sessions/:sessionId/end` 结束会话并排队 `summary.daily`；关闭会话 tab 会调用该入口；summary agent 只读 session 文件，服务端追加 `记忆/daily/YYYY/MM/YYYY-MM-DD.md`，不生成单会话摘要文件；同一 daily date 串行写入，不同 session 不误去重。`workspace-memory.test.ts` 与 `background-jobs.test.ts` 覆盖。
 - **27 memory agent MEMORY 维护与注入**：`memory.maintain` 在 summary 后维护 `记忆/MEMORY.md`；消息入口支持显式“记住/忘掉”立即改写；服务端过滤敏感信息；新会话启动和 resource reload 注入 `MEMORY.md` 与 `Wiki/index.md` XML 块，空文件不注入，并包含“记忆可能过时，当前用户最新话语和当前文件事实优先”提醒。`workspace-memory.test.ts` 覆盖。
 - **28 Kuzu 图谱存储与抽取**：`graph-store.ts` 使用 Kuzu Node.js 客户端写入 `.ridge/graph.kuzu/database.kuzu`，初始化写 `.ridge/graph.kuzu/schema.cypher`；schema 包含 Project/File/Task/Person/Org/Concept/Tech/Source/Decision 节点和带 `evidence/source_path/confidence/updated_at` 的 EvidenceRelation，证据统一截断为 80 字以内。`graph-agent.ts` 只从已索引 Markdown 标准产物、daily 和内部项目 Markdown 收集输入，排除外部项目、`.ridge`、`.originals` 和非 Markdown 原件；直接读取来源前校验 `realpath`，防止内部项目根目录符号链接越界；`rag-worker.ts` 夜间链路在 deferred RAG 后触发 graph runner；`POST /api/workspace/graph/corrections` 支持用户自然语言纠错后由 graph agent 写回，并有 HTTP 集成测试。`GET /api/workspace/backup` 生成真实备份 ZIP，包含 `.ridge/graph.kuzu`，排除可重建缓存并跳过符号链接；隐藏 Git exclude 包含 `.ridge`。测试覆盖真实 Kuzu 写入读回、graph store/schema/纠错、source 边界与 symlink 防护、夜间顺序、纠错 API、备份 ZIP/API、隐藏 Git exclude 和初始化 schema 文件。
+- **29 Wiki 夜间维护与 index 注入**：`wiki-agent.ts` 收集当前 `Wiki/**/*.md`、`记忆/MEMORY.md`、daily、已索引 Markdown RAG chunk 和 Kuzu 图谱快照；Wiki agent 严格返回 JSON，只允许相对 `Wiki/` 的 `.md` 路径，拒绝绝对路径、`..`、`Wiki/` 前缀、隐藏路径和符号链接写入路径。`rag-worker.ts` 夜间链路为 deferred RAG -> graph -> Wiki -> immediate RAG，保证 Wiki 写入或未索引保留页在本轮进入 RAG；删除 Wiki 页同步清理 RAG target。`runtime-bundle.ts` 和普通会话注入均读取当前真源 `记忆/MEMORY.md` 与 `Wiki/index.md`，空 index 不注入。`wiki-agent.test.ts`、`graph-worker.test.ts`、`task30-31-32.test.ts` 覆盖。
 - **34 通知与建议中心**：左侧「通知」固定入口已接入 `NotificationCenterView.vue`，展示未处理数、筛选、列表和动作；`GET /api/notifications` 与 `POST /api/notifications/:eventId/actions` 支持忽略、标记已处理、重试、接受/拒绝建议、打开关联对象。`notification_events` 扩展 source/related/actions/handled 字段；文件处理失败、RAG 失败、后台任务最终失败写入关联对象和动作。新增通知 API 与前端组件测试，并通过全量测试。
 - **36 自动化规则运行与跳过**：`automation_rules` CRUD、调度器、手动 run API、UI 已有，但 `automation_runs` 无业务写入，跳过记录/失败通知/运行历史未闭环。只能标为自动化规则 CRUD/调度部分完成。
 - **37 备份恢复设置主题收尾**：设置页真实实现只有主题/明暗模式、退出、偏好；没有备份恢复、数据路径、错误边界。只能标“设置基础部分完成”。
@@ -63,8 +64,8 @@
 - **18 文件处理状态与临时文件边界**：`PATCH /status`、`POST /retry` API 完整实现，含状态流转校验、原子通知、错误可见。上传自动注册 pending、删除同步清理、.ridge 严格隔离均已实现且有测试覆盖。
 - **21 空间 HTML 作品私有预览**：左侧「空间」入口已接入真实 `SpaceView`，服务端提供 `GET /api/workspace/space` 与 `GET /api/workspace/space/:id/preview-html`；只读取 `空间/<作品名>/index.html`，路径有 `.ridge`、词法和 realpath 越界防护，缺失 `index.html` 返回 404。预览使用 `srcdoc` + `sandbox="allow-scripts"`，无 `allow-same-origin`，并确保 CSP 早于用户 HTML active content，禁止 ridge API/外联请求。已有服务端集成测试、前端组件测试和工作台接线测试。隐藏版本管理依赖工作空间级能力，本任务不新增保存/版本点链路，因此归档项保留为部分完成。
 - **插件与扩展能力真实状态**：
-  - **已真实接入**：Agent 注册/发现/选择（`/api/agents`、HomePage/WorkspaceChatTab agent 选择）、自动化规则（作为定时创建普通会话并发送消息的规则系统）、Pi resource catalog 后端可列 prompts/skills/extension commands（`/api/resources`、`buildResourceCatalog`）。
-  - **未在当前工作空间主会话 UI 中完整接入**：Skill 独立功能页仍占位；`WorkspaceChatTab` 当前给 `WorkbenchChatPanel` 传 `commands=[]`、`prompts=[]`、`skills=[]`，因此主工作空间会话的资源选择器/Skill 注入没有真正可用；runtime bundle 已包含 workspace MCP 配置，但设备专属 Skill 物化和主会话资源选择器仍未完整接入。
+  - **已真实接入**：Agent 注册/发现/选择（`/api/agents`、HomePage/WorkspaceChatTab agent 选择）、自动化规则（作为定时创建普通会话并发送消息的规则系统）、Pi resource catalog 后端可列 prompts/skills/extension commands（`/api/resources`、`buildResourceCatalog`）、runtime bundle（设备 token 鉴权、设备专属 Skill 过滤、启动上下文 `MEMORY.md + Wiki/index.md`）。
+  - **未在当前工作空间主会话 UI 中完整接入**：Skill 独立功能页仍占位；`WorkspaceChatTab` 当前给 `WorkbenchChatPanel` 传 `commands=[]`、`prompts=[]`、`skills=[]`，因此主工作空间会话的资源选择器/Skill 注入没有真正可用；runtime bundle 服务端生成和设备专属 Skill 过滤已实现，但桌面端物化后的主会话资源选择器仍未完整接入。
   - **旧 `SessionTabContent` 有 resourcePicker 接入，但当前工作空间主界面走 `WorkspaceChatTab`**，不能把旧组件能力当作当前真实可用功能。
 
 > **注**："✅" = 已实现且有测试/验收证据；"◐" = 部分实现/当前工作树证据但未完整验收；"⚠️" = 仅入口/占位或未合并待验证；"-" = 尚未实现或仅存在占位。归档需所有维度通过后方可标记。

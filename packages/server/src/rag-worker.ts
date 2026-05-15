@@ -2,6 +2,7 @@ import { indexPendingTarget, indexAllPending } from "./rag-indexer.js";
 import type { createBackgroundJobQueue } from "./background-jobs.js";
 import type { RagIndexEvent } from "./rag-indexer.js";
 import type { GraphMaintenanceRunner } from "./graph-agent.js";
+import type { WikiMaintenanceRunner } from "./wiki-agent.js";
 
 type BackgroundJobQueue = ReturnType<typeof createBackgroundJobQueue>;
 
@@ -13,6 +14,7 @@ export interface RagWorkerOptions {
 	nightlyHour?: number;
 	indexAllPendingFn?: typeof indexAllPending;
 	graphRunner?: Pick<GraphMaintenanceRunner, "runNightlyOnce">;
+	wikiRunner?: Pick<WikiMaintenanceRunner, "runNightlyOnce">;
 }
 
 export function createRagWorker(options: RagWorkerOptions) {
@@ -24,6 +26,7 @@ export function createRagWorker(options: RagWorkerOptions) {
 		nightlyHour = 3,
 		indexAllPendingFn = indexAllPending,
 		graphRunner,
+		wikiRunner,
 	} = options;
 
 	let timer: NodeJS.Timeout | null = null;
@@ -98,11 +101,21 @@ export function createRagWorker(options: RagWorkerOptions) {
 	}
 
 	async function runNightlyOnce() {
-		const result = await indexAllPendingFn({ workspaceDir, includeDeferred: true, event: "nightly" });
+		const deferredResult = await indexAllPendingFn({ workspaceDir, includeDeferred: true, event: "nightly" });
 		if (graphRunner) {
 			await graphRunner.runNightlyOnce();
 		}
-		return result;
+		let wikiRagResult: Awaited<ReturnType<typeof indexAllPendingFn>> | null = null;
+		if (wikiRunner) {
+			await wikiRunner.runNightlyOnce();
+			wikiRagResult = await indexAllPendingFn({ workspaceDir, event: "nightly" });
+		}
+		if (!wikiRagResult) return deferredResult;
+		return {
+			processed: deferredResult.processed + wikiRagResult.processed,
+			succeeded: deferredResult.succeeded + wikiRagResult.succeeded,
+			failed: deferredResult.failed + wikiRagResult.failed,
+		};
 	}
 
 	function delayUntilNextNightlyRun(now = new Date()): number {

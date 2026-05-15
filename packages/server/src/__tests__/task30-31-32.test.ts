@@ -783,14 +783,17 @@ describe("Task 32 - Runtime Bundle", () => {
     // Setup workspace resources
     const agentsDir = path.join(WORKSPACE, ".pi", "agents");
     const skillsDir = path.join(WORKSPACE, ".pi", "skills");
-    const memDir = path.join(WORKSPACE, "文档", "记忆");
+    const memDir = path.join(WORKSPACE, "记忆");
+    const wikiDir = path.join(WORKSPACE, "Wiki");
     await fs.mkdir(agentsDir, { recursive: true });
     await fs.mkdir(skillsDir, { recursive: true });
     await fs.mkdir(memDir, { recursive: true });
+    await fs.mkdir(wikiDir, { recursive: true });
     await fs.writeFile(path.join(agentsDir, "coder.pi.md"), "# Coder", "utf-8");
     await fs.writeFile(path.join(skillsDir, "test.md"), "# Test Skill", "utf-8");
     await fs.writeFile(path.join(WORKSPACE, ".pi", "mcp.json"), '{"servers":[]}', "utf-8");
     await fs.writeFile(path.join(memDir, "MEMORY.md"), "## Startup memory", "utf-8");
+    await fs.writeFile(path.join(wikiDir, "index.md"), "# Wiki\n\n- Startup wiki", "utf-8");
 
     const regRes = await agent.post("/api/devices/register").send({
       deviceId: "bundle-full",
@@ -807,6 +810,7 @@ describe("Task 32 - Runtime Bundle", () => {
     expect(res.body.manifest.skills.length).toBeGreaterThan(0);
     expect(res.body.manifest.mcp).toEqual({ servers: [] });
     expect(res.body.manifest.startupContext.memory).toContain("Startup memory");
+    expect(res.body.manifest.startupContext.wikiIndex).toContain("Startup wiki");
     expect(Object.keys(res.body.files).length).toBeGreaterThan(0);
     expect(res.body.files["agents/coder.pi.md"].content).toBe("# Coder");
     expect(res.body.files["agents/coder.pi.md"].encoding).toBe("utf-8");
@@ -816,6 +820,7 @@ describe("Task 32 - Runtime Bundle", () => {
     await fs.rm(path.join(skillsDir, "test.md"), { force: true });
     await fs.rm(path.join(WORKSPACE, ".pi", "mcp.json"), { force: true });
     await fs.rm(path.join(memDir, "MEMORY.md"), { force: true });
+    await fs.rm(path.join(wikiDir, "index.md"), { force: true });
   });
 
   it("Mac-only Skill 只下发给 Mac 设备", async () => {

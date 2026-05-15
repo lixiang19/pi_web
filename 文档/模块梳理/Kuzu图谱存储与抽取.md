@@ -86,8 +86,10 @@ graph agent 只接收标准化输入：
 
 1. `indexAllPending({ includeDeferred: true, event: "nightly" })`
 2. `graphRunner.runNightlyOnce()`
+3. `wikiRunner.runNightlyOnce()`
+4. `indexAllPending({ event: "nightly" })`
 
-因此 graph agent 读取的是夜间 RAG 后的标准产物视图。
+因此 graph agent 读取的是夜间 RAG 后的标准产物视图，Wiki agent 再读取 graph 结果和当前 Wiki 文件维护少量入口页；Wiki 写入后本轮会立即补一次 non-deferred RAG 索引。
 
 ## 6. 自然语言纠错
 

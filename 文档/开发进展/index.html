@@ -566,7 +566,7 @@
             </div>
             <p>输入 → 会话 / 闪念 / 文件 / 任务 → 处理和确认 → Markdown / 任务 / 项目 / 空间 / 记忆 → RAG / 图谱 / Wiki → 下一次会话可继续使用。</p>
             <div class="bar" style="margin-top: 14px"><span style="width: 34%"></span></div>
-            <p style="margin-top: 8px">已验证/已合并口径：00–09 主路径基础较明确；08 已实现任务里程碑数据模型、系统默认里程碑、项目绑定与 Agent 完成限制；09 已完成任务列表详情与状态流转（看板/列表/日历/里程碑四视图、详情编辑、状态流转、项目筛选、错误处理）。12 代码完成但 AI 验收尚未跑完；13/16/36/37 多为部分实现或待验证，不作为完成。25 有设计/代码线索待复验。其余功能以 spec/占位为主。</p>
+            <p style="margin-top: 8px">已验证/已合并口径：00–09 主路径基础较明确；08 已实现任务里程碑数据模型、系统默认里程碑、项目绑定与 Agent 完成限制；09 已完成任务列表详情与状态流转（看板/列表/日历/里程碑四视图、详情编辑、状态流转、项目筛选、错误处理）。22–24 RAG/搜索主链路、26–29 记忆/图谱/Wiki 后台链路、32 runtime bundle 服务端生成、33 workspace MCP 和 34 通知中心已有代码与测试证据。12 代码完成但 AI 验收尚未跑完；13/16/36/37 多为部分实现或待验证，不作为完成。25 有设计/代码线索待复验。其余功能以 spec/占位为主。</p>
           </div>
 
           <div class="panel" style="border-left:4px solid var(--amber); background:#fffaf0">
@@ -588,7 +588,7 @@
             <ul style="margin: 6px 0 10px; padding-left: 18px; color: var(--muted); font-size: 13px">
               <li>Skill 独立功能页仍占位；WorkspaceChatTab 给 WorkbenchChatPanel 传 <code>commands=[]、prompts=[]、skills=[]</code></li>
               <li>主工作空间会话的资源选择器/Skill 注入没有真正可用</li>
-              <li>runtime bundle 与设备专属 Skill、workspace MCP 仍是 spec/未实现</li>
+              <li>runtime bundle 服务端生成、设备 token 鉴权、设备专属 Skill 过滤和 workspace MCP 查读工具已实现；主工作空间会话的资源选择器/Skill 注入仍未完整可用</li>
             </ul>
             <p><strong>占位 / 仅入口</strong></p>
             <ul style="margin: 6px 0 10px; padding-left: 18px; color: var(--muted); font-size: 13px">
@@ -773,11 +773,11 @@
         ["26", "summary agent daily 会话记忆", "M6", "spec"],
         ["27", "memory agent MEMORY 维护与注入", "M6", "spec"],
         ["28", "Kuzu 图谱存储与抽取", "M7", "spec"],
-        ["29", "Wiki 夜间维护与 index 注入", "M7", "spec"],
+        ["29", "Wiki 夜间维护与 index 注入", "M7", "done"],
         ["30", "项目注册与内部外部项目", "M8", "spec"],
         ["31", "设备注册在线状态与调度", "M8", "spec"],
-        ["32", "runtime bundle 与设备专属 Skill", "M8", "spec"],
-        ["33", "workspace MCP 查读工具", "M8", "spec"],
+        ["32", "runtime bundle 与设备专属 Skill", "M8", "done"],
+        ["33", "workspace MCP 查读工具", "M8", "done"],
         ["34", "通知与建议中心", "M9", "spec"],
         ["35", "task review agent 任务回顾", "M9", "spec"],
         ["36", "自动化规则运行与跳过", "M9", "spec"],
