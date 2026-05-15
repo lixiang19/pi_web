@@ -5,7 +5,7 @@ import { toast } from "vue-sonner";
 
 import NoteMilkdownEditor from "@/components/workspace/NoteMilkdownEditor.vue";
 import { Button } from "@/components/ui/button";
-import { getNoteContent, saveNoteContent } from "@/lib/api";
+import { getFilePreview, saveFileContent } from "@/lib/api";
 
 const AUTO_SAVE_DELAY_MS = 2000;
 
@@ -30,9 +30,10 @@ const emit = defineEmits<{
 const loadContent = async () => {
 	isLoading.value = true;
 	try {
-		const response = await getNoteContent(props.filePath);
-		content.value = response.content;
-		savedContent.value = response.content;
+		const response = await getFilePreview(props.filePath, props.rootDir);
+		const nextContent = response.content ?? "";
+		content.value = nextContent;
+		savedContent.value = nextContent;
 		saveStatus.value = "saved";
 	} catch (err) {
 		saveError.value = err instanceof Error ? err.message : String(err);
@@ -66,7 +67,11 @@ const flushAutoSave = async () => {
 	emit("update:save-status", saveStatus.value);
 
 	try {
-		await saveNoteContent(props.filePath, content.value);
+		await saveFileContent({
+			root: props.rootDir,
+			path: props.filePath,
+			content: content.value,
+		});
 		savedContent.value = content.value;
 		saveStatus.value = "saved";
 		saveError.value = "";

@@ -163,6 +163,81 @@ describe("useWorkspaceFiles", () => {
 		expect(instance.error.value).toBe("Convert failed");
 		convertSpy.mockRestore();
 	});
+
+	it("uploads files into the current directory and refreshes", async () => {
+		const treeSpy = vi
+			.spyOn(api, "getWorkspaceFilesTree")
+			.mockResolvedValue({
+				root: "/workspace",
+				directory: "/workspace/附件",
+				entries: [],
+			} as Awaited<ReturnType<typeof api.getWorkspaceFilesTree>>);
+		const uploadSpy = vi
+			.spyOn(api, "uploadFiles")
+			.mockResolvedValue({ entries: [] } as Awaited<ReturnType<typeof api.uploadFiles>>);
+		const file = new File(["hello"], "hello.md", { type: "text/markdown" });
+
+		const instance = useWorkspaceFiles();
+		await instance.load("/workspace/附件");
+		treeSpy.mockClear();
+		await instance.upload([file]);
+
+		expect(uploadSpy).toHaveBeenCalledWith("/workspace", "/workspace/附件", [file]);
+		expect(treeSpy).toHaveBeenCalledWith("/workspace/附件");
+		expect(instance.error.value).toBe("");
+	});
+
+	it("creates, renames, moves and deletes entries with workspace root context", async () => {
+		const treeSpy = vi
+			.spyOn(api, "getWorkspaceFilesTree")
+			.mockResolvedValue({
+				root: "/workspace",
+				directory: "/workspace/附件",
+				entries: [],
+			} as Awaited<ReturnType<typeof api.getWorkspaceFilesTree>>);
+		const createSpy = vi
+			.spyOn(api, "createFileEntry")
+			.mockResolvedValue({ entry: { name: "资料", path: "/workspace/附件/资料", kind: "directory", size: null, modifiedAt: 1, extension: "" } } as Awaited<ReturnType<typeof api.createFileEntry>>);
+		const moveSpy = vi
+			.spyOn(api, "moveFileEntry")
+			.mockResolvedValue({ entry: { name: "renamed.md", path: "/workspace/附件/renamed.md", kind: "file", size: 1, modifiedAt: 1, extension: ".md" } } as Awaited<ReturnType<typeof api.moveFileEntry>>);
+		const trashSpy = vi
+			.spyOn(api, "trashFileEntry")
+			.mockResolvedValue({
+				root: "/workspace",
+				path: "/workspace/附件/renamed.md",
+				trashedPath: "/workspace/.trash/renamed.md",
+				trashedAt: 1,
+			} as Awaited<ReturnType<typeof api.trashFileEntry>>);
+
+		const instance = useWorkspaceFiles();
+		await instance.load("/workspace/附件");
+		treeSpy.mockClear();
+
+		await instance.createFolder("资料");
+		await instance.rename("/workspace/附件/old.md", "renamed.md");
+		await instance.move("/workspace/附件/renamed.md", "/workspace/笔记");
+		await instance.remove("/workspace/附件/renamed.md");
+
+		expect(createSpy).toHaveBeenCalledWith({
+			root: "/workspace",
+			directory: "/workspace/附件",
+			name: "资料",
+			kind: "directory",
+		});
+		expect(moveSpy).toHaveBeenCalledWith({
+			root: "/workspace",
+			path: "/workspace/附件/old.md",
+			name: "renamed.md",
+		});
+		expect(moveSpy).toHaveBeenCalledWith({
+			root: "/workspace",
+			path: "/workspace/附件/renamed.md",
+			targetDirectory: "/workspace/笔记",
+		});
+		expect(trashSpy).toHaveBeenCalledWith("/workspace", "/workspace/附件/renamed.md");
+		expect(treeSpy).toHaveBeenCalledTimes(4);
+	});
 });
 
 describe("getParentPath", () => {

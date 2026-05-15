@@ -4,6 +4,7 @@ import { LoaderCircle } from "lucide-vue-next";
 
 import OpenWithDefaultApp from "@/components/workspace/OpenWithDefaultApp.vue";
 import WorkspaceMarkdownEditor from "@/components/workspace/WorkspaceMarkdownEditor.vue";
+import WorkspaceTextFileEditor from "@/components/workspace/WorkspaceTextFileEditor.vue";
 import BaseView from "@/components/workspace/BaseView.vue";
 import WorkbenchReadonlyFilePreview from "@/components/workbench/file-preview/WorkbenchReadonlyFilePreview.vue";
 import { getFileBlobUrl } from "@/lib/api";
@@ -32,6 +33,12 @@ const isUnsupported = computed(() => {
 		!props.tab.isLoading &&
 		!props.tab.error
 	);
+});
+
+const isEditableSpaceHtml = computed(() => {
+	if (!props.tab || props.tab.previewKind !== "html") return false;
+	const normalizedPath = props.tab.path.replace(/\\/g, "/");
+	return normalizedPath.includes("/空间/") && normalizedPath.endsWith("/index.html");
 });
 </script>
 
@@ -69,6 +76,15 @@ const isUnsupported = computed(() => {
       :file-path="tab.path"
       :workspace-dir="tab.root"
       class="h-full"
+    />
+
+    <WorkspaceTextFileEditor
+      v-else-if="tab && isEditableSpaceHtml"
+      :file-path="tab.path"
+      :root-dir="tab.root"
+      :initial-content="tab.content"
+      class="h-full"
+      @update:save-status="emit('save-status', tab.id, $event)"
     />
 
     <!-- 其他文件：只读预览 -->

@@ -11,6 +11,13 @@ vi.mock("@/components/workspace/WorkspaceMarkdownEditor.vue", () => ({
 	},
 }));
 
+vi.mock("@/components/workspace/WorkspaceTextFileEditor.vue", () => ({
+	default: {
+		name: "WorkspaceTextFileEditor",
+		template: `<div data-test="text-file-editor" />`,
+	},
+}));
+
 vi.mock("@/components/workbench/file-preview/WorkbenchReadonlyFilePreview.vue", () => ({
 	default: {
 		name: "WorkbenchReadonlyFilePreview",
@@ -70,6 +77,25 @@ describe("WorkspaceContentArea markdown routing", () => {
 		});
 		expect(wrapper.find('[data-test="markdown-editor"]').exists()).toBe(false);
 		expect(wrapper.find('[data-test="readonly-preview"]').exists()).toBe(true);
+	});
+
+	it("renders an editable text editor for space index html", () => {
+		const wrapper = mount(WorkspaceContentArea, {
+			props: {
+				tab: createTab({
+					id: "/workspace/空间/demo/index.html",
+					path: "/workspace/空间/demo/index.html",
+					title: "index.html",
+					extension: ".html",
+					mimeType: "text/html",
+					previewKind: "html",
+					content: "<h1>demo</h1>",
+				}),
+				rootDir: "/workspace",
+			},
+		});
+		expect(wrapper.find('[data-test="text-file-editor"]').exists()).toBe(true);
+		expect(wrapper.find('[data-test="readonly-preview"]').exists()).toBe(false);
 	});
 });
 

@@ -1,5 +1,13 @@
 import { ref } from "vue";
-import { getWorkspaceFilesTree, retryFileProcessing, convertFile } from "@/lib/api";
+import {
+	createFileEntry,
+	getWorkspaceFilesTree,
+	moveFileEntry,
+	retryFileProcessing,
+	convertFile,
+	trashFileEntry,
+	uploadFiles,
+} from "@/lib/api";
 import type { FileTreeEntry } from "@/lib/types";
 
 export function getParentPath(currentPath: string): string | null {
@@ -73,6 +81,78 @@ export function useWorkspaceFiles() {
 		}
 	};
 
+	const refreshCurrentDirectory = async () => {
+		await load(currentPath.value || workspaceRoot.value);
+	};
+
+	const upload = async (files: File[]) => {
+		if (!workspaceRoot.value || !currentPath.value || files.length === 0) return;
+		error.value = "";
+		try {
+			await uploadFiles(workspaceRoot.value, currentPath.value, files);
+			await refreshCurrentDirectory();
+		} catch (err) {
+			error.value = err instanceof Error ? err.message : String(err);
+		}
+	};
+
+	const createFolder = async (name: string) => {
+		if (!workspaceRoot.value || !currentPath.value || !name.trim()) return;
+		error.value = "";
+		try {
+			await createFileEntry({
+				root: workspaceRoot.value,
+				directory: currentPath.value,
+				name: name.trim(),
+				kind: "directory",
+			});
+			await refreshCurrentDirectory();
+		} catch (err) {
+			error.value = err instanceof Error ? err.message : String(err);
+		}
+	};
+
+	const rename = async (filePath: string, name: string) => {
+		if (!workspaceRoot.value || !name.trim()) return;
+		error.value = "";
+		try {
+			await moveFileEntry({
+				root: workspaceRoot.value,
+				path: filePath,
+				name: name.trim(),
+			});
+			await refreshCurrentDirectory();
+		} catch (err) {
+			error.value = err instanceof Error ? err.message : String(err);
+		}
+	};
+
+	const move = async (filePath: string, targetDirectory: string) => {
+		if (!workspaceRoot.value || !targetDirectory.trim()) return;
+		error.value = "";
+		try {
+			await moveFileEntry({
+				root: workspaceRoot.value,
+				path: filePath,
+				targetDirectory: targetDirectory.trim(),
+			});
+			await refreshCurrentDirectory();
+		} catch (err) {
+			error.value = err instanceof Error ? err.message : String(err);
+		}
+	};
+
+	const remove = async (filePath: string) => {
+		if (!workspaceRoot.value) return;
+		error.value = "";
+		try {
+			await trashFileEntry(workspaceRoot.value, filePath);
+			await refreshCurrentDirectory();
+		} catch (err) {
+			error.value = err instanceof Error ? err.message : String(err);
+		}
+	};
+
 	return {
 		entries,
 		workspaceRoot,
@@ -84,5 +164,10 @@ export function useWorkspaceFiles() {
 		navigateBack,
 		retry,
 		convert,
+		upload,
+		createFolder,
+		rename,
+		move,
+		remove,
 	};
 }

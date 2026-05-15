@@ -85,6 +85,8 @@
 - [导航去重] 会话侧栏不要再维护“最近访问”这类二次导航；标签页已承担最近工作集语义，侧栏应只保留稳定信息架构（项目/搜索），否则状态重复、localStorage 重复、认知也重复
 - [搜索入口] 左侧"搜索"只负责进入独立搜索页；真实搜索输入与结果必须放主内容区，侧栏搜索框只是本地过滤器（两者全存在会造成职责混淆，侧栏过滤器应删除统一入口）
 - [RAG刷新契约] RAG 上传和普通编辑不是同一触发语义：Markdown 上传要同步可检索；普通 Markdown 编辑只标记 `refresh_policy=deferred` 并保留旧 chunk，直到手动刷新或夜间索引再重建；删除/移动文件必须同步清理或改写 RAG metadata。
+- [V2阶段2文件闭环] 文件页操作入口已收口到 `FilesView` + `useWorkspaceFiles`，支持上传、新建文件夹、重命名、移动、删除、重试和重新转换；Markdown 编辑保存必须走 `/api/files/content`，不能再走 notes API，否则会丢失 workspace 文件路径、RAG deferred 和隐藏版本点。
+- [空间隐藏版本契约] `空间/<作品名>/index.html` 可通过普通文件编辑器保存；保存走 `/api/files/content`，写入 RAG immediate pending，并通过 `workspace-version.ts` 创建隐藏版本点。预览 API 仍只负责私有 `srcdoc` 读取，不创建公开 URL。
 - [Wiki维护契约] 夜间维护顺序固定为 RAG deferred 索引 -> graph -> Wiki -> Wiki immediate RAG；Wiki agent 必须读取当前 `Wiki/**/*.md` 作为用户可编辑真源，只维护少量 canonical Markdown 页面，拒绝隐藏/越界/符号链接写入路径，空 `Wiki/index.md` 不注入。
 - [RAG向量契约] RAG embedding 使用 SiliconFlow `Qwen/Qwen3-VL-Embedding-8B`；配置从 `app_settings` 的 `siliconflow_embedding_*` 或 `SILICONFLOW_*` 环境变量读取。索引阶段缺 Key/远端失败必须写 `index_failed` 和通知；搜索阶段只允许旧 chunk 做精确文本命中，不能把历史 96 维本地 hash 向量继续混入语义相似度。
 - [图片RAG契约] 图片原文件是 RAG 一等源：上传 `.png/.jpg/.jpeg/.webp/.bmp/.gif/.tif/.tiff` 后直接用 Qwen3-VL 图片 embedding 入库；图片 OCR 转换产物 `.md` 仍作为独立文本 RAG 源入库，二者互补，不能只依赖 OCR 代表图片 RAG。

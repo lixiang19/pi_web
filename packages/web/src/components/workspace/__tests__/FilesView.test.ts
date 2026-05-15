@@ -421,4 +421,78 @@ describe("FilesView", () => {
     expect(row.attributes("role")).toBe("button");
     expect(row.attributes("tabindex")).toBe("0");
   });
+
+  it("exposes upload, create-folder, rename, move and delete actions", async () => {
+    const entries: FileTreeEntry[] = [
+      makeEntry("docs", "directory"),
+      makeEntry("notes.md", "file"),
+    ];
+
+    const wrapper = mount(FilesView, {
+      props: {
+        workspaceRoot: "/ws",
+        entries,
+        currentPath: "/ws/附件",
+        loading: false,
+      },
+      global: {
+        stubs: {
+          Badge: {
+            props: ["variant"],
+            template: `<span class="badge-stub"><slot /></span>`,
+          },
+          ScrollArea: {
+            template: `<div class="scroll-area-stub"><slot /></div>`,
+          },
+          Dialog: {
+            props: ["open"],
+            template: `<div class="dialog-stub"><slot /></div>`,
+          },
+          DialogContent: {
+            template: `<div class="dialog-content-stub"><slot /></div>`,
+          },
+          DialogHeader: {
+            template: `<div class="dialog-header-stub"><slot /></div>`,
+          },
+          DialogTitle: {
+            template: `<div class="dialog-title-stub"><slot /></div>`,
+          },
+          DialogDescription: {
+            template: `<div class="dialog-description-stub"><slot /></div>`,
+          },
+          DialogFooter: {
+            template: `<div class="dialog-footer-stub"><slot /></div>`,
+          },
+        },
+      },
+    });
+
+    await nextTick();
+
+    const uploadInput = wrapper.find<HTMLInputElement>("[data-test='file-upload-input']");
+    const file = new File(["hello"], "hello.md", { type: "text/markdown" });
+    Object.defineProperty(uploadInput.element, "files", { value: [file], configurable: true });
+    await uploadInput.trigger("change");
+    expect(wrapper.emitted("upload")![0]![0]).toEqual([file]);
+
+    await wrapper.find("[data-test='create-folder-action']").trigger("click");
+    await wrapper.find<HTMLInputElement>("[data-test='entry-name-input']").setValue("资料");
+    await wrapper.find("[data-test='entry-dialog-confirm']").trigger("click");
+    expect(wrapper.emitted("create-folder")![0]![0]).toBe("资料");
+
+    const rows = wrapper.findAll("[data-test='file-row']");
+    await rows[1]!.find("[data-test='rename-entry-action']").trigger("click");
+    await wrapper.find<HTMLInputElement>("[data-test='entry-name-input']").setValue("renamed.md");
+    await wrapper.find("[data-test='entry-dialog-confirm']").trigger("click");
+    expect(wrapper.emitted("rename")![0]).toEqual(["/ws/notes.md", "renamed.md"]);
+
+    await rows[1]!.find("[data-test='move-entry-action']").trigger("click");
+    await wrapper.find<HTMLInputElement>("[data-test='entry-target-directory-input']").setValue("/ws/笔记");
+    await wrapper.find("[data-test='entry-dialog-confirm']").trigger("click");
+    expect(wrapper.emitted("move")![0]).toEqual(["/ws/notes.md", "/ws/笔记"]);
+
+    await rows[1]!.find("[data-test='delete-entry-action']").trigger("click");
+    expect(wrapper.emitted("delete")![0]![0]).toBe("/ws/notes.md");
+    expect(wrapper.emitted("open-file")).toBeFalsy();
+  });
 });

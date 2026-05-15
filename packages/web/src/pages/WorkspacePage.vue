@@ -122,11 +122,12 @@ const {
 
 const { handleDelete, handleRename, handleCreateFolderInTree } = useFileTreeActions(workspaceDir, refreshTree);
 
-// 文件预览
-const preview = useWorkspaceFilePreview(workspaceDir);
-
 // 工作空间文件页
 const workspaceFiles = useWorkspaceFiles();
+
+// 文件预览
+const previewRootDir = computed(() => workspaceDir.value || workspaceFiles.workspaceRoot.value || rootPath.value);
+const preview = useWorkspaceFilePreview(previewRootDir);
 
 // 空间 HTML 作品
 const workspaceSpace = useWorkspaceSpace();
@@ -449,7 +450,7 @@ async function handleOpenSpacePreviewById(workId: string) {
 }
 
 /** 打开文件标签页到当前活跃面板 */
-function handleSelectFile(entry: FileTreeEntry) {
+async function handleSelectFile(entry: FileTreeEntry) {
 	if (entry.kind === "directory") {
 		selectedDirPath.value = entry.path;
 		toggleDirectory(entry);
@@ -459,7 +460,7 @@ function handleSelectFile(entry: FileTreeEntry) {
 	selectedDirPath.value = entry.path.substring(0, entry.path.lastIndexOf('/'));
 
 	// 先加载文件预览
-	preview.openFile(entry.path);
+	await preview.openFile(entry.path);
 
 	const fileTab = preview.tabs.value.find((t) => t.path === entry.path);
 	if (fileTab) {
@@ -1094,11 +1095,17 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			  :entries="workspaceFiles.entries.value"
 			  :current-path="workspaceFiles.currentPath.value"
 			  :loading="workspaceFiles.loading.value"
+			  :error="workspaceFiles.error.value"
 			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
 			  @navigate="workspaceFiles.navigate"
 			  @navigate-back="workspaceFiles.navigateBack"
 			  @retry="workspaceFiles.retry($event)"
 			  @convert="(path: string, force: boolean) => workspaceFiles.convert(path, force)"
+			  @upload="workspaceFiles.upload($event)"
+			  @create-folder="workspaceFiles.createFolder($event)"
+			  @rename="(path: string, name: string) => workspaceFiles.rename(path, name)"
+			  @move="(path: string, targetDirectory: string) => workspaceFiles.move(path, targetDirectory)"
+			  @delete="workspaceFiles.remove($event)"
 			/>
 			<WorkspaceSearchView
 			  v-else-if="tab.featureId === 'search'"

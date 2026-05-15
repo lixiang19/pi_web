@@ -3,14 +3,14 @@ import { defineComponent } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import WorkspaceMarkdownEditor from "@/components/workspace/WorkspaceMarkdownEditor.vue";
-import { getNoteContent, saveNoteContent } from "@/lib/api";
+import { getFilePreview, saveFileContent } from "@/lib/api";
 
 vi.mock("@/lib/api", async () => {
 	const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
 	return {
 		...actual,
-		getNoteContent: vi.fn(),
-		saveNoteContent: vi.fn(),
+		getFilePreview: vi.fn(),
+		saveFileContent: vi.fn(),
 	};
 });
 
@@ -51,18 +51,23 @@ const mountEditor = async () => {
 describe("WorkspaceMarkdownEditor reliability", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
-		vi.mocked(getNoteContent).mockResolvedValue({
-			path: "笔记/test.md",
-			relativePath: "笔记/test.md",
+		vi.mocked(getFilePreview).mockResolvedValue({
+			root: "/workspace",
+			path: "/workspace/笔记/test.md",
+			name: "test.md",
+			extension: ".md",
+			mimeType: "text/markdown",
+			previewKind: "markdown",
 			content: "old content",
-			updatedAt: 1,
 			size: 11,
+			isLargeFile: false,
+			readOnly: false,
 		});
-		vi.mocked(saveNoteContent).mockResolvedValue({
-			path: "笔记/test.md",
-			relativePath: "笔记/test.md",
+		vi.mocked(saveFileContent).mockResolvedValue({
+			root: "/workspace",
+			path: "/workspace/笔记/test.md",
 			size: 11,
-			updatedAt: 2,
+			savedAt: 2,
 		});
 	});
 
@@ -75,7 +80,11 @@ describe("WorkspaceMarkdownEditor reliability", () => {
 
 		await vi.advanceTimersByTimeAsync(2000);
 		await vi.waitFor(() => {
-			expect(saveNoteContent).toHaveBeenCalledWith("笔记/test.md", "new content");
+			expect(saveFileContent).toHaveBeenCalledWith({
+				root: "/workspace",
+				path: "笔记/test.md",
+				content: "new content",
+			});
 		});
 		expect(wrapper.emitted("update:save-status")?.map((item) => item[0])).toContain("saving");
 		expect(wrapper.emitted("update:save-status")?.at(-1)).toEqual(["saved"]);
@@ -83,9 +92,9 @@ describe("WorkspaceMarkdownEditor reliability", () => {
 	});
 
 	it("shows save errors, keeps edited content, and retries save", async () => {
-		vi.mocked(saveNoteContent)
+		vi.mocked(saveFileContent)
 			.mockRejectedValueOnce(new Error("disk full"))
-			.mockResolvedValueOnce({ path: "笔记/test.md", relativePath: "笔记/test.md", size: 13, updatedAt: 3 });
+			.mockResolvedValueOnce({ root: "/workspace", path: "/workspace/笔记/test.md", size: 13, savedAt: 3 });
 		const wrapper = await mountEditor();
 
 		await wrapper.get('[data-test="milkdown"]').setValue("draft content");
@@ -98,9 +107,17 @@ describe("WorkspaceMarkdownEditor reliability", () => {
 
 		await wrapper.get('[data-test="retry-save"]').trigger("click");
 		await vi.waitFor(() => {
-			expect(saveNoteContent).toHaveBeenCalledWith("笔记/test.md", "draft content");
+			expect(saveFileContent).toHaveBeenCalledWith({
+				root: "/workspace",
+				path: "笔记/test.md",
+				content: "draft content",
+			});
 		});
-		expect(saveNoteContent).toHaveBeenLastCalledWith("笔记/test.md", "draft content");
+		expect(saveFileContent).toHaveBeenLastCalledWith({
+			root: "/workspace",
+			path: "笔记/test.md",
+			content: "draft content",
+		});
 		expect(wrapper.emitted("update:save-status")?.at(-1)).toEqual(["saved"]);
 	});
 
@@ -109,7 +126,11 @@ describe("WorkspaceMarkdownEditor reliability", () => {
 		await wrapper.get('[data-test="milkdown"]').setValue("pending content");
 		wrapper.unmount();
 		await vi.waitFor(() => {
-			expect(saveNoteContent).toHaveBeenCalledWith("笔记/test.md", "pending content");
+			expect(saveFileContent).toHaveBeenCalledWith({
+				root: "/workspace",
+				path: "笔记/test.md",
+				content: "pending content",
+			});
 		});
 	});
 });

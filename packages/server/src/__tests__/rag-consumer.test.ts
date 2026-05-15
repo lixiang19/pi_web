@@ -8,6 +8,8 @@ import { app } from "../index.js";
 import { createAuthenticatedAgent } from "../test/auth.js";
 import { getRidgeDb } from "../db/index.js";
 import { indexPendingTarget, searchContent } from "../rag-indexer.js";
+import { createIsoGitService } from "../iso-git-service.js";
+import { getWorkspaceVersionContext } from "../workspace-version.js";
 
 let api: ReturnType<typeof request.agent>;
 const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
@@ -117,6 +119,31 @@ describe("RAG consumer chain — end-to-end", () => {
 		const oldSearchResults = await searchContent("old content before editing");
 		const oldMatch = oldSearchResults.find((r) => r.targetPath === filePath);
 		expect(oldMatch).toBeUndefined();
+	});
+
+	it("saves space index html through file content API and creates a hidden version point", async () => {
+		const workDir = path.join(TEST_ROOT, "空间", `space-edit-${Date.now()}`);
+		await fs.mkdir(workDir, { recursive: true });
+		const filePath = path.join(workDir, "index.html").replace(/\\/g, "/");
+		await fs.writeFile(filePath, "<h1>old space</h1>", "utf-8");
+
+		const editRes = await api.put("/api/files/content").send({
+			root: TEST_ROOT,
+			path: filePath,
+			content: "<h1>new space token</h1>",
+		});
+
+		expect(editRes.status).toBe(200);
+		expect(await fs.readFile(filePath, "utf-8")).toBe("<h1>new space token</h1>");
+
+		const db = await getRidgeDb();
+		const row = db
+			.prepare("SELECT status, refresh_policy, last_event FROM search_index_status WHERE target_path = ?")
+			.get(filePath) as { status: string; refresh_policy: string; last_event: string } | undefined;
+		expect(row).toMatchObject({ status: "pending", refresh_policy: "immediate", last_event: "edit" });
+
+		const status = await createIsoGitService().getStatus(getWorkspaceVersionContext(TEST_ROOT));
+		expect(status.files.some((file) => file.path === path.relative(TEST_ROOT, filePath).replace(/\\/g, "/"))).toBe(false);
 	});
 
 	it("indexes conversion-produced Markdown and makes OCR text searchable", async () => {

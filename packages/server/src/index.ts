@@ -68,6 +68,7 @@ import { createWorktreeRouter } from "./routes/worktrees.js";
 import { createWorkspaceFilesRouter } from "./routes/workspace-files.js";
 import { createWorkspaceSpaceRouter } from "./routes/workspace-space.js";
 import { createWorkspaceSearchRouter } from "./routes/workspace-search.js";
+import { commitWorkspaceVersionPoint } from "./workspace-version.js";
 import { createWorkspaceGraphRouter } from "./routes/workspace-graph.js";
 import { createWorkspaceBackupRouter } from "./workspace-backup.js";
 import { createWorkspaceMcpRouter } from "./routes/workspace-mcp.js";
@@ -1007,10 +1008,16 @@ app.put(
 			const { rootPath, targetPath, stats } =
 				await ensureFileForPreview(payload);
 			const extension = path.extname(targetPath).toLowerCase();
+			const relativeToWorkspace = toPosixPath(path.relative(rootPath, targetPath));
+			const isSpaceIndexHtml =
+				!relativeToWorkspace.startsWith("../") &&
+				!path.isAbsolute(relativeToWorkspace) &&
+				relativeToWorkspace.startsWith("空间/") &&
+				path.basename(relativeToWorkspace).toLowerCase() === "index.html";
 
-			if (!markdownExtensions.has(extension)) {
+			if (!markdownExtensions.has(extension) && !(isSpaceIndexHtml && (extension === ".html" || extension === ".htm"))) {
 				const error = new Error(
-					"Only Markdown files can be edited",
+					"Only Markdown files and space index.html can be edited",
 				) as HttpError;
 				error.statusCode = 400;
 				throw error;
@@ -1023,11 +1030,24 @@ app.put(
 			if (markdownExtensions.has(extension)) {
 				const posixPath = toPosixPath(targetPath);
 				await markRagTargetPending(posixPath, {
-					workspaceDir: defaultWorkspaceDir,
+					workspaceDir: rootPath,
 					refreshPolicy: "deferred",
 					event: "edit",
 				});
+			} else if (isSpaceIndexHtml) {
+				const posixPath = toPosixPath(targetPath);
+				await markRagTargetPending(posixPath, {
+					workspaceDir: rootPath,
+					refreshPolicy: "immediate",
+					event: "edit",
+				});
 			}
+
+			await commitWorkspaceVersionPoint({
+				workspaceDir: rootPath,
+				files: [targetPath],
+				message: isSpaceIndexHtml ? "保存空间作品" : "保存 Markdown 文件",
+			});
 
 			const response: FileSaveResponse = {
 				root: toPosixPath(rootPath),

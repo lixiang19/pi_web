@@ -58,6 +58,7 @@ function convertStatusMatrix(
 
 		// 排除 .git 目录自身
 		if (filepath === ".git" || filepath.startsWith(".git/")) continue;
+		if (filepath === ".ridge" || filepath.startsWith(".ridge/")) continue;
 
 		let index = " ";
 		let working_dir = " ";
@@ -162,12 +163,26 @@ export function createIsoGitService() {
 		await ensureInit(ctx);
 
 		for (const f of files) {
-			await isoGit.add({
-				fs,
-				dir: ctx.workTree,
-				gitdir: ctx.gitdir,
-				filepath: f,
-			});
+			const targetPath = path.join(ctx.workTree, f);
+			try {
+				await fs.promises.access(targetPath);
+				await isoGit.add({
+					fs,
+					dir: ctx.workTree,
+					gitdir: ctx.gitdir,
+					filepath: f,
+				});
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+					throw error;
+				}
+				await isoGit.remove({
+					fs,
+					dir: ctx.workTree,
+					gitdir: ctx.gitdir,
+					filepath: f,
+				});
+			}
 		}
 
 		const sha = await isoGit.commit({

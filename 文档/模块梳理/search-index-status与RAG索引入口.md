@@ -83,7 +83,7 @@ pending ──[rag-worker / indexPendingTarget]──► indexed
 |--------|-------------|----------------------|----------|
 | Markdown 上传 | 原 `.md` 路径 | `SHA256(文件内容)` | 上传 API 落盘后 |
 | Markdown 编辑 | 原 `.md` 路径 | `SHA256(新内容)` | PUT /api/files/content 保存后，`refresh_policy=deferred` |
-| 空间 HTML | `空间/<作品名>/index.html` | `SHA256(HTML 原文)` | 上传 API 落盘后或手动标记后 |
+| 空间 HTML | `空间/<作品名>/index.html` | `SHA256(HTML 原文)` | 上传 API 落盘后、空间 HTML 编辑保存后或手动刷新 |
 | 图片原文件 | `.png/.jpg/.jpeg/.webp/.bmp/.gif/.tif/.tiff` 路径 | `SHA256(图片 buffer)` | 上传 API 落盘后或手动刷新 |
 | 音频转换产物 | `.md` 产物路径 | `SHA256(md artifact buffer)` | worker 写盘后 |
 | 图片 OCR 产物 | `.md` 产物路径 | `SHA256(md artifact buffer)` | worker 写盘后 |
@@ -239,6 +239,8 @@ await indexPendingTarget(entry.path, {
 const contentHash = crypto.createHash("sha256").update(payload.content).digest("hex");
 db.prepare(`INSERT INTO search_index_status ... ON CONFLICT ...`).run(posixPath, contentHash, now);
 ```
+
+Markdown 编辑保存使用 `refresh_policy=deferred`，保留旧 chunks，等待手动刷新或夜间任务重建。空间 `index.html` 编辑保存使用 `refresh_policy=immediate`，因为空间作品预览依赖当前 HTML 真源，保存后应尽快进入 RAG 消费队列。
 
 ## 8. 文件关联
 
