@@ -173,6 +173,19 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   );
 
   const isDraftSession = computed(() => !activeSession.value);
+  const isReadonlySession = computed(
+    () =>
+      activeSession.value?.archived === true ||
+      activeSessionSnapshot.value?.archived === true,
+  );
+
+  watch(
+    isReadonlySession,
+    (readonly) => {
+      composer.isDisabled = readonly;
+    },
+    { immediate: true },
+  );
 
   const currentSessionTitle = computed(() => {
     if (activeSession.value?.title) {
@@ -210,7 +223,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
       3;
     streamParams.set("rounds", String(currentRounds));
     eventSource = new EventSource(
-      `/api/sessions/${sid}/stream?${streamParams.toString()}`,
+      `/api/sessions/${sid}/events?${streamParams.toString()}`,
     );
 
     eventSource.onmessage = (event) => {
@@ -373,6 +386,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   ) => {
     activeDraftContext.value = null;
     composer.sessionId = snapshot.id;
+    composer.isDisabled = snapshot.archived === true;
     status.value = snapshot.status;
     isSending.value = snapshot.status === "streaming";
     composer.isSending = snapshot.status === "streaming";
@@ -473,6 +487,12 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   const submit = async (attachmentIds?: string[]) => {
     const prompt = composer.draftText.trim();
     if (!prompt || composer.isSending) {
+      return;
+    }
+
+    if (isReadonlySession.value) {
+      composer.isDisabled = true;
+      error.value = "归档会话只读，不能继续发送";
       return;
     }
 
@@ -862,6 +882,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
 
     messages.value = [];
     composer.sessionId = null;
+    composer.isDisabled = false;
     composer.draftText = "";
     composer.hasDraft = false;
     status.value = "idle";
@@ -961,6 +982,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     isLoadingOlder,
     activeHistoryMeta,
     isDraftSession,
+    isReadonlySession,
     currentSessionTitle,
     fileTreeRoot,
     effectiveModel,

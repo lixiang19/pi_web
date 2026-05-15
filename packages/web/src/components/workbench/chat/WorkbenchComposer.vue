@@ -35,6 +35,7 @@ const props = defineProps<{
   commands: CommandCatalogItem[];
   composer: ChatComposerState;
   currentProjectPath: string;
+  error: string;
   hasVisibleResources: boolean;
   isResourcePickerVisible: boolean;
   isDraftSession: boolean;
@@ -210,7 +211,7 @@ const handleKeydown = (event: KeyboardEvent) => {
       emit("abort");
       return;
     }
-    if (draftText.value.trim()) {
+    if (draftText.value.trim() && !props.composer.isDisabled) {
       emit("submit");
     }
   }
@@ -284,6 +285,7 @@ const currentAgentLabel = computed(() => {
             placeholder="输入消息… 支持 Markdown，Shift + Enter 换行，可拖拽文件路径到输入框"
             class="min-h-[96px] resize-none border-0 bg-transparent px-4 py-3 pr-14 text-sm leading-6 focus-visible:ring-0 focus-visible:ring-offset-0"
             :class="isDraggingOver ? 'placeholder:text-primary/70' : ''"
+            :disabled="composer.isDisabled"
             @keydown="handleKeydown"
             @drop="handleDrop"
             @dragover="handleDragOver"
@@ -313,7 +315,7 @@ const currentAgentLabel = computed(() => {
               v-else
               size="icon"
               class="size-9 rounded-lg"
-              :disabled="!value.trim()"
+              :disabled="composer.isDisabled || !value.trim()"
               @click="emit('submit')"
             >
               <SendHorizontal class="size-4" />
@@ -322,6 +324,14 @@ const currentAgentLabel = computed(() => {
         </div>
 
         <div class="mx-4 h-px bg-border/60" />
+
+        <div
+          v-if="composer.isDisabled || error"
+          class="px-4 pt-2 text-xs"
+          :class="composer.isDisabled ? 'text-muted-foreground' : 'text-destructive'"
+        >
+          {{ composer.isDisabled ? "归档会话只读，不能继续发送" : error }}
+        </div>
 
         <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-2.5">
           <div class="flex flex-wrap items-center gap-1">

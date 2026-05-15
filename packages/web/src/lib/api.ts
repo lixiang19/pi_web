@@ -327,7 +327,7 @@ export function getSessionAttachments(sessionId: string) {
 }
 
 export function abortSession(sessionId: string) {
-	return request<{ ok: true }>(`/api/sessions/${sessionId}/abort`, {
+	return request<{ ok: true }>(`/api/sessions/${sessionId}/cancel`, {
 		method: "POST",
 	});
 }
@@ -340,7 +340,7 @@ export function respondToAsk(
 		| { action: "dismiss" },
 ) {
 	return request<{ ok: true }>(
-		`/api/sessions/${sessionId}/asks/${askId}/respond`,
+		`/api/sessions/${sessionId}/ask/${askId}`,
 		{
 			method: "POST",
 			body: JSON.stringify(payload),
@@ -354,7 +354,7 @@ export function respondToPermissionRequest(
 	payload: { action: PermissionDecisionAction },
 ) {
 	return request<{ ok: true }>(
-		`/api/sessions/${sessionId}/permissions/${requestId}/respond`,
+		`/api/sessions/${sessionId}/permissions/${requestId}`,
 		{
 			method: "POST",
 			body: JSON.stringify(payload),

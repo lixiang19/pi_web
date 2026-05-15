@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
+import { EventEmitter } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import request from "supertest";
+import { WebSocket } from "ws";
 import { beforeAll, describe, expect, it } from "vitest";
 import { app, setJobQueueForTesting } from "../index.js";
 import { createAuthenticatedAgent } from "../test/auth.js";
@@ -15,6 +17,37 @@ const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
 beforeAll(async () => {
 	api = await createAuthenticatedAgent(app);
 });
+
+class ForwardingDesktopSocket extends EventEmitter {
+	readyState = WebSocket.OPEN;
+	readonly forwardedPayloads: Array<Record<string, unknown>> = [];
+
+	send(data: string) {
+		const message = JSON.parse(data) as {
+			type?: string;
+			requestId?: string;
+			payload?: Record<string, unknown>;
+		};
+		if (message.payload) {
+			this.forwardedPayloads.push(message.payload);
+		}
+		queueMicrotask(() => {
+			this.emit(
+				"message",
+				JSON.stringify({
+					type: "run_result",
+					requestId: message.requestId,
+					result: { ok: true },
+				}),
+			);
+		});
+	}
+
+	close() {
+		this.readyState = WebSocket.CLOSED;
+		this.emit("close");
+	}
+}
 
 describe("POST /api/files/create security", () => {
 	it("rejects absolute paths", async () => {
@@ -110,6 +143,241 @@ describe("POST /api/sessions/:sessionId/messages archived guard", () => {
 		expect(afterRes.status).toBe(200);
 		const afterList = afterRes.body as Array<{ id: string; archived: boolean }>;
 		expect(afterList.find((s) => s.id === sessionId)).toBeUndefined();
+	});
+
+	it("returns 403 without forwarding when sending to an archived desktop session", async () => {
+		const db = await getRidgeDb();
+		const sessionId = `session-archive-desktop-${Date.now()}`;
+		const deviceId = `desktop-archive-${Date.now()}`;
+		const desktopSocket = new ForwardingDesktopSocket();
+		const {
+			_injectMockWebSocketForTesting,
+			_clearMockConnectionsForTesting,
+		} = await import("../desktop-bridge.js");
+
+		db.prepare(
+			`INSERT INTO session_index(
+				session_id, title, session_type, context_type, workspace_path,
+				project_id, device_id, run_location, archived, created_at, updated_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			sessionId,
+			"desktop-archived",
+			"workspace",
+			"project",
+			WORKSPACE,
+			"desktop-archived-project",
+			deviceId,
+			"desktop",
+			1,
+			Date.now(),
+			Date.now(),
+		);
+		_injectMockWebSocketForTesting(deviceId, desktopSocket as unknown as WebSocket);
+
+		try {
+			const res = await api
+				.post(`/api/sessions/${sessionId}/messages`)
+				.send({ prompt: "should not forward" });
+			expect(res.status).toBe(403);
+			expect(res.text).toContain("归档会话不可发送消息");
+			expect(desktopSocket.forwardedPayloads).toEqual([]);
+		} finally {
+			_clearMockConnectionsForTesting();
+			db.prepare("DELETE FROM session_index WHERE session_id = ?").run(sessionId);
+		}
+	});
+
+	it("archives a desktop-only session in session_index and blocks future sends", async () => {
+		const db = await getRidgeDb();
+		const sessionId = `session-archive-desktop-route-${Date.now()}`;
+		const deviceId = `desktop-archive-route-${Date.now()}`;
+
+		db.prepare(
+			`INSERT INTO session_index(
+				session_id, title, session_type, context_type, workspace_path,
+				project_id, device_id, run_location, archived, created_at, updated_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			sessionId,
+			"desktop-archive-route",
+			"workspace",
+			"project",
+			WORKSPACE,
+			"desktop-archive-route-project",
+			deviceId,
+			"desktop",
+			0,
+			Date.now(),
+			Date.now(),
+		);
+
+		try {
+			const archiveRes = await api.post(`/api/sessions/${sessionId}/archive`).send({ archived: true });
+			expect(archiveRes.status).toBe(200);
+			expect(archiveRes.body.sessionIds).toEqual([sessionId]);
+
+			const row = db.prepare(
+				"SELECT archived FROM session_index WHERE session_id = ?",
+			).get(sessionId) as { archived: number } | undefined;
+			expect(row?.archived).toBe(1);
+
+			const sendRes = await api
+				.post(`/api/sessions/${sessionId}/messages`)
+				.send({ prompt: "blocked" });
+			expect(sendRes.status).toBe(403);
+		} finally {
+			db.prepare("DELETE FROM session_index WHERE session_id = ?").run(sessionId);
+		}
+	});
+});
+
+describe("task 38 session API contract", () => {
+	it("routes /events, /cancel, /ask/:id and /permissions/:id to session handlers", async () => {
+		const missingSessionId = `session-alias-missing-${Date.now()}`;
+
+		const eventsRes = await api.get(`/api/sessions/${missingSessionId}/events`);
+		expect(eventsRes.status).toBe(404);
+		expect(eventsRes.text).toBe("Session not found");
+
+		const cancelRes = await api.post(`/api/sessions/${missingSessionId}/cancel`).send({});
+		expect(cancelRes.status).toBe(404);
+		expect(cancelRes.text).toBe("Session not found");
+
+		const askRes = await api
+			.post(`/api/sessions/${missingSessionId}/ask/ask-1`)
+			.send({ action: "dismiss" });
+		expect(askRes.status).toBe(404);
+		expect(askRes.text).toBe("Session not found");
+
+		const permissionRes = await api
+			.post(`/api/sessions/${missingSessionId}/permissions/permission-1`)
+			.send({ action: "reject" });
+		expect(permissionRes.status).toBe(404);
+		expect(permissionRes.text).toBe("Session not found");
+	});
+
+	it("forwards desktop ask, permission and cancel actions to the desktop runtime", async () => {
+		const db = await getRidgeDb();
+		const sessionId = `session-desktop-control-${Date.now()}`;
+		const deviceId = `desktop-control-${Date.now()}`;
+		const desktopSocket = new ForwardingDesktopSocket();
+		const {
+			_injectMockWebSocketForTesting,
+			_clearMockConnectionsForTesting,
+		} = await import("../desktop-bridge.js");
+
+		db.prepare(
+			`INSERT INTO session_index(
+				session_id, title, session_type, context_type, workspace_path,
+				project_id, device_id, run_location, archived, created_at, updated_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			sessionId,
+			"desktop-control",
+			"workspace",
+			"project",
+			WORKSPACE,
+			"desktop-control-project",
+			deviceId,
+			"desktop",
+			0,
+			Date.now(),
+			Date.now(),
+		);
+		_injectMockWebSocketForTesting(deviceId, desktopSocket as unknown as WebSocket);
+
+		try {
+			const answers = [{ questionId: "q1", values: ["yes"] }];
+			const askRes = await api
+				.post(`/api/sessions/${sessionId}/ask/ask-1`)
+				.send({ action: "submit", answers });
+			expect(askRes.status).toBe(200);
+			expect(askRes.body).toMatchObject({ ok: true, forwarded: true });
+
+			const permissionRes = await api
+				.post(`/api/sessions/${sessionId}/permissions/permission-1`)
+				.send({ action: "once" });
+			expect(permissionRes.status).toBe(200);
+			expect(permissionRes.body).toMatchObject({ ok: true, forwarded: true });
+
+			const cancelRes = await api.post(`/api/sessions/${sessionId}/cancel`).send({});
+			expect(cancelRes.status).toBe(200);
+			expect(cancelRes.body).toMatchObject({ ok: true, forwarded: true });
+
+			expect(desktopSocket.forwardedPayloads).toEqual([
+				{
+					type: "respond_ask",
+					sessionId,
+					requestId: "ask-1",
+					action: "submit",
+					answers,
+				},
+				{
+					type: "respond_permission",
+					sessionId,
+					requestId: "permission-1",
+					action: "once",
+				},
+				{
+					type: "cancel_session",
+					sessionId,
+				},
+			]);
+		} finally {
+			_clearMockConnectionsForTesting();
+			db.prepare("DELETE FROM session_index WHERE session_id = ?").run(sessionId);
+		}
+	});
+
+	it("returns 403 without forwarding desktop ask, permission and cancel actions for archived sessions", async () => {
+		const db = await getRidgeDb();
+		const sessionId = `session-desktop-control-archived-${Date.now()}`;
+		const deviceId = `desktop-control-archived-${Date.now()}`;
+		const desktopSocket = new ForwardingDesktopSocket();
+		const {
+			_injectMockWebSocketForTesting,
+			_clearMockConnectionsForTesting,
+		} = await import("../desktop-bridge.js");
+
+		db.prepare(
+			`INSERT INTO session_index(
+				session_id, title, session_type, context_type, workspace_path,
+				project_id, device_id, run_location, archived, created_at, updated_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			sessionId,
+			"desktop-control-archived",
+			"workspace",
+			"project",
+			WORKSPACE,
+			"desktop-control-archived-project",
+			deviceId,
+			"desktop",
+			1,
+			Date.now(),
+			Date.now(),
+		);
+		_injectMockWebSocketForTesting(deviceId, desktopSocket as unknown as WebSocket);
+
+		try {
+			const askRes = await api
+				.post(`/api/sessions/${sessionId}/ask/ask-archived`)
+				.send({ action: "dismiss" });
+			expect(askRes.status).toBe(403);
+
+			const permissionRes = await api
+				.post(`/api/sessions/${sessionId}/permissions/permission-archived`)
+				.send({ action: "reject" });
+			expect(permissionRes.status).toBe(403);
+
+			const cancelRes = await api.post(`/api/sessions/${sessionId}/cancel`).send({});
+			expect(cancelRes.status).toBe(403);
+			expect(desktopSocket.forwardedPayloads).toEqual([]);
+		} finally {
+			_clearMockConnectionsForTesting();
+			db.prepare("DELETE FROM session_index WHERE session_id = ?").run(sessionId);
+		}
 	});
 });
 

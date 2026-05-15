@@ -1,0 +1,65 @@
+# AI 对话主线闭环
+
+## 职责
+
+把工作空间主页首发、会话恢复、消息发送、SSE 订阅、交互阻塞、附件上下文、历史分页和归档只读收束成一条真实 Pi session 主线。
+
+## 入口
+
+- `packages/server/src/index.ts`
+  - `POST /api/sessions`
+  - `GET /api/sessions/:sessionId/messages`
+  - `POST /api/sessions/:sessionId/messages`
+  - `GET /api/sessions/:sessionId/events`
+  - `POST /api/sessions/:sessionId/cancel`
+  - `POST /api/sessions/:sessionId/ask/:requestId`
+  - `POST /api/sessions/:sessionId/permissions/:requestId`
+- `packages/web/src/composables/usePerSessionChat.ts`
+- `packages/web/src/components/workbench/chat/WorkbenchChatPanel.vue`
+- `packages/web/src/components/workbench/chat/WorkbenchComposer.vue`
+- `packages/web/src/components/workbench/chat/WorkbenchMessageStream.vue`
+- `packages/web/src/components/workspace/WorkspaceChatTab.vue`
+
+## API 契约
+
+- `GET /api/sessions/:sessionId/messages` 只读取消息快照；非活跃会话读取 Pi session 文件，不隐式打开完整 runtime。
+- `GET /api/sessions/:sessionId/events` 是唯一 SSE 订阅入口。
+- `POST /api/sessions/:sessionId/cancel` 是取消当前运行的唯一入口。
+- `POST /api/sessions/:sessionId/ask/:requestId` 提交或 dismiss ask。
+- `POST /api/sessions/:sessionId/permissions/:requestId` 提交 permission 决策。
+- `POST /api/sessions/:sessionId/archive` 同时更新 `sessions.archived` 与 `session_index.archived`；纯 desktop 会话只存在于 `session_index` 时也必须可归档。
+- 归档只读边界覆盖 `messages/ask/permissions/cancel`；归档会话返回 403，不依赖前端隐藏。
+- desktop 会话在 `session_index.run_location = 'desktop'` 时，`events/messages/cancel/ask/permissions` 都必须先走桌面 WebSocket 转发，不读取本地 Pi session 文件。
+
+## 前端状态边界
+
+- `pending/localId` 只存在于 `UiConversationMessage` 包装层，不写入 Pi message 协议。
+- 前端发送前乐观展示 user 消息；服务端 SSE 过滤 Pi SDK 的 user `message_start/message_end`，避免重复。
+- `usePerSessionChat` 从 `activeSession` 或缓存 snapshot 的 `archived` 派生 `isReadonlySession`，同步到 `composer.isDisabled`。
+- 只读会话保留输入草稿，显示「归档会话只读，不能继续发送」，不调用发送 API。
+- 未配置可用模型时，`submit()` 返回明确错误「当前没有可用模型，无法发送」，并保留输入草稿。
+
+## 事件与消息展示
+
+- SSE 首包发送 `snapshot`，包含当前消息窗口、历史轮次元数据、ask 请求和 permission 请求。
+- `message_start/message_end/status/error/snapshot` 统一进入 `applyStreamSnapshotEvent` 或本地消息合并逻辑。
+- `WorkbenchMessageStream` 按 user 轮次组织 UI：用户消息、过程消息、最终 assistant 消息。
+- thinking、tool call、tool result 作为过程消息进入 `ProcessMessagesFold`，保留 `toolCallId/toolName/details/isError`。
+- ask 以 `AskCard` 显示，permission 以 `PermissionRequestCard` 显示，提交后会话状态回到 streaming。
+
+## 测试覆盖
+
+- `packages/web/src/composables/__tests__/usePerSessionChat.test.ts`
+  - 临时模型/Agent/thinking 不写全局设置。
+  - 订阅使用 `/events`。
+  - 归档会话只读、草稿不丢、不调用发送 API。
+- `packages/web/src/components/workbench/chat/__tests__/WorkbenchComposer.test.ts`
+  - 只读输入禁用、发送按钮禁用、只读原因可见。
+  - 发送错误可见且不清空草稿。
+- `packages/server/src/__tests__/security-guards.test.ts`
+  - 归档会话发送 403。
+  - `/events`、`/cancel`、`/ask/:id`、`/permissions/:id` 进入会话处理器。
+  - desktop 会话的 ask、permission、cancel 转发到桌面运行时。
+  - 纯 desktop 会话归档写入 `session_index`，归档后 messages、ask、permission、cancel 都返回 403 且不转发。
+- `packages/web/src/components/workspace/__tests__/WorkspaceChatTab.test.ts`
+  - 首页 `initialPrompt/model/agent/thinking/attachmentIds` 注入 composer 后自动提交。

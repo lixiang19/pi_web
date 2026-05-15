@@ -639,6 +639,40 @@ function objectPayload(payload: unknown): Record<string, unknown> {
 		? payload as Record<string, unknown>
 		: {};
 }
+
+async function getDesktopSessionDeviceId(sessionId: string): Promise<string | null> {
+	const db = await getRidgeDb();
+	const sessionRow = db.prepare(
+		`SELECT device_id, run_location FROM session_index WHERE session_id = ?`,
+	).get(sessionId) as { device_id: string | null; run_location: string | null } | undefined;
+
+	if (sessionRow?.run_location !== "desktop" || !sessionRow.device_id) {
+		return null;
+	}
+	if (!isDesktopOnline(sessionRow.device_id)) {
+		const error = new Error("Device offline") as HttpError;
+		error.statusCode = 409;
+		throw error;
+	}
+	return sessionRow.device_id;
+}
+
+async function assertSessionNotArchived(
+	sessionId: string,
+	message = "归档会话只读，不能继续操作",
+): Promise<void> {
+	const db = await getRidgeDb();
+	const indexRow = db.prepare(
+		`SELECT archived FROM session_index WHERE session_id = ?`,
+	).get(sessionId) as { archived: number } | undefined;
+	const metadata = await sessionMetadataStore.getSessionMetadata(sessionId);
+
+	if (indexRow?.archived || metadata.archived) {
+		const error = new Error(message) as HttpError;
+		error.statusCode = 403;
+		throw error;
+	}
+}
 // ===== Routes =====
 app.get("/api/auth/session", authRuntime.session);
 app.post("/api/auth/login", authRuntime.login);
@@ -1153,7 +1187,7 @@ app.get(
 );
 
 app.get(
-	"/api/sessions/:sessionId/stream",
+	"/api/sessions/:sessionId/events",
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
@@ -1406,17 +1440,35 @@ app.post(
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const payload = archiveSessionSchema.parse(req.body ?? {});
-			const sessionIds = (
-				await getIndexedSessionTree(String(req.params.sessionId))
+			const requestedSessionId = String(req.params.sessionId);
+			let sessionIds = (
+				await getIndexedSessionTree(requestedSessionId)
 			).map((item) => item.id);
 
 			if (sessionIds.length === 0) {
-				const error = new Error("Session not found") as HttpError;
-				error.statusCode = 404;
-				throw error;
+				const db = await getRidgeDb();
+				const indexedSession = db.prepare(
+					`SELECT session_id FROM session_index WHERE session_id = ?`,
+				).get(requestedSessionId) as { session_id: string } | undefined;
+				if (!indexedSession) {
+					const error = new Error("Session not found") as HttpError;
+					error.statusCode = 404;
+					throw error;
+				}
+				sessionIds = [requestedSessionId];
 			}
 
 			await sessionMetadataStore.setArchived(sessionIds, payload.archived);
+			const db = await getRidgeDb();
+			const now = Date.now();
+			const updateIndexedSession = db.prepare(
+				`UPDATE session_index SET archived = ?, updated_at = ? WHERE session_id = ?`,
+			);
+			db.transaction((ids: string[]) => {
+				for (const sessionId of ids) {
+					updateIndexedSession.run(payload.archived ? 1 : 0, now, sessionId);
+				}
+			})(sessionIds);
 
 			res.json({ ok: true, sessionIds });
 		} catch (error) {
@@ -1478,6 +1530,7 @@ app.post(
 		try {
 			const payload = messageSchema.parse(req.body ?? {});
 			const sessionId = String(req.params.sessionId);
+			await assertSessionNotArchived(sessionId, "归档会话不可发送消息");
 			
 			// Check if this is a desktop session FIRST — before any local session lookup
 			const db = await getRidgeDb();
@@ -1505,12 +1558,6 @@ app.post(
 			}
 			
 			// Only for local sessions: load the session record
-			const metadata = await sessionMetadataStore.getSessionMetadata(sessionId);
-			if (metadata.archived) {
-				const error = new Error("归档会话不可发送消息") as HttpError;
-				error.statusCode = 403;
-				throw error;
-			}
 			const record = await ensureSessionRecord(sessionId);
 
 			if (record.turnBudget.exhausted) {
@@ -1564,12 +1611,27 @@ app.post(
 );
 
 app.post(
-	"/api/sessions/:sessionId/asks/:askId/respond",
+	"/api/sessions/:sessionId/ask/:requestId",
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const payload = askActionSchema.parse(req.body ?? {});
-			const record = await ensureSessionRecord(String(req.params.sessionId));
-			const askId = String(req.params.askId);
+			const sessionId = String(req.params.sessionId);
+			const askId = String(req.params.requestId);
+			await assertSessionNotArchived(sessionId);
+			const desktopDeviceId = await getDesktopSessionDeviceId(sessionId);
+			if (desktopDeviceId) {
+				await forwardRunRequestToDesktop(desktopDeviceId, {
+					type: "respond_ask",
+					sessionId,
+					requestId: askId,
+					action: payload.action,
+					...(payload.action === "submit" ? { answers: payload.answers } : {}),
+				});
+				res.json({ ok: true, forwarded: true });
+				return;
+			}
+
+			const record = await ensureSessionRecord(sessionId);
 
 			if (payload.action === "dismiss") {
 				await settlePendingAsk(record, askId, [], true);
@@ -1587,13 +1649,26 @@ app.post(
 );
 
 app.post(
-	"/api/sessions/:sessionId/permissions/:requestId/respond",
+	"/api/sessions/:sessionId/permissions/:requestId",
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const payload = permissionActionSchema.parse(req.body ?? {});
-			const record = await ensureSessionRecord(String(req.params.sessionId));
+			const sessionId = String(req.params.sessionId);
 			const requestId = String(req.params.requestId);
+			await assertSessionNotArchived(sessionId);
+			const desktopDeviceId = await getDesktopSessionDeviceId(sessionId);
+			if (desktopDeviceId) {
+				await forwardRunRequestToDesktop(desktopDeviceId, {
+					type: "respond_permission",
+					sessionId,
+					requestId,
+					action: payload.action,
+				});
+				res.json({ ok: true, forwarded: true });
+				return;
+			}
 
+			const record = await ensureSessionRecord(sessionId);
 			await settlePendingPermission(record, requestId, payload.action);
 			res.json({ ok: true });
 		} catch (error) {
@@ -1603,10 +1678,22 @@ app.post(
 );
 
 app.post(
-	"/api/sessions/:sessionId/abort",
+	"/api/sessions/:sessionId/cancel",
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
-			const record = await ensureSessionRecord(String(req.params.sessionId));
+			const sessionId = String(req.params.sessionId);
+			await assertSessionNotArchived(sessionId);
+			const desktopDeviceId = await getDesktopSessionDeviceId(sessionId);
+			if (desktopDeviceId) {
+				await forwardRunRequestToDesktop(desktopDeviceId, {
+					type: "cancel_session",
+					sessionId,
+				});
+				res.json({ ok: true, forwarded: true });
+				return;
+			}
+
+			const record = await ensureSessionRecord(sessionId);
 			await record.session.abort();
 			cancelPendingPermissions(record, "Session aborted");
 			updateStatus(record, "idle");

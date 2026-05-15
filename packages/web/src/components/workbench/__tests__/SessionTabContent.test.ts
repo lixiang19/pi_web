@@ -26,6 +26,7 @@ vi.mock("@/composables/usePerSessionChat", () => ({
     currentSessionTitle: computed(() => "新会话"),
     isDraftSession: computed(() => mockSessionId.value === ""),
     isSending: computed(() => mockStatus.value === "streaming"),
+    error: computed(() => ""),
     messages: ref([]),
     hasMoreAbove: computed(() => false),
     isLoadingOlder: computed(() => false),

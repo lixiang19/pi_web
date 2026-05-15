@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { usePerSessionChat } from "@/composables/usePerSessionChat";
 import type { ThinkingLevel, UiSessionSnapshot } from "@/lib/types";
 
-const mockSessions = ref<Array<{ id: string; title?: string; cwd?: string; agent?: string; model?: string; thinkingLevel?: string; taskId?: string; sessionType?: string }>>([]);
+const mockSessions = ref<Array<{ id: string; title?: string; cwd?: string; agent?: string; model?: string; thinkingLevel?: string; taskId?: string; sessionType?: string; archived?: boolean }>>([]);
 const mockSessionCache = ref<Record<string, { snapshot?: UiSessionSnapshot }>>({});
 const mockAgents = ref<Array<{ name: string; model?: string; thinking?: string }>>([]);
 const mockModels = ref<Array<{ value: string; label: string }>>([]);
@@ -70,6 +70,12 @@ vi.mock("@/composables/usePiChatCore", () => ({
 }));
 
 class MockEventSource {
+  static urls: string[] = [];
+  url: string;
+  constructor(url: string) {
+    this.url = url;
+    MockEventSource.urls.push(url);
+  }
   close = vi.fn();
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
@@ -98,6 +104,8 @@ vi.mock("@/lib/api", () => ({
   sendMessage: vi.fn(),
 }));
 
+const { sendMessage } = await import("@/lib/api");
+
 describe("usePerSessionChat - temporary selection does NOT write global settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -108,6 +116,7 @@ describe("usePerSessionChat - temporary selection does NOT write global settings
     mockSettingsStore.defaultModel = "global-model";
     mockSettingsStore.defaultAgent = "global-agent";
     mockSettingsStore.defaultThinkingLevel = "medium";
+    MockEventSource.urls = [];
   });
 
   it("setSelectedModel updates composer but does NOT call settingsStore.setDefaultModel", async () => {
@@ -192,6 +201,28 @@ describe("usePerSessionChat - temporary selection does NOT write global settings
     expect(mockSettingsStore.setDefaultModel).not.toHaveBeenCalled();
     expect(mockApplySelectionUpdate).not.toHaveBeenCalled();
   });
+
+  it("subscribes to the session events endpoint when loading a session", async () => {
+    const sessionIdRef = ref("session-events");
+    const chat = usePerSessionChat(sessionIdRef);
+
+    mockSessionCache.value = {
+      "session-events": {
+        snapshot: {
+          id: "session-events",
+          messages: [],
+          historyMeta: { loadedRounds: 3, totalRounds: 3, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+
+    await chat.loadSession("session-events");
+
+    expect(MockEventSource.urls.at(-1)).toBe("/api/sessions/session-events/events?rounds=3");
+  });
 });
 
 describe("usePerSessionChat - forkSession", () => {
@@ -265,5 +296,53 @@ describe("usePerSessionChat - forkSession", () => {
     expect(chat.activeSession.value?.id).toBe("session-task");
     expect((chat.activeSession.value as unknown as { taskId?: string }).taskId).toBe("task-1");
     expect((chat.activeSession.value as unknown as { sessionType?: string }).sessionType).toBe("task");
+  });
+});
+
+describe("usePerSessionChat - archived readonly", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSessions.value = [];
+    mockSessionCache.value = {};
+    mockAgents.value = [];
+    mockModels.value = [{ value: "default-model", label: "Default model" }];
+    mockDefaultModel.value = "default-model";
+  });
+
+  it("marks archived sessions readonly and preserves draft instead of sending", async () => {
+    const sessionIdRef = ref("session-archived");
+    const chat = usePerSessionChat(sessionIdRef);
+
+    mockSessions.value = [
+      {
+        id: "session-archived",
+        title: "Archived session",
+        cwd: "/workspace",
+        archived: true,
+      },
+    ];
+    mockSessionCache.value = {
+      "session-archived": {
+        snapshot: {
+          id: "session-archived",
+          title: "Archived session",
+          archived: true,
+          messages: [],
+          historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+
+    await chat.loadSession("session-archived");
+    chat.composer.draftText = "should stay in draft";
+    await chat.submit();
+
+    expect(chat.composer.isDisabled).toBe(true);
+    expect(chat.composer.draftText).toBe("should stay in draft");
+    expect(chat.error.value).toBe("归档会话只读，不能继续发送");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });
