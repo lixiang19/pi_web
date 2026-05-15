@@ -421,6 +421,44 @@ export interface SpacePreviewHtmlResponse {
 	html: string;
 }
 
+export type WorkspaceSearchResultType =
+	| "file"
+	| "task"
+	| "milestone"
+	| "project"
+	| "session"
+	| "memory"
+	| "wiki"
+	| "space"
+	| "rag";
+
+export interface WorkspaceSearchResult {
+	id: string;
+	type: WorkspaceSearchResultType;
+	title: string;
+	path?: string;
+	sourcePath?: string;
+	projectId?: string | null;
+	targetId?: string;
+	updatedAt: number;
+	snippet: string;
+	headingPath?: string[];
+	startLine?: number;
+	endLine?: number;
+	score: number;
+}
+
+export interface WorkspaceSearchResponse {
+	query: string;
+	results: WorkspaceSearchResult[];
+	groups: Array<{ type: WorkspaceSearchResultType; count: number }>;
+	indexStatus: {
+		pending: number;
+		indexed: number;
+		indexFailed: number;
+	};
+}
+
 export interface FileSaveRequest {
 	root: string;
 	path: string;

@@ -57,6 +57,7 @@ import type {
 	ValidateWorktreeResponse,
 	WorktreeApiInfo,
 	WorktreesResponse,
+	WorkspaceSearchResponse,
 } from "./types";
 
 export class UnauthorizedError extends Error {
@@ -447,6 +448,35 @@ export function getWorkspaceSpaceWorks() {
 export function getWorkspaceSpacePreviewHtml(id: string) {
 	return request<SpacePreviewHtmlResponse>(
 		`/api/workspace/space/${encodeURIComponent(id)}/preview-html`,
+	);
+}
+
+export function searchWorkspace(options: {
+	q: string;
+	type?: string;
+	project?: string;
+	time?: string;
+	dir?: string;
+	limit?: number;
+	sort?: string;
+}) {
+	const params = new URLSearchParams({ q: options.q });
+	if (options.type) params.set("type", options.type);
+	if (options.project) params.set("project", options.project);
+	if (options.time) params.set("time", options.time);
+	if (options.dir) params.set("dir", options.dir);
+	if (options.limit) params.set("limit", String(options.limit));
+	if (options.sort) params.set("sort", options.sort);
+	return request<WorkspaceSearchResponse>(`/api/workspace/search?${params.toString()}`);
+}
+
+export function refreshWorkspaceRag(path: string) {
+	return request<{ success: boolean; indexed: boolean; error?: string; skipped?: boolean }>(
+		"/api/workspace/rag/refresh",
+		{
+			method: "POST",
+			body: JSON.stringify({ path }),
+		},
 	);
 }
 

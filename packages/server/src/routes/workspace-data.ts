@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import crypto from "node:crypto";
 import path from "node:path";
 import express, {
 	type NextFunction,
@@ -14,6 +13,13 @@ import { toPosixPath } from "../utils/paths.js";
 import { getRidgeDb } from "../db/index.js";
 import type { createBackgroundJobQueue } from "../background-jobs.js";
 import { isConvertibleExtension } from "../conversion-service-client.js";
+import {
+	indexPendingTarget,
+	isStandardRagSourcePath,
+	markRagTargetPending,
+	moveRagTarget,
+	removeRagTarget,
+} from "../rag-indexer.js";
 
 export interface WorkspaceDataDeps {
 	defaultWorkspaceDir: string;
@@ -43,6 +49,19 @@ export interface WorkspaceDataDeps {
 		parse: (data: unknown) => { root?: string; path?: string };
 	};
 	fileOpenSchema: { parse: (data: unknown) => { root: string; path: string } };
+}
+
+function isSpaceIndexHtml(filePath: string, workspaceDir: string): boolean {
+	const relative = toPosixPath(path.relative(workspaceDir, filePath));
+	return !relative.startsWith("../") &&
+		!path.isAbsolute(relative) &&
+		relative.startsWith("空间/") &&
+		path.basename(relative).toLowerCase() === "index.html";
+}
+
+function isImmediateTextRagSource(filePath: string, workspaceDir: string): boolean {
+	const ext = path.extname(filePath).toLowerCase();
+	return ext === ".md" || ext === ".markdown" || isSpaceIndexHtml(filePath, workspaceDir);
 }
 
 export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
@@ -299,6 +318,7 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 					db.prepare(
 						`UPDATE file_processing_status SET file_path = ?, updated_at = ? WHERE file_path = ?`,
 					).run(newPosixPath, Date.now(), oldPosixPath);
+					await moveRagTarget(oldPosixPath, newPosixPath, { workspaceDir: defaultWorkspaceDir });
 				} else {
 					const oldPrefix = oldPosixPath.replace(/\/$/, "");
 					const newPrefix = newPosixPath.replace(/\/$/, "");
@@ -308,6 +328,7 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 						 SET file_path = ? || substr(file_path, length(?) + 1), updated_at = ?
 						 WHERE file_path LIKE ? ESCAPE '\\'`,
 					).run(newPrefix, oldPrefix, Date.now(), `${likePrefix}%`);
+					await moveRagTarget(oldPrefix, newPrefix, { workspaceDir: defaultWorkspaceDir });
 				}
 
 				res.json({
@@ -338,6 +359,7 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 				const dirPrefix = trashedPath.replace(/\/$/, "") + "/";
 				const escapedPrefix = dirPrefix.replace(/[%_\\]/g, (c) => `\\${c}`);
 				db.prepare("DELETE FROM file_processing_status WHERE file_path LIKE ? ESCAPE '\\'").run(`${escapedPrefix}%`);
+				await removeRagTarget(trashedPath);
 				res.json(payload);
 			} catch (error) {
 				next(error);
@@ -365,41 +387,30 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 				for (const entry of entries) {
 					if (entry.kind !== "file") continue;
 					// Skip ridge system paths
-					if (entry.path.includes("/.ridge/") || entry.path.endsWith("/.ridge")) continue;
+					const entryPathSegments = toPosixPath(entry.path).split("/").filter(Boolean);
+					if (entryPathSegments.includes(".ridge")) continue;
 					const ext = path.extname(entry.path).toLowerCase();
-				// Markdown files are directly text assets: skip conversion queue, mark as converted
-				if (ext === ".md" || ext === ".markdown") {
-					db.prepare(
-						`INSERT OR IGNORE INTO file_processing_status (
-							file_path, workspace_path, status, converted_at, updated_at
-						) VALUES (?, ?, ?, ?, ?)`,
-					).run(entry.path, defaultWorkspaceDir, "converted", now, now);
-					// Register as RAG source: compute content hash from the Markdown file itself
-					const mdContent = await fs.readFile(entry.path, "utf-8");
-					const mdHash = crypto.createHash("sha256").update(mdContent).digest("hex");
-					db.prepare(
-						`INSERT INTO search_index_status (target_path, target_type, status, content_hash, updated_at)
-						 VALUES (?, 'file', 'pending', ?, ?)
-						 ON CONFLICT(target_path) DO UPDATE SET
-							status = excluded.status,
-							content_hash = excluded.content_hash,
-							updated_at = excluded.updated_at`,
-					).run(entry.path, mdHash, now);
-					// Enqueue RAG indexing job so the worker will chunk and store content
-					if (deps.getJobQueue) {
-						const queue = deps.getJobQueue();
-						if (queue) {
-							queue.enqueue({
-								type: "rag.index",
-								relatedType: "file",
-								relatedId: entry.path,
-								payload: { targetPath: entry.path },
-								maxAttempts: 3,
-							});
-						}
+					const isImmediateTextSource = isImmediateTextRagSource(entry.path, defaultWorkspaceDir);
+					if (isStandardRagSourcePath(entry.path)) {
+						await markRagTargetPending(entry.path, {
+							workspaceDir: defaultWorkspaceDir,
+							refreshPolicy: "immediate",
+							event: "upload",
+						});
+						await indexPendingTarget(entry.path, {
+							workspaceDir: defaultWorkspaceDir,
+							event: "upload",
+						});
 					}
-					continue;
-				}
+					// Markdown files are directly text assets: skip conversion queue, mark as converted
+					if (isImmediateTextSource) {
+						db.prepare(
+							`INSERT OR IGNORE INTO file_processing_status (
+								file_path, workspace_path, status, converted_at, updated_at
+							) VALUES (?, ?, ?, ?, ?)`,
+						).run(entry.path, defaultWorkspaceDir, "converted", now, now);
+						continue;
+					}
 					db.prepare(
 						`INSERT OR IGNORE INTO file_processing_status (
 							file_path, workspace_path, status, updated_at

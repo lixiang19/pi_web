@@ -84,6 +84,9 @@ export type {
 	ValidateWorktreeResponse,
 	WorktreeApiInfo,
 	WorktreesResponse,
+	WorkspaceSearchResponse,
+	WorkspaceSearchResult,
+	WorkspaceSearchResultType,
 } from "@pi/protocol";
 
 import type { PiMessage, ThinkingLevel } from "@pi/protocol";

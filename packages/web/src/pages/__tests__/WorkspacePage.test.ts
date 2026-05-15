@@ -319,18 +319,18 @@ describe("WorkspacePage - 固定入口", () => {
 		const wrapper = mountWorkspace();
 		const text = wrapper.text();
 		// 只断言已实现的真实入口，不暴露未实现占位
-		for (const label of ["闪念", "任务", "文件", "空间", "终端", "自动化", "设置"]) {
+		for (const label of ["闪念", "搜索", "任务", "文件", "空间", "终端", "自动化", "设置"]) {
 			expect(text).toContain(label);
 		}
 		const navButtons = wrapper.findAll("[data-test='workspace-fixed-entry']");
 		expect(navButtons.map((button) => button.text())).not.toContain("主页");
 	});
 
-	it("固定入口顺序严格为：闪念、任务、文件、空间、终端、自动化、设置", () => {
+	it("固定入口顺序严格为：闪念、搜索、任务、文件、空间、终端、自动化、设置", () => {
 		const wrapper = mountWorkspace();
 		const buttons = wrapper.findAll("[data-test='workspace-fixed-entry']");
 		const labels = buttons.map((button) => button.text().replace(/\d+$/, "").trim());
-		expect(labels).toEqual(["闪念", "任务", "文件", "空间", "终端", "自动化", "设置"]);
+		expect(labels).toEqual(["闪念", "搜索", "任务", "文件", "空间", "终端", "自动化", "设置"]);
 	});
 
 	it("点击任务固定入口创建 singleton_feature 标签", async () => {

@@ -75,6 +75,10 @@
 - [历史分页] 会话历史分页单位必须是 user 轮次，不是消息条数；工具消息/thinking/toolResult 会放大消息数，若按条数截窗，UI 与用户心智必然错位
 - [导航去重] 会话侧栏不要再维护“最近访问”这类二次导航；标签页已承担最近工作集语义，侧栏应只保留稳定信息架构（项目/搜索），否则状态重复、localStorage 重复、认知也重复
 - [搜索入口] 左侧"搜索"只负责进入独立搜索页；真实搜索输入与结果必须放主内容区，侧栏搜索框只是本地过滤器（两者全存在会造成职责混淆，侧栏过滤器应删除统一入口）
+- [RAG刷新契约] RAG 上传和普通编辑不是同一触发语义：Markdown 上传要同步可检索；普通 Markdown 编辑只标记 `refresh_policy=deferred` 并保留旧 chunk，直到手动刷新或夜间索引再重建；删除/移动文件必须同步清理或改写 RAG metadata。
+- [RAG向量契约] RAG embedding 使用 SiliconFlow `Qwen/Qwen3-VL-Embedding-8B`；配置从 `app_settings` 的 `siliconflow_embedding_*` 或 `SILICONFLOW_*` 环境变量读取。索引阶段缺 Key/远端失败必须写 `index_failed` 和通知；搜索阶段只允许旧 chunk 做精确文本命中，不能把历史 96 维本地 hash 向量继续混入语义相似度。
+- [图片RAG契约] 图片原文件是 RAG 一等源：上传 `.png/.jpg/.jpeg/.webp/.bmp/.gif/.tif/.tiff` 后直接用 Qwen3-VL 图片 embedding 入库；图片 OCR 转换产物 `.md` 仍作为独立文本 RAG 源入库，二者互补，不能只依赖 OCR 代表图片 RAG。
+- [全局搜索边界] 全局搜索聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间和 RAG，但不搜索外部项目文件内容，也不读取 Pi 会话正文；项目注册信息可以出现，外部项目文件路径不能作为 file/RAG 结果泄露。
 - [术语边界] 用户可见文案不要把会话列表记录说成“会话摘要”；内部类型可以存在，但产品语义只能说“会话/会话列表数据”
 - [TS 检测边界] Web 端如果明确不改 shadcn/reka 生成包装层，就不要继续用 `exactOptionalPropertyTypes` 把第三方可选 props 透传问题算成项目故障；应在 `tsconfig.app.json` 收紧真实适用的门禁，同时把业务层事件载荷、Ref 透传、索引签名访问等类型错误逐个修正，保证 `check` 与 `build` 同标准
 - [索引主键一致性] session 上下文里的 `projectId` 必须直接复用 `projects.id`；一旦混入路径型标识，左栏项目归组会立刻失真
@@ -587,3 +591,26 @@
 - `SpacePreviewTab.test.ts` 覆盖 `sandbox="allow-scripts"`、无 `allow-same-origin`、CSP 禁止 `connect-src`、CSP 早于用户脚本且允许内联脚本。
 - `SpaceView.test.ts` 覆盖点击作品事件与无公开链接空状态。
 - `WorkspacePage.test.ts` 覆盖「空间」固定入口顺序与点击作品打开 `space_preview` 标签。
+
+## 2026-05-15 任务 22/23/24 RAG 与全局搜索
+
+### 契约
+
+- RAG 只索引工作空间内可见文本资产，排除 `.ridge`、`.originals`、`.git`、`node_modules` 和外部项目文件内容。
+- Markdown 上传立即写入 `file_processing_status=converted` 并同步 RAG；普通 Markdown 编辑只标记 `refresh_policy=deferred`，保留旧 chunk，手动刷新或夜间刷新才重建。
+- RAG worker 处理显式 `rag.index` job 时默认按 `manual` 事件执行，避免 deferred 目标被后台 job 标记完成但没有真正重建；worker 还有每天 03:00 的夜间入口，会用 `includeDeferred=true,event=nightly` 消费 deferred pending。
+- `search_chunks` 持久化 `embedding_id` 和 `embedding_vector`；当前实现使用 SiliconFlow `Qwen/Qwen3-VL-Embedding-8B` 生成文本/图片向量，检索用精确文本召回 + embedding 相似度排序。
+- `content_hash` 未变且已有同 hash chunk 时跳过重建；hash 变更才删除旧 chunk 并重建。
+- 空间 `index.html` 是 RAG 的 HTML 标准源，文件上传路径为 `空间/<作品名>/index.html` 时同步进入 RAG。
+- RAG 索引和手动刷新必须同时做词法路径和 realpath/symlink 边界检查。
+- 全局搜索聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间和 RAG；不暴露 `graph` 占位类型，图谱节点等待 Task 28 Kuzu 图谱存储后接入。
+- 目录筛选按路径边界匹配，`记忆` 不匹配 `记忆体`；搜索文件树跳过符号链接，避免工作空间内链接越界读取外部目录。
+- 项目搜索结果点击打开项目主页标签，不把项目路径当文件打开；项目筛选要推导项目内 file/RAG 的 `projectId`。
+
+### 测试
+
+- `rag-standard-indexer.test.ts` 覆盖结构化 chunk、metadata、embedding vector、hash skip、空间 HTML、外部路径/符号链接排除、来源定位、手动刷新、删除、移动和失败通知。
+- `rag-worker-e2e.test.ts` 覆盖显式 job 重建 deferred 与夜间入口消费 deferred。
+- `workspace-search-api.test.ts` 覆盖聚合、类型筛选、项目内 file/RAG、目录边界、缺失空间 `index.html` 不抛错、符号链接越界和外部项目内容排除。
+- `rag-consumer.test.ts` 覆盖默认工作空间 RAG 消费链路。
+- `WorkspaceSearchView.test.ts` 覆盖文件打开、RAG 刷新、项目结果打开项目主页事件。

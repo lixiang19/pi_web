@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 13;
+export const RIDGE_DB_SCHEMA_VERSION = 15;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -257,6 +257,10 @@ CREATE TABLE IF NOT EXISTS search_index_status (
   target_path TEXT PRIMARY KEY,
   target_type TEXT NOT NULL DEFAULT 'file',
   status TEXT NOT NULL DEFAULT 'pending',
+  workspace_path TEXT NOT NULL DEFAULT '',
+  source_path TEXT NOT NULL DEFAULT '',
+  refresh_policy TEXT NOT NULL DEFAULT 'immediate',
+  last_event TEXT NOT NULL DEFAULT 'manual',
   content_hash TEXT,
   indexed_at INTEGER,
   error TEXT,
@@ -269,8 +273,16 @@ CREATE INDEX IF NOT EXISTS idx_search_index_status_state
 CREATE TABLE IF NOT EXISTS search_chunks (
   chunk_id TEXT PRIMARY KEY,
   target_path TEXT NOT NULL,
+  source_path TEXT NOT NULL DEFAULT '',
+  heading_path TEXT NOT NULL DEFAULT '[]',
   chunk_index INTEGER NOT NULL,
   chunk_text TEXT NOT NULL,
+  content_hash TEXT NOT NULL DEFAULT '',
+  file_type TEXT NOT NULL DEFAULT 'markdown',
+  embedding_id TEXT NOT NULL DEFAULT '',
+  embedding_vector TEXT NOT NULL DEFAULT '[]',
+  start_line INTEGER NOT NULL DEFAULT 1,
+  end_line INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -520,6 +532,10 @@ CREATE TABLE IF NOT EXISTS search_index_status (
   target_path TEXT PRIMARY KEY,
   target_type TEXT NOT NULL DEFAULT 'file',
   status TEXT NOT NULL DEFAULT 'pending',
+  workspace_path TEXT NOT NULL DEFAULT '',
+  source_path TEXT NOT NULL DEFAULT '',
+  refresh_policy TEXT NOT NULL DEFAULT 'immediate',
+  last_event TEXT NOT NULL DEFAULT 'manual',
   content_hash TEXT,
   indexed_at INTEGER,
   error TEXT,
@@ -667,8 +683,16 @@ CREATE INDEX IF NOT EXISTS idx_python_conversion_jobs_python_job_id
 CREATE TABLE IF NOT EXISTS search_chunks (
   chunk_id TEXT PRIMARY KEY,
   target_path TEXT NOT NULL,
+  source_path TEXT NOT NULL DEFAULT '',
+  heading_path TEXT NOT NULL DEFAULT '[]',
   chunk_index INTEGER NOT NULL,
   chunk_text TEXT NOT NULL,
+  content_hash TEXT NOT NULL DEFAULT '',
+  file_type TEXT NOT NULL DEFAULT 'markdown',
+  embedding_id TEXT NOT NULL DEFAULT '',
+  embedding_vector TEXT NOT NULL DEFAULT '[]',
+  start_line INTEGER NOT NULL DEFAULT 1,
+  end_line INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -677,6 +701,27 @@ CREATE INDEX IF NOT EXISTS idx_search_chunks_target
   ON search_chunks(target_path, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_search_chunks_text
   ON search_chunks(chunk_text);
+`,
+  },
+  {
+    version: 14,
+    name: 'standard RAG chunk metadata and refresh policy',
+    sql: `
+-- Column repair is handled before migration application so existing and fresh
+-- databases can converge without duplicate ALTER TABLE failures.
+CREATE INDEX IF NOT EXISTS idx_search_chunks_source
+  ON search_chunks(source_path, file_type, updated_at);
+CREATE INDEX IF NOT EXISTS idx_search_index_status_workspace
+  ON search_index_status(workspace_path, refresh_policy, status, updated_at);
+`,
+  },
+  {
+    version: 15,
+    name: 'local RAG embedding vectors',
+    sql: `
+-- Column repair adds search_chunks.embedding_vector for existing databases.
+CREATE INDEX IF NOT EXISTS idx_search_chunks_embedding
+  ON search_chunks(embedding_id);
 `,
   },
 ];

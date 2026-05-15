@@ -10,7 +10,7 @@
 - 解析 Markdown 结构。
 - 按标题、段落、表格和语义边界切块。
 - 生成 embedding。
-- 保存 chunk 文本和 metadata。
+- 保存 chunk 文本、metadata、embedding id 与 embedding vector。
 - 建立过滤字段。
 
 ## 不做
@@ -23,7 +23,7 @@
 
 - chunk 保存工作空间相对路径、标题路径、序号、更新时间、内容 hash、文件类型。
 - 检索结果能回到原 Markdown 和位置。
-- 内部项目、记忆、Wiki、空间进入 RAG。
+- 内部项目、记忆、Wiki、空间 `index.html` 进入 RAG。
 - 外部项目不进入 RAG。
 
 ## 关联设计
@@ -50,12 +50,14 @@
 - file_type
 - updated_at
 - embedding_id
+- embedding_vector
 
 ### 行为
 
 - 只读取标准产物。
 - 按 Markdown 结构和语义边界切块。
 - 每个 chunk 生成 embedding。
+- 检索使用精确文本召回 + embedding 相似度排序。
 - 保留可回跳来源。
 
 ### 测试
@@ -63,4 +65,6 @@
 - Markdown 按标题生成 chunk。
 - chunk metadata 包含相对路径。
 - 外部项目文件不会生成 chunk。
+- workspace 内 symlink realpath 越界不会生成 chunk。
+- 空间 `index.html` 可生成 HTML RAG chunk。
 - RAG 结果可定位来源文件。

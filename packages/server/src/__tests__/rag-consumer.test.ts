@@ -38,10 +38,9 @@ describe("RAG consumer chain — end-to-end", () => {
 
 		const uploadedPath = res.body.entries[0].path;
 
-		// Manually trigger indexing (in production, the RAG worker does this)
+		// Markdown upload indexes synchronously; a direct consumer call should be idempotent.
 		const indexResult = await indexPendingTarget(uploadedPath);
 		expect(indexResult.success).toBe(true);
-		expect(indexResult.indexed).toBe(true);
 
 		// Search should find the content
 		const searchResults = await searchContent("Project Alpha");

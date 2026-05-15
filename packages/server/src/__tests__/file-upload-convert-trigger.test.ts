@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { app, setConversionEnabledForTesting } from "../index.js";
 import { createAuthenticatedAgent } from "../test/auth.js";
 import { getRidgeDb } from "../db/index.js";
+import { searchContent } from "../rag-indexer.js";
 
 let api: ReturnType<typeof request.agent>;
 
@@ -23,6 +24,8 @@ afterAll(async () => {
 	const db = await getRidgeDb();
 	db.prepare("DELETE FROM file_processing_status WHERE file_path LIKE ?").run(`${TEST_ROOT}%`);
 	db.prepare("DELETE FROM background_jobs WHERE payload_json LIKE ?").run(`%${TEST_ROOT}%`);
+	db.prepare("DELETE FROM search_index_status WHERE target_path LIKE ?").run(`${TEST_ROOT}%`);
+	db.prepare("DELETE FROM search_chunks WHERE target_path LIKE ?").run(`${TEST_ROOT}%`);
 });
 
 describe("upload auto-enqueue conversion", () => {
@@ -114,5 +117,31 @@ describe("upload auto-enqueue conversion", () => {
 			.get(posixPath) as { status: string; error: string | null } | undefined;
 		expect(row?.status).toBe("convert_failed");
 		expect(row?.error).toBe("Old error");
+	});
+
+	it("indexes uploaded images directly for RAG even when conversion service is disabled", async () => {
+		setConversionEnabledForTesting(false);
+		const tmpDir = path.join(TEST_ROOT, "image-rag");
+		await fs.mkdir(tmpDir, { recursive: true });
+		const fileName = `diagram-${Date.now()}.png`;
+
+		const res = await api
+			.post("/api/files/upload")
+			.field("root", TEST_ROOT)
+			.field("directory", tmpDir)
+			.attach("files", Buffer.from([0x89, 0x50, 0x4e, 0x47]), fileName);
+
+		expect(res.status).toBe(201);
+		const uploadedPath = res.body.entries[0].path;
+		const db = await getRidgeDb();
+		const chunk = db
+			.prepare("SELECT file_type, source_path FROM search_chunks WHERE target_path = ?")
+			.get(uploadedPath) as { file_type: string; source_path: string } | undefined;
+		expect(chunk).toMatchObject({
+			file_type: "image",
+		});
+
+		const results = await searchContent(fileName, { workspaceDir: TEST_ROOT });
+		expect(results.some((item) => item.targetPath === uploadedPath && item.fileType === "image")).toBe(true);
 	});
 });

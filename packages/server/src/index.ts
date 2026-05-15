@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
 	AuthStorage,
@@ -59,6 +58,7 @@ import {
 import { createWorktreeRouter } from "./routes/worktrees.js";
 import { createWorkspaceFilesRouter } from "./routes/workspace-files.js";
 import { createWorkspaceSpaceRouter } from "./routes/workspace-space.js";
+import { createWorkspaceSearchRouter } from "./routes/workspace-search.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
@@ -75,6 +75,7 @@ import {
 } from "./conversion-service-client.js";
 import { createFileConversionWorker } from "./file-conversion-worker.js";
 import { createRagWorker } from "./rag-worker.js";
+import { markRagTargetPending } from "./rag-indexer.js";
 import {
 	getIndexedSessionTree,
 	invalidateManagedProjectScopes,
@@ -680,6 +681,7 @@ const workspaceFilesRouter = createWorkspaceFilesRouter({
 });
 app.use(workspaceFilesRouter);
 app.use(createWorkspaceSpaceRouter({ defaultWorkspaceDir }));
+app.use(createWorkspaceSearchRouter({ defaultWorkspaceDir, getRidgeDb }));
 app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(ensureSessionRecord));
 app.get(
 	"/api/files/content",
@@ -766,30 +768,12 @@ app.put(
 
 			// Markdown edit: mark search_index_status as pending so RAG will re-index with current content
 			if (markdownExtensions.has(extension)) {
-				const db = await getRidgeDb();
 				const posixPath = toPosixPath(targetPath);
-				const contentHash = crypto.createHash("sha256").update(payload.content).digest("hex");
-				const now = Date.now();
-				db.prepare(
-					`INSERT INTO search_index_status (target_path, target_type, status, content_hash, updated_at)
-					 VALUES (?, 'file', 'pending', ?, ?)
-					 ON CONFLICT(target_path) DO UPDATE SET
-						status = excluded.status,
-						content_hash = excluded.content_hash,
-						updated_at = excluded.updated_at`,
-				).run(posixPath, contentHash, now);
-
-				// Enqueue RAG indexing job so worker will chunk and store new content
-				const q = jobQueue;
-				if (q) {
-					q.enqueue({
-						type: "rag.index",
-						relatedType: "file",
-						relatedId: posixPath,
-						payload: { targetPath: posixPath },
-						maxAttempts: 3,
-					});
-				}
+				await markRagTargetPending(posixPath, {
+					workspaceDir: defaultWorkspaceDir,
+					refreshPolicy: "deferred",
+					event: "edit",
+				});
 			}
 
 			const response: FileSaveResponse = {
@@ -1514,7 +1498,7 @@ export async function startServer() {
 	await refreshSessionCatalogIndex();
 
 	// Start RAG worker (always runs, even without Python conversion service)
-	const ragWorker = createRagWorker({ jobQueue });
+	const ragWorker = createRagWorker({ jobQueue, workspaceDir: defaultWorkspaceDir });
 	ragWorker.start();
 
 	await listenHttpServer(httpServer, port);

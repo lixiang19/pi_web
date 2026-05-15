@@ -23,6 +23,8 @@
 
 - 上传后 RAG 可检索。
 - 普通 Markdown 编辑等待夜间或手动刷新。
+- 夜间 worker 入口会消费 deferred pending。
+- 内容 hash 未变时跳过 chunk 重建。
 - 删除文件后检索不到旧 chunk。
 - 索引失败进入通知中心。
 
@@ -56,5 +58,7 @@
 
 - 上传文件后可立即检索。
 - 修改 Markdown 后未手动刷新前不重建。
+- 夜间入口后 Markdown deferred 变更会重建。
+- 内容未变重复索引不会重建 chunk。
 - 删除文件后旧结果消失。
 - 手动刷新成功更新 chunk。

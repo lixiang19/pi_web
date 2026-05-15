@@ -32,6 +32,7 @@ import AutomationTabContent from "@/components/workspace/AutomationTabContent.vu
 import SettingsTabContent from "@/components/workspace/SettingsTabContent.vue";
 import SpacePreviewTab from "@/components/workspace/SpacePreviewTab.vue";
 import SpaceView from "@/components/workspace/SpaceView.vue";
+import WorkspaceSearchView from "@/components/workspace/WorkspaceSearchView.vue";
 import WorkspaceFeaturePlaceholder from "@/components/workspace/WorkspaceFeaturePlaceholder.vue";
 import SplitGrid from "@/components/workspace/split/SplitGrid.vue";
 import { useFileTreeData } from "@/composables/useFileTreeData";
@@ -174,7 +175,7 @@ type SingletonFeatureId = (typeof singletonFeatureEntries)[number]["id"];
 
 const fixedEntries = [
 	...singletonFeatureEntries
-		.filter((e) => ["moments", "tasks", "files", "space"].includes(e.id))
+		.filter((e) => ["moments", "search", "tasks", "files", "space"].includes(e.id))
 		.map((entry) => ({ ...entry, type: "singleton" as const })),
 	{ id: "terminal", label: "终端", icon: TerminalSquare, type: "terminal" as const },
 	...singletonFeatureEntries
@@ -274,6 +275,12 @@ function handleOpenProjectHome(project: SessionProjectView) {
 	splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
 }
 
+function handleOpenProjectFromSearch(projectId: string) {
+	const project = sidebarProjects.value.find((item) => item.id === projectId);
+	if (!project) return;
+	handleOpenProjectHome(project);
+}
+
 /** 归档入口 */
 function handleOpenArchived() {
 	splitPanes.openTab(
@@ -349,6 +356,23 @@ function handleOpenSpace() {
 async function handleOpenSpacePreview(work: SpaceWorkItem) {
 	try {
 		const previewPayload = await workspaceSpace.openPreview(work.id);
+		splitPanes.openTab(
+			splitPanes.activePaneGroupId.value,
+			createSpacePreviewTab(previewPayload.indexPath, previewPayload.name, {
+				spaceWorkId: previewPayload.id,
+				html: previewPayload.html,
+			}),
+		);
+	} catch (error) {
+		toast.error("空间预览打开失败", {
+			description: error instanceof Error ? error.message : "无法读取空间作品 HTML。",
+		});
+	}
+}
+
+async function handleOpenSpacePreviewById(workId: string) {
+	try {
+		const previewPayload = await workspaceSpace.openPreview(workId);
 		splitPanes.openTab(
 			splitPanes.activePaneGroupId.value,
 			createSpacePreviewTab(previewPayload.indexPath, previewPayload.name, {
@@ -1000,6 +1024,15 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			  @navigate-back="workspaceFiles.navigateBack"
 			  @retry="workspaceFiles.retry($event)"
 			  @convert="(path: string, force: boolean) => workspaceFiles.convert(path, force)"
+			/>
+			<WorkspaceSearchView
+			  v-else-if="tab.featureId === 'search'"
+			  :workspace-dir="workspaceDir"
+			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
+			  @open-session="handleOpenSession($event)"
+			  @open-tasks="handleOpenTasks"
+			  @open-project="handleOpenProjectFromSearch"
+			  @open-space-work="handleOpenSpacePreviewById"
 			/>
 			<SpaceView
 			  v-else-if="tab.featureId === 'space'"
