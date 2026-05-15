@@ -28,6 +28,11 @@ interface UpsertIndexedSessionRecordOptions {
   workspaceChatConfig: WorkspaceChatConfig;
 }
 
+interface UpsertTaskSessionIndexOptions extends UpsertIndexedSessionRecordOptions {
+  taskId: string;
+  title?: string;
+}
+
 interface ManagedProjectScope {
   project: Project;
   allowedRoots: string[];
@@ -614,6 +619,64 @@ export const upsertIndexedSessionRecord = async (
 
   await upsertCatalogRows([row], [contextEntry]);
   await updateParentSessionIds([row]);
+};
+
+export const upsertTaskSessionIndexRecord = async (
+  record: SessionRecord,
+  options: UpsertTaskSessionIndexOptions,
+): Promise<void> => {
+  const db = await getRidgeDb();
+  const contextEntry = await resolveIndexedSessionContextEntry(
+    record.cwd,
+    options.projectContextResolver,
+    options.workspaceChatConfig,
+  );
+  const now = Date.now();
+  const title =
+    normalizeString(options.title) ||
+    normalizeString(record.session.sessionName) ||
+    '任务处理会话';
+  const workspacePath = toPosixPath(path.resolve(record.cwd));
+  const projectId = contextEntry?.projectId || null;
+
+  db.prepare(
+    `INSERT INTO session_index (
+      session_id,
+      title,
+      session_type,
+      context_type,
+      workspace_path,
+      project_id,
+      task_id,
+      device_id,
+      run_location,
+      archived,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      title = excluded.title,
+      session_type = excluded.session_type,
+      context_type = excluded.context_type,
+      workspace_path = excluded.workspace_path,
+      project_id = excluded.project_id,
+      task_id = excluded.task_id,
+      run_location = excluded.run_location,
+      updated_at = excluded.updated_at`,
+  ).run(
+    record.id,
+    title,
+    'task',
+    'project',
+    workspacePath,
+    projectId,
+    options.taskId,
+    null,
+    'server',
+    0,
+    record.createdAt || now,
+    Math.max(record.updatedAt || 0, now),
+  );
 };
 
 export const listIndexedSessions = async (

@@ -25,6 +25,8 @@ import type { SessionRecord, SessionSnapshot } from "../types/index.js";
 import type { ProjectContextResolver } from "../project-context.js";
 import type { WorkspaceChatConfig } from "../workspace-chat.js";
 import type { ThinkingLevel } from "../types/index.js";
+import { TASK_SESSION_AGENT_NAME } from "../task-session-boundary.js";
+import { upsertTaskSessionIndexRecord } from "../session-indexer.js";
 
 type BackgroundJobQueue = ReturnType<typeof createBackgroundJobQueue>;
 
@@ -284,7 +286,7 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 				const defaultModel = await processingDeps.getDefaultModel();
 				const defaultThinkingLevel = await processingDeps.getDefaultThinkingLevel();
 				await processingDeps.applyTaskSessionAgentSelection(record, {
-					agentName: "task-agent",
+					agentName: TASK_SESSION_AGENT_NAME,
 					model: defaultModel || undefined,
 					thinkingLevel: defaultThinkingLevel || undefined,
 				});
@@ -302,6 +304,12 @@ export function createWorkspaceTasksRouter(defaultWorkspaceDir: string, deps?: W
 					res.status(200).json({ sessionId: existingSessionId, created: false });
 					return;
 				}
+				await upsertTaskSessionIndexRecord(record, {
+					taskId: task.id,
+					title: task.title,
+					projectContextResolver: processingDeps.projectContextResolver,
+					workspaceChatConfig: processingDeps.workspaceChatConfig,
+				});
 
 				const snapshot = await processingDeps.toSessionSnapshot(record, {});
 				res.status(201).json({ sessionId: record.id, created: true, snapshot });

@@ -10,8 +10,10 @@
 - `packages/server/src/routes/workspace-tasks.ts` — 任务回顾手动触发路由（`POST /review`）
 - `packages/server/src/task-review.ts` — task review 扫描、建议生成、队列 worker 与定期 scheduler
 - `packages/server/src/task-system.ts` — `setTaskProcessingSessionId` 内部函数
+- `packages/server/src/session-indexer.ts` — `upsertTaskSessionIndexRecord` 写入任务处理会话索引
+- `packages/server/src/task-session-boundary.ts` — task processing session 的 Agent 选择边界
 - `packages/server/src/default-agents.ts` — 内置 `task-agent`（mode: task, enabled: true）
-- `packages/server/src/index.ts` — 分叉守卫（`POST /api/sessions`）
+- `packages/server/src/index.ts` — 分叉守卫（`POST /api/sessions`）与 PATCH/messages 的 task-agent 边界
 - `packages/web/src/composables/useWorkspaceTasks.ts` — `openProcessingSession` 方法
 - `packages/web/src/components/workspace/TaskView.vue` — 任务详情处理会话按钮
 - `packages/web/src/components/workspace/TaskView.vue` — 任务回顾触发按钮与任务/里程碑详情关联建议
@@ -22,6 +24,12 @@
 ### `workspace_tasks`
 
 - `processing_session_id TEXT` — 绑定处理会话 ID，一任务最多一个
+
+### `session_index`
+
+- 任务处理会话必须写入一条完整索引记录：`session_type='task'`、`context_type='project'`、`task_id=<task_id>`、`run_location='server'`。
+- `workspace_path` 使用处理会话实际 cwd：未绑定项目为默认工作空间，绑定项目为项目路径。
+- `project_id` 由会话 cwd 通过项目上下文解析得到；无法解析时保持 `NULL`，但 `task_id` 必须写入。
 
 ### `agents`
 
@@ -44,6 +52,7 @@ GET  /api/workspace/tasks/:taskId/processing-session
 - 未绑定项目时：cwd = defaultWorkspaceDir。
 - 会话强制选择 `task-agent`。
 - 创建成功后写入 `workspace_tasks.processing_session_id`。
+- 创建成功后调用 `upsertTaskSessionIndexRecord`，用 `INSERT ... ON CONFLICT(session_id) DO UPDATE` 补齐/修正 `session_index`，避免只更新已有索引导致任务会话在列表、搜索或回顾链路中缺少 `session_type/task_id`。
 
 `GET` 行为：
 - 返回 `{ sessionId }`；无会话时 404。
@@ -56,6 +65,18 @@ POST /api/sessions
 ```
 
 - 若 `parentSessionId` 出现在 `workspace_tasks.processing_session_id` 中，返回 409「任务处理会话不允许分叉」。
+
+### 会话 Agent 边界
+
+```
+PATCH /api/sessions/:sessionId
+POST  /api/sessions/:sessionId/messages
+```
+
+- 当 `sessionId` 命中 `workspace_tasks.processing_session_id`，或 `session_index.session_type='task'` / `session_index.task_id IS NOT NULL` 时，视为任务处理会话。
+- 任务处理会话只允许 `task-agent`。请求显式传入普通 Agent 时返回 400「任务处理会话只能使用 task-agent，不能切换到普通 Agent」。
+- 该边界必须在加载/恢复本地 Pi runtime 之前执行；拒绝普通 Agent 不依赖模型配置、API key 或真实 session 文件。
+- 任务处理会话省略 `agent` 但修改 `model/thinkingLevel` 时，服务端仍强制套用 `task-agent`。
 
 ### PATCH 任务限制
 
@@ -93,9 +114,10 @@ POST /api/workspace/tasks/review
 - `processingSessionId` 只能通过 `POST /api/workspace/tasks/:id/processing-session` 创建/查询，不能直接 PATCH。
 - 有 deviceId 且离线的项目禁止启动处理会话；本地 server-folder 项目（无 deviceId）不受 `isOnline=false` 影响。
 - 普通 `/api/agents` 返回列表过滤掉 `mode === 'task'` 的 agent，避免普通会话误选。
+- 普通会话不能选择 `task-agent`；任务处理会话不能切换到普通 Agent。
 - task review agent 只生成建议通知；正式对象变更只能通过用户接受通知建议进入既有任务系统状态机。
 - 任务回顾建议的重复控制以同一 workspace 队列活跃任务去重，以及同一对象同一 suggestionType 未处理通知去重为边界。
-- `workspace_tasks.processing_session_id` 是任务处理会话的优先真源；`session_index` 仅补充没有绑定 processing session 的会话索引。
+- `workspace_tasks.processing_session_id` 是任务处理会话的优先真源；`session_index.session_type/task_id` 是会话列表、搜索、回顾兜底和路由层早期识别的索引投影，不能替代任务绑定真源。
 - 接受建议时通知中心在事务内 claim 非终态通知后才执行 `payload.suggestion`，重复接受不会重复创建任务或里程碑。
 
 ## 测试覆盖
@@ -109,6 +131,8 @@ POST /api/workspace/tasks/review
   - 无项目 cwd=defaultWorkspaceDir
   - 强制选择 task-agent
   - 禁止分叉任务处理会话
+  - PATCH 任务处理会话切换普通 Agent 返回 400
+  - messages 对任务处理会话显式使用普通 Agent 返回 400
   - 允许分叉普通会话
 - 前端：`useWorkspaceTasks.test.ts` / `TaskView.test.ts`
   - openProcessingSession 成功更新本地 processingSessionId

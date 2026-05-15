@@ -3,6 +3,7 @@ import { computed, onMounted, ref, toRef } from "vue";
 import { usePerSessionChat } from "@/composables/usePerSessionChat";
 import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
 import { NO_AGENT_VALUE, thinkingOptions } from "@/composables/useWorkbenchSessionState";
+import { useWorkbenchResourcePicker } from "@/composables/useWorkbenchResourcePicker";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -33,6 +34,13 @@ const emit = defineEmits<{
 
 const sessionIdRef = toRef(props, "sessionId");
 const chat = usePerSessionChat(sessionIdRef);
+const chatState = {
+	composer: chat.composer,
+	activeSessionId: chat.sessionId,
+	resources: chat.core.resources,
+	refreshResources: chat.core.refreshResources,
+};
+const resourcePicker = useWorkbenchResourcePicker(chatState, chat.fileTreeRoot);
 
 /** 自动发送是否完成（无论成功/失败） */
 const autoSendDone = ref(false);
@@ -49,6 +57,23 @@ const userRoundCount = computed(() =>
 const isTaskSession = computed(() => {
 	const session = chat.activeSession.value;
 	return Boolean(session?.taskId || session?.sessionType === "task");
+});
+
+const resourceStatusLabel = computed(() => {
+	if (chat.core.resourceError.value) {
+		return `资源加载失败：${chat.core.resourceError.value}`;
+	}
+
+	const resources = chat.core.resources.value;
+	const total =
+		resources.commands.length +
+		resources.prompts.length +
+		resources.skills.length;
+	if (total === 0) {
+		return "无可用资源";
+	}
+
+	return `${resources.commands.length} 个命令 / ${resources.prompts.length} 个 Prompt / ${resources.skills.length} 个 Skill`;
 });
 
 const isForkDisabled = computed(() => isTaskSession.value);
@@ -135,31 +160,34 @@ const handleSelectFile = (_path: string) => {
           :active-draft-parent-session-id="chat.activeDraftContext.value?.parentSessionId"
           :active-session-id="chat.sessionId.value"
           :agents="chat.core.agents.value"
-          :commands="[]"
+          :commands="resourcePicker.filteredCommands.value"
           :composer="chat.composer"
           :error="chat.error.value"
           :has-more-above="chat.hasMoreAbove.value"
           :interactive-requests="chat.interactiveRequests.value"
           :permission-requests="chat.permissionRequests.value"
-          :has-visible-resources="false"
+          :has-visible-resources="resourcePicker.hasVisibleResources.value"
           :is-draft-session="chat.isDraftSession.value"
           :is-loading-older="chat.isLoadingOlder.value"
-          :is-resource-picker-visible="false"
+          :is-resource-picker-visible="resourcePicker.isResourcePickerVisible.value"
           :is-sending="chat.isSending.value"
           :messages="chat.messages.value"
           :model-options="chat.core.models.value"
           :no-agent-value="NO_AGENT_VALUE"
           :current-project-path="chat.fileTreeRoot.value"
-          :prompts="[]"
+          :prompts="resourcePicker.filteredPrompts.value"
           :resource-error="chat.core.resourceError.value"
-          :skills="[]"
+          :skills="resourcePicker.filteredSkills.value"
           :status="chat.status.value"
           :thinking-options="thinkingOptions"
           :is-fork-disabled="isForkDisabled"
           :fork-disabled-reason="forkDisabledReason"
           class="flex-1"
+          @apply-prompt="resourcePicker.applyPrompt($event)"
           @create-session="chat.openSessionDraft({})"
           @dismiss-ask="chat.dismissPendingAsk(sessionId, $event)"
+          @inject-command="resourcePicker.injectCommand($event)"
+          @inject-skill="resourcePicker.injectSkill($event)"
           @load-earlier="chat.loadEarlier()"
           @respond-ask="(askId, answers) => chat.respondToPendingAsk(sessionId, askId, answers)"
           @respond-permission="(requestId, action) => chat.respondToPendingPermission(sessionId, requestId, action)"
@@ -169,6 +197,7 @@ const handleSelectFile = (_path: string) => {
           @select-project-path="chat.setDraftProjectPath($event)"
           @submit="chat.submit()"
           @abort="chat.abort()"
+          @toggle-resource-picker="resourcePicker.toggleResourcePicker()"
           @update:draft-text="chat.composer.draftText = $event"
           @edit-message="handleEditMessage"
           @retry-message="handleRetryMessage"
@@ -229,6 +258,11 @@ const handleSelectFile = (_path: string) => {
                   <div>
                     <h4 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Agent</h4>
                     <p class="text-xs text-foreground/80">{{ chat.effectiveAgent.value || '无' }}</p>
+                  </div>
+                  <Separator class="bg-border/30" />
+                  <div>
+                    <h4 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">资源</h4>
+                    <p class="text-xs text-foreground/80">{{ resourceStatusLabel }}</p>
                   </div>
                   <template v-if="isTaskSession">
                     <Separator class="bg-border/30" />

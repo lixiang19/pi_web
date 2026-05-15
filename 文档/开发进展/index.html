@@ -583,12 +583,12 @@
               <li>Agent 注册/发现/选择（<code>/api/agents</code>、HomePage / WorkspaceChatTab agent 选择）</li>
               <li>自动化规则（作为定时创建普通会话并发送消息的规则系统）</li>
               <li>Pi resource catalog 后端可列 prompts/skills/extension commands（<code>/api/resources</code>、<code>buildResourceCatalog</code>）</li>
+              <li>WorkspaceChatTab 已消费 <code>/api/resources</code>，主工作空间会话可把 prompts/skills/extension commands 写入当前输入框</li>
             </ul>
-            <p><strong>未在当前工作空间主会话 UI 完整接入</strong></p>
+            <p><strong>仍待后续阶段验收</strong></p>
             <ul style="margin: 6px 0 10px; padding-left: 18px; color: var(--muted); font-size: 13px">
-              <li>Skill 独立功能页仍占位；WorkspaceChatTab 给 WorkbenchChatPanel 传 <code>commands=[]、prompts=[]、skills=[]</code></li>
-              <li>主工作空间会话的资源选择器/Skill 注入没有真正可用</li>
-              <li>runtime bundle 服务端生成、设备 token 鉴权、设备专属 Skill 过滤和 workspace MCP 查读工具已实现；主工作空间会话的资源选择器/Skill 注入仍未完整可用</li>
+              <li>Skill 独立功能页仍占位</li>
+              <li>runtime bundle 服务端生成、设备 token 鉴权、设备专属 Skill 过滤和 workspace MCP 查读工具已实现；桌面端物化后的资源选择器仍需 V2 桌面闭环验收</li>
             </ul>
             <p><strong>占位 / 仅入口</strong></p>
             <ul style="margin: 6px 0 10px; padding-left: 18px; color: var(--muted); font-size: 13px">
@@ -719,6 +719,8 @@
             <a href="../项目设计/记忆Wiki图谱与工作空间MCP.md">记忆、Wiki、图谱与工作空间 MCP</a>
             <a href="../项目设计/文件处理流程.md">文件处理流程</a>
             <a href="../项目设计/后台Agent系统.md">后台 Agent 系统</a>
+            <a href="项目完成情况可视化.html">项目完成情况可视化</a>
+            <a href="../项目设计/V2最终上线计划.md">V2 最终上线计划</a>
             <a href="功能使用验证记录.html">功能使用验证记录</a>
             <a href="并行开发路线图.html">并行开发路线图</a>
           </div>

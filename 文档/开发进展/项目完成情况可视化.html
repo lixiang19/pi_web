@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ridge 项目完成情况可视化</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: light-dark(#f4f1ea, #17181b);
+        --paper: light-dark(#fffdf8, #202226);
+        --paper-2: light-dark(#f8f4ea, #29272b);
+        --ink: light-dark(#1e2430, #f4efe6);
+        --muted: light-dark(#69717f, #a9a39a);
+        --line: light-dark(#d8cfbf, #3c3a3d);
+        --navy: light-dark(#22324d, #dbe7ff);
+        --green: light-dark(#2d7b57, #73c69b);
+        --amber: light-dark(#b26a1d, #e4aa54);
+        --red: light-dark(#b24032, #e47e72);
+        --blue: light-dark(#315f9d, #86aee5);
+        --shadow: light-dark(0 18px 50px rgba(36, 32, 24, 0.12), 0 18px 50px rgba(0, 0, 0, 0.3));
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(90deg, color-mix(in oklch, var(--line), transparent 78%) 1px, transparent 1px) 0 0 / 42px 42px,
+          linear-gradient(0deg, color-mix(in oklch, var(--line), transparent 80%) 1px, transparent 1px) 0 0 / 42px 42px,
+          var(--bg);
+        color: var(--ink);
+        font-family:
+          ui-serif, "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+          Georgia, serif;
+        line-height: 1.55;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 292px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      aside {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        padding: 28px 20px;
+        border-right: 1px solid var(--line);
+        background: color-mix(in oklch, var(--paper), transparent 6%);
+        backdrop-filter: blur(10px);
+      }
+
+      .mark {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 26px;
+      }
+
+      .mark .word {
+        font-size: 28px;
+        line-height: 1;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .mark p,
+      nav a,
+      .eyebrow,
+      .chip,
+      .small,
+      .meta {
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      .mark p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      nav {
+        display: grid;
+        gap: 7px;
+      }
+
+      nav a {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        text-decoration: none;
+      }
+
+      nav a:hover {
+        border-color: var(--line);
+        background: var(--paper-2);
+        color: var(--ink);
+      }
+
+      main {
+        width: min(1220px, 100%);
+        padding: 34px clamp(18px, 4vw, 54px) 46px;
+      }
+
+      section {
+        margin-top: 28px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+        gap: 24px;
+        align-items: stretch;
+      }
+
+      .hero-copy {
+        min-height: 430px;
+        display: grid;
+        align-content: space-between;
+        gap: 28px;
+        padding: clamp(26px, 5vw, 54px);
+        border: 1px solid var(--line);
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        width: fit-content;
+        align-items: center;
+        gap: 8px;
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 26px;
+        height: 2px;
+        background: currentColor;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 10em;
+        font-size: clamp(42px, 7vw, 86px);
+        line-height: 0.95;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: clamp(24px, 3vw, 38px);
+        line-height: 1.08;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      p {
+        color: var(--muted);
+      }
+
+      .hero-copy .lead {
+        max-width: 760px;
+        color: color-mix(in oklch, var(--ink), var(--muted) 28%);
+        font-size: clamp(17px, 2vw, 21px);
+      }
+
+      .hero-side {
+        display: grid;
+        gap: 14px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .score-card {
+        display: grid;
+        gap: 16px;
+        padding: 22px;
+      }
+
+      .score-ring {
+        --percent: 78;
+        width: min(260px, 70vw);
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+        justify-self: center;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at center, var(--paper) 0 56%, transparent 57%),
+          conic-gradient(var(--green) calc(var(--percent) * 1%), color-mix(in oklch, var(--line), transparent 25%) 0);
+      }
+
+      .score-ring strong {
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: 46px;
+        line-height: 1;
+      }
+
+      .score-ring span {
+        display: block;
+        margin-top: 5px;
+        color: var(--muted);
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: 12px;
+        text-align: center;
+      }
+
+      .legend {
+        display: grid;
+        gap: 8px;
+      }
+
+      .legend-row {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr) 42px;
+        gap: 10px;
+        align-items: center;
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: 13px;
+      }
+
+      .track {
+        height: 9px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: color-mix(in oklch, var(--line), transparent 32%);
+      }
+
+      .fill {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+      }
+
+      .done {
+        background: var(--green);
+      }
+
+      .partial {
+        background: var(--amber);
+      }
+
+      .gap {
+        background: var(--red);
+      }
+
+      .evidence {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric {
+        min-height: 126px;
+        display: grid;
+        align-content: space-between;
+        gap: 16px;
+        padding: 18px;
+      }
+
+      .metric strong {
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: clamp(31px, 5vw, 50px);
+        line-height: 0.9;
+      }
+
+      .metric span {
+        color: var(--muted);
+      }
+
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: end;
+        margin-bottom: 14px;
+      }
+
+      .section-head p {
+        max-width: 640px;
+      }
+
+      .map {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 14px;
+      }
+
+      .column {
+        display: grid;
+        gap: 10px;
+        align-content: start;
+        padding: 16px;
+      }
+
+      .column.done-col {
+        border-top: 5px solid var(--green);
+      }
+
+      .column.partial-col {
+        border-top: 5px solid var(--amber);
+      }
+
+      .column.gap-col {
+        border-top: 5px solid var(--red);
+      }
+
+      .item {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper-2);
+      }
+
+      .item strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .item p {
+        font-size: 13px;
+      }
+
+      .matrix {
+        display: grid;
+        gap: 8px;
+      }
+
+      .matrix-row {
+        display: grid;
+        grid-template-columns: 84px minmax(0, 1.2fr) minmax(190px, 0.8fr) 110px;
+        gap: 10px;
+        align-items: center;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .badge {
+        display: inline-flex;
+        min-height: 28px;
+        align-items: center;
+        justify-content: center;
+        width: fit-content;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .badge.done-b {
+        background: color-mix(in oklch, var(--green), transparent 84%);
+        color: var(--green);
+      }
+
+      .badge.partial-b {
+        background: color-mix(in oklch, var(--amber), transparent 84%);
+        color: var(--amber);
+      }
+
+      .badge.gap-b {
+        background: color-mix(in oklch, var(--red), transparent 84%);
+        color: var(--red);
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(150px, 1fr));
+        gap: 10px;
+      }
+
+      .flow-step {
+        position: relative;
+        min-height: 138px;
+        display: grid;
+        align-content: space-between;
+        gap: 12px;
+        padding: 16px;
+        overflow: hidden;
+      }
+
+      .flow-step::after {
+        content: attr(data-no);
+        position: absolute;
+        right: 12px;
+        bottom: -18px;
+        color: color-mix(in oklch, var(--ink), transparent 90%);
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: 78px;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .risk-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .risk {
+        padding: 15px;
+        border: 1px solid color-mix(in oklch, var(--amber), var(--line) 54%);
+        border-radius: 8px;
+        background: color-mix(in oklch, var(--amber), transparent 91%);
+      }
+
+      .risk strong {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .links {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .links a {
+        display: grid;
+        min-height: 76px;
+        align-content: center;
+        gap: 4px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        text-decoration: none;
+      }
+
+      .links a:hover {
+        border-color: var(--blue);
+      }
+
+      .links span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      code {
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: color-mix(in oklch, var(--line), transparent 55%);
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.9em;
+      }
+
+      footer {
+        margin-top: 30px;
+        color: var(--muted);
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: 13px;
+      }
+
+      @media (max-width: 1040px) {
+        .shell,
+        .hero,
+        .map,
+        .risk-grid,
+        .links {
+          grid-template-columns: 1fr;
+        }
+
+        aside {
+          position: static;
+          height: auto;
+        }
+
+        nav {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .evidence,
+        .flow {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .matrix-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 620px) {
+        main {
+          padding: 20px 14px 34px;
+        }
+
+        .hero-copy {
+          min-height: auto;
+        }
+
+        nav,
+        .evidence,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside>
+        <div class="mark">
+          <div class="word">ridge</div>
+          <p>当前项目完成情况，可视化口径：文档矩阵 + 模块梳理 + 当前源码入口。</p>
+        </div>
+        <nav>
+          <a href="#summary"><span>总览</span><span>01</span></a>
+          <a href="#shape"><span>完成面</span><span>02</span></a>
+          <a href="#milestones"><span>里程碑</span><span>03</span></a>
+          <a href="#loop"><span>主闭环</span><span>04</span></a>
+          <a href="#risks"><span>缺口</span><span>05</span></a>
+          <a href="#v2"><span>V2 计划</span><span>06</span></a>
+          <a href="#sources"><span>依据</span><span>07</span></a>
+        </nav>
+      </aside>
+
+      <main>
+        <section class="hero" id="summary">
+          <div class="hero-copy">
+            <div>
+              <span class="eyebrow">2026-05-15 当前快照</span>
+              <h1>第一版主闭环已成型，收尾集中在用户可见完整性。</h1>
+            </div>
+            <p class="lead">
+              现在项目不再是只有设计稿或框架：工作台、会话、任务、闪念、文件处理、RAG、搜索、记忆、图谱、Wiki、设备、runtime bundle、workspace MCP、通知与任务回顾都有当前代码和测试证据。剩余风险主要在自动化运行历史、备份恢复设置、主会话资源选择器、文件页上传/附件管理和桌面端真实物化闭环。
+            </p>
+          </div>
+
+          <div class="hero-side">
+            <div class="panel score-card">
+              <div class="score-ring" aria-label="完成度估算 78%">
+                <div>
+                  <strong>78%</strong>
+                  <span>一版闭环完成度估算</span>
+                </div>
+              </div>
+              <div class="legend">
+                <div class="legend-row">
+                  <span>已成型</span>
+                  <div class="track"><span class="fill done" style="width: 78%"></span></div>
+                  <b>31</b>
+                </div>
+                <div class="legend-row">
+                  <span>部分完成</span>
+                  <div class="track"><span class="fill partial" style="width: 10%"></span></div>
+                  <b>4</b>
+                </div>
+                <div class="legend-row">
+                  <span>明显缺口</span>
+                  <div class="track"><span class="fill gap" style="width: 10%"></span></div>
+                  <b>4</b>
+                </div>
+              </div>
+              <p class="small">数字按 39 个功能开发任务粗略归类；“已成型”要求至少有模块契约、当前代码入口和测试/验收线索，不代表 UX 已最终完成。</p>
+            </div>
+            <div class="panel metric">
+              <span>当前工作树</span>
+              <strong>干净</strong>
+              <p class="small">开始梳理时 `git status --short --branch` 仅显示 `main...origin/main`。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="evidence" aria-label="证据指标">
+          <div class="panel metric">
+            <span>功能开发任务</span>
+            <strong>39</strong>
+            <p class="small">来自 `文档/功能开发/index.md` 功能矩阵。</p>
+          </div>
+          <div class="panel metric">
+            <span>模块梳理文档</span>
+            <strong>21</strong>
+            <p class="small">覆盖主流程、接口契约、状态机和边界。</p>
+          </div>
+          <div class="panel metric">
+            <span>服务端测试文件</span>
+            <strong>57</strong>
+            <p class="small">当前 `packages/server/src/__tests__` 统计。</p>
+          </div>
+          <div class="panel metric">
+            <span>前端测试 + E2E</span>
+            <strong>61</strong>
+            <p class="small">44 个前端单元/组件测试，17 个 E2E spec。</p>
+          </div>
+        </section>
+
+        <section id="shape">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">完成面</span>
+              <h2>当前可以分成三类看</h2>
+            </div>
+            <p>这里按“用户能否真实走通”和“后端契约是否闭环”归类。服务端已完成但主 UI 未完整暴露的能力列入部分完成。</p>
+          </div>
+
+          <div class="map">
+            <div class="panel column done-col">
+              <h3>已成型</h3>
+              <div class="item">
+                <strong>工作台与会话主线</strong>
+                <p>主页输入、标签系统、工作空间会话、归档只读、ask/permission/cancel、SSE 事件和任务会话边界已形成。</p>
+              </div>
+              <div class="item">
+                <strong>任务系统</strong>
+                <p>里程碑、任务列表/详情、状态流转、项目绑定、任务处理会话、规划工具与“完成必须人工确认”边界都有测试线索。</p>
+              </div>
+              <div class="item">
+                <strong>长期知识链路</strong>
+                <p>文件标准产物、RAG chunk、全局搜索、daily、MEMORY、Kuzu 图谱、Wiki 夜间维护和 workspace MCP 已串起来。</p>
+              </div>
+              <div class="item">
+                <strong>设备与运行基础</strong>
+                <p>设备 token、在线状态、runtime bundle、设备专属 Skill 过滤、外部项目设备绑定和 WebSocket 转发均有模块契约。</p>
+              </div>
+              <div class="item">
+                <strong>通知与任务回顾</strong>
+                <p>后台失败、文件/RAG 失败、task review suggestion 和通知动作已进入通知中心，不绕过正式状态机。</p>
+              </div>
+            </div>
+
+            <div class="panel column partial-col">
+              <h3>部分完成</h3>
+              <div class="item">
+                <strong>文件页与附件管理</strong>
+                <p>文件浏览、状态和预览存在；上传按钮、正式附件管理、移动/重命名前端完整体验仍需要补齐。</p>
+              </div>
+              <div class="item">
+                <strong>空间 HTML</strong>
+                <p>私有预览、安全边界和 RAG 接入已完成；隐藏版本管理关系仍只算部分完成。</p>
+              </div>
+              <div class="item">
+                <strong>自动化</strong>
+                <p>规则 CRUD、调度和手动运行入口已有；运行历史、跳过记录、失败通知闭环仍不完整。</p>
+              </div>
+              <div class="item">
+                <strong>备份恢复与设置</strong>
+                <p>已有备份 API/图谱备份线索和主题设置；整包恢复、数据路径展示、错误边界还没有完整交付。</p>
+              </div>
+            </div>
+
+            <div class="panel column gap-col">
+              <h3>明显缺口</h3>
+              <div class="item">
+                <strong>桌面端资源物化验收</strong>
+                <p>主工作区会话已接入 resource catalog；桌面端 runtime bundle 物化后的资源选择器仍需端到端验收。</p>
+              </div>
+              <div class="item">
+                <strong>桌面端真实闭环</strong>
+                <p>Tauri 只能打包；桌面 runtime bundle 物化、sidecar 运行和本机项目真实调度仍需要端到端验证。</p>
+              </div>
+              <div class="item">
+                <strong>音频图片 Markdown 处理</strong>
+                <p>RAG 与转换契约已有，但功能矩阵里 Task 20 仍未按完整任务归档为完成。</p>
+              </div>
+              <div class="item">
+                <strong>恢复能力</strong>
+                <p>第一版目标要求整包恢复；当前只看到备份和设置基础，恢复流程仍是交付缺口。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="milestones">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">里程碑</span>
+              <h2>11 个一版里程碑的状态</h2>
+            </div>
+            <p>状态不是按文件是否存在，而是按产品闭环程度判断。</p>
+          </div>
+          <div class="matrix">
+            <div class="matrix-row">
+              <strong>M0 数据基座</strong>
+              <p>唯一工作空间、`ridge.db`、目录初始化、隐藏 `.ridge`、迁移框架。</p>
+              <span class="meta">工作空间初始化 / DB / 路径边界</span>
+              <span class="badge done-b">完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M1 工作台会话</strong>
+              <p>Shell、固定入口、主页、会话、归档只读、AI 对话主线闭环。</p>
+              <span class="meta">WorkspacePage / WorkspaceChatTab / SSE</span>
+              <span class="badge done-b">完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M2 任务体系</strong>
+              <p>任务、里程碑、任务 Agent、规划工具与完成确认边界。</p>
+              <span class="meta">TaskView / task-system / planning-tools</span>
+              <span class="badge done-b">完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M3 闪念采集</strong>
+              <p>Web 闪念、临时附件、分析建议、处理为正式对象；桌面采集需继续端到端复验。</p>
+              <span class="meta">Inbox / FleetingCaptureButton / fleeting routes</span>
+              <span class="badge partial-b">接近完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M4 文件与空间</strong>
+              <p>文件处理状态、PDF/Word 转换、空间私有预览已成型；文件页上传/附件体验、Task 20 仍需收口。</p>
+              <span class="meta">FilesView / conversion / SpaceView</span>
+              <span class="badge partial-b">部分完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M5 RAG 搜索</strong>
+              <p>标准产物索引、更新/删除/移动、全局搜索资产导航器已实现。</p>
+              <span class="meta">rag-indexer / WorkspaceSearchView</span>
+              <span class="badge done-b">完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M6 记忆后台</strong>
+              <p>summary.daily、memory.maintain、后台队列、MEMORY/Wiki 注入链路已实现。</p>
+              <span class="meta">background-jobs / workspace-memory</span>
+              <span class="badge done-b">完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M7 图谱 Wiki</strong>
+              <p>Kuzu schema、graph agent、Wiki agent、夜间维护顺序和备份纳入已完成后端基础链路。</p>
+              <span class="meta">graph-store / graph-agent / wiki-agent</span>
+              <span class="badge done-b">完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M8 项目设备</strong>
+              <p>项目注册、设备在线、runtime bundle、workspace MCP 已成型；桌面本机真实运行仍需整体验收。</p>
+              <span class="meta">projects / devices / runtime-bundle</span>
+              <span class="badge partial-b">后端完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M9 通知自动化</strong>
+              <p>通知中心和 task review 完成；自动化运行历史、跳过、失败通知仍未闭环。</p>
+              <span class="meta">notifications / task-review / automations</span>
+              <span class="badge partial-b">部分完成</span>
+            </div>
+            <div class="matrix-row">
+              <strong>M10 备份收尾</strong>
+              <p>设置基础和备份线索已有；整包恢复、校验信息、恢复前快照和错误边界仍是收尾缺口。</p>
+              <span class="meta">workspace-backup / SettingsTabContent</span>
+              <span class="badge gap-b">未完成</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="loop">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">主闭环</span>
+              <h2>当前已能说明的产品路径</h2>
+            </div>
+            <p>这条路径是 ridge 作为 AI 工作平台的核心，不包括公开分享、多用户、复杂图谱画布等非一版目标。</p>
+          </div>
+          <div class="flow">
+            <div class="panel flow-step" data-no="1">
+              <h3>输入</h3>
+              <p>主页会话、闪念、文件、任务入口已经在工作台内聚合。</p>
+            </div>
+            <div class="panel flow-step" data-no="2">
+              <h3>处理</h3>
+              <p>Pi 会话、任务 Agent、文件转换 worker、后台 Agent 分层运行。</p>
+            </div>
+            <div class="panel flow-step" data-no="3">
+              <h3>确认</h3>
+              <p>任务完成、建议应用、失败重试都要求显式用户动作或状态机约束。</p>
+            </div>
+            <div class="panel flow-step" data-no="4">
+              <h3>沉淀</h3>
+              <p>正式对象落到 Markdown、任务、项目、空间、daily、MEMORY、Wiki。</p>
+            </div>
+            <div class="panel flow-step" data-no="5">
+              <h3>复用</h3>
+              <p>RAG、图谱、Wiki、workspace MCP 和启动注入让下一次会话继续使用。</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="risks">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">下一步</span>
+              <h2>最值得继续收口的 6 件事</h2>
+            </div>
+            <p>按对第一版可用性的影响排序。</p>
+          </div>
+          <div class="risk-grid">
+            <div class="risk">
+              <strong>1. 桌面端资源物化验收</strong>
+              <p>主工作区会话已经消费 `/api/resources`；下一步要验证桌面 runtime bundle 物化后，设备专属 Skill 与主会话资源选择器一致可用。</p>
+            </div>
+            <div class="risk">
+              <strong>2. 自动化运行闭环</strong>
+              <p>补 `automation_runs` 业务写入、跳过原因、失败通知和运行历史视图。</p>
+            </div>
+            <div class="risk">
+              <strong>3. 文件页完整操作</strong>
+              <p>补上传入口、正式附件管理、移动/重命名的用户界面和失败可见性。</p>
+            </div>
+            <div class="risk">
+              <strong>4. 备份恢复</strong>
+              <p>把备份、恢复前快照、整包恢复、校验信息和设置页入口作为一条功能交付。</p>
+            </div>
+            <div class="risk">
+              <strong>5. 桌面端端到端验收</strong>
+              <p>验证设备在线、bundle 物化、本机项目会话、SSE 转发和离线拒绝。</p>
+            </div>
+            <div class="risk">
+              <strong>6. 功能矩阵刷新</strong>
+              <p>`文档/功能开发/index.md` 局部仍有 2026-05-12 的陈旧行，需按当前模块梳理统一校准。</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="v2">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">V2</span>
+              <h2>最终上线计划已冻结为 7 个阶段</h2>
+            </div>
+            <p>Task 36 按用户确认在其他 worktree 正常推进；当前 v2 计划只保留合并验收，不把它作为本 worktree 阻塞项。</p>
+          </div>
+          <div class="matrix">
+            <div class="matrix-row">
+              <strong>阶段 0</strong>
+              <p>V2 基线冻结：校准功能矩阵、入口状态、API 消费和模块梳理。</p>
+              <span class="meta">先收口事实</span>
+              <span class="badge done-b">立即开始</span>
+            </div>
+            <div class="matrix-row">
+              <strong>阶段 1</strong>
+              <p>主会话资源与 Agent 运行体验：接入 commands、prompts、skills，删除旧双轨。</p>
+              <span class="meta">主会话最终入口</span>
+              <span class="badge done-b">已完成主会话接入</span>
+            </div>
+            <div class="matrix-row">
+              <strong>阶段 2</strong>
+              <p>文件、附件、空间与隐藏版本：上传、转换、预览、版本点、RAG 同步全闭环。</p>
+              <span class="meta">资产沉淀</span>
+              <span class="badge partial-b">核心</span>
+            </div>
+            <div class="matrix-row">
+              <strong>阶段 3</strong>
+              <p>桌面端与本机项目上线闭环：runtime bundle 物化、本机 Pi 运行、SSE 转发和离线拒绝。</p>
+              <span class="meta">桌面真实运行</span>
+              <span class="badge partial-b">核心</span>
+            </div>
+            <div class="matrix-row">
+              <strong>阶段 4</strong>
+              <p>备份、恢复、设置与错误边界：整包恢复、恢复前快照、数据路径和全局错误边界。</p>
+              <span class="meta">上线安全</span>
+              <span class="badge gap-b">必须补齐</span>
+            </div>
+            <div class="matrix-row">
+              <strong>阶段 5</strong>
+              <p>知识系统可诊断化：索引队列、失败文件、图谱/Wiki 状态、MCP 边界可见。</p>
+              <span class="meta">可维护</span>
+              <span class="badge partial-b">收口</span>
+            </div>
+            <div class="matrix-row">
+              <strong>阶段 6</strong>
+              <p>上线质量门禁：删除占位，文档同步，`npm run check`、`pnpm test`、关键 E2E 和人工验收。</p>
+              <span class="meta">做完上线</span>
+              <span class="badge gap-b">最终门禁</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="sources">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">依据</span>
+              <h2>本页读取的核心入口</h2>
+            </div>
+          </div>
+          <div class="links">
+            <a href="../功能开发/index.md">功能开发矩阵<span>任务状态与真实实现口径</span></a>
+            <a href="../项目设计/开发计划与里程碑.md">开发计划与里程碑<span>第一版闭环与 M0-M10</span></a>
+            <a href="../模块梳理/工作台Shell与标签系统.md">工作台 Shell 与标签系统<span>固定入口、标签、会话规则</span></a>
+            <a href="../模块梳理/AI对话主线闭环.md">AI 对话主线闭环<span>SSE、cancel、ask、permission</span></a>
+            <a href="../模块梳理/search-index-status与RAG索引入口.md">RAG 索引入口<span>标准产物、chunk、刷新规则</span></a>
+            <a href="../模块梳理/记忆与后台会话整理.md">记忆与后台会话整理<span>summary、MEMORY、Wiki 注入</span></a>
+            <a href="../模块梳理/设备模型与在线状态.md">设备模型与在线状态<span>token、心跳、bundle ack</span></a>
+            <a href="../模块梳理/runtime-bundle与设备专属Skill.md">Runtime Bundle<span>设备专属 Skill 与物化边界</span></a>
+            <a href="../模块梳理/通知与建议中心.md">通知与建议中心<span>建议、重试、前端入口</span></a>
+            <a href="../项目设计/V2最终上线计划.md">V2 最终上线计划<span>最终版阶段、验收和上线门禁</span></a>
+          </div>
+        </section>
+
+        <footer>
+          本页是静态说明页，不执行 API。更新时间：2026-05-15；若功能矩阵更新，应同步刷新本页的估算和缺口列表。
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

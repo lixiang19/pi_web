@@ -1,7 +1,8 @@
-import { computed, ref } from "vue";
+import { computed, defineComponent, nextTick, ref } from "vue";
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WorkspaceChatTab from "../WorkspaceChatTab.vue";
+import type { ResourceCatalogResponse } from "@/lib/types";
 
 const mockComposer = {
 	draftText: "",
@@ -18,12 +19,24 @@ const mockComposer = {
 const loadSession = vi.fn();
 const openSessionDraft = vi.fn();
 const submit = vi.fn();
+const refreshResources = vi.fn();
+const mockActiveSession = ref<Record<string, unknown> | null>(null);
+const mockResources = ref<ResourceCatalogResponse>({
+	prompts: [],
+	skills: [],
+	commands: [],
+	diagnostics: {
+		prompts: [],
+		skills: [],
+		commands: [],
+	},
+});
 
 vi.mock("@/composables/usePerSessionChat", () => ({
 	usePerSessionChat: () => ({
 		sessionId: computed(() => "session-home-first"),
 		status: computed(() => "idle"),
-		activeSession: computed(() => null),
+		activeSession: computed(() => mockActiveSession.value),
 		activeDraftContext: ref(null),
 		currentSessionTitle: computed(() => "新会话"),
 		isDraftSession: computed(() => false),
@@ -41,7 +54,9 @@ vi.mock("@/composables/usePerSessionChat", () => ({
 		core: {
 			agents: ref([]),
 			models: ref([]),
+			resources: mockResources,
 			resourceError: ref(""),
+			refreshResources,
 		},
 		openSessionDraft,
 		loadSession,
@@ -81,6 +96,19 @@ describe("WorkspaceChatTab", () => {
 		openSessionDraft.mockClear();
 		submit.mockResolvedValue(undefined);
 		submit.mockClear();
+		mockActiveSession.value = null;
+		refreshResources.mockImplementation(async () => mockResources.value);
+		refreshResources.mockClear();
+		mockResources.value = {
+			prompts: [],
+			skills: [],
+			commands: [],
+			diagnostics: {
+				prompts: [],
+				skills: [],
+				commands: [],
+			},
+		};
 	});
 
 	it("loads the session and auto-submits the home initial prompt with selected options", async () => {
@@ -118,5 +146,290 @@ describe("WorkspaceChatTab", () => {
 		expect(mockComposer.selectedAgent).toBe("planner");
 		expect(mockComposer.selectedThinkingLevel).toBe("high");
 		expect(submit).toHaveBeenCalledWith(["attachment-1", "attachment-2"]);
+	});
+
+	it("keeps task sessions from edit and retry actions", async () => {
+		mockActiveSession.value = {
+			id: "session-task",
+			taskId: "task-1",
+			sessionType: "task",
+		};
+
+		const wrapper = mount(WorkspaceChatTab, {
+			props: {
+				sessionId: "session-task",
+				workspaceDir: "/tmp/project",
+			},
+			global: {
+				stubs: {
+					WorkbenchChatPanel: defineComponent({
+						name: "WorkbenchChatPanel",
+						props: ["isForkDisabled", "forkDisabledReason"],
+						emits: ["editMessage", "retryMessage"],
+						template: `
+							<div>
+								<p data-test="fork-disabled">{{ String(isForkDisabled) }}</p>
+								<p data-test="fork-reason">{{ forkDisabledReason }}</p>
+								<button data-test="edit" @click="$emit('editMessage', 'hello')">edit</button>
+								<button data-test="retry" @click="$emit('retryMessage', 'hello')">retry</button>
+							</div>
+						`,
+					}),
+					WorkspaceFileTree: true,
+					WorkbenchGitPanel: true,
+					Tabs: { template: "<div><slot /></div>" },
+					TabsList: { template: "<div><slot /></div>" },
+					TabsTrigger: { template: "<button><slot /></button>" },
+					TabsContent: { template: "<div><slot /></div>" },
+					ScrollArea: { template: "<div><slot /></div>" },
+					Separator: true,
+				},
+			},
+		});
+
+		await nextTick();
+
+		expect(wrapper.get('[data-test="fork-disabled"]').text()).toBe("true");
+		expect(wrapper.get('[data-test="fork-reason"]').text()).toBe("任务处理会话不支持编辑/重试");
+
+		await wrapper.get('[data-test="edit"]').trigger("click");
+		await wrapper.get('[data-test="retry"]').trigger("click");
+
+		expect(openSessionDraft).not.toHaveBeenCalled();
+	});
+
+	it("connects the workspace chat resource picker to the current resource catalog", async () => {
+		mockResources.value = {
+			prompts: [
+				{
+					name: "daily-plan",
+					description: "生成今日计划",
+					content: "请基于当前上下文规划今天任务",
+				},
+			],
+			skills: [
+				{
+					name: "deep-review",
+					description: "深度审查",
+					invocation: "$deep-review",
+					disableModelInvocation: false,
+				},
+			],
+			commands: [
+				{
+					name: "summarize",
+					description: "总结当前会话",
+					source: "extension",
+				},
+			],
+			diagnostics: {
+				prompts: [],
+				skills: [],
+				commands: [],
+			},
+		};
+
+		const wrapper = mount(WorkspaceChatTab, {
+			props: {
+				sessionId: "session-home-first",
+				workspaceDir: "/tmp/project",
+			},
+			global: {
+				stubs: {
+					WorkbenchChatPanel: defineComponent({
+						name: "WorkbenchChatPanel",
+						props: [
+							"commands",
+							"hasVisibleResources",
+							"isResourcePickerVisible",
+							"prompts",
+							"skills",
+						],
+						emits: [
+							"applyPrompt",
+							"injectCommand",
+							"injectSkill",
+							"toggleResourcePicker",
+						],
+						template: `
+							<div>
+								<button data-test="toggle-resource" @click="$emit('toggleResourcePicker')">resources</button>
+								<button data-test="apply-prompt" @click="$emit('applyPrompt', prompts[0])">prompt</button>
+								<button data-test="inject-skill" @click="$emit('injectSkill', skills[0].invocation)">skill</button>
+								<button data-test="inject-command" @click="$emit('injectCommand', commands[0].name)">command</button>
+							</div>
+						`,
+					}),
+					WorkspaceFileTree: true,
+					WorkbenchGitPanel: true,
+					Tabs: { template: "<div><slot /></div>" },
+					TabsList: { template: "<div><slot /></div>" },
+					TabsTrigger: { template: "<button><slot /></button>" },
+					TabsContent: { template: "<div><slot /></div>" },
+					ScrollArea: { template: "<div><slot /></div>" },
+					Separator: true,
+				},
+			},
+		});
+
+		await Promise.resolve();
+		await nextTick();
+
+		const chatPanel = wrapper.findComponent({ name: "WorkbenchChatPanel" });
+		expect(chatPanel.props("commands")).toEqual(mockResources.value.commands);
+		expect(chatPanel.props("prompts")).toEqual(mockResources.value.prompts);
+		expect(chatPanel.props("skills")).toEqual(mockResources.value.skills);
+		expect(chatPanel.props("hasVisibleResources")).toBe(true);
+
+		await wrapper.get('[data-test="toggle-resource"]').trigger("click");
+		expect(refreshResources).toHaveBeenCalledWith({
+			cwd: "/tmp/project",
+			sessionId: "session-home-first",
+		});
+
+		await nextTick();
+		expect(chatPanel.props("isResourcePickerVisible")).toBe(true);
+
+		await wrapper.get('[data-test="apply-prompt"]').trigger("click");
+		expect(mockComposer.draftText).toBe("请基于当前上下文规划今天任务");
+
+		await wrapper.get('[data-test="inject-skill"]').trigger("click");
+		expect(mockComposer.draftText).toBe("请基于当前上下文规划今天任务 $deep-review ");
+
+		await wrapper.get('[data-test="inject-command"]').trigger("click");
+		expect(mockComposer.draftText).toBe("请基于当前上下文规划今天任务 $deep-review /summarize ");
+	});
+
+	it("submits the main workspace chat draft after prompt skill and command injection", async () => {
+		mockResources.value = {
+			prompts: [
+				{
+					name: "daily-plan",
+					description: "生成今日计划",
+					content: "请基于当前上下文规划今天任务",
+				},
+			],
+			skills: [
+				{
+					name: "deep-review",
+					description: "深度审查",
+					invocation: "$deep-review",
+					disableModelInvocation: false,
+				},
+			],
+			commands: [
+				{
+					name: "summarize",
+					description: "总结当前会话",
+					source: "extension",
+				},
+			],
+			diagnostics: {
+				prompts: [],
+				skills: [],
+				commands: [],
+			},
+		};
+
+		const wrapper = mount(WorkspaceChatTab, {
+			props: {
+				sessionId: "session-home-first",
+				workspaceDir: "/tmp/project",
+			},
+			global: {
+				stubs: {
+					WorkbenchChatPanel: defineComponent({
+						name: "WorkbenchChatPanel",
+						props: ["commands", "prompts", "skills"],
+						emits: [
+							"applyPrompt",
+							"injectCommand",
+							"injectSkill",
+							"submit",
+						],
+						template: `
+							<div>
+								<button data-test="apply-prompt" @click="$emit('applyPrompt', prompts[0])">prompt</button>
+								<button data-test="inject-skill" @click="$emit('injectSkill', skills[0].invocation)">skill</button>
+								<button data-test="inject-command" @click="$emit('injectCommand', commands[0].name)">command</button>
+								<button data-test="submit" @click="$emit('submit')">submit</button>
+							</div>
+						`,
+					}),
+					WorkspaceFileTree: true,
+					WorkbenchGitPanel: true,
+					Tabs: { template: "<div><slot /></div>" },
+					TabsList: { template: "<div><slot /></div>" },
+					TabsTrigger: { template: "<button><slot /></button>" },
+					TabsContent: { template: "<div><slot /></div>" },
+					ScrollArea: { template: "<div><slot /></div>" },
+					Separator: true,
+				},
+			},
+		});
+
+		await Promise.resolve();
+		await nextTick();
+
+		await wrapper.get('[data-test="apply-prompt"]').trigger("click");
+		await wrapper.get('[data-test="inject-skill"]').trigger("click");
+		await wrapper.get('[data-test="inject-command"]').trigger("click");
+		await wrapper.get('[data-test="submit"]').trigger("click");
+
+		expect(mockComposer.draftText).toBe("请基于当前上下文规划今天任务 $deep-review /summarize ");
+		expect(submit).toHaveBeenCalledOnce();
+		expect(submit).toHaveBeenCalledWith();
+	});
+
+	it("shows the real empty resource catalog state without fake resource entries", async () => {
+		const wrapper = mount(WorkspaceChatTab, {
+			props: {
+				sessionId: "session-home-first",
+				workspaceDir: "/tmp/project",
+			},
+			global: {
+				stubs: {
+					WorkbenchChatPanel: defineComponent({
+						name: "WorkbenchChatPanel",
+						props: [
+							"commands",
+							"hasVisibleResources",
+							"prompts",
+							"skills",
+						],
+						template: `
+							<div>
+								<p data-test="has-resources">{{ String(hasVisibleResources) }}</p>
+								<p data-test="command-count">{{ commands.length }}</p>
+								<p data-test="prompt-count">{{ prompts.length }}</p>
+								<p data-test="skill-count">{{ skills.length }}</p>
+							</div>
+						`,
+					}),
+					WorkspaceFileTree: true,
+					WorkbenchGitPanel: true,
+					Tabs: { template: "<div><slot /></div>" },
+					TabsList: { template: "<div><slot /></div>" },
+					TabsTrigger: { template: "<button><slot /></button>" },
+					TabsContent: { template: "<div><slot /></div>" },
+					ScrollArea: { template: "<div><slot /></div>" },
+					Separator: true,
+				},
+			},
+		});
+
+		await Promise.resolve();
+		await nextTick();
+
+		const chatPanel = wrapper.findComponent({ name: "WorkbenchChatPanel" });
+		expect(chatPanel.props("hasVisibleResources")).toBe(false);
+		expect(chatPanel.props("commands")).toEqual([]);
+		expect(chatPanel.props("prompts")).toEqual([]);
+		expect(chatPanel.props("skills")).toEqual([]);
+		expect(wrapper.get('[data-test="has-resources"]').text()).toBe("false");
+		expect(wrapper.get('[data-test="command-count"]').text()).toBe("0");
+		expect(wrapper.get('[data-test="prompt-count"]').text()).toBe("0");
+		expect(wrapper.get('[data-test="skill-count"]').text()).toBe("0");
+		expect(wrapper.text()).toContain("无可用资源");
 	});
 });

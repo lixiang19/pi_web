@@ -40,10 +40,12 @@ type SessionDraftContext = {
   parentSessionId: string;
 };
 
+const TASK_SESSION_AGENT_NAME = "task-agent";
+
 /**
  * 每个会话容器独立的聊天状态管理
  *
- * 每个 SessionTabContent 实例创建一个 usePerSessionChat，
+ * 每个工作区会话容器（WorkspaceChatTab）创建一个 usePerSessionChat，
  * 拥有独立的 messages、composer、SSE 连接等。内部维护 resolvedSessionId，
  * 以支持草稿首发后在同一实例内切换到正式会话。
  * 全局共享状态（sessions 列表、缓存等）通过 usePiChatCore 访问。
@@ -173,6 +175,9 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   );
 
   const isDraftSession = computed(() => !activeSession.value);
+  const isTaskSession = computed(() =>
+    Boolean(activeSession.value?.taskId || activeSession.value?.sessionType === "task"),
+  );
   const isReadonlySession = computed(
     () =>
       activeSession.value?.archived === true ||
@@ -508,6 +513,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     }
 
     if (
+      !isTaskSession.value &&
       composer.selectedAgent &&
       !core.agents.value.some((agent) => agent.name === composer.selectedAgent)
     ) {
@@ -788,6 +794,11 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
 
   const setSelectedAgent = async (agentName: string) => {
     const nextAgent = agentName.trim();
+    if (isTaskSession.value && nextAgent !== TASK_SESSION_AGENT_NAME) {
+      error.value = "任务处理会话只能使用 task-agent，不能切换到普通 Agent";
+      return;
+    }
+
     const previousAgent = composer.selectedAgent;
     composer.selectedAgent = nextAgent;
 
@@ -982,6 +993,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
     isLoadingOlder,
     activeHistoryMeta,
     isDraftSession,
+    isTaskSession,
     isReadonlySession,
     currentSessionTitle,
     fileTreeRoot,

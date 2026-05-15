@@ -15,6 +15,7 @@
   - `POST /api/sessions/:sessionId/ask/:requestId`
   - `POST /api/sessions/:sessionId/permissions/:requestId`
 - `packages/web/src/composables/usePerSessionChat.ts`
+- `packages/web/src/composables/useWorkbenchResourcePicker.ts`
 - `packages/web/src/components/workbench/chat/WorkbenchChatPanel.vue`
 - `packages/web/src/components/workbench/chat/WorkbenchComposer.vue`
 - `packages/web/src/components/workbench/chat/WorkbenchMessageStream.vue`
@@ -30,6 +31,8 @@
 - `POST /api/sessions/:sessionId/archive` 同时更新 `sessions.archived` 与 `session_index.archived`；纯 desktop 会话只存在于 `session_index` 时也必须可归档。
 - 归档只读边界覆盖 `messages/ask/permissions/cancel`；归档会话返回 403，不依赖前端隐藏。
 - desktop 会话在 `session_index.run_location = 'desktop'` 时，`events/messages/cancel/ask/permissions` 都必须先走桌面 WebSocket 转发，不读取本地 Pi session 文件。
+- task processing session 通过 `workspace_tasks.processing_session_id` 和 `session_index.session_type/task_id` 识别；`PATCH /api/sessions/:sessionId` 与 `POST /api/sessions/:sessionId/messages` 对显式普通 Agent 返回 400，只允许 `task-agent`。
+- task processing session 的 Agent 边界必须早于本地 Pi runtime 加载/恢复执行，避免普通 Agent 请求先触发模型/API key 选择或 session 文件读取。
 
 ## 前端状态边界
 
@@ -38,6 +41,9 @@
 - `usePerSessionChat` 从 `activeSession` 或缓存 snapshot 的 `archived` 派生 `isReadonlySession`，同步到 `composer.isDisabled`。
 - 只读会话保留输入草稿，显示「归档会话只读，不能继续发送」，不调用发送 API。
 - 未配置可用模型时，`submit()` 返回明确错误「当前没有可用模型，无法发送」，并保留输入草稿。
+- `WorkspaceChatTab` 是当前工作空间主会话入口，接入 `useWorkbenchResourcePicker`，把 `GET /api/resources` 的 commands、prompts、skills 传给 `WorkbenchChatPanel`；旧 `SessionTabContent` / `SessionTabArea` 已删除，不保留 resource picker 双轨。
+- 资源刷新使用当前 `fileTreeRoot` 和 `sessionId`，保证 prompt / skill / extension command 按当前 cwd 与会话上下文解析。
+- 右侧摘要显示资源注入状态：命令、Prompt、Skill 数量；资源加载失败时显示错误；无资源时显示真实空状态。
 
 ## 事件与消息展示
 
@@ -61,5 +67,12 @@
   - `/events`、`/cancel`、`/ask/:id`、`/permissions/:id` 进入会话处理器。
   - desktop 会话的 ask、permission、cancel 转发到桌面运行时。
   - 纯 desktop 会话归档写入 `session_index`，归档后 messages、ask、permission、cancel 都返回 403 且不转发。
+- `packages/server/src/__tests__/workspace-tasks.test.ts`
+  - PATCH 任务处理会话显式切换普通 Agent 返回 400。
+  - messages 对任务处理会话显式使用普通 Agent 返回 400。
 - `packages/web/src/components/workspace/__tests__/WorkspaceChatTab.test.ts`
   - 首页 `initialPrompt/model/agent/thinking/attachmentIds` 注入 composer 后自动提交。
+  - 主工作区会话把 resource catalog 传给 composer，资源面板按当前 cwd/session 刷新，prompt/skill/command 可写入草稿并可提交。
+  - resource catalog 为空时传入空列表，摘要显示「无可用资源」，不显示假资源入口。
+- `packages/web/src/composables/__tests__/usePerSessionChat.test.ts`
+  - prompt/skill/command 注入后的主会话草稿通过 `sendMessage` 发送为真实 payload。

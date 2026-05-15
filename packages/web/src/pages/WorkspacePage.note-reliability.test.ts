@@ -107,7 +107,6 @@ const mountWorkspace = () =>
 				TerminalTabContent: true,
 				AutomationTabContent: true,
 				SettingsTabContent: true,
-				SessionTabContent: true,
 				WorkspaceTopMenu: true,
 				Separator: true,
 				Badge: true,

@@ -330,6 +330,70 @@ describe("workspace tasks processing session api", () => {
 		expect(psRes2.body.sessionId).toBe(psRes.body.sessionId);
 	});
 
+	it("POST upserts a complete task row into session_index even when the catalog indexer does not", async () => {
+		const deps = createMockDeps();
+		const app = createApp(workspaceDir, deps);
+
+		const createRes = await request(app)
+			.post("/api/workspace/tasks")
+			.send({ title: "补写索引任务", priority: "normal", acceptanceCriteria: "标准" })
+			.expect(201);
+		const taskId = createRes.body.task.id;
+
+		const psRes = await request(app)
+			.post(`/api/workspace/tasks/${taskId}/processing-session`)
+			.expect(201);
+
+		const db = await getRidgeDb();
+		const row = db
+			.prepare(
+				`SELECT
+					session_id AS sessionId,
+					title,
+					session_type AS sessionType,
+					context_type AS contextType,
+					workspace_path AS workspacePath,
+					project_id AS projectId,
+					task_id AS taskId,
+					run_location AS runLocation,
+					archived,
+					created_at AS createdAt,
+					updated_at AS updatedAt
+				FROM session_index
+				WHERE session_id = ?`,
+			)
+			.get(psRes.body.sessionId) as
+			| {
+					sessionId: string;
+					title: string;
+					sessionType: string;
+					contextType: string;
+					workspacePath: string;
+					projectId: string | null;
+					taskId: string | null;
+					runLocation: string;
+					archived: number;
+					createdAt: number;
+					updatedAt: number;
+			  }
+			| undefined;
+
+		expect(row).toEqual(
+			expect.objectContaining({
+				sessionId: psRes.body.sessionId,
+				title: "补写索引任务",
+				sessionType: "task",
+				contextType: "project",
+				workspacePath: workspaceDir,
+				taskId,
+				runLocation: "server",
+				archived: 0,
+			}),
+		);
+		expect(row?.createdAt).toBeGreaterThan(0);
+		expect(row?.updatedAt).toBeGreaterThan(0);
+	});
+
 	it("POST creates project session when task has projectId", async () => {
 		const deps = createMockDeps();
 		deps.getProjects = vi.fn(async () => ({

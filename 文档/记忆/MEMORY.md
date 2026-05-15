@@ -51,6 +51,7 @@
 - [任务系统基准] 任务系统以 `任务系统PRD-v0.1.md` 为准，旧 `.ridge/tasks.json` 和 checkbox 聚合属于废弃原型；新实现必须走 `~/.pi/ridge.db` 的任务/里程碑表，不迁移旧 JSON 数据
 - [任务回顾边界] task review agent 只能写 `task_review.suggestion` 通知，不能直接改任务/里程碑；正式对象变更必须等用户接受通知建议后走任务系统状态机。任务页可展示关联建议，但仍复用通知中心动作契约。
 - [任务回顾会话真源] task review 的“处理会话长期无进展”必须优先读取 `workspace_tasks.processing_session_id` 绑定的 `sessions`；只有任务没有绑定 processing session 时才用未归档 `session_index` 补充。
+- [任务处理会话索引与边界] 创建 task processing session 后必须同时写 `workspace_tasks.processing_session_id` 和 `session_index(session_type='task', task_id)`；PATCH/messages 对任务会话显式传普通 Agent 必须在加载 Pi runtime 前返回 400，只允许 `task-agent`。
 - [建议动作幂等] 通知建议的 `accept_suggestion` 必须在事务内先 claim 非终态通知再执行正式写入；否则重复点击/并发请求会让 `task.create`、`milestone.create` 这类建议重复落库。
 - [乐观更新] 任务 toggle/create/delete 应先本地更新状态、失败再回滚，避免每次操作后 await load() 全量重新加载的延迟感
 - [规划工具权限] 多个工具应共享同一个逻辑权限键（如 7 个规划工具全部映射到 `task`），而不是每个工具一个键。`compileAgentPermission` 移除工具时不能只按 `normalizeString === permissionKey`，要单独遍历 `PLANNING_TOOL_NAMES`，否则 deny 不会生效。`extractPermissionSubject` 和 `derivePermissionPattern` 对规划工具返回工具名本身，让 `task: ask` 的 permission request 能精确归类到 `task`。子代理 `task` 工具与规划工具共享同一个逻辑权限键，这是设计意图。

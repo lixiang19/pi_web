@@ -10,6 +10,32 @@ import { createAuthenticatedAgent } from "../test/auth.js";
 let api: ReturnType<typeof request.agent>;
 const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
 
+async function bindTaskProcessingSession(taskId: string): Promise<string> {
+	const sessionId = `session-task-${taskId}`;
+	const db = await getRidgeDb();
+	db.prepare(
+		`UPDATE workspace_tasks
+		 SET processing_session_id = ?, updated_at = ?
+		 WHERE task_id = ?`,
+	).run(sessionId, Date.now(), taskId);
+	db.prepare(
+		`INSERT INTO session_index(
+			session_id, title, session_type, context_type, workspace_path,
+			project_id, task_id, device_id, run_location, archived, created_at, updated_at
+		)
+		VALUES(?, ?, 'task', 'project', ?, NULL, ?, NULL, 'server', 0, ?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET
+			session_type = excluded.session_type,
+			context_type = excluded.context_type,
+			workspace_path = excluded.workspace_path,
+			task_id = excluded.task_id,
+			run_location = excluded.run_location,
+			archived = excluded.archived,
+			updated_at = excluded.updated_at`,
+	).run(sessionId, "测试任务处理会话", WORKSPACE, taskId, Date.now(), Date.now());
+	return sessionId;
+}
+
 beforeEach(async () => {
 	api = await createAuthenticatedAgent(app);
 	await fs.mkdir(WORKSPACE, { recursive: true });
@@ -464,5 +490,39 @@ describe("workspace task system", () => {
 		if (sessionRes.status === 400 || sessionRes.status === 500) {
 			expect(sessionRes.text).toContain("task");
 		}
+	});
+
+	it("PATCH /api/sessions/:sessionId rejects switching a task processing session to a normal agent", async () => {
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "PATCH 边界任务",
+			priority: "normal",
+			acceptanceCriteria: "任务会话不能切换普通 Agent",
+		});
+		expect(taskRes.status).toBe(201);
+		const sessionId = await bindTaskProcessingSession(taskRes.body.task.id);
+
+		const patchRes = await api
+			.patch(`/api/sessions/${sessionId}`)
+			.send({ agent: "general-agent" });
+
+		expect(patchRes.status).toBe(400);
+		expect(patchRes.text).toContain("任务处理会话只能使用 task-agent");
+	});
+
+	it("POST /api/sessions/:sessionId/messages rejects a normal agent on task processing sessions", async () => {
+		const taskRes = await api.post("/api/workspace/tasks").send({
+			title: "消息边界任务",
+			priority: "normal",
+			acceptanceCriteria: "任务会话消息不能切换普通 Agent",
+		});
+		expect(taskRes.status).toBe(201);
+		const sessionId = await bindTaskProcessingSession(taskRes.body.task.id);
+
+		const messageRes = await api
+			.post(`/api/sessions/${sessionId}/messages`)
+			.send({ prompt: "继续处理", agent: "general-agent" });
+
+		expect(messageRes.status).toBe(400);
+		expect(messageRes.text).toContain("任务处理会话只能使用 task-agent");
 	});
 });

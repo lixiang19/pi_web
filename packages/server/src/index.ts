@@ -60,6 +60,10 @@ import {
 	createWorkspaceMilestonesRouter,
 	createWorkspaceTasksRouter,
 } from "./routes/workspace-tasks.js";
+import {
+	TASK_SESSION_AGENT_NAME,
+	assertTaskSessionAgentBoundary,
+} from "./task-session-boundary.js";
 import { createWorktreeRouter } from "./routes/worktrees.js";
 import { createWorkspaceFilesRouter } from "./routes/workspace-files.js";
 import { createWorkspaceSpaceRouter } from "./routes/workspace-space.js";
@@ -725,6 +729,23 @@ async function assertSessionNotArchived(
 		error.statusCode = 403;
 		throw error;
 	}
+}
+
+async function isTaskProcessingSession(sessionId: string): Promise<boolean> {
+	const db = await getRidgeDb();
+	const taskRow = db.prepare(
+		`SELECT task_id FROM workspace_tasks WHERE processing_session_id = ?`,
+	).get(sessionId) as { task_id: string } | undefined;
+	if (taskRow) {
+		return true;
+	}
+
+	const indexRow = db.prepare(
+		`SELECT task_id, session_type FROM session_index WHERE session_id = ?`,
+	).get(sessionId) as
+		| { task_id: string | null; session_type: string | null }
+		| undefined;
+	return Boolean(indexRow?.task_id || indexRow?.session_type === "task");
 }
 // ===== Routes =====
 app.get("/api/auth/session", authRuntime.session);
@@ -1455,25 +1476,40 @@ app.patch(
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const payload = updateSessionSchema.parse(req.body ?? {});
-			const record = await ensureSessionRecord(String(req.params.sessionId));
+			const requestedSessionId = String(req.params.sessionId);
+			const changesSelection =
+				payload.agent !== undefined ||
+				payload.model !== undefined ||
+				payload.thinkingLevel !== undefined;
+			const isTaskSession = changesSelection
+				? await isTaskProcessingSession(requestedSessionId)
+				: false;
+			if (changesSelection) {
+				assertTaskSessionAgentBoundary(isTaskSession, payload.agent);
+			}
+			const record = await ensureSessionRecord(requestedSessionId);
 
 			if (payload.title !== undefined) {
 				record.session.setSessionName(payload.title.trim());
 			}
 
-			if (
-				payload.agent !== undefined ||
-				payload.model !== undefined ||
-				payload.thinkingLevel !== undefined
-			) {
-				await applySessionAgentSelection(record, {
-					agentName:
-						payload.agent !== undefined
-							? payload.agent || undefined
-							: record.selectedAgentName,
-					model: payload.model || undefined,
-					thinkingLevel: payload.thinkingLevel,
-				});
+			if (changesSelection) {
+				if (isTaskSession) {
+					await applyTaskSessionAgentSelection(record, {
+						agentName: TASK_SESSION_AGENT_NAME,
+						model: payload.model || undefined,
+						thinkingLevel: payload.thinkingLevel,
+					});
+				} else {
+					await applySessionAgentSelection(record, {
+						agentName:
+							payload.agent !== undefined
+								? payload.agent || undefined
+								: record.selectedAgentName,
+						model: payload.model || undefined,
+						thinkingLevel: payload.thinkingLevel,
+					});
+				}
 			}
 
 			record.updatedAt = Date.now();
@@ -1482,7 +1518,6 @@ app.patch(
 				projectContextResolver,
 				workspaceChatConfig,
 			});
-
 			res.json(await toSessionSnapshot(record, {}));
 		} catch (error) {
 			next(error);
@@ -1586,6 +1621,8 @@ app.post(
 			const payload = messageSchema.parse(req.body ?? {});
 			const sessionId = String(req.params.sessionId);
 			await assertSessionNotArchived(sessionId, "归档会话不可发送消息");
+			const isTaskSession = await isTaskProcessingSession(sessionId);
+			assertTaskSessionAgentBoundary(isTaskSession, payload.agent);
 			
 			// Check if this is a desktop session FIRST — before any local session lookup
 			const db = await getRidgeDb();
@@ -1625,14 +1662,22 @@ app.post(
 
 			await applyExplicitMemoryCommand(defaultWorkspaceDir, payload.prompt);
 
-			await applySessionAgentSelection(record, {
-				agentName:
-					payload.agent !== undefined
-						? payload.agent || undefined
-						: record.selectedAgentName,
-				model: payload.model || undefined,
-				thinkingLevel: payload.thinkingLevel,
-			});
+			if (isTaskSession) {
+				await applyTaskSessionAgentSelection(record, {
+					agentName: TASK_SESSION_AGENT_NAME,
+					model: payload.model || undefined,
+					thinkingLevel: payload.thinkingLevel,
+				});
+			} else {
+				await applySessionAgentSelection(record, {
+					agentName:
+						payload.agent !== undefined
+							? payload.agent || undefined
+							: record.selectedAgentName,
+					model: payload.model || undefined,
+					thinkingLevel: payload.thinkingLevel,
+				});
+			}
 
 			updateStatus(record, "streaming");
 

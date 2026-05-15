@@ -297,6 +297,99 @@ describe("usePerSessionChat - forkSession", () => {
     expect((chat.activeSession.value as unknown as { taskId?: string }).taskId).toBe("task-1");
     expect((chat.activeSession.value as unknown as { sessionType?: string }).sessionType).toBe("task");
   });
+
+  it("submits task sessions with task-agent even when task-agent is not in normal agents", async () => {
+    const sessionIdRef = ref("session-task");
+    const chat = usePerSessionChat(sessionIdRef);
+
+    mockModels.value = [{ value: "default-model", label: "Default model" }];
+    mockDefaultModel.value = "default-model";
+    mockAgents.value = [{ name: "general-agent" }];
+    mockSessions.value = [
+      {
+        id: "session-task",
+        title: "Task Session",
+        cwd: "/workspace",
+        agent: "task-agent",
+        taskId: "task-1",
+        sessionType: "task",
+      } as unknown as typeof mockSessions.value[number],
+    ];
+    mockSessionCache.value = {
+      "session-task": {
+        snapshot: {
+          id: "session-task",
+          title: "Task Session",
+          messages: [],
+          historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          agent: "task-agent",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+    mockSyncComposerSelection.mockImplementation((composer, snapshot) => {
+      composer.selectedAgent = (snapshot as { agent?: string }).agent || "";
+    });
+
+    await chat.loadSession("session-task");
+    chat.composer.draftText = "继续处理任务";
+    await chat.submit();
+
+    expect(chat.error.value).toBe("");
+    expect(sendMessage).toHaveBeenCalledWith(
+      "session-task",
+      expect.objectContaining({
+        prompt: "继续处理任务",
+        agent: "task-agent",
+      }),
+    );
+  });
+
+  it("submits the injected main-session draft as the sendMessage payload", async () => {
+    const sessionIdRef = ref("session-main");
+    const chat = usePerSessionChat(sessionIdRef);
+
+    mockModels.value = [{ value: "default-model", label: "Default model" }];
+    mockDefaultModel.value = "default-model";
+    mockAgents.value = [{ name: "general-agent" }];
+    mockSessions.value = [
+      {
+        id: "session-main",
+        title: "Main Session",
+        cwd: "/workspace",
+      },
+    ];
+    mockSessionCache.value = {
+      "session-main": {
+        snapshot: {
+          id: "session-main",
+          title: "Main Session",
+          messages: [],
+          historyMeta: { loadedRounds: 0, totalRounds: 0, hasMoreAbove: false, roundWindow: 3 },
+          status: "idle",
+          cwd: "/workspace",
+          updatedAt: Date.now(),
+        } as unknown as UiSessionSnapshot,
+      },
+    };
+
+    await chat.loadSession("session-main");
+    chat.composer.draftText = "请基于当前上下文规划今天任务 $deep-review /summarize ";
+    chat.composer.selectedAgent = "general-agent";
+    chat.composer.selectedModel = "gpt-5.4";
+    chat.composer.selectedThinkingLevel = "high";
+
+    await chat.submit();
+
+    expect(sendMessage).toHaveBeenCalledWith("session-main", {
+      prompt: "请基于当前上下文规划今天任务 $deep-review /summarize",
+      model: "gpt-5.4",
+      thinkingLevel: "high",
+      agent: "general-agent",
+    });
+  });
 });
 
 describe("usePerSessionChat - archived readonly", () => {
