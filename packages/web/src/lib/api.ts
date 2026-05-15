@@ -563,10 +563,102 @@ export function getProjects() {
 	return request<ProjectsResponse>("/api/projects");
 }
 
+export function getDevices() {
+	return request<import("@pi/protocol").DevicesResponse>('/api/devices');
+}
+
+export function registerDevice(params: {
+	deviceId: string;
+	name: string;
+	deviceType: 'server' | 'desktop';
+	capabilities?: Record<string, boolean>;
+}) {
+	return request<{
+		deviceId: string;
+		name: string;
+		deviceType: string;
+		status: string;
+		capabilities: Record<string, boolean>;
+		token: string;
+	}>('/api/devices/register', {
+		method: 'POST',
+		body: JSON.stringify(params),
+	});
+}
+
+export function heartbeatDevice(deviceId: string, token: string) {
+	return request<{ ok: true }>('/api/devices/heartbeat', {
+		method: 'POST',
+		body: JSON.stringify({ deviceId, token }),
+	});
+}
+
+export function renameDevice(deviceId: string, name: string, token: string) {
+	return request<{ ok: true }>(`/api/devices/${deviceId}/rename`, {
+		method: 'POST',
+		body: JSON.stringify({ name, token }),
+	});
+}
+
+export function getDeviceBundle(deviceId: string, token: string) {
+	return request<{
+		manifest: {
+			bundleId: string;
+			deviceId: string;
+			version: number;
+			agents: Array<{ name: string; path: string }>;
+			skills: Array<{ name: string; path: string }>;
+			startupContext: { memory?: string; wikiIndex?: string };
+		};
+		files: Record<string, string>;
+	}>(`/api/devices/${deviceId}/bundle?token=${encodeURIComponent(token)}`);
+}
+
+export function ackDeviceBundle(deviceId: string, bundleId: string, token: string) {
+	return request<{ ok: true; bundleId: string; ackedAt: number }>(`/api/devices/${deviceId}/bundle/ack`, {
+		method: 'POST',
+		body: JSON.stringify({ bundleId, token }),
+	});
+}
+
 export function addProject(path: string) {
 	return request<ProjectItem>("/api/projects", {
 		method: "POST",
 		body: JSON.stringify({ path }),
+	});
+}
+
+export function createInternalProject(name: string) {
+	return request<ProjectItem>("/api/workspace/projects/internal", {
+		method: "POST",
+		body: JSON.stringify({ name }),
+	});
+}
+
+export function registerExternalProject(projectPath: string, deviceId?: string) {
+	return request<ProjectItem>("/api/workspace/projects/external", {
+		method: "POST",
+		body: JSON.stringify({ path: projectPath, deviceId }),
+	});
+}
+
+export function cloneGithubProject(url: string, deviceId?: string) {
+	return request<ProjectItem>("/api/workspace/projects/github", {
+		method: "POST",
+		body: JSON.stringify({ url, deviceId }),
+	});
+}
+
+export function archiveProject(id: string, archived: boolean) {
+	return request<ProjectItem>(`/api/workspace/projects/${id}`, {
+		method: "PATCH",
+		body: JSON.stringify({ archived }),
+	});
+}
+
+export function deleteProjectRegistration(id: string) {
+	return request<{ ok: true }>(`/api/workspace/projects/${id}`, {
+		method: "DELETE",
 	});
 }
 

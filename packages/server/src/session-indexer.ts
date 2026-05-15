@@ -81,11 +81,13 @@ export interface IndexedSessionSummary {
   updatedAt: number;
   createdAt: number;
   archived: boolean;
-  sessionFile: string;
+  sessionFile?: string;
   parentSessionId?: string;
-  contextId: string;
+  contextId?: string;
   taskId?: string;
   sessionType?: string;
+  runLocation?: string;
+  deviceId?: string;
 }
 
 export interface IndexedSessionLookup {
@@ -618,24 +620,61 @@ export const listIndexedSessions = async (
   activeSessions: Map<string, SessionRecord>,
 ): Promise<IndexedSessionSummary[]> => {
   const db = await getRidgeDb();
+  // Include both local sessions (from `sessions` table) and desktop sessions (from `session_index`)
   const rows = db
     .prepare(
       `SELECT
-         s.session_id AS id,
-         s.title,
-         s.cwd,
-         s.updated_at AS updatedAt,
-         s.created_at AS createdAt,
-         s.archived,
-         s.session_file AS sessionFile,
-         s.parent_session_id AS parentSessionId,
-         s.context_id AS contextId,
-         si.task_id AS taskId,
-         si.session_type AS sessionType
-       FROM sessions s
-       LEFT JOIN session_index si ON si.session_id = s.session_id
-       WHERE s.archived = 0
-       ORDER BY s.updated_at DESC`,
+         session_id AS id,
+         title,
+         cwd,
+         updated_at AS updatedAt,
+         created_at AS createdAt,
+         archived,
+         session_file AS sessionFile,
+         parent_session_id AS parentSessionId,
+         context_id AS contextId,
+         task_id AS taskId,
+         session_type AS sessionType,
+         run_location AS runLocation,
+         device_id AS deviceId
+       FROM (
+         SELECT
+           s.session_id,
+           s.title,
+           s.cwd,
+           s.updated_at,
+           s.created_at,
+           s.archived,
+           s.session_file,
+           s.parent_session_id,
+           s.context_id,
+           si.task_id,
+           si.session_type,
+           si.run_location,
+           si.device_id
+         FROM sessions s
+         LEFT JOIN session_index si ON si.session_id = s.session_id
+         WHERE s.archived = 0
+         UNION ALL
+         SELECT
+           si.session_id,
+           si.title,
+           si.workspace_path AS cwd,
+           si.updated_at,
+           si.created_at,
+           si.archived,
+           NULL AS session_file,
+           NULL AS parent_session_id,
+           NULL AS context_id,
+           si.task_id,
+           si.session_type,
+           si.run_location,
+           si.device_id
+         FROM session_index si
+         WHERE si.run_location = 'desktop' AND si.archived = 0
+           AND si.session_id NOT IN (SELECT session_id FROM sessions)
+       )
+       ORDER BY updatedAt DESC`,
     )
     .all() as Array<{
       id: string;
@@ -644,11 +683,13 @@ export const listIndexedSessions = async (
       updatedAt: number;
       createdAt: number;
       archived: number;
-      sessionFile: string;
+      sessionFile: string | null;
       parentSessionId: string | null;
-      contextId: string;
+      contextId: string | null;
       taskId: string | null;
       sessionType: string | null;
+      runLocation: string | null;
+      deviceId: string | null;
     }>;
   return rows.map((row) => {
     const activeRecord = activeSessions.get(row.id);
@@ -662,11 +703,13 @@ export const listIndexedSessions = async (
         : row.updatedAt,
       createdAt: row.createdAt,
       archived: Boolean(row.archived),
-      sessionFile: row.sessionFile,
+      sessionFile: row.sessionFile || undefined,
       parentSessionId: row.parentSessionId || undefined,
-      contextId: row.contextId,
+      contextId: row.contextId || undefined,
       taskId: row.taskId || undefined,
       sessionType: row.sessionType || undefined,
+      runLocation: row.runLocation || undefined,
+      deviceId: row.deviceId || undefined,
     };
   });
 };

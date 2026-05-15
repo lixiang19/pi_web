@@ -20,6 +20,7 @@ import {
 	moveRagTarget,
 	removeRagTarget,
 } from "../rag-indexer.js";
+import { getProjects } from "../storage/index.js";
 
 export interface WorkspaceDataDeps {
 	defaultWorkspaceDir: string;
@@ -389,6 +390,10 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 					// Skip ridge system paths
 					const entryPathSegments = toPosixPath(entry.path).split("/").filter(Boolean);
 					if (entryPathSegments.includes(".ridge")) continue;
+					const isExternalProjectPath = (await getProjects()).projects.some(
+						(p) => p.projectType === "external" && entry.path.startsWith(p.path),
+					);
+					if (isExternalProjectPath) continue;
 					const ext = path.extname(entry.path).toLowerCase();
 					const isImmediateTextSource = isImmediateTextRagSource(entry.path, defaultWorkspaceDir);
 					if (isStandardRagSourcePath(entry.path)) {

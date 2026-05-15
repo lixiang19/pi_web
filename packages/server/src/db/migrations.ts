@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 15;
+export const RIDGE_DB_SCHEMA_VERSION = 21;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS devices (
   device_id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
   device_type TEXT NOT NULL DEFAULT 'server',
+  token TEXT,
   status TEXT NOT NULL DEFAULT 'offline',
   capabilities_json TEXT NOT NULL DEFAULT '{}',
   last_seen_at INTEGER,
@@ -35,7 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_devices_status
 CREATE TABLE IF NOT EXISTS projects (
   project_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  path TEXT NOT NULL UNIQUE,
+  path TEXT NOT NULL,
   is_git INTEGER NOT NULL,
   added_at INTEGER NOT NULL,
   project_type TEXT NOT NULL DEFAULT 'external',
@@ -722,6 +723,117 @@ CREATE INDEX IF NOT EXISTS idx_search_index_status_workspace
 -- Column repair adds search_chunks.embedding_vector for existing databases.
 CREATE INDEX IF NOT EXISTS idx_search_chunks_embedding
   ON search_chunks(embedding_id);
+`,
+  },
+  {
+    version: 16,
+    name: 'device token and project device_path unique constraint',
+    sql: `
+-- token column addition is handled by repairKnownTableColumns (CORE_TABLE_COLUMNS)
+-- Ensure existing projects have device_id as NULL rather than empty string
+UPDATE projects SET device_id = NULL WHERE device_id = '';
+
+-- Add unique constraint on (device_id, path) for projects via a unique index
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_device_path
+  ON projects(COALESCE(device_id, 'server'), path);
+`,
+  },
+  {
+    version: 17,
+    name: 'device bundle ack tracking for runtime sync',
+    sql: `
+CREATE TABLE IF NOT EXISTS device_bundle_acks (
+  device_id TEXT PRIMARY KEY,
+  bundle_id TEXT NOT NULL,
+  acked_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+`,
+  },
+  {
+    version: 18,
+    name: 'enhance bundle ack with hash, version and sync status',
+    sql: `
+-- Column repair adds bundle ack hash/version/sync columns for existing databases.
+
+-- Served bundle record for strict ack validation (device_id scoped, with project context)
+CREATE TABLE IF NOT EXISTS device_bundle_served (
+  device_id TEXT PRIMARY KEY,
+  bundle_id TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  bundle_version INTEGER NOT NULL DEFAULT 1,
+  project_id TEXT,
+  project_path TEXT,
+  served_at INTEGER NOT NULL
+);
+`,
+  },
+  {
+    version: 19,
+    name: 'bundle served materialize status',
+    sql: `
+-- Column repair adds device_bundle_served.materialized for existing databases.
+`,
+  },
+  {
+    version: 20,
+    name: 'bundle served materialized hash for ack validation',
+    sql: `
+-- Column repair adds device_bundle_served.materialized_hash for existing databases.
+`,
+  },
+  {
+    version: 21,
+    name: 'merged RAG and runtime bundle schema convergence',
+    sql: `
+-- Branch merge convergence: RAG and runtime-bundle work both used migration
+-- numbers in the 13-17 range while in flight. These CREATE/INDEX statements
+-- are idempotent and ensure either side's already-applied dev database reaches
+-- the merged schema; column repair handles partial bundle tables after apply.
+CREATE TABLE IF NOT EXISTS search_chunks (
+  chunk_id TEXT PRIMARY KEY,
+  target_path TEXT NOT NULL,
+  source_path TEXT NOT NULL DEFAULT '',
+  heading_path TEXT NOT NULL DEFAULT '[]',
+  chunk_index INTEGER NOT NULL,
+  chunk_text TEXT NOT NULL,
+  content_hash TEXT NOT NULL DEFAULT '',
+  file_type TEXT NOT NULL DEFAULT 'markdown',
+  embedding_id TEXT NOT NULL DEFAULT '',
+  embedding_vector TEXT NOT NULL DEFAULT '[]',
+  start_line INTEGER NOT NULL DEFAULT 1,
+  end_line INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_chunks_target
+  ON search_chunks(target_path, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_search_chunks_text
+  ON search_chunks(chunk_text);
+CREATE INDEX IF NOT EXISTS idx_search_chunks_source
+  ON search_chunks(source_path, file_type, updated_at);
+CREATE INDEX IF NOT EXISTS idx_search_chunks_embedding
+  ON search_chunks(embedding_id);
+CREATE INDEX IF NOT EXISTS idx_search_index_status_workspace
+  ON search_index_status(workspace_path, refresh_policy, status, updated_at);
+
+CREATE TABLE IF NOT EXISTS device_bundle_acks (
+  device_id TEXT PRIMARY KEY,
+  bundle_id TEXT NOT NULL DEFAULT '',
+  acked_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS device_bundle_served (
+  device_id TEXT PRIMARY KEY,
+  bundle_id TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL DEFAULT '',
+  bundle_version INTEGER NOT NULL DEFAULT 1,
+  project_id TEXT,
+  project_path TEXT,
+  served_at INTEGER NOT NULL DEFAULT 0
+);
 `,
   },
 ];

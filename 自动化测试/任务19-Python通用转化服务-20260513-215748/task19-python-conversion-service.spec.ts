@@ -3,8 +3,8 @@ import { expect, test } from "@playwright/test";
 const ADMIN_PASSWORD = process.env.RIDGE_E2E_PASSWORD ?? process.env.RIDGE_ADMIN_PASSWORD ?? "ridge-admin";
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5175";
 
-	test.describe("任务19 — Python通用转化服务契约集成验收", () => {
-		let workspaceDir: string | null = null;
+test.describe("任务19 — Python通用转化服务契约集成验收", () => {
+	let workspaceDir: string | null = null;
 
 	test.beforeEach(async ({ page }) => {
 		await page.goto(`${BASE_URL}/login`);
@@ -20,14 +20,7 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5175";
 				return r.ok ? await r.json() : null;
 			});
 			workspaceDir = info?.workspaceDir ?? null;
-			// apiBase and sessionCookie available for future API assertions
 		}
-
-		// Get session cookie for API calls
-		// const cookies = await page.context().cookies();
-		// const session = cookies.find((c) => c.name.includes("session") || c.name.includes("ridge"));
-		// sessionCookie available for future API assertions
-		// void session;
 	});
 
 	test("转换服务未配置时：手动convert API返回503", async ({ page }) => {

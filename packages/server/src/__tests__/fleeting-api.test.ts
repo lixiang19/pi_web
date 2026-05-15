@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS fleeting_attachments (
 CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
   ON fleeting_attachments(note_id, created_at DESC);
 		`);
-		runAnalysis = vi.fn(async () => undefined);
+		runAnalysis = vi.fn(() => undefined);
 		app = express();
 		app.use(express.json());
 		app.use(
@@ -510,39 +510,41 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			return originalReadFile(filepath, ...(args as any[]));
 		});
 
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/attachment`)
-			.send({});
-
-		expect(res.status).toBe(500);
-		expect(res.body.error).toContain("附件迁移失败");
-
-		// Note must still exist
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-		expect(list.body.notes[0].id).toBe(noteId);
-
-		// All temp DB records must still exist
-		const dbRows = db
-			.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
-			.all(noteId) as unknown[];
-		expect(dbRows).toHaveLength(2);
-
-		// All temp files must still exist
-		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
-		const tempFiles = await fs.readdir(tempDir);
-		expect(tempFiles).toHaveLength(2);
-
-		// No half-copied files should remain in formal directory
-		const formalDir = path.join(workspaceDir, "附件");
 		try {
-			const formalFiles = await fs.readdir(formalDir);
-			expect(formalFiles).toHaveLength(0);
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-		}
+			const res = await request(app)
+				.post(`/api/fleeting/${noteId}/process/attachment`)
+				.send({});
 
-		readFileSpy.mockRestore();
+			expect(res.status).toBe(500);
+			expect(res.body.error).toContain("附件迁移失败");
+
+			// Note must still exist
+			const list = await request(app).get("/api/fleeting");
+			expect(list.body.notes).toHaveLength(1);
+			expect(list.body.notes[0].id).toBe(noteId);
+
+			// All temp DB records must still exist
+			const dbRows = db
+				.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
+				.all(noteId) as unknown[];
+			expect(dbRows).toHaveLength(2);
+
+			// All temp files must still exist
+			const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
+			const tempFiles = await fs.readdir(tempDir);
+			expect(tempFiles).toHaveLength(2);
+
+			// No half-copied files should remain in formal directory
+			const formalDir = path.join(workspaceDir, "附件");
+			try {
+				const formalFiles = await fs.readdir(formalDir);
+				expect(formalFiles).toHaveLength(0);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
+		} finally {
+			readFileSpy.mockRestore();
+		}
 	});
 
 	it("keeps fleeting note and temp attachments when target INSERT fails after successful copy", async () => {

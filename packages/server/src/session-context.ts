@@ -60,6 +60,7 @@ import type { WorkspaceChatConfig } from "./workspace-chat.js";
 import { createWorkspaceChatProject } from "./workspace-chat.js";
 import { createPlanningToolsExtension } from "./planning-tools.js";
 import { buildWorkspaceMemoryInjectionSync } from "./workspace-memory.js";
+import { createBundleBackedResourceLoader } from "./bundle-resource-loader.js";
 
 // ===== Dependency injection =====
 export interface SessionContextDeps {
@@ -949,6 +950,10 @@ export interface CreateSessionRecordParams {
 	title?: string;
 	model?: string;
 	parentSessionPath?: string;
+	// Optional: use a materialized bundle directory instead of the default agent dir.
+	// When a desktop device provides a bundle, or when the server wants to use
+	// a workspace-local .pi bundle, pass the materialized path here.
+	materializedBundleDir?: string;
 }
 
 export const createSessionRecord = async ({
@@ -956,6 +961,7 @@ export const createSessionRecord = async ({
 	title,
 	model,
 	parentSessionPath,
+	materializedBundleDir,
 }: CreateSessionRecordParams): Promise<SessionRecord> => {
 	const sessionManager = SessionManager.create(cwd);
 	if (parentSessionPath) {
@@ -972,9 +978,12 @@ export const createSessionRecord = async ({
 		selectedAgentConfig: null,
 		selectedPermissionPolicy: null,
 	};
-	const resourceLoader = createSessionResourceLoader(
-		recordState as SessionRecord,
-	);
+	// Use bundle-backed resourceLoader when a materialized bundle dir is provided.
+	// This ensures Pi reads agents/skills/config from the server-provided bundle
+	// instead of the desktop's real ~/.pi directory.
+	const resourceLoader = materializedBundleDir
+		? createBundleBackedResourceLoader(materializedBundleDir, cwd)
+		: createSessionResourceLoader(recordState as SessionRecord);
 	await resourceLoader.reload();
 	const { session } = await createAgentSession({
 		cwd,

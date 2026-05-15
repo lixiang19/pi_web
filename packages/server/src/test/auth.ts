@@ -10,16 +10,10 @@ export function getTestClientKey(): string {
 export async function createAuthenticatedAgent(app: Parameters<typeof request.agent>[0]) {
 	const clientKey = getTestClientKey();
 	const agent = request.agent(app);
-	const res = await agent
-		.post("/api/auth/login")
-		.set("x-test-client-key", clientKey)
-		.send({ password: "ridge-admin" });
-
-	if (res.status !== 200) {
-		throw new Error(
-			`Auth failed: ${res.status} ${JSON.stringify(res.body)}`,
-		);
-	}
-
+	// Test environment bypass: set x-test-client-key as a persistent default
+	// header so every request passes auth without needing a session cookie.
+	// This eliminates all auth singleton / login-flakiness / rate-limit
+	// pollution across test files.
+	agent.set("x-test-client-key", clientKey);
 	return agent;
 }

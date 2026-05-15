@@ -62,7 +62,10 @@
 - [LRU布局] 草稿会话和正式会话池必须共享同一个会话舞台；隐藏实例只能在舞台内 `v-show`，外层不能作为多个 `flex-1` 兄弟节点参与布局
 - [草稿语义] 如果产品要求“新建草稿独立存在、切换即丢失”，就必须在创建草稿时主动清空 `null draft`，否则旧草稿会通过共享状态偷偷恢复
 
-- [ask 交互] 阻塞式 ask 要拆成两条线：pending 阶段走 `interactiveRequests` 底部表单，历史阶段回到普通工具消息；两者不能混成一种投影
+- [设备 token 鉴权] 桌面设备注册后返回 token，后续所有敏感操作（心跳、重命名、bundle 获取、ack）必须校验 token。GET bundle 用 query `?token=`，POST ack 用 body `token`，rename/heartbeat 用 body `token`。缺失或错误 token 统一 401。
+- [WebSocket 设备连接] 桌面端通过 `ws://host/api/devices/:deviceId/ws?token=xxx` 建立长连接；服务器每 30s ping，桌面 pong 回复即刷新在线状态。token 在 upgrade 阶段异步校验，失败 401 断开。SSE 事件通过 ws 从桌面回传服务器，再由服务器 SSE 管道广播给 Web 客户端。
+- [Bundle 过滤规则] Skill 路径中任意目录名含 `[tag]` 即视为设备专属；所有 tag 必须全部匹配设备 `skill_${tag}` capability 才保留，通用 Skill（无 tag）始终保留。不能用文件名简单匹配，因为 skill 可能在子目录中。
+- [Bundle ack 覆盖] `device_bundle_acks` 以 `device_id` 为 PK，同设备多次 ack 时 `ON CONFLICT DO UPDATE` 覆盖，只记录最后一次 ack。
 - [permission 审批] 运行时权限审批不是 ask 工具，也不是新工具消息；它是 tool_call 前拦截层。pending 走独立 `permissionRequests` 卡片，历史不单独落 UI，避免把审批语义伪装成工具协议
 - [server 类型补洞] 当 workspace 没有完整第三方类型包时，可在 `packages/server/src/types/` 放最小 shim 保住 server `tsc --noEmit`，但 shim 只补边界，不扩散到业务层
 - [server 路由类型] 拆分 Express 路由时，Deps 接口不能用 `unknown` 接收真实服务函数；要导入领域类型、schema 输出类型和服务 ReturnType，否则 strictFunctionTypes 会让注入点和路由内部同时失去类型检查。
@@ -638,3 +641,58 @@
 - `security-guards.test.ts` 覆盖 `/end` 入队、完成后重复结束幂等、非 active 外部 session 保留 project context。
 - `WorkspacePage.test.ts` 覆盖页面卸载时结束仍打开的会话标签，以及 `pagehide` 下优先使用 `sendBeacon`。
 - `SettingsTabContent.test.ts` 覆盖后台整理模型/思考强度入口渲染和保存。
+
+## 2026-05-13 任务 30/31/32 项目注册、设备在线状态、Runtime Bundle
+
+### 实现要点
+
+- **项目注册（Task 30）**：
+  - 新增 `POST /api/workspace/projects/internal` 创建工作空间内项目（目录 `~/ridge-workspace/项目/<name>`，`projectType='internal'`）。
+  - 新增 `POST /api/workspace/projects/external` 注册外部仓库（支持 `deviceId` 绑定）。
+  - 新增 `POST /api/workspace/projects/github` GitHub URL 克隆并注册。
+  - `PATCH /api/workspace/projects/:id` 仅支持归档/解归档；`DELETE` 删除注册记录（有会话时 409）。
+  - 同设备同路径唯一约束通过 `idx_projects_device_path` UNIQUE INDEX 实现。
+  - 内部项目前后端双重防线禁止作为 pi cwd（`POST /api/sessions` 入口显式检查路径前缀）。
+
+- **设备注册与在线状态（Task 31）**：
+  - `POST /api/devices/register` 桌面设备注册，返回 `deviceId + token`（32 字节 hex）。
+  - `POST /api/devices/heartbeat` 刷新 `last_seen_at`。
+  - `GET /api/devices` 自动执行 `sweepOfflineDevices()`（超时 60s 设为 offline）。
+  - `POST /api/devices/:deviceId/rename` 重命名设备。
+  - 离线设备的项目禁止启动会话（409）。
+  - 服务器设备内置（`ensureServerDevice()` 在 `index.ts` 启动时执行）。
+
+- **Runtime Bundle（Task 32）**：
+  - `GET /api/devices/:deviceId/bundle` 生成并返回 runtime bundle（manifest + files）。
+  - Bundle 包含：全局 agents/skills（按设备 capability 过滤）、MCP/工具/权限/模型配置占位、启动上下文（MEMORY.md + Wiki/index.md）。
+  - 设备专属 Skill 过滤：文件名含 `[mac]`/`[chrome]` 等 tag 时，只有设备 `skill_<tag>` capability 为 true 才下发。
+  - `POST /api/devices/:deviceId/bundle/ack` 确认接收（预留）。
+
+- **前端 API 扩展**：`packages/web/src/lib/api.ts` 新增 10 个 API 函数，覆盖内部项目创建、外部仓库注册、GitHub 克隆、归档、设备注册/心跳/重命名/Bundle 获取。
+
+### DB 变更
+
+- Migration v16：devices 表增加 `token` 字段（由 `CORE_TABLE_COLUMNS` repair 机制处理，不在 migration SQL 中 `ALTER TABLE` 避免 duplicate column）。
+- Migration v16：projects 表 `device_id` 空字符串清理为 NULL；新增 `idx_projects_device_path` UNIQUE INDEX 实现同设备同路径唯一。
+- Migration v21：合并任务 20-24 与任务 30-32 后用于幂等收敛 RAG / runtime bundle 表与索引，避免并行分支复用 13-17 迁移号时本机开发库漏表。
+
+### 测试覆盖
+
+- 后端 `task30-31-32.test.ts`：16 项测试覆盖内部项目创建、外部仓库注册、重复注册 409、归档、删除不删文件、有会话禁止删除、内部项目拒绝 cwd、设备注册、设备列表、心跳、超时离线、重命名、离线设备禁止会话、Bundle 生成、Mac-only Skill 过滤、Bundle ack。
+- 前端 `task30-31-32.test.ts`：API 函数存在性验证 + 设备能力 Skill 过滤逻辑验证。
+- 后端全量：377 passed（36 files）。前端全量：261 passed（35 files）。
+- `npm run check`：通过，仅剩已有项目的 4 个未使用变量错误（与本次实现无关）。
+
+### 关键经验
+
+- **migration 与 repair columns 不重复**：新增列如果在 `CORE_TABLE_COLUMNS` 中已声明，`repairKnownTableColumns` 会在启动时自动补列；migration SQL 中不能再 `ALTER TABLE ADD COLUMN`，否则旧库会 duplicate column。本次 `token` 字段即通过此机制处理。
+- **zod record 类型谨慎使用**：zod v4 的 `z.record(z.boolean())` 对 `{ skill_mac: true }` 这类 JSON 反序列化后的值（实际上是字符串 "true"）会报 invalid_key；改为 `z.record(z.any()).optional()` 并在代码层做类型断言更可靠。
+- **设备能力契约**：Skill tag 与 capability key 的映射约定为 `skill_<tag>`（如 `skill_mac`），前后端统一。
+- **token 不暴露在列表 API**：`serializeDevice` 默认不包含 `token`，只有 `POST /api/devices/register` 显式在响应体中附加，防止列表接口泄露敏感凭证。
+- **Pi DefaultResourceLoader skill 目录结构要求**：Pi `loadSkills()` 要求 Skill 必须放在命名子目录中（如 `skills/my-skill/SKILL.md`），`SKILL.md` 必须有 YAML frontmatter 至少包含 `description` 字段，文件名必须是 `SKILL.md`。不能直接把 `.md` 文件放 skills 根目录。`getAgentsFiles()` 只查找 `AGENTS.md` 或 `CLAUDE.md`，其他命名不识别。
+- **WebSocket E2E 禁止 mock 注入**：测试必须通过真实 `ws` 客户端连接 `ws://127.0.0.1:${port}/api/devices/:id/ws?token=...`，验证握手、ping/pong、sse_event 消息、run_request/run_result 自动响应。`afterAll` 中必须 `_clearMockConnectionsForTesting()` + 关闭 HTTP server 防止进程 hang。
+- **Bundle ack 完整链路校验**：ack 必须校验 bundleId、contentHash、bundleVersion、projectId、projectPath、materializedHash 全部匹配。`device_bundle_served` 表已包含 project_id/project_path/materialized_hash。新增测试流程：GET bundle → materialize → compute materializedHash → POST ack → DB 验证。
+- **Auth 稳定性根治**：`createAuthenticatedAgent` 彻底移除 login 重试，仅设置 `x-test-client-key` header 作为持久默认，完全绕过 session cookie 机制。`auth.test.ts` 中 rate-limit 测试使用独立 `getTestClientKey()` 获取独立 client key。vitest pool 保持 `forks`（threads 导致 hang 更严重）。`vitest-setup.ts` 不全局 reset auth singleton，避免 worker 复用时污染其他测试文件。
+- **GitHub URL 安全边界**：clone 前必须检查 URL scheme（仅 http/https）、hostname（仅 github.com）、credential（username/password 拒绝）、path traversal（`/../` 拒绝）。`new URL(url).pathname` 用于解析 owner/repo，query/hash 不影响 repoName。注册失败时必须清理已创建的目录。
+- **RAG 排除外部仓库**：`POST /api/files/upload` 到外部仓库路径时，必须在 `file_processing_status` 中排除记录，避免外部仓库内容混入 RAG 索引。
+- **server 设备离线判定**：`matchingProject.deviceId !== 'server'` 避免 server 本地外部仓库被误判为桌面项目。server 本地外部仓库（deviceId='server'）应允许新建会话。

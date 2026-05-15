@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
 	AuthStorage,
@@ -51,6 +52,10 @@ import { createCoreRouter } from "./routes/core.js";
 import { createGitRouter } from "./routes/git.js";
 import { createSystemRouter } from "./routes/system.js";
 import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
+import { createProjectRouter } from "./routes/projects.js";
+import { createDeviceRouter, createServerDeviceRouter } from "./routes/devices.js";
+import { createDesktopForwardRouter } from "./routes/desktop-forward.js";
+import { createBundleRouter } from "./routes/bundle.js";
 import {
 	createWorkspaceMilestonesRouter,
 	createWorkspaceTasksRouter,
@@ -85,7 +90,6 @@ import {
 	getIndexedSessionContext,
 	getIndexedSessionTree,
 	invalidateManagedProjectScopes,
-	listIndexedSessionContexts,
 	listIndexedSessions,
 	refreshSessionCatalog,
 	upsertIndexedSessionRecord,
@@ -93,12 +97,10 @@ import {
 import { createSessionMetadataStore } from "./session-metadata.js";
 import {
 	addFavorite,
-	addProject,
 	getFavorites,
 	getProjects,
 	getSettings,
 	removeFavorite,
-	removeProject,
 	setSettings,
 } from "./storage/index.js";
 import type {
@@ -116,6 +118,11 @@ import {
 	resolveDefaultWorkspaceDir,
 } from "./workspace-chat.js";
 import { createWorktreeService } from "./worktree-service.js";
+import { ensureServerDevice } from "./devices.js";
+import {
+	forwardRunRequestToDesktop,
+	isDesktopOnline,
+} from "./desktop-bridge.js";
 
 const fallbackWorkspaceDir = resolveDefaultWorkspaceDir({
 	homeDir: os.homedir(),
@@ -126,6 +133,7 @@ const defaultWorkspaceDir = resolveDefaultWorkspaceDir({
 	storedWorkspaceDir: await getStoredWorkspaceDir(),
 });
 await ensureStoredWorkspaceDir(defaultWorkspaceDir);
+await ensureServerDevice();
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 const workspaceChatConfig = getWorkspaceChatConfig(defaultWorkspaceDir);
 
@@ -518,9 +526,6 @@ const fileEntryMoveSchema = z
 		"targetDirectory or name is required",
 	);
 
-const createProjectSchema = z.object({
-	path: z.string().min(1).refine((v) => !v.includes("\\"), "path must not contain backslash"),
-});
 
 // ===== Constants =====
 const DEFAULT_SESSION_ROUND_WINDOW = 3;
@@ -733,6 +738,15 @@ app.use("/api/workspace/tasks", workspaceTasksRouter);
 const workspaceMilestonesRouter =
 	createWorkspaceMilestonesRouter(defaultWorkspaceDir);
 app.use("/api/workspace/milestones", workspaceMilestonesRouter);
+// ===== New Workspace Projects Router (Task 30) =====
+app.use("/api/workspace/projects", createProjectRouter(defaultWorkspaceDir));
+// ===== Device Router (Task 31) =====
+app.use("/api/devices", createDeviceRouter());
+app.use("/api/devices", createServerDeviceRouter());
+// ===== Desktop Forward Router (Task 31 — SSE + Request Forward) =====
+app.use("/api/devices", createDesktopForwardRouter());
+// ===== Bundle Router (Task 32) =====
+app.use("/api/devices", createBundleRouter(defaultWorkspaceDir));
 // ===== Workspace Data Routes =====
 // ===== Workspace Data Routes =====
 const workspaceDataRouter = createWorkspaceDataRouter({
@@ -904,77 +918,28 @@ app.get(
 	},
 );
 
-app.get(
-	"/api/projects",
-	async (_req: Request, res: Response, next: NextFunction) => {
-		try {
-			const state = await getProjects();
-			res.json({
-				projects: state.projects.map(serializeProject),
-			});
-		} catch (error) {
-			next(error);
-		}
-	},
-);
+// OLD /api/projects WRITE ROUTES DEPRECATED — replaced by /api/workspace/projects
+// POST/DELETE now return 410 Gone to force migration to the new project API.
+// GET is preserved as read-only compatibility but delegates to the new service.
 
-app.get(
-	"/api/session-contexts",
-	async (_req: Request, res: Response, next: NextFunction) => {
-		try {
-			res.json(await listIndexedSessionContexts());
-		} catch (error) {
-			next(error);
-		}
-	},
-);
+app.get("/api/projects", async (_req: Request, res: Response, next: NextFunction) => {
+	try {
+		const state = await getProjects();
+		res.json({
+			projects: state.projects.map(serializeProject),
+		});
+	} catch (error) {
+		next(error);
+	}
+});
 
-app.post(
-	"/api/projects",
-	async (req: Request, res: Response, next: NextFunction) => {
-		try {
-			const payload = createProjectSchema.parse(req.body ?? {});
-			const homeDir = path.resolve(os.homedir());
-			const projectPath = normalizeFsPath(payload.path);
+app.post("/api/projects", (_req: Request, res: Response) => {
+	res.status(410).json({ error: "Deprecated: use POST /api/workspace/projects/internal or /external" });
+});
 
-			ensureWithinRoot(projectPath, homeDir);
-
-			const stats = await fs.stat(projectPath);
-			if (!stats.isDirectory()) {
-				const error = new Error(
-					"Project path must be a directory",
-				) as HttpError;
-				error.statusCode = 400;
-				throw error;
-			}
-
-			const isGit = await gitService.isGitRepository(projectPath);
-			const project = await addProject(projectPath, isGit);
-			projectContextResolver.invalidateContext();
-			invalidateManagedProjectScopes();
-			await refreshSessionCatalogIndex();
-			res.json(serializeProject(project));
-		} catch (error) {
-			next(error);
-		}
-	},
-);
-
-app.delete(
-	"/api/projects/:id",
-	async (req: Request, res: Response, next: NextFunction) => {
-		try {
-			const projectId = String(req.params.id);
-			await removeProject(projectId);
-			projectContextResolver.invalidateContext();
-			invalidateManagedProjectScopes();
-			await refreshSessionCatalogIndex();
-			res.json({ ok: true });
-		} catch (error) {
-			next(error);
-		}
-	},
-);
+app.delete("/api/projects/:id", (_req: Request, res: Response) => {
+	res.status(410).json({ error: "Deprecated: use DELETE /api/workspace/projects/:id" });
+});
 
 app.get(
 	"/api/sessions",
@@ -1015,6 +980,27 @@ app.get(
 				return;
 			}
 
+			// Check for desktop session
+			const db = await getRidgeDb();
+			const sessionRow = db.prepare(
+				`SELECT run_location, device_id FROM session_index WHERE session_id = ?`
+			).get(sessionId) as { run_location: string | null; device_id: string | null } | undefined;
+			
+			if (sessionRow?.run_location === 'desktop' && sessionRow.device_id) {
+				if (!isDesktopOnline(sessionRow.device_id)) {
+					const error = new Error("Device offline") as HttpError;
+					error.statusCode = 409;
+					throw error;
+				}
+				const desktopResult = await forwardRunRequestToDesktop(sessionRow.device_id, {
+					type: 'get_messages',
+					sessionId,
+					query,
+				});
+				res.json(desktopResult);
+				return;
+			}
+
 			res.json(await getStoredSessionMessagesPayload(sessionId, query));
 		} catch (error) {
 			next(error);
@@ -1030,6 +1016,26 @@ app.get(
 			const record = activeSessions.get(sessionId);
 			if (record) {
 				res.json(toSessionRuntimePayload(record));
+				return;
+			}
+
+			// Check for desktop session
+			const db = await getRidgeDb();
+			const sessionRow = db.prepare(
+				`SELECT run_location, device_id FROM session_index WHERE session_id = ?`
+			).get(sessionId) as { run_location: string | null; device_id: string | null } | undefined;
+			
+			if (sessionRow?.run_location === 'desktop' && sessionRow.device_id) {
+				if (!isDesktopOnline(sessionRow.device_id)) {
+					const error = new Error("Device offline") as HttpError;
+					error.statusCode = 409;
+					throw error;
+				}
+				const desktopResult = await forwardRunRequestToDesktop(sessionRow.device_id, {
+					type: 'get_runtime',
+					sessionId,
+				});
+				res.json(desktopResult);
 				return;
 			}
 
@@ -1055,6 +1061,33 @@ app.get(
 				return;
 			}
 
+			// Check for desktop session
+			const db = await getRidgeDb();
+			const sessionRow = db.prepare(
+				`SELECT run_location, device_id FROM session_index WHERE session_id = ?`
+			).get(sessionId) as { run_location: string | null; device_id: string | null } | undefined;
+			
+			if (sessionRow?.run_location === 'desktop' && sessionRow.device_id) {
+				if (!isDesktopOnline(sessionRow.device_id)) {
+					const error = new Error("Device offline") as HttpError;
+					error.statusCode = 409;
+					throw error;
+				}
+				const [messagesPayload, runtimePayload] = await Promise.all([
+					forwardRunRequestToDesktop(sessionRow.device_id, {
+						type: 'get_messages',
+						sessionId,
+						query,
+					}),
+					forwardRunRequestToDesktop(sessionRow.device_id, {
+						type: 'get_runtime',
+						sessionId,
+					}),
+				]);
+				res.json({ ...messagesPayload, ...runtimePayload });
+				return;
+			}
+
 			const [messagesPayload, runtimePayload] = await Promise.all([
 				getStoredSessionMessagesPayload(sessionId, query),
 				getStoredSessionRuntimePayload(sessionId),
@@ -1071,7 +1104,51 @@ app.get(
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const query = sessionSnapshotQuerySchema.parse(req.query ?? {});
-			const record = await ensureSessionRecord(String(req.params.sessionId));
+			const sessionId = String(req.params.sessionId);
+			
+			// Check if this is a desktop session
+			const db = await getRidgeDb();
+			const sessionRow = db.prepare(
+				`SELECT device_id, run_location FROM session_index WHERE session_id = ?`
+			).get(sessionId) as { device_id: string | null; run_location: string } | undefined;
+			
+			// Desktop session: bridge SSE from desktop device
+			if (sessionRow?.run_location === 'desktop' && sessionRow.device_id) {
+				if (!isDesktopOnline(sessionRow.device_id)) {
+					const error = new Error("Device offline") as HttpError;
+					error.statusCode = 409;
+					throw error;
+				}
+
+				res.setHeader("Content-Type", "text/event-stream");
+				res.setHeader("Cache-Control", "no-cache");
+				res.setHeader("Connection", "keep-alive");
+				res.flushHeaders();
+
+				// Forward desktop SSE events to this response stream
+				const { addDesktopSseListener } = await import("./desktop-bridge.js");
+				const listener = (event: Record<string, unknown>) => {
+					try {
+						res.write(`data: ${JSON.stringify(event)}\n\n`);
+					} catch (writeErr) {
+						// SSE write failure — remove listener to prevent repeated errors
+						console.error(`[index] SSE write failed for desktop session ${sessionId}:`, writeErr);
+						removeListener();
+					}
+				};
+				const removeListener = addDesktopSseListener(sessionRow.device_id, listener);
+
+				req.on("close", () => {
+					removeListener();
+				});
+				req.on("error", () => {
+					removeListener();
+				});
+				return;
+			}
+			
+			// Local session: existing behavior
+			const record = await ensureSessionRecord(sessionId);
 
 			res.setHeader("Content-Type", "text/event-stream");
 			res.setHeader("Cache-Control", "no-cache");
@@ -1144,6 +1221,67 @@ app.post(
 					error.statusCode = 400;
 					throw error;
 				}
+			}
+
+			// 检查外部仓库绑定的设备是否在线（有 deviceId 且离线的项目禁止启动会话）
+			const matchingProject = projectsState.projects.find(
+				(p) => p.projectType === 'external' && normalizedSessionCwd.startsWith(normalizeFsPath(p.path)),
+			);
+			if (matchingProject?.deviceId && matchingProject.deviceId !== 'server' && !matchingProject.isOnline) {
+				const error = new Error("项目离线，无法启动会话") as HttpError;
+				error.statusCode = 409;
+				throw error;
+			}
+
+			// 归档项目禁止新建会话
+			if (matchingProject?.archivedAt) {
+				const error = new Error("项目已归档，无法新建会话") as HttpError;
+				error.statusCode = 403;
+				throw error;
+			}
+
+			// 桌面项目：forward 到桌面设备创建会话，server 不保存消息正文
+			if (matchingProject?.deviceId && matchingProject.deviceId !== 'server' && matchingProject.isOnline) {
+				const db = await getRidgeDb();
+				const now = Date.now();
+				const sessionId = crypto.randomUUID();
+				// 创建 server 侧轻量 session_index 记录（metadata 层）
+				db.prepare(
+					`INSERT INTO session_index (
+						session_id, title, session_type, context_type,
+						workspace_path, project_id, device_id, run_location,
+						archived, created_at, updated_at
+					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				).run(
+					sessionId,
+					payload.title || matchingProject.name,
+					'workspace',
+					'project',
+					defaultWorkspaceDir,
+					matchingProject.id,
+					matchingProject.deviceId,
+					'desktop',
+					0,
+					now,
+					now,
+				);
+				// Forward 会话创建请求到桌面设备
+				const desktopResult = await forwardRunRequestToDesktop(matchingProject.deviceId, {
+					type: 'create_session',
+					sessionId,
+					cwd: sessionCwd,
+					title: payload.title,
+					model: payload.model,
+					agent: payload.agent,
+					thinkingLevel: payload.thinkingLevel,
+				});
+				res.status(201).json({
+					id: sessionId,
+					...desktopResult,
+					desktopSession: true,
+					deviceId: matchingProject.deviceId,
+				});
+				return;
 			}
 
 			await ensureManagedProjectScope(sessionCwd);
@@ -1287,6 +1425,33 @@ app.post(
 		try {
 			const payload = messageSchema.parse(req.body ?? {});
 			const sessionId = String(req.params.sessionId);
+			
+			// Check if this is a desktop session FIRST — before any local session lookup
+			const db = await getRidgeDb();
+			const sessionRow = db.prepare(
+				`SELECT device_id, run_location FROM session_index WHERE session_id = ?`
+			).get(sessionId) as { device_id: string | null; run_location: string } | undefined;
+			
+			if (sessionRow?.run_location === 'desktop' && sessionRow.device_id) {
+				if (!isDesktopOnline(sessionRow.device_id)) {
+					const error = new Error("Device offline") as HttpError;
+					error.statusCode = 409;
+					throw error;
+				}
+				await forwardRunRequestToDesktop(sessionRow.device_id, {
+					type: 'send_message',
+					sessionId,
+					prompt: payload.prompt,
+					model: payload.model,
+					agent: payload.agent,
+					thinkingLevel: payload.thinkingLevel,
+					attachmentIds: payload.attachmentIds,
+				});
+				res.json({ ok: true, forwarded: true });
+				return;
+			}
+			
+			// Only for local sessions: load the session record
 			const metadata = await sessionMetadataStore.getSessionMetadata(sessionId);
 			if (metadata.archived) {
 				const error = new Error("归档会话不可发送消息") as HttpError;
@@ -1498,13 +1663,69 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 	res.status(statusCode as number).send(message);
 });
 
-export async function startServer() {
-	const httpServer = createServer(app);
+export function registerWebSocketUpgrades(httpServer: ReturnType<typeof createServer>): void {
 	const terminalWebSocketServer = new WebSocketServer({ noServer: true });
 
 	httpServer.on("upgrade", (request, socket, head) => {
 		const host = request.headers.host || `127.0.0.1:${port}`;
 		const url = new URL(request.url || "/", `http://${host}`);
+
+		// Desktop device WebSocket long-connection
+		const deviceMatch = url.pathname.match(/^\/api\/devices\/([^/]+)\/ws$/);
+		if (deviceMatch) {
+			const deviceId = decodeURIComponent(deviceMatch[1]);
+			const token = url.searchParams.get("token");
+			if (!token) {
+				socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+				socket.destroy();
+				return;
+			}
+			import("./desktop-bridge.js").then(({ validateDeviceToken }) =>
+				validateDeviceToken(deviceId, token),
+			).then((valid) => {
+				if (!valid) {
+					socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+					socket.destroy();
+					return;
+				}
+				const wsServer = new WebSocketServer({ noServer: true });
+				wsServer.handleUpgrade(request, socket, head, (ws) => {
+					import("./desktop-bridge.js").then(({ registerDesktopConnection }) => {
+						registerDesktopConnection(deviceId, ws);
+						ws.on("message", (data) => {
+							try {
+								const msg = JSON.parse(String(data));
+								if (msg.type === "sse_event") {
+									import("./desktop-bridge.js").then(({ forwardDesktopSseEvent }) => {
+										forwardDesktopSseEvent(deviceId, msg.event);
+									});
+								} else if (msg.type === "run_result") {
+									// handled by forwardRunRequestToDesktop promise resolver
+								} else {
+									console.warn(`[index] Unknown WebSocket message type from ${deviceId}: ${msg.type}`);
+								}
+							} catch (parseErr) {
+								console.error(`[index] Invalid WebSocket message from ${deviceId}:`, parseErr);
+								try {
+									ws.send(JSON.stringify({
+										type: "error",
+										code: "INVALID_MESSAGE",
+										message: "Message could not be parsed as JSON",
+									}));
+								} catch (sendErr) {
+									console.error(`[index] Failed to send error response to ${deviceId}:`, sendErr);
+								}
+							}
+						});
+					});
+				});
+			}).catch(() => {
+				socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
+				socket.destroy();
+			});
+			return;
+		}
+
 		const match = url.pathname.match(/^\/api\/terminals\/([^/]+)\/stream$/);
 
 		if (!match) {
@@ -1529,6 +1750,11 @@ export async function startServer() {
 			terminalWebSocketServer.emit("connection", ws, request);
 		});
 	});
+}
+
+export async function startServer() {
+	const httpServer = createServer(app);
+	registerWebSocketUpgrades(httpServer);
 
 	await ensureWorkspaceTemplate(defaultWorkspaceDir);
 	const db = await initializeRidgeDb(defaultWorkspaceDir);

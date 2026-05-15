@@ -1,6 +1,6 @@
 import request from "supertest";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { app, authRuntime } from "../index.js";
+import { beforeEach, describe, expect, it } from "vitest";
+import { app } from "../index.js";
 import { createAuthRuntime } from "../auth.js";
 import { getTestClientKey } from "../test/auth.js";
 
@@ -8,18 +8,16 @@ const api = request(app);
 const ADMIN_PASSWORD = "ridge-admin";
 
 describe("single-user auth", () => {
-	beforeAll(() => {
-		// Explicitly reset module-level auth singleton so this suite starts
-		// from a known clean state, regardless of fork isolation.
-		authRuntime.resetForTests();
-	});
-
-	beforeEach(() => {
-		// Reset between individual tests within this file so that
-		// rate-limiting / session state from one test does not leak
-		// into the next (test order is not guaranteed to be declaration
-		// order under all vitest configurations).
-		authRuntime.resetForTests();
+	// Reset the module-level auth singleton BEFORE EACH test in this file.
+	// With pool:forks a worker may reuse its process for multiple test files;
+	// leftover sessions / rate-limit state from earlier files or earlier tests
+	// in this file would break assertions. Per-test reset is the only way to
+	// guarantee pristine state in the presence of fork reuse.
+	beforeEach(async () => {
+		const { authRuntime } = await import("../index.js");
+		if (authRuntime?.resetForTests) {
+			authRuntime.resetForTests();
+		}
 	});
 
 	it("rejects protected api requests without a session", async () => {
