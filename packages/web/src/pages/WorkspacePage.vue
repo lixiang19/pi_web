@@ -11,6 +11,7 @@ import {
 	FolderPlus,
 	LayoutGrid,
 	ListTodo,
+	MonitorPlay,
 	Search,
 	Settings2,
 	TerminalSquare,
@@ -29,6 +30,8 @@ import WorkspaceChatTab from "@/components/workspace/WorkspaceChatTab.vue";
 import TerminalTabContent from "@/components/workspace/TerminalTabContent.vue";
 import AutomationTabContent from "@/components/workspace/AutomationTabContent.vue";
 import SettingsTabContent from "@/components/workspace/SettingsTabContent.vue";
+import SpacePreviewTab from "@/components/workspace/SpacePreviewTab.vue";
+import SpaceView from "@/components/workspace/SpaceView.vue";
 import WorkspaceFeaturePlaceholder from "@/components/workspace/WorkspaceFeaturePlaceholder.vue";
 import SplitGrid from "@/components/workspace/split/SplitGrid.vue";
 import { useFileTreeData } from "@/composables/useFileTreeData";
@@ -40,6 +43,7 @@ import {
 	createChatTab,
 	createTerminalTab,
 	createSingletonFeatureTab,
+	createSpacePreviewTab,
 } from "@/composables/useSplitPanes";
 import type { SplitTabItem } from "@/composables/useSplitPanes";
 import type { DropZone } from "@/composables/useSplitDrag";
@@ -70,6 +74,8 @@ import type { FileTreeEntry, ThinkingLevel } from "@/lib/types";
 import { toast } from "vue-sonner";
 import FilesView from "@/components/workspace/FilesView.vue";
 import { useWorkspaceFiles } from "@/composables/useWorkspaceFiles";
+import { useWorkspaceSpace } from "@/composables/useWorkspaceSpace";
+import type { SpaceWorkItem } from "@/lib/types";
 
 /** 从文件绝对路径构造完整的 FileTreeEntry（用于只需路径即可打开文件的场景） */
 function createFileTreeEntryFromPath(filePath: string): FileTreeEntry {
@@ -119,6 +125,9 @@ const preview = useWorkspaceFilePreview(workspaceDir);
 // 工作空间文件页
 const workspaceFiles = useWorkspaceFiles();
 
+// 空间 HTML 作品
+const workspaceSpace = useWorkspaceSpace();
+
 // 分屏管理
 const splitPanes = useSplitPanes();
 
@@ -155,6 +164,7 @@ const singletonFeatureEntries = [
 	{ id: "notifications", label: "通知", icon: Bell },
 	{ id: "tasks", label: "任务", icon: ListTodo },
 	{ id: "files", label: "文件", icon: Files },
+	{ id: "space", label: "空间", icon: MonitorPlay },
 	{ id: "automation", label: "自动化", icon: Bot },
 	{ id: "skills", label: "Skill", icon: BookOpen },
 	{ id: "settings", label: "设置", icon: Settings2 },
@@ -164,7 +174,7 @@ type SingletonFeatureId = (typeof singletonFeatureEntries)[number]["id"];
 
 const fixedEntries = [
 	...singletonFeatureEntries
-		.filter((e) => ["moments", "tasks", "files"].includes(e.id))
+		.filter((e) => ["moments", "tasks", "files", "space"].includes(e.id))
 		.map((entry) => ({ ...entry, type: "singleton" as const })),
 	{ id: "terminal", label: "终端", icon: TerminalSquare, type: "terminal" as const },
 	...singletonFeatureEntries
@@ -319,12 +329,38 @@ function handleFixedEntry(entry: (typeof fixedEntries)[number]) {
 		handleOpenFiles();
 		return;
 	}
+	if (entry.id === "space") {
+		void handleOpenSpace();
+		return;
+	}
 	handleOpenSingletonFeature(entry.id);
 }
 
 async function handleOpenFiles() {
 	await workspaceFiles.load(workspaceDir.value);
 	handleOpenSingletonFeature("files");
+}
+
+function handleOpenSpace() {
+	handleOpenSingletonFeature("space");
+	void workspaceSpace.load();
+}
+
+async function handleOpenSpacePreview(work: SpaceWorkItem) {
+	try {
+		const previewPayload = await workspaceSpace.openPreview(work.id);
+		splitPanes.openTab(
+			splitPanes.activePaneGroupId.value,
+			createSpacePreviewTab(previewPayload.indexPath, previewPayload.name, {
+				spaceWorkId: previewPayload.id,
+				html: previewPayload.html,
+			}),
+		);
+	} catch (error) {
+		toast.error("空间预览打开失败", {
+			description: error instanceof Error ? error.message : "无法读取空间作品 HTML。",
+		});
+	}
 }
 
 /** 打开文件标签页到当前活跃面板 */
@@ -965,6 +1001,14 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			  @retry="workspaceFiles.retry($event)"
 			  @convert="(path: string, force: boolean) => workspaceFiles.convert(path, force)"
 			/>
+			<SpaceView
+			  v-else-if="tab.featureId === 'space'"
+			  :works="workspaceSpace.works.value"
+			  :loading="workspaceSpace.loading.value"
+			  :error="workspaceSpace.error.value"
+			  @refresh="workspaceSpace.load"
+			  @open-preview="handleOpenSpacePreview"
+			/>
 			<AutomationTabContent v-else-if="tab.featureId === 'automation'" />
 			<SettingsTabContent v-else-if="tab.featureId === 'settings'" />
 			<WorkspaceFeaturePlaceholder v-else :title="tab.title" />
@@ -1051,7 +1095,12 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             v-show="activeTabId === tab.id && tab.kind === 'space_preview'"
             class="h-full"
           >
-            <WorkspaceFeaturePlaceholder v-if="tab.kind === 'space_preview'" :title="tab.title" />
+            <SpacePreviewTab
+              v-if="tab.kind === 'space_preview'"
+              :title="tab.title"
+              :html="tab.spacePreviewHtml ?? ''"
+              :index-path="tab.filePath"
+            />
           </div>
         </template>
       </SplitGrid>

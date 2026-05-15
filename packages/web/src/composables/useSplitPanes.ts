@@ -38,7 +38,9 @@ export interface SplitTabItem {
 	filePath?: string;
 	sessionId?: string;
 	terminalId?: string;
-  initialPrompt?: string;
+	spaceWorkId?: string;
+	spacePreviewHtml?: string;
+	initialPrompt?: string;
   initialModel?: string;
   initialAgent?: string;
   initialThinkingLevel?: string;
@@ -63,6 +65,7 @@ export type SerializableGridNode =
 				filePath?: string;
 				sessionId?: string;
 				terminalId?: string;
+				spaceWorkId?: string;
 				initialPrompt?: string;
 				initialModel?: string;
 				initialAgent?: string;
@@ -150,11 +153,17 @@ export const createTerminalTab = (
 export const createSpacePreviewTab = (
 	filePath: string,
 	title?: string,
+	options?: {
+		spaceWorkId?: string;
+		html?: string;
+	},
 ): SplitTabItem => ({
 	id: `space:${filePath}`,
 	title: title ?? "空间",
 	kind: "space_preview",
 	filePath,
+	spaceWorkId: options?.spaceWorkId,
+	spacePreviewHtml: options?.html,
 	status: "idle",
 });
 
@@ -599,6 +608,7 @@ function serializeNode(node: GridNode): SerializableGridNode {
 				filePath: t.filePath,
 				sessionId: t.sessionId,
 				terminalId: t.terminalId,
+				spaceWorkId: t.spaceWorkId,
 				initialPrompt: t.initialPrompt,
 				initialModel: t.initialModel,
 				initialAgent: t.initialAgent,
@@ -634,6 +644,7 @@ function deserializeNode(node: SerializableGridNode): GridNode {
 				filePath: t.filePath,
 				sessionId: t.sessionId,
 				terminalId: t.terminalId,
+				spaceWorkId: t.spaceWorkId,
 				initialPrompt: t.initialPrompt,
 				initialModel: t.initialModel,
 				initialAgent: t.initialAgent,

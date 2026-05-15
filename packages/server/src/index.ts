@@ -58,6 +58,7 @@ import {
 } from "./routes/workspace-tasks.js";
 import { createWorktreeRouter } from "./routes/worktrees.js";
 import { createWorkspaceFilesRouter } from "./routes/workspace-files.js";
+import { createWorkspaceSpaceRouter } from "./routes/workspace-space.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
@@ -678,6 +679,7 @@ const workspaceFilesRouter = createWorkspaceFilesRouter({
 	isConversionEnabled: () => isConversionEnabled?.() ?? false,
 });
 app.use(workspaceFilesRouter);
+app.use(createWorkspaceSpaceRouter({ defaultWorkspaceDir }));
 app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(ensureSessionRecord));
 app.get(
 	"/api/files/content",

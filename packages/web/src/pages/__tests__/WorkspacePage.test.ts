@@ -23,6 +23,9 @@ const {
 	mockUseWorkspaceTasks,
 	mockProvideWorkspaceInbox,
 	mockUseWorkspaceInbox,
+	mockSpaceLoad,
+	mockOpenSpacePreview,
+	mockSpaceWorks,
 	mockAllPaneGroups,
 	mockSessions,
 	mockProjects,
@@ -56,6 +59,9 @@ const {
 	mockUseWorkspaceInbox: vi.fn(() => {
 		throw new Error("WorkspacePage must reuse provideWorkspaceInbox return value");
 	}),
+	mockSpaceLoad: vi.fn(),
+	mockOpenSpacePreview: vi.fn(),
+	mockSpaceWorks: { value: [] as Array<{ id: string; name: string; path: string; indexPath: string; size: number; modifiedAt: number }> },
 	mockAllPaneGroups: {
 		value: [
 			{
@@ -173,6 +179,13 @@ vi.mock("@/composables/useSplitPanes", () => ({
 		terminalId,
 		status: "idle",
 	}),
+	createSpacePreviewTab: (filePath: string, title: string) => ({
+		id: `space:${filePath}`,
+		title,
+		kind: "space_preview",
+		filePath,
+		status: "idle",
+	}),
 }));
 
 vi.mock("@/composables/useWorkspaceTasks", () => ({
@@ -183,6 +196,16 @@ vi.mock("@/composables/useWorkspaceTasks", () => ({
 vi.mock("@/composables/useInbox", () => ({
 	provideWorkspaceInbox: mockProvideWorkspaceInbox,
 	useWorkspaceInbox: mockUseWorkspaceInbox,
+}));
+
+vi.mock("@/composables/useWorkspaceSpace", () => ({
+	useWorkspaceSpace: () => ({
+		works: mockSpaceWorks,
+		loading: { value: false },
+		error: { value: "" },
+		load: mockSpaceLoad,
+		openPreview: mockOpenSpacePreview,
+	}),
 }));
 
 vi.mock("@/composables/usePiChatCore", () => ({
@@ -296,18 +319,18 @@ describe("WorkspacePage - 固定入口", () => {
 		const wrapper = mountWorkspace();
 		const text = wrapper.text();
 		// 只断言已实现的真实入口，不暴露未实现占位
-		for (const label of ["闪念", "任务", "文件", "终端", "自动化", "设置"]) {
+		for (const label of ["闪念", "任务", "文件", "空间", "终端", "自动化", "设置"]) {
 			expect(text).toContain(label);
 		}
 		const navButtons = wrapper.findAll("[data-test='workspace-fixed-entry']");
 		expect(navButtons.map((button) => button.text())).not.toContain("主页");
 	});
 
-	it("固定入口顺序严格为：闪念、任务、文件、终端、自动化、设置", () => {
+	it("固定入口顺序严格为：闪念、任务、文件、空间、终端、自动化、设置", () => {
 		const wrapper = mountWorkspace();
 		const buttons = wrapper.findAll("[data-test='workspace-fixed-entry']");
 		const labels = buttons.map((button) => button.text().replace(/\d+$/, "").trim());
-		expect(labels).toEqual(["闪念", "任务", "文件", "终端", "自动化", "设置"]);
+		expect(labels).toEqual(["闪念", "任务", "文件", "空间", "终端", "自动化", "设置"]);
 	});
 
 	it("点击任务固定入口创建 singleton_feature 标签", async () => {
@@ -343,6 +366,46 @@ describe("WorkspacePage - 固定入口", () => {
 		expect(mockOpenTab).toHaveBeenCalledWith(
 			"pane-1",
 			expect.objectContaining({ kind: "terminal", terminalId: "terminal-2" }),
+		);
+	});
+
+	it("点击空间作品打开 space_preview 标签", async () => {
+		const wrapper = mountWorkspace();
+		const vm = wrapper.vm as unknown as {
+			handleOpenSpacePreview: (work: {
+				id: string;
+				name: string;
+				path: string;
+				indexPath: string;
+				size: number;
+				modifiedAt: number;
+			}) => Promise<void>;
+		};
+		mockOpenSpacePreview.mockResolvedValue({
+			id: "demo-id",
+			name: "demo",
+			indexPath: "/ws/空间/demo/index.html",
+			html: "<h1>demo</h1>",
+		});
+
+		await vm.handleOpenSpacePreview({
+			id: "demo-id",
+			name: "demo",
+			path: "/ws/空间/demo",
+			indexPath: "/ws/空间/demo/index.html",
+			size: 128,
+			modifiedAt: 1714521600000,
+		});
+
+		expect(mockOpenSpacePreview).toHaveBeenCalledWith("demo-id");
+		expect(mockOpenTab).toHaveBeenCalledWith(
+			"pane-1",
+			expect.objectContaining({
+				id: "space:/ws/空间/demo/index.html",
+				kind: "space_preview",
+				filePath: "/ws/空间/demo/index.html",
+				title: "demo",
+			}),
 		);
 	});
 });

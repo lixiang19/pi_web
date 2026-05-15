@@ -400,6 +400,27 @@ export interface FilePreviewWindowPayload {
 	nextStartLine?: number;
 }
 
+export interface SpaceWorkItem {
+	id: string;
+	name: string;
+	path: string;
+	indexPath: string;
+	size: number;
+	modifiedAt: number;
+}
+
+export interface SpaceWorksResponse {
+	root: string;
+	works: SpaceWorkItem[];
+}
+
+export interface SpacePreviewHtmlResponse {
+	id: string;
+	name: string;
+	indexPath: string;
+	html: string;
+}
+
 export interface FileSaveRequest {
 	root: string;
 	path: string;

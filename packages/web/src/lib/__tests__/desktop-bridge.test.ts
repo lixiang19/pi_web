@@ -8,6 +8,7 @@ import {
 	tauriCaptureScreenshotRegion,
 	tauriCaptureScreenshotWindow,
 	tauriCaptureScreenshotFullscreen,
+	setDesktopBridgeInvokeForTests,
 } from "@/lib/desktop-bridge";
 
 const mockInvoke = vi.fn();
@@ -19,6 +20,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 describe("desktop-bridge", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		setDesktopBridgeInvokeForTests((command, args) =>
+			args === undefined ? mockInvoke(command) : mockInvoke(command, args),
+		);
 		delete (window as unknown as Record<string, unknown>)['__TAURI_INTERNALS__'];
 	});
 

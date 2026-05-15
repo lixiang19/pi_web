@@ -25,7 +25,7 @@
 | 18 文件处理状态与临时文件边界 | - | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 19 PDF Word 标准化转换 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 20 音频图片 Markdown 处理 | - | - | - | - | - | - | - |
-| 21 空间 HTML 作品私有预览 | - | - | - | - | - | - | - |
+| 21 空间 HTML 作品私有预览 | ✅ | ✅ | - | ✅ | ✅ | - | ◐ |
 | 22 RAG 标准产物索引与 chunk | - | - | - | - | - | - | - |
 | 23 RAG 更新删除移动规则 | - | - | - | - | - | - | - |
 | 24 全局搜索资产导航器 | ⚠️ | - | - | - | - | - | - |
@@ -56,6 +56,7 @@
 - **37 备份恢复设置主题收尾**：设置页真实实现只有主题/明暗模式、退出、偏好；没有备份恢复、数据路径、错误边界。只能标“设置基础部分完成”。
 - **17 文件页与正式附件目录**：左侧导航“文件”入口存在，`WorkspacePage.vue` 中已接入 `FilesView.vue` 真实文件页（文件树浏览、状态展示、文件预览），不再是占位。但上传功能走 `uploadFiles` API、`FilesView` 本身无上传按钮，附件管理（移动/重命名）未在前端完整实现。
 - **18 文件处理状态与临时文件边界**：`PATCH /status`、`POST /retry` API 完整实现，含状态流转校验、原子通知、错误可见。上传自动注册 pending、删除同步清理、.ridge 严格隔离均已实现且有测试覆盖。
+- **21 空间 HTML 作品私有预览**：左侧「空间」入口已接入真实 `SpaceView`，服务端提供 `GET /api/workspace/space` 与 `GET /api/workspace/space/:id/preview-html`；只读取 `空间/<作品名>/index.html`，路径有 `.ridge`、词法和 realpath 越界防护，缺失 `index.html` 返回 404。预览使用 `srcdoc` + `sandbox="allow-scripts"`，无 `allow-same-origin`，并确保 CSP 早于用户 HTML active content，禁止 ridge API/外联请求。已有服务端集成测试、前端组件测试和工作台接线测试。隐藏版本管理依赖工作空间级能力，本任务不新增保存/版本点链路，因此归档项保留为部分完成。
 - **插件与扩展能力真实状态**：
   - **已真实接入**：Agent 注册/发现/选择（`/api/agents`、HomePage/WorkspaceChatTab agent 选择）、自动化规则（作为定时创建普通会话并发送消息的规则系统）、Pi resource catalog 后端可列 prompts/skills/extension commands（`/api/resources`、`buildResourceCatalog`）。
   - **未在当前工作空间主会话 UI 中完整接入**：Skill 独立功能页仍占位；`WorkspaceChatTab` 当前给 `WorkbenchChatPanel` 传 `commands=[]`、`prompts=[]`、`skills=[]`，因此主工作空间会话的资源选择器/Skill 注入没有真正可用；runtime bundle 与设备专属 Skill、workspace MCP 仍是 spec/未实现。

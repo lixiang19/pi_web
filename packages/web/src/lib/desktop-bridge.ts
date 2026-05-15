@@ -1,4 +1,37 @@
-import { invoke } from "@tauri-apps/api/core";
+type TauriCoreModule = {
+	invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+};
+
+type TauriInvoke = <T>(
+	command: string,
+	args?: Record<string, unknown>,
+) => Promise<T>;
+
+let invokeOverride: TauriInvoke | null = null;
+
+export function setDesktopBridgeInvokeForTests(invoke: TauriInvoke | null): void {
+	invokeOverride = invoke;
+}
+
+const importTauriCore = new Function(
+	"specifier",
+	"return import(specifier)",
+) as (specifier: string) => Promise<unknown>;
+
+async function invokeTauri<T>(
+	command: string,
+	args?: Record<string, unknown>,
+): Promise<T> {
+	if (invokeOverride) {
+		return args === undefined
+			? invokeOverride<T>(command)
+			: invokeOverride<T>(command, args);
+	}
+	const core = await importTauriCore("@tauri-apps/api/core") as TauriCoreModule;
+	return args === undefined
+		? core.invoke<T>(command)
+		: core.invoke<T>(command, args);
+}
 
 export function isTauri(): boolean {
 	return typeof window !== "undefined" && (window as unknown as Record<string, unknown>)['__TAURI_INTERNALS__'] !== undefined;
@@ -13,7 +46,7 @@ export function isTauri(): boolean {
 export async function syncDesktopStatus(online: boolean, authenticated: boolean): Promise<void> {
 	if (!isTauri()) return;
 	try {
-		await invoke("set_desktop_status", { online, authenticated });
+		await invokeTauri("set_desktop_status", { online, authenticated });
 	} catch {
 		// 静默失败
 	}
@@ -23,7 +56,7 @@ export async function syncDesktopStatus(online: boolean, authenticated: boolean)
 export async function tauriCaptureClipboard(): Promise<string | null> {
 	if (!isTauri()) return null;
 	try {
-		const text = await invoke<string>("capture_clipboard");
+		const text = await invokeTauri<string>("capture_clipboard");
 		return text || null;
 	} catch {
 		return null;
@@ -34,7 +67,7 @@ export async function tauriCaptureClipboard(): Promise<string | null> {
 export async function tauriCaptureBrowserUrl(): Promise<{ url: string; title: string; selectedText: string } | null> {
 	if (!isTauri()) return null;
 	try {
-		const result = await invoke<[string, string, string]>("capture_browser_url");
+		const result = await invokeTauri<[string, string, string]>("capture_browser_url");
 		return { url: result[0], title: result[1], selectedText: result[2] };
 	} catch {
 		return null;
@@ -45,7 +78,7 @@ export async function tauriCaptureBrowserUrl(): Promise<{ url: string; title: st
 export async function tauriCaptureSelection(): Promise<string | null> {
 	if (!isTauri()) return null;
 	try {
-		const text = await invoke<string>("capture_selection");
+		const text = await invokeTauri<string>("capture_selection");
 		return text || null;
 	} catch {
 		return null;
@@ -56,7 +89,7 @@ export async function tauriCaptureSelection(): Promise<string | null> {
 export async function tauriCaptureScreenshotRegion(): Promise<Uint8Array | null> {
 	if (!isTauri()) return null;
 	try {
-		const data = await invoke<Uint8Array>("capture_screenshot_region");
+		const data = await invokeTauri<Uint8Array>("capture_screenshot_region");
 		return data;
 	} catch {
 		return null;
@@ -67,7 +100,7 @@ export async function tauriCaptureScreenshotRegion(): Promise<Uint8Array | null>
 export async function tauriCaptureScreenshotWindow(): Promise<Uint8Array | null> {
 	if (!isTauri()) return null;
 	try {
-		const data = await invoke<Uint8Array>("capture_screenshot_window");
+		const data = await invokeTauri<Uint8Array>("capture_screenshot_window");
 		return data;
 	} catch {
 		return null;
@@ -78,7 +111,7 @@ export async function tauriCaptureScreenshotWindow(): Promise<Uint8Array | null>
 export async function tauriCaptureScreenshotFullscreen(): Promise<Uint8Array | null> {
 	if (!isTauri()) return null;
 	try {
-		const data = await invoke<Uint8Array>("capture_screenshot_fullscreen");
+		const data = await invokeTauri<Uint8Array>("capture_screenshot_fullscreen");
 		return data;
 	} catch {
 		return null;

@@ -559,3 +559,31 @@
 - `npm run check`：0 errors，21 warnings（历史 `any`，本任务未引入新 warning）。
 - `pnpm test` 后端：366 passed，转换相关测试 100% 通过。
 - `pnpm test` 前端：261 passed（新增 5 项组件测试）。
+
+## 2026-05-15 任务 21 空间 HTML 作品私有预览
+
+### 契约
+
+- 空间作品路径固定为 `空间/<作品名>/index.html`，第一版只支持单文件 HTML。
+- 服务端入口：`packages/server/src/routes/workspace-space.ts`。
+- API：
+  - `GET /api/workspace/space`：确保 `空间/` 存在，列出一级作品目录中存在 `index.html` 的条目。
+  - `GET /api/workspace/space/:id/preview-html`：按服务端生成的作品 ID 读取对应 `index.html`，不接受前端任意路径。
+- 前端入口：`WorkspacePage.vue` 左侧「空间」固定入口，打开 `feature:space`；点击作品打开 `space:<indexPath>` 预览标签。
+
+### 安全与便利性
+
+- iframe 使用 `srcdoc`，不生成公开 URL。
+- sandbox 使用 `allow-scripts` 以保留单文件 HTML 的内联 JS 交互能力，但不包含 `allow-same-origin`，因此不能拿到主站同源权限或 cookie。
+- `SpacePreviewTab.vue` 注入 CSP：`default-src 'none'`、`connect-src 'none'`、`form-action 'none'`、`base-uri 'none'`、`navigate-to 'none'`，且 CSP 必须早于用户 HTML active content，禁止 ridge API 调用、表单、导航和外联请求。
+- 服务端读取路径必须同时做 `ensureWithinRoot`、`.ridge` 系统目录与 realpath 边界检查；符号链接越界到 `空间/` 外或隐藏 `.ridge` 段会返回 400。
+- 预览 HTML 上限为 10 MB，避免异常大文件进入 `srcdoc`。
+- 直接请求缺失 `index.html` 的作品 ID 返回 404。
+- 隐藏版本管理不是空间预览 API 自身能力；空间作品作为工作空间可见文件，依赖工作空间级隐藏版本管理覆盖 `空间/` 目录。
+
+### 测试
+
+- `workspace-space-api.test.ts` 覆盖列表、HTML 读取、缺 `index.html` 不展示、缺失读取 404、`.ridge` 拒绝、符号链接越界拒绝、非空间路径 ID 拒绝。
+- `SpacePreviewTab.test.ts` 覆盖 `sandbox="allow-scripts"`、无 `allow-same-origin`、CSP 禁止 `connect-src`、CSP 早于用户脚本且允许内联脚本。
+- `SpaceView.test.ts` 覆盖点击作品事件与无公开链接空状态。
+- `WorkspacePage.test.ts` 覆盖「空间」固定入口顺序与点击作品打开 `space_preview` 标签。

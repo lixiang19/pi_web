@@ -31,6 +31,7 @@
 - 通知
 - 任务
 - 文件
+- 空间
 - 终端
 - 自动化
 - Skill
@@ -38,6 +39,7 @@
 
 除终端外，固定入口都使用稳定 `feature:<id>` 标签 ID，重复点击只激活已有标签。
 终端每次点击都会创建新终端实例和新标签。
+空间入口打开 `feature:space` 作品列表；点击作品后打开 `space:<indexPath>` 预览标签，同一作品重复点击只激活已有预览标签。
 
 ## 项目列表
 
@@ -92,6 +94,14 @@
 - **文件**：复用 `WorkspaceFileTree.vue`，`rootDir` 取自 `chat.fileTreeRoot.value`（工作空间会话为 `workspaceDir`，项目会话为项目目录）。
 - **Git**：复用 `WorkbenchGitPanel.vue`，通过 `useGitRepositoryStatus` 探测当前 `fileTreeRoot` 是否为 Git 仓库；非 Git 仓库显示不可用状态。
 - **Diff**：第一版显示占位说明"Diff 暂不可用/等待隐藏版本管理"，不做伪装。
+
+## 空间 HTML 私有预览
+
+- 左侧固定入口「空间」渲染 `SpaceView`，数据来自 `GET /api/workspace/space`。
+- `SpaceView` 只展示 `空间/<作品名>/index.html` 形成的一级作品列表；缺少 `index.html` 的目录不展示。
+- 点击作品后调用 `GET /api/workspace/space/:id/preview-html` 读取 HTML，并创建 `space_preview` 标签。
+- `space_preview` 标签由 `SpacePreviewTab` 渲染，iframe 使用 `srcdoc`，不生成独立公开 URL。
+- iframe sandbox 为 `allow-scripts`，不包含 `allow-same-origin`；配套 CSP 禁止 `connect-src`、表单、导航、frame/object/worker 等外联能力。这样保留单文件 HTML 内联 JS 交互，但不能读取主站 cookie 或调用 ridge API。
 
 ### 类型与 API
 

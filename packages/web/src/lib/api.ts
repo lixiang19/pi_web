@@ -43,6 +43,8 @@ import type {
 	SessionRuntimePayload,
 	SessionSnapshot,
 	SessionSummary,
+	SpacePreviewHtmlResponse,
+	SpaceWorksResponse,
 	SystemInfo,
 	TerminalCreateRequest,
 	TerminalListResponse,
@@ -436,6 +438,16 @@ export function getWorkspaceFilesRead(path: string) {
 		params.set("path", path);
 	}
 	return request<FilePreviewPayload>(`/api/workspace/files/read?${params.toString()}`);
+}
+
+export function getWorkspaceSpaceWorks() {
+	return request<SpaceWorksResponse>("/api/workspace/space");
+}
+
+export function getWorkspaceSpacePreviewHtml(id: string) {
+	return request<SpacePreviewHtmlResponse>(
+		`/api/workspace/space/${encodeURIComponent(id)}/preview-html`,
+	);
 }
 
 export function updateFileProcessingStatus(path: string, status: string, error?: string) {
