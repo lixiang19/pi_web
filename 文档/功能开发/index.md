@@ -38,7 +38,7 @@
 | 31 设备注册在线状态与调度 | - | - | - | - | - | - | - |
 | 32 runtime bundle 与设备专属 Skill | - | - | - | - | - | - | - |
 | 33 workspace MCP 查读工具 | - | - | - | - | - | - | - |
-| 34 通知与建议中心 | ⚠️ | - | - | - | - | - | - |
+| 34 通知与建议中心 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 35 task review agent 任务回顾 | - | - | - | - | - | - | - |
 | 36 自动化规则运行与跳过 | ◐ | ◐ | ◐ | ◐ | - | - | - |
 | 37 备份恢复设置主题收尾 | ◐ | - | - | ◐ | - | - | - |
@@ -53,7 +53,7 @@
 - **22 RAG 标准产物索引与 chunk**：`rag-indexer.ts` 已按 Markdown 标题、段落、表格、代码块切 chunk，并读取 `.metadata.json`；空间 `index.html` 作为 HTML 标准源进入 RAG；`search_chunks` 保存 `source_path`、`heading_path`、`content_hash`、`file_type`、`embedding_id`、`embedding_vector`、行号等来源定位字段；检索使用精确文本召回 + 本地 embedding 相似度；外部路径、`.ridge`、`.originals`、realpath 越界 symlink 不进入 RAG。`rag-standard-indexer.test.ts` 覆盖结构化 chunk、metadata、embedding、hash skip、空间 HTML、外部路径/符号链接排除和来源定位。
 - **23 RAG 更新删除移动规则**：Markdown 上传同步索引；普通 Markdown 编辑写 `refresh_policy=deferred` 并保留旧 chunk；RAG worker 每天 03:00 运行 deferred 夜间入口，显式 `rag.index` job 按 manual 重建；`POST /api/workspace/rag/refresh` 手动立即重建且校验 realpath 边界；删除文件/目录清理 RAG 表；移动/改名更新 RAG metadata；索引失败写 `notification_events`。`rag-standard-indexer.test.ts`、`rag-worker-e2e.test.ts` 和 `rag-consumer.test.ts` 覆盖手动刷新、夜间刷新、删除、移动、失败通知和默认工作空间消费链路。
 - **24 全局搜索资产导航器**：左侧固定「搜索」入口已接入 `WorkspaceSearchView.vue` 单例标签；`GET /api/workspace/search` 聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间、RAG，支持类型/时间/目录/项目筛选和索引状态展示；项目筛选会保留项目内 file/RAG 结果；结果可打开文件、项目主页、任务页、会话、空间预览，并可手动刷新 RAG。`workspace-search-api.test.ts` 覆盖聚合、类型筛选、项目内 file/RAG、目录边界筛选、缺失空间入口、符号链接越界和外部项目文件内容排除。图谱节点依赖 Task 28 Kuzu 图谱存储，当前搜索不暴露 `graph` 占位类型。
-- **34 通知与建议中心**：左侧导航入口存在，但同样走 `WorkspaceFeaturePlaceholder`，真实通知中心未实现，只能标为入口/占位。
+- **34 通知与建议中心**：左侧「通知」固定入口已接入 `NotificationCenterView.vue`，展示未处理数、筛选、列表和动作；`GET /api/notifications` 与 `POST /api/notifications/:eventId/actions` 支持忽略、标记已处理、重试、接受/拒绝建议、打开关联对象。`notification_events` 扩展 source/related/actions/handled 字段；文件处理失败、RAG 失败、后台任务最终失败写入关联对象和动作。新增通知 API 与前端组件测试，并通过全量测试。
 - **36 自动化规则运行与跳过**：`automation_rules` CRUD、调度器、手动 run API、UI 已有，但 `automation_runs` 无业务写入，跳过记录/失败通知/运行历史未闭环。只能标为自动化规则 CRUD/调度部分完成。
 - **37 备份恢复设置主题收尾**：设置页真实实现只有主题/明暗模式、退出、偏好；没有备份恢复、数据路径、错误边界。只能标“设置基础部分完成”。
 - **17 文件页与正式附件目录**：左侧导航“文件”入口存在，`WorkspacePage.vue` 中已接入 `FilesView.vue` 真实文件页（文件树浏览、状态展示、文件预览），不再是占位。但上传功能走 `uploadFiles` API、`FilesView` 本身无上传按钮，附件管理（移动/重命名）未在前端完整实现。

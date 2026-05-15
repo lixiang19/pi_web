@@ -33,6 +33,7 @@ import SettingsTabContent from "@/components/workspace/SettingsTabContent.vue";
 import SpacePreviewTab from "@/components/workspace/SpacePreviewTab.vue";
 import SpaceView from "@/components/workspace/SpaceView.vue";
 import WorkspaceSearchView from "@/components/workspace/WorkspaceSearchView.vue";
+import NotificationCenterView from "@/components/workspace/NotificationCenterView.vue";
 import WorkspaceFeaturePlaceholder from "@/components/workspace/WorkspaceFeaturePlaceholder.vue";
 import SplitGrid from "@/components/workspace/split/SplitGrid.vue";
 import { useFileTreeData } from "@/composables/useFileTreeData";
@@ -56,6 +57,7 @@ import { useTerminalContextOptions } from "@/composables/useTerminalContextOptio
 import { useTerminalPool } from "@/composables/useTerminalPool";
 import { useDashboard } from "@/composables/useDashboard";
 import { useRecentActivity } from "@/composables/useRecentActivity";
+import { useNotifications } from "@/composables/useNotifications";
 import { useFavoritesStore } from "@/stores/favorites";
 import { useSettingsStore } from "@/stores/settings";
 import { useProjects } from "@/composables/useProjects";
@@ -128,6 +130,7 @@ const workspaceFiles = useWorkspaceFiles();
 
 // 空间 HTML 作品
 const workspaceSpace = useWorkspaceSpace();
+const notificationsStore = useNotifications(() => workspaceDir.value);
 
 // 分屏管理
 const splitPanes = useSplitPanes();
@@ -175,7 +178,7 @@ type SingletonFeatureId = (typeof singletonFeatureEntries)[number]["id"];
 
 const fixedEntries = [
 	...singletonFeatureEntries
-		.filter((e) => ["moments", "search", "tasks", "files", "space"].includes(e.id))
+		.filter((e) => ["moments", "search", "notifications", "tasks", "files", "space"].includes(e.id))
 		.map((entry) => ({ ...entry, type: "singleton" as const })),
 	{ id: "terminal", label: "终端", icon: TerminalSquare, type: "terminal" as const },
 	...singletonFeatureEntries
@@ -291,6 +294,7 @@ function handleOpenArchived() {
 
 // 收件箱数量
 const inboxCount = inboxStore.count;
+const notificationCount = notificationsStore.unhandledCount;
 
 // 仪表盘数据（复用最近文件和日记）
 const dashboard = useDashboard(() => workspaceDir.value);
@@ -757,6 +761,9 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
           <Badge v-if="entry.id === 'moments' && inboxCount > 0" variant="secondary" class="h-4 min-w-4 px-1 text-[10px]">
             {{ inboxCount }}
           </Badge>
+          <Badge v-else-if="entry.id === 'notifications' && notificationCount > 0" variant="secondary" class="h-4 min-w-4 px-1 text-[10px]">
+            {{ notificationCount }}
+          </Badge>
         </button>
       </div>
 
@@ -1033,6 +1040,16 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			  @open-tasks="handleOpenTasks"
 			  @open-project="handleOpenProjectFromSearch"
 			  @open-space-work="handleOpenSpacePreviewById"
+			/>
+			<NotificationCenterView
+			  v-else-if="tab.featureId === 'notifications'"
+			  :workspace-dir="workspaceDir"
+			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
+			  @open-session="handleOpenSession($event)"
+			  @open-project="handleOpenProjectFromSearch"
+			  @open-automation="handleOpenSingletonFeature('automation')"
+			  @open-tasks="handleOpenTasks"
+			  @notifications-updated="notificationsStore.load()"
 			/>
 			<SpaceView
 			  v-else-if="tab.featureId === 'space'"

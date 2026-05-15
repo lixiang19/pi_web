@@ -59,6 +59,7 @@ import { createWorktreeRouter } from "./routes/worktrees.js";
 import { createWorkspaceFilesRouter } from "./routes/workspace-files.js";
 import { createWorkspaceSpaceRouter } from "./routes/workspace-space.js";
 import { createWorkspaceSearchRouter } from "./routes/workspace-search.js";
+import { createNotificationsRouter } from "./routes/notifications.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
@@ -657,6 +658,15 @@ app.use("/api/workspace/tasks", workspaceTasksRouter);
 const workspaceMilestonesRouter =
 	createWorkspaceMilestonesRouter(defaultWorkspaceDir);
 app.use("/api/workspace/milestones", workspaceMilestonesRouter);
+app.use(
+	"/api/notifications",
+	createNotificationsRouter({
+		defaultWorkspaceDir,
+		getRidgeDb,
+		getJobQueue: () => jobQueue,
+		isConversionEnabled: () => isConversionEnabled?.() ?? false,
+	}),
+);
 // ===== Workspace Data Routes =====
 // ===== Workspace Data Routes =====
 const workspaceDataRouter = createWorkspaceDataRouter({

@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 15;
+export const RIDGE_DB_SCHEMA_VERSION = 16;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -295,13 +295,19 @@ CREATE INDEX IF NOT EXISTS idx_search_chunks_text
 CREATE TABLE IF NOT EXISTS notification_events (
   event_id TEXT PRIMARY KEY,
   event_type TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
   severity TEXT NOT NULL DEFAULT 'info',
   title TEXT NOT NULL DEFAULT '',
   body TEXT NOT NULL DEFAULT '',
+  related_type TEXT,
+  related_id TEXT,
+  actions_json TEXT NOT NULL DEFAULT '[]',
   payload_json TEXT NOT NULL DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'unread',
   created_at INTEGER NOT NULL DEFAULT 0,
-  read_at INTEGER
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  read_at INTEGER,
+  handled_at INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_notification_events_status
@@ -546,13 +552,19 @@ CREATE INDEX IF NOT EXISTS idx_search_index_status_state
 CREATE TABLE IF NOT EXISTS notification_events (
   event_id TEXT PRIMARY KEY,
   event_type TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
   severity TEXT NOT NULL DEFAULT 'info',
   title TEXT NOT NULL DEFAULT '',
   body TEXT NOT NULL DEFAULT '',
+  related_type TEXT,
+  related_id TEXT,
+  actions_json TEXT NOT NULL DEFAULT '[]',
   payload_json TEXT NOT NULL DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'unread',
   created_at INTEGER NOT NULL DEFAULT 0,
-  read_at INTEGER
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  read_at INTEGER,
+  handled_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_notification_events_status
   ON notification_events(status, created_at DESC);
@@ -722,6 +734,16 @@ CREATE INDEX IF NOT EXISTS idx_search_index_status_workspace
 -- Column repair adds search_chunks.embedding_vector for existing databases.
 CREATE INDEX IF NOT EXISTS idx_search_chunks_embedding
   ON search_chunks(embedding_id);
+`,
+  },
+  {
+    version: 16,
+    name: 'notification center actions and related objects',
+    sql: `
+CREATE INDEX IF NOT EXISTS idx_notification_events_type
+  ON notification_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_events_related
+  ON notification_events(related_type, related_id);
 `,
   },
 ];

@@ -310,18 +310,25 @@ export const createBackgroundJobQueue = (
 		if (!shouldRetry && current.notifyOnFailure) {
 			db.prepare(
 				`INSERT INTO notification_events(
-					event_id, event_type, severity, title, body,
-					payload_json, status, created_at, read_at
-				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					event_id, event_type, source, severity, title, body,
+					related_type, related_id, actions_json, payload_json,
+					status, created_at, updated_at, read_at, handled_at
+				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			).run(
 				`notification-${crypto.randomUUID()}`,
 				"background_job.failed",
+				"background_jobs",
 				"error",
 				"后台任务失败",
 				message,
+				"background_job",
+				jobId,
+				JSON.stringify([{ id: "retry", label: "重试" }, { id: "open_related", label: "打开对象" }]),
 				JSON.stringify({ jobId }),
 				"unread",
 				timestamp,
+				timestamp,
+				null,
 				null,
 			);
 		}

@@ -1209,6 +1209,70 @@ export function deleteWorkspaceMilestone(milestoneId: string) {
 	);
 }
 
+// Notifications API
+export type NotificationFilter =
+	| "unhandled"
+	| "all"
+	| "failed"
+	| "suggestions"
+	| "handled";
+
+export type NotificationType =
+	| "suggestion"
+	| "confirmation"
+	| "failure"
+	| "warning"
+	| "info";
+
+export type NotificationSeverity = "info" | "warning" | "error";
+export type NotificationStatus = "unread" | "pending" | "handled" | "dismissed" | "failed";
+
+export interface NotificationAction {
+	id: string;
+	label: string;
+	kind:
+		| "view"
+		| "dismiss"
+		| "retry"
+		| "accept_suggestion"
+		| "reject_suggestion"
+		| "open_related"
+		| "mark_handled";
+}
+
+export interface NotificationEvent {
+	id: string;
+	eventType: string;
+	type: NotificationType;
+	source: string;
+	severity: NotificationSeverity;
+	status: NotificationStatus;
+	title: string;
+	body: string;
+	payload: Record<string, unknown>;
+	related: { type: string; id: string } | null;
+	actions: NotificationAction[];
+	createdAt: number;
+	updatedAt: number;
+	handledAt: number | null;
+}
+
+export interface NotificationsResponse {
+	notifications: NotificationEvent[];
+	counts: Record<NotificationFilter, number>;
+}
+
+export function getNotifications(filter: NotificationFilter = "unhandled") {
+	return request<NotificationsResponse>(`/api/notifications?filter=${filter}`);
+}
+
+export function performNotificationAction(eventId: string, actionId: string) {
+	return request<{ notification: NotificationEvent }>(`/api/notifications/${eventId}/actions`, {
+		method: "POST",
+		body: JSON.stringify({ actionId }),
+	});
+}
+
 // Journal API
 export function getJournalMonths(root: string, year: number) {
 	const params = new URLSearchParams({ root, year: String(year) });

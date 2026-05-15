@@ -2,6 +2,20 @@ import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WorkspacePage from "@/pages/WorkspacePage.vue";
 
+type MockTab = {
+	id: string;
+	kind: string;
+	title: string;
+	sessionId?: string;
+	featureId?: string;
+};
+
+type MockPaneGroup = {
+	id: string;
+	tabs: MockTab[];
+	activeTabId: string;
+};
+
 // ===== Mocks =====
 const {
 	mockCreateFileEntry,
@@ -26,6 +40,7 @@ const {
 	mockSpaceLoad,
 	mockOpenSpacePreview,
 	mockSpaceWorks,
+	mockNotificationsLoad,
 	mockAllPaneGroups,
 	mockSessions,
 	mockProjects,
@@ -62,6 +77,7 @@ const {
 	mockSpaceLoad: vi.fn(),
 	mockOpenSpacePreview: vi.fn(),
 	mockSpaceWorks: { value: [] as Array<{ id: string; name: string; path: string; indexPath: string; size: number; modifiedAt: number }> },
+	mockNotificationsLoad: vi.fn(),
 	mockAllPaneGroups: {
 		value: [
 			{
@@ -69,7 +85,7 @@ const {
 				tabs: [{ id: "home-1", kind: "home", title: "主页", sessionId: undefined as string | undefined }],
 				activeTabId: "home-1",
 			},
-		],
+		] as MockPaneGroup[],
 	},
 	mockSessions: { value: [] as Array<{ id: string; title: string; updatedAt?: number; archived?: boolean; projectId?: string; contextId?: string }> },
 	mockProjects: { value: [] as Array<{ id: string; name: string; path: string; isOnline: boolean; archivedAt?: number; externalOrigin?: 'github' | 'folder' | null; projectType?: 'internal' | 'external' | 'workspace'; isGit?: boolean; deviceName?: string }> },
@@ -126,10 +142,13 @@ vi.mock("@/composables/useSplitPanes", () => ({
 		activePaneGroupId: { value: "pane-1" },
 		allPaneGroups: mockAllPaneGroups,
 		rootNode: {
-			value: {
-				id: "root",
-				type: "leaf",
-				tabs: [{ id: "home-1", kind: "home", title: "主页" }],
+			get value() {
+				return {
+					id: "root",
+					type: "leaf",
+					tabs: mockAllPaneGroups.value[0]?.tabs ?? [],
+					activeTabId: mockAllPaneGroups.value[0]?.activeTabId ?? "",
+				};
 			},
 		},
 		setActiveTab: mockSetActiveTab,
@@ -208,6 +227,13 @@ vi.mock("@/composables/useWorkspaceSpace", () => ({
 	}),
 }));
 
+vi.mock("@/composables/useNotifications", () => ({
+	useNotifications: () => ({
+		unhandledCount: { value: 0 },
+		load: mockNotificationsLoad,
+	}),
+}));
+
 vi.mock("@/composables/usePiChatCore", () => ({
 	usePiChatCore: () => ({
 		info: { value: { workspaceDir: "/ws", chatProjectId: "ridge:workspace-chat", chatProjectPath: "/ws", chatProjectLabel: "聊天" } },
@@ -276,7 +302,7 @@ vi.mock("@/stores/settings", () => ({
 
 // ===== Helpers =====
 
-function mountWorkspace() {
+function mountWorkspace(stubs: Record<string, unknown> = {}) {
 	return mount(WorkspacePage, {
 		global: {
 			stubs: {
@@ -287,6 +313,7 @@ function mountWorkspace() {
 				TooltipContent: { template: "<span />" },
 				Separator: { template: "<hr />" },
 				Badge: { template: "<span />" },
+				...stubs,
 			},
 		},
 	});
@@ -319,18 +346,18 @@ describe("WorkspacePage - 固定入口", () => {
 		const wrapper = mountWorkspace();
 		const text = wrapper.text();
 		// 只断言已实现的真实入口，不暴露未实现占位
-		for (const label of ["闪念", "搜索", "任务", "文件", "空间", "终端", "自动化", "设置"]) {
+		for (const label of ["闪念", "搜索", "通知", "任务", "文件", "空间", "终端", "自动化", "设置"]) {
 			expect(text).toContain(label);
 		}
 		const navButtons = wrapper.findAll("[data-test='workspace-fixed-entry']");
 		expect(navButtons.map((button) => button.text())).not.toContain("主页");
 	});
 
-	it("固定入口顺序严格为：闪念、搜索、任务、文件、空间、终端、自动化、设置", () => {
+	it("固定入口顺序严格为：闪念、搜索、通知、任务、文件、空间、终端、自动化、设置", () => {
 		const wrapper = mountWorkspace();
 		const buttons = wrapper.findAll("[data-test='workspace-fixed-entry']");
 		const labels = buttons.map((button) => button.text().replace(/\d+$/, "").trim());
-		expect(labels).toEqual(["闪念", "搜索", "任务", "文件", "空间", "终端", "自动化", "设置"]);
+		expect(labels).toEqual(["闪念", "搜索", "通知", "任务", "文件", "空间", "终端", "自动化", "设置"]);
 	});
 
 	it("点击任务固定入口创建 singleton_feature 标签", async () => {
@@ -348,6 +375,46 @@ describe("WorkspacePage - 固定入口", () => {
 				}),
 			);
 		}
+	});
+
+	it("点击通知固定入口创建 singleton_feature 标签", async () => {
+		const wrapper = mountWorkspace();
+		const notificationBtn = wrapper.findAll("button").find((button) => button.text().includes("通知"));
+		expect(notificationBtn).toBeTruthy();
+
+		await notificationBtn!.trigger("click");
+
+		expect(mockOpenTab).toHaveBeenCalledWith(
+			"pane-1",
+			expect.objectContaining({
+				id: "feature:notifications",
+				kind: "singleton_feature",
+				featureId: "notifications",
+			}),
+		);
+	});
+
+	it("通知中心更新事件触发页面级通知刷新", async () => {
+		mockAllPaneGroups.value = [
+			{
+				id: "pane-1",
+				tabs: [{ id: "feature:notifications", kind: "singleton_feature", title: "通知", featureId: "notifications" }],
+				activeTabId: "feature:notifications",
+			},
+		];
+		const wrapper = mountWorkspace({
+			SplitGrid: {
+				props: ["node"],
+				template: `<div><slot :tabs="node.tabs" :active-tab-id="node.activeTabId" /></div>`,
+			},
+			NotificationCenterView: {
+				template: `<button data-test="emit-notifications-updated" @click="$emit('notificationsUpdated')">更新通知</button>`,
+			},
+		});
+
+		await wrapper.find("[data-test='emit-notifications-updated']").trigger("click");
+
+		expect(mockNotificationsLoad).toHaveBeenCalledTimes(1);
 	});
 
 	it("连续点击终端入口创建多个终端标签", async () => {

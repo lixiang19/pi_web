@@ -393,6 +393,7 @@
 - **失败必填错误**：`convert_failed` / `index_failed` 必须携带 `error` 字段，否则返回 400；通知事件 body 直接使用该错误原因，不兜底 `"Unknown error"`。
 - **原子事务**：状态更新和通知写入包裹在 `db.transaction()` 中，同成同败。
 - **重试 API**：`POST /api/workspace/files/retry` 将 `convert_failed` / `index_failed` 回退到 `pending`，清除 `error` 字段；非失败状态拒绝重试；路径通过 `fileManager.resolveManagedFileLocation` 校验，拒绝 `.ridge`/外部路径/符号链接逃逸。
+- **重试入队一致性**：`POST /api/workspace/files/retry` 必须要求后台任务队列可用；队列不可用返回 503 且保持失败状态。失败状态恢复、旧 `file.convert` 取消和新任务入队必须放在同一 SQLite transaction。
 - **上传自动注册**：`POST /api/files/upload` 上传文件到可见目录后自动在 `file_processing_status` 插入 `pending` 记录；`.ridge` 内文件跳过注册。
 - **删除同步清理**：`DELETE /api/files/entries` 删除文件时同步删除对应的 `file_processing_status` 记录；删除目录时清理该目录前缀下全部状态记录。
 - **目录删除 LIKE 安全**：前缀匹配时转义 `%` 和 `_`（SQL LIKE 通配符），使用 `ESCAPE '\'` 语法，防止路径含特殊字符时误删无关记录。
@@ -614,3 +615,30 @@
 - `workspace-search-api.test.ts` 覆盖聚合、类型筛选、项目内 file/RAG、目录边界、缺失空间 `index.html` 不抛错、符号链接越界和外部项目内容排除。
 - `rag-consumer.test.ts` 覆盖默认工作空间 RAG 消费链路。
 - `WorkspaceSearchView.test.ts` 覆盖文件打开、RAG 刷新、项目结果打开项目主页事件。
+
+## 2026-05-15 任务 34 通知与建议中心
+
+### 契约
+
+- 通知中心是待处理系统事件入口，不进入 RAG，不替代聊天，也不做系统级推送。
+- `notification_events` 是通知真源，字段包含 `source`、`related_type`、`related_id`、`actions_json`、`updated_at`、`handled_at`；迁移版本为 16。
+- `GET /api/notifications` 支持 `unhandled/all/failed/suggestions/handled` 筛选并返回计数；`info` 类型默认不进入 `unhandled`，只在 `all` 中可查。
+- `POST /api/notifications/:eventId/actions` 支持 `dismiss`、`mark_handled`、`retry`、`accept_suggestion`、`reject_suggestion`、`open_related`。
+- 接受建议时才写正式对象，当前支持 `task.update`、`task.create`、`milestone.update`、`milestone.create`，并继续走任务系统状态机。
+- 建议应用和通知标记已处理必须在同一 SQLite transaction 中提交，避免正式对象写入和通知状态脱节。
+- 文件处理失败和 RAG 失败通知关联 `file`，后台任务最终失败关联 `background_job`；重试动作恢复对应状态并重新入队。
+- 重试动作必须确认对应失败记录存在；文件/RAG 重试在后台队列不可用时返回错误且不标记通知已处理。
+- 动作接口必须先校验动作存在于当前通知可用动作；非法建议 payload 返回错误且通知状态不变。
+- 文件/RAG 重试的失败状态恢复、取消旧任务和重新入队必须在同一数据库事务中完成。
+- 关联对象回退只按 `event_type` 白名单读取 payload；普通信息里的同名字段不生成打开对象动作。
+- 服务端默认补充非终态通知的安全生命周期动作 `mark_handled` 和 `dismiss`，生产方动作只负责领域语义。
+- 左侧固定入口「通知」打开 `feature:notifications` 单例标签，并显示未处理数量；文件、会话、任务/里程碑、项目、自动化有明确打开路径，不支持详情页的 `background_job` 不返回无效打开动作。
+- 前端通知动作按钮按 `notificationId:actionId` 做 pending 禁用，避免重复提交。
+
+### 测试
+
+- `notifications-api.test.ts` 覆盖列表/计数/动作推导、info 默认降噪、所有建议写入/拒绝、不可用动作、非法建议 payload、文件/RAG/background job 重试、队列缺失不改状态。
+- `NotificationCenterView.test.ts` 覆盖渲染、重试动作、pending 禁用、打开关联文件/项目/自动化、筛选切换。
+- `useNotifications.test.ts` 覆盖 composable 首次加载、空工作空间、筛选切换、动作刷新和错误回退。
+- `WorkspacePage.test.ts` 覆盖固定入口顺序包含通知、通知入口单例标签、通知更新刷新。
+- `npm run check`、`pnpm --filter @pi/server typecheck`、`pnpm test` 全部通过。
