@@ -22,6 +22,7 @@
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "isomorphic-git": "^1.37.6",
+    "kuzu": "0.11.2",
     "mammoth": "^1.12.0",
     "multer": "2.1.1",
     "node-pty": "1.2.0-beta.12",

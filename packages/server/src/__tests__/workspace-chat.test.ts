@@ -71,6 +71,10 @@ describe("resolveDefaultWorkspaceDir", () => {
 		}
 
 		await expect(
+			fs.readFile(path.join(workspaceDir, ".ridge", "graph.kuzu", "schema.cypher"), "utf8"),
+		).resolves.toContain("CREATE NODE TABLE IF NOT EXISTS Project");
+
+		await expect(
 			fs.readFile(path.join(workspaceDir, "记忆", "MEMORY.md"), "utf8"),
 		).resolves.toBe("# MEMORY\n");
 		await expect(

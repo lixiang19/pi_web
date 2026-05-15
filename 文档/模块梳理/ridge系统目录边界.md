@@ -44,5 +44,7 @@
 
 - RAG 扫描必须复用 `isRidgeSystemPath` / `assertNotRidgeSystemPath`。
 - workspace MCP 读取必须复用同一套 `.ridge` 拒绝逻辑。
-- 备份可以包含 `.ridge/graph.kuzu`，但应排除 `.ridge/rag`、`.ridge/cache`、`.ridge/runtime` 和临时附件。
+- `GET /api/workspace/backup` 生成服务器备份 ZIP，包含 `.ridge/graph.kuzu`，但排除 `.ridge/rag`、`.ridge/cache`、`.ridge/runtime` 和临时附件；打包时显式跳过符号链接。
+- `.ridge/graph.kuzu/schema.cypher` 记录 Kuzu schema；真实 Kuzu 数据库位于 `.ridge/graph.kuzu/database.kuzu`。
+- 内置隐藏 Git exclude 包含 `.ridge`，因此 Kuzu 图谱、RAG 缓存和运行缓存都不会进入隐藏版本管理。
 - 文件页 API 与文件树 API 分离，文件页使用 `/api/workspace/files/*`，专门用于工作空间文件管理，附加处理状态。

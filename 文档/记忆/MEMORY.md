@@ -642,6 +642,33 @@
 - `WorkspacePage.test.ts` 覆盖页面卸载时结束仍打开的会话标签，以及 `pagehide` 下优先使用 `sendBeacon`。
 - `SettingsTabContent.test.ts` 覆盖后台整理模型/思考强度入口渲染和保存。
 
+## 2026-05-15 任务 28 Kuzu 图谱存储与抽取
+
+### 契约
+
+- 图谱存储目录固定为 `.ridge/graph.kuzu/`；workspace 初始化会创建目录并写入 `schema.cypher`，真实 Kuzu 数据库位于 `database.kuzu`。
+- Kuzu schema 包含 `Project`、`File`、`Task`、`Person`、`Org`、`Concept`、`Tech`、`Source`、`Decision` 九类节点；关系统一为 `EvidenceRelation`，必须带 `evidence`、`source_path`、`confidence`、`updated_at`。
+- graph agent 输入只来自标准化来源：已索引 Markdown 标准产物、`记忆/daily/**/*.md`、内部项目 Markdown 文档；排除外部项目、`.ridge`、`.originals`、非 Markdown 原件和图片/音频/PDF 原文件。
+- 直接读取 daily 或内部项目 Markdown 前校验 `realpath` 仍在 workspace 内；内部项目根目录如果是指向 workspace 外的符号链接，会被跳过。
+- 夜间维护顺序为 RAG deferred 索引完成后再运行 graph agent。
+- 用户自然语言纠错入口为 `POST /api/workspace/graph/corrections`，服务端让 graph agent 解析纠错并写回 Kuzu，用户不直接编辑图谱。
+- 关系证据按 prompt 和存储层统一截断为 80 字以内，避免 graph agent 输出和 Kuzu 写入契约分裂。
+- `GET /api/workspace/backup` 生成服务器备份 ZIP，包含 `ridge.db`、工作空间文件和 `.ridge/graph.kuzu`；排除 `.ridge/rag`、`.ridge/cache`、`.ridge/runtime`、`.ridge/fleeting-attachments`；隐藏 Git exclude 包含 `.ridge`，图谱不进隐藏版本管理。
+- 备份打包显式跳过符号链接，避免 workspace 内链接把外部文件纳入备份。
+
+### 测试
+
+- `graph-store.test.ts` 覆盖 schema、证据关系、80 字截断、真实嵌入式 Kuzu 写入和纠错写入。
+- `graph-agent.test.ts` 覆盖来源边界、输出 schema 解析和维护 runner。
+- `graph-agent.test.ts` 覆盖内部项目根目录符号链接越界时不读取外部 Markdown。
+- `graph-worker.test.ts` 覆盖夜间 RAG 后触发 graph agent。
+- `workspace-graph-api.test.ts` 覆盖纠错 API 认证、graph runner 未初始化 503、成功调用 runner。
+- `workspace-backup.test.ts` 覆盖备份清单和 ZIP 内容。
+- `workspace-backup.test.ts` 覆盖备份跳过符号链接。
+- `workspace-backup-api.test.ts` 覆盖备份下载 API 认证、ZIP 包含 graph.kuzu 且排除 RAG 缓存。
+- `iso-git-service.test.ts` 覆盖隐藏 Git 排除 `.ridge`。
+- `workspace-chat.test.ts` 覆盖初始化写入 graph schema。
+
 ## 2026-05-13 任务 30/31/32 项目注册、设备在线状态、Runtime Bundle
 
 ### 实现要点
