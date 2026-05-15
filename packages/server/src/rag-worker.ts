@@ -1,6 +1,7 @@
 import { indexPendingTarget, indexAllPending } from "./rag-indexer.js";
 import type { createBackgroundJobQueue } from "./background-jobs.js";
 import type { RagIndexEvent } from "./rag-indexer.js";
+import type { GraphMaintenanceRunner } from "./graph-agent.js";
 
 type BackgroundJobQueue = ReturnType<typeof createBackgroundJobQueue>;
 
@@ -10,6 +11,8 @@ export interface RagWorkerOptions {
 	pollIntervalMs?: number;
 	compensationScanMs?: number;
 	nightlyHour?: number;
+	indexAllPendingFn?: typeof indexAllPending;
+	graphRunner?: Pick<GraphMaintenanceRunner, "runNightlyOnce">;
 }
 
 export function createRagWorker(options: RagWorkerOptions) {
@@ -19,6 +22,8 @@ export function createRagWorker(options: RagWorkerOptions) {
 		pollIntervalMs = 5000,
 		compensationScanMs = 30000,
 		nightlyHour = 3,
+		indexAllPendingFn = indexAllPending,
+		graphRunner,
 	} = options;
 
 	let timer: NodeJS.Timeout | null = null;
@@ -83,7 +88,7 @@ export function createRagWorker(options: RagWorkerOptions) {
 	async function compensationTick() {
 		if (!running) return;
 		try {
-			await indexAllPending({ workspaceDir });
+			await indexAllPendingFn({ workspaceDir });
 		} catch (error) {
 			console.error("RAG compensation scan error:", error);
 		}
@@ -93,7 +98,11 @@ export function createRagWorker(options: RagWorkerOptions) {
 	}
 
 	async function runNightlyOnce() {
-		return indexAllPending({ workspaceDir, includeDeferred: true, event: "nightly" });
+		const result = await indexAllPendingFn({ workspaceDir, includeDeferred: true, event: "nightly" });
+		if (graphRunner) {
+			await graphRunner.runNightlyOnce();
+		}
+		return result;
 	}
 
 	function delayUntilNextNightlyRun(now = new Date()): number {

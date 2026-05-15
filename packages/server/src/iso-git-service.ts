@@ -20,6 +20,7 @@ const EXCLUDE_PATTERNS = [
 	".turbo",
 	"coverage",
 	".pi-web",
+	".ridge",
 	".DS_Store",
 ];
 

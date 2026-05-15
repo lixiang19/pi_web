@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { writeGraphSchemaFile } from "./graph-store.js";
 import type { Project } from "./types/index.js";
 
 export const WORKSPACE_CHAT_PROJECT_ID = "ridge:workspace-chat";
@@ -139,5 +140,6 @@ export const ensureWorkspaceTemplate = async (workspaceDir: string) => {
 			path.join(workspaceDir, "Wiki", "index.md"),
 			"# Wiki\n",
 		),
+		writeGraphSchemaFile(workspaceDir),
 	]);
 };

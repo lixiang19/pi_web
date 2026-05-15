@@ -59,6 +59,8 @@ import { createWorktreeRouter } from "./routes/worktrees.js";
 import { createWorkspaceFilesRouter } from "./routes/workspace-files.js";
 import { createWorkspaceSpaceRouter } from "./routes/workspace-space.js";
 import { createWorkspaceSearchRouter } from "./routes/workspace-search.js";
+import { createWorkspaceGraphRouter } from "./routes/workspace-graph.js";
+import { createWorkspaceBackupRouter } from "./workspace-backup.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
@@ -68,6 +70,11 @@ import {
 	createFleetingAnalysisRunner,
 	createFleetingAnalysisWorker,
 } from "./fleeting-analysis.js";
+import {
+	createGraphMaintenanceRunner,
+	createPiGraphExtractor,
+	type GraphMaintenanceRunner,
+} from "./graph-agent.js";
 import { createConversionWebhookRouter } from "./routes/conversion-webhook.js";
 import {
 	ConversionServiceClient,
@@ -102,7 +109,7 @@ import type {
 	SessionRecord,
 } from "./types/index.js";
 import { atomicWriteFile } from "./utils/fs.js";
-import { toPosixPath } from "./utils/paths.js";
+import { getRidgeDbPath, toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
 import {
 	ensureWorkspaceTemplate,
@@ -163,6 +170,7 @@ let automationStore: AutomationStore | undefined;
 let automationScheduler: ReturnType<typeof createAutomationScheduler> | undefined;
 let jobQueue: ReturnType<typeof createBackgroundJobQueue> | undefined;
 let isConversionEnabled: (() => boolean) | undefined;
+let graphRunner: GraphMaintenanceRunner | undefined;
 const fleetingRunnerRef: {
 	value?: ReturnType<typeof createFleetingAnalysisRunner>;
 } = {};
@@ -203,6 +211,15 @@ export function getJobQueueForTesting(): ReturnType<typeof createBackgroundJobQu
 	return jobQueue;
 }
 
+export function setGraphRunnerForTesting(
+	runner: GraphMaintenanceRunner | undefined,
+): void {
+	if (!process.env.VITEST) {
+		throw new Error("setGraphRunnerForTesting is only allowed in test environment");
+	}
+	graphRunner = runner;
+}
+
 /**
  * Test-only helper: reset all module-level singleton state so that each
  * test file starts with a clean slate when Vitest reuses fork workers.
@@ -218,6 +235,7 @@ export function resetModuleStateForTests(): void {
 	projectContextResolver.invalidateContext();
 	setConversionEnabledForTesting(false);
 	setJobQueueForTesting(undefined);
+	graphRunner = undefined;
 }
 
 export const getAutomationStore = (): AutomationStore => {
@@ -682,6 +700,8 @@ const workspaceFilesRouter = createWorkspaceFilesRouter({
 app.use(workspaceFilesRouter);
 app.use(createWorkspaceSpaceRouter({ defaultWorkspaceDir }));
 app.use(createWorkspaceSearchRouter({ defaultWorkspaceDir, getRidgeDb }));
+app.use(createWorkspaceGraphRouter({ getGraphRunner: () => graphRunner }));
+app.use(createWorkspaceBackupRouter({ defaultWorkspaceDir, getRidgeDbPath }));
 app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(ensureSessionRecord));
 app.get(
 	"/api/files/content",
@@ -1443,6 +1463,15 @@ export async function startServer() {
 	await ensureWorkspaceTemplate(defaultWorkspaceDir);
 	const db = await initializeRidgeDb(defaultWorkspaceDir);
 	jobQueue = createBackgroundJobQueue(db);
+	graphRunner = createGraphMaintenanceRunner({
+		db,
+		workspaceDir: defaultWorkspaceDir,
+		extract: createPiGraphExtractor({
+			workspaceDir: defaultWorkspaceDir,
+			authStorage,
+			modelRegistry,
+		}),
+	});
 	fleetingRunnerRef.value = createFleetingAnalysisRunner({ db, jobQueue });
 	const fleetingAnalysisWorker = createFleetingAnalysisWorker({
 		db,
@@ -1498,7 +1527,7 @@ export async function startServer() {
 	await refreshSessionCatalogIndex();
 
 	// Start RAG worker (always runs, even without Python conversion service)
-	const ragWorker = createRagWorker({ jobQueue, workspaceDir: defaultWorkspaceDir });
+	const ragWorker = createRagWorker({ jobQueue, workspaceDir: defaultWorkspaceDir, graphRunner });
 	ragWorker.start();
 
 	await listenHttpServer(httpServer, port);
