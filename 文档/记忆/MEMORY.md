@@ -49,6 +49,9 @@
 - [共享列表状态] 同一份项目列表如果会被侧栏、空态、弹窗同时消费，composable 必须提升为模块级共享状态并做请求去重，否则不同区域会出现数据不同步
 - [任务store共享] useWorkspaceTasks 必须通过 provide/inject 在 WorkspacePage 层级共享，不能让 DashboardView 和 TaskView 各自实例化；WorkspacePage 自身要直接复用 provideWorkspaceTasks 返回值，不能在同一 setup 内靠 inject 读回自己刚 provide 的值
 - [任务系统基准] 任务系统以 `任务系统PRD-v0.1.md` 为准，旧 `.ridge/tasks.json` 和 checkbox 聚合属于废弃原型；新实现必须走 `~/.pi/ridge.db` 的任务/里程碑表，不迁移旧 JSON 数据
+- [任务回顾边界] task review agent 只能写 `task_review.suggestion` 通知，不能直接改任务/里程碑；正式对象变更必须等用户接受通知建议后走任务系统状态机。任务页可展示关联建议，但仍复用通知中心动作契约。
+- [任务回顾会话真源] task review 的“处理会话长期无进展”必须优先读取 `workspace_tasks.processing_session_id` 绑定的 `sessions`；只有任务没有绑定 processing session 时才用未归档 `session_index` 补充。
+- [建议动作幂等] 通知建议的 `accept_suggestion` 必须在事务内先 claim 非终态通知再执行正式写入；否则重复点击/并发请求会让 `task.create`、`milestone.create` 这类建议重复落库。
 - [乐观更新] 任务 toggle/create/delete 应先本地更新状态、失败再回滚，避免每次操作后 await load() 全量重新加载的延迟感
 - [规划工具权限] 多个工具应共享同一个逻辑权限键（如 7 个规划工具全部映射到 `task`），而不是每个工具一个键。`compileAgentPermission` 移除工具时不能只按 `normalizeString === permissionKey`，要单独遍历 `PLANNING_TOOL_NAMES`，否则 deny 不会生效。`extractPermissionSubject` 和 `derivePermissionPattern` 对规划工具返回工具名本身，让 `task: ask` 的 permission request 能精确归类到 `task`。子代理 `task` 工具与规划工具共享同一个逻辑权限键，这是设计意图。
 - [Checkbox ID] checkbox 任务 ID 不能含数组下标（顺序变化会致 key 失效），只能用 (sourcePath, lineNumber) 组合

@@ -82,6 +82,10 @@ import {
 	createFleetingAnalysisWorker,
 } from "./fleeting-analysis.js";
 import {
+	createTaskReviewScheduler,
+	createTaskReviewWorkers,
+} from "./task-review.js";
+import {
 	createGraphMaintenanceRunner,
 	createPiGraphExtractor,
 	type GraphMaintenanceRunner,
@@ -766,6 +770,7 @@ const workspaceTasksRouter = createWorkspaceTasksRouter(defaultWorkspaceDir, {
 	},
 	projectContextResolver,
 	workspaceChatConfig,
+	getJobQueue: () => jobQueue,
 });
 app.use("/api/workspace/tasks", workspaceTasksRouter);
 const workspaceMilestonesRouter =
@@ -1869,6 +1874,18 @@ export async function startServer() {
 	// Start RAG worker (always runs, even without Python conversion service)
 	const ragWorker = createRagWorker({ jobQueue, workspaceDir: defaultWorkspaceDir, graphRunner });
 	ragWorker.start();
+
+	const taskReviewWorkers = createTaskReviewWorkers({
+		db,
+		jobQueue,
+		workspaceDir: defaultWorkspaceDir,
+	});
+	taskReviewWorkers.start();
+	const taskReviewScheduler = createTaskReviewScheduler({
+		jobQueue,
+		workspaceDir: defaultWorkspaceDir,
+	});
+	taskReviewScheduler.start();
 
 	const workspaceMemoryWorkers = createWorkspaceMemoryWorkers({
 		jobQueue,

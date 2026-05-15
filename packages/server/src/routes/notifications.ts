@@ -391,8 +391,40 @@ const applySuggestionAndMarkHandled = (
 	notification: NotificationEvent,
 ): NotificationEvent =>
 	db.transaction(() => {
+		const timestamp = Date.now();
+		const claimed = db.prepare(
+			`UPDATE notification_events
+			    SET status = 'handled',
+			        updated_at = ?,
+			        handled_at = ?
+			  WHERE event_id = ?
+			    AND status NOT IN ('handled', 'dismissed')`,
+		).run(timestamp, timestamp, notification.id);
+		if (claimed.changes === 0) {
+			const row = db
+				.prepare(
+					`SELECT event_id, event_type, severity, title, body, payload_json,
+					        status, created_at, read_at, source, related_type, related_id,
+					        actions_json, updated_at, handled_at
+					   FROM notification_events
+					  WHERE event_id = ?`,
+				)
+				.get(notification.id) as NotificationRow | undefined;
+			if (!row) throw createHttpError("Notification not found", 404);
+			return mapNotification(row);
+		}
 		applySuggestion(db, workspaceDir, notification.payload);
-		return markNotification(db, notification.id, "handled");
+		const row = db
+			.prepare(
+				`SELECT event_id, event_type, severity, title, body, payload_json,
+				        status, created_at, read_at, source, related_type, related_id,
+				        actions_json, updated_at, handled_at
+				   FROM notification_events
+				  WHERE event_id = ?`,
+			)
+			.get(notification.id) as NotificationRow | undefined;
+		if (!row) throw createHttpError("Notification not found", 404);
+		return mapNotification(row);
 	})();
 
 const retryNotification = async (
