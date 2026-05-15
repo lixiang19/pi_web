@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import { materializeBundle } from "./runtime-bundle.js";
-import type { RuntimeBundle } from "./runtime-bundle.js";
+import type { BundleResource, RuntimeBundle } from "./runtime-bundle.js";
 import { createBundleBackedResourceLoader } from "./bundle-resource-loader.js";
 
 /**
@@ -111,28 +111,28 @@ export async function syncDesktopBundle(
 	if (!response.ok) {
 		throw new Error(`Bundle fetch failed: ${response.status} ${response.statusText}`);
 	}
-	const bundleRaw = await response.json() as RuntimeBundle & { manifest?: { bundleId: string; version: number; contentHash: string } };
-	// Rehydrate Map from JSON serialization (server returns plain object in `files`)
-	const filesMap = new Map<string, unknown>(
-		Array.isArray(bundleRaw.files)
-			? (bundleRaw.files as [string, unknown][])
-			: Object.entries(bundleRaw.files as Record<string, unknown>),
-	);
-	// Server returns { manifest, files } — reconstruct RuntimeBundle shape
-	const manifest = bundleRaw.manifest || (bundleRaw as unknown as Record<string, unknown>).manifest as { bundleId: string; version: number; contentHash: string } | undefined;
-	const bundle: RuntimeBundle = {
-		...bundleRaw,
-		id: manifest?.bundleId || (bundleRaw as unknown as { id?: string }).id || "",
-		version: manifest?.version || (bundleRaw as unknown as { version?: number }).version || 1,
-		contentHash: manifest?.contentHash || (bundleRaw as unknown as { contentHash?: string }).contentHash || "",
-		files: filesMap as RuntimeBundle["files"],
+	const bundleRaw = await response.json() as {
+		manifest?: RuntimeBundle["manifest"];
+		files?: Record<string, BundleResource> | Array<[string, BundleResource]>;
 	};
-	if (!bundle.id) {
-		throw new Error("Bundle response missing bundleId/id");
+	const manifest = bundleRaw.manifest;
+	if (!manifest?.bundleId) {
+		throw new Error("Bundle response missing bundleId");
 	}
-	if (!bundle.contentHash) {
+	if (!manifest.contentHash) {
 		throw new Error("Bundle response missing contentHash");
 	}
+	// Rehydrate Map from JSON serialization (server returns plain object in `files`)
+	const filesMap = new Map<string, BundleResource>(
+		Array.isArray(bundleRaw.files)
+			? bundleRaw.files
+			: Object.entries(bundleRaw.files ?? {}),
+	);
+	// Server returns { manifest, files } — reconstruct RuntimeBundle shape
+	const bundle: RuntimeBundle = {
+		manifest,
+		files: filesMap,
+	};
 
 	// 2. Materialize
 	const { materializedDir, materializedHash } = await materializeDesktopBundle(
@@ -152,19 +152,19 @@ export async function syncDesktopBundle(
 			...options?.headers,
 		},
 		body: JSON.stringify({
-			bundleId: bundle.id,
+			bundleId: bundle.manifest.bundleId,
 			token,
-			contentHash: bundle.contentHash,
-			bundleVersion: bundle.version,
-			projectId: bundle.projectId,
-			projectPath: bundle.projectPath,
+			contentHash: bundle.manifest.contentHash,
+			bundleVersion: bundle.manifest.version,
+			projectId: undefined,
+			projectPath: undefined,
 			materializedHash,
 		}),
 	});
 
 	return {
-		bundleId: bundle.id,
-		bundleVersion: bundle.version,
+		bundleId: bundle.manifest.bundleId,
+		bundleVersion: bundle.manifest.version,
 		materializedDir,
 		materializedHash,
 		acked: ackResponse.ok,

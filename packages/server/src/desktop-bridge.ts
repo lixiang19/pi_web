@@ -1,5 +1,6 @@
 import { WebSocket } from "ws";
-import { getDevice, heartbeatDevice } from "./devices.js";
+import { heartbeatDevice } from "./devices.js";
+export { validateDeviceToken } from "./devices.js";
 
 // ===== Desktop Long-Connection Hub =====
 // WebSocket-based persistent connection for desktop devices.
@@ -16,16 +17,6 @@ export interface DesktopConnection {
 const connections = new Map<string, DesktopConnection>();
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
-
-/** Validate device token against DB */
-export async function validateDeviceToken(
-  deviceId: string,
-  token: string,
-): Promise<boolean> {
-  const device = await getDevice(deviceId);
-  if (!device) return false;
-  return device.token === token;
-}
 
 /** Register a WebSocket connection for a desktop device */
 export function registerDesktopConnection(

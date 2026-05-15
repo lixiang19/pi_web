@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS devices (
   token TEXT,
   status TEXT NOT NULL DEFAULT 'offline',
   capabilities_json TEXT NOT NULL DEFAULT '{}',
+  token_hash TEXT,
   last_seen_at INTEGER,
   created_at INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0
@@ -727,15 +728,17 @@ CREATE INDEX IF NOT EXISTS idx_search_chunks_embedding
   },
   {
     version: 16,
-    name: 'device token and project device_path unique constraint',
+    name: 'device token hash and project device_path unique constraint',
     sql: `
--- token column addition is handled by repairKnownTableColumns (CORE_TABLE_COLUMNS)
+-- token_hash column addition is handled by repairKnownTableColumns (CORE_TABLE_COLUMNS)
 -- Ensure existing projects have device_id as NULL rather than empty string
 UPDATE projects SET device_id = NULL WHERE device_id = '';
 
 -- Add unique constraint on (device_id, path) for projects via a unique index
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_device_path
   ON projects(COALESCE(device_id, 'server'), path);
+CREATE INDEX IF NOT EXISTS idx_devices_token_hash
+  ON devices(token_hash);
 `,
   },
   {
@@ -784,12 +787,12 @@ CREATE TABLE IF NOT EXISTS device_bundle_served (
   },
   {
     version: 21,
-    name: 'merged RAG and runtime bundle schema convergence',
+    name: 'merged RAG, device token hash and runtime bundle schema convergence',
     sql: `
--- Branch merge convergence: RAG and runtime-bundle work both used migration
--- numbers in the 13-17 range while in flight. These CREATE/INDEX statements
+-- Branch merge convergence: RAG, runtime-bundle and workspace MCP work used
+-- overlapping migration numbers while in flight. These CREATE/INDEX statements
 -- are idempotent and ensure either side's already-applied dev database reaches
--- the merged schema; column repair handles partial bundle tables after apply.
+-- the merged schema; column repair handles partial tables after apply.
 CREATE TABLE IF NOT EXISTS search_chunks (
   chunk_id TEXT PRIMARY KEY,
   target_path TEXT NOT NULL,
@@ -817,6 +820,8 @@ CREATE INDEX IF NOT EXISTS idx_search_chunks_embedding
   ON search_chunks(embedding_id);
 CREATE INDEX IF NOT EXISTS idx_search_index_status_workspace
   ON search_index_status(workspace_path, refresh_policy, status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_devices_token_hash
+  ON devices(token_hash);
 
 CREATE TABLE IF NOT EXISTS device_bundle_acks (
   device_id TEXT PRIMARY KEY,

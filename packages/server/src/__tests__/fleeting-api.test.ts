@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS fleeting_attachments (
 CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
   ON fleeting_attachments(note_id, created_at DESC);
 		`);
-		runAnalysis = vi.fn(() => undefined);
+		runAnalysis = vi.fn(async () => undefined);
 		app = express();
 		app.use(express.json());
 		app.use(

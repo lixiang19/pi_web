@@ -66,6 +66,11 @@ import { createWorkspaceSpaceRouter } from "./routes/workspace-space.js";
 import { createWorkspaceSearchRouter } from "./routes/workspace-search.js";
 import { createWorkspaceGraphRouter } from "./routes/workspace-graph.js";
 import { createWorkspaceBackupRouter } from "./workspace-backup.js";
+import { createWorkspaceMcpRouter } from "./routes/workspace-mcp.js";
+import {
+	createDeviceRegistrationRouter,
+	createRuntimeBundleRouter,
+} from "./routes/runtime-bundle.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
 import {
@@ -619,11 +624,20 @@ initSessionPayload({
 	DEFAULT_SESSION_ROUND_WINDOW,
 	getAutomationStore,
 });
+
+function objectPayload(payload: unknown): Record<string, unknown> {
+	return payload && typeof payload === "object" && !Array.isArray(payload)
+		? payload as Record<string, unknown>
+		: {};
+}
 // ===== Routes =====
 app.get("/api/auth/session", authRuntime.session);
 app.post("/api/auth/login", authRuntime.login);
 app.post("/api/auth/logout", authRuntime.logout);
+app.use(createRuntimeBundleRouter({ defaultWorkspaceDir, getRidgeDb }));
+app.use(createWorkspaceMcpRouter({ defaultWorkspaceDir, getRidgeDb }));
 app.use(authRuntime.requireApiAuth);
+app.use(createDeviceRegistrationRouter({ defaultWorkspaceDir, getRidgeDb }));
 
 app.use("/api/fleeting", createFleetingRouter({
 	db: await initializeRidgeDb(defaultWorkspaceDir),
@@ -1104,7 +1118,7 @@ app.get(
 						sessionId,
 					}),
 				]);
-				res.json({ ...messagesPayload, ...runtimePayload });
+				res.json({ ...objectPayload(messagesPayload), ...objectPayload(runtimePayload) });
 				return;
 			}
 
@@ -1297,7 +1311,7 @@ app.post(
 				});
 				res.status(201).json({
 					id: sessionId,
-					...desktopResult,
+					...objectPayload(desktopResult),
 					desktopSession: true,
 					deviceId: matchingProject.deviceId,
 				});

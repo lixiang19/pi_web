@@ -287,7 +287,7 @@ describe("workspace memory agents", () => {
 			workspaceDir,
 			modelRegistry: modelRegistry as never,
 			resolveBackgroundModel: async () => "openai/gpt-test",
-			resolveBackgroundThinkingLevel: async () => "low",
+			resolveBackgroundThinkingLevel: async () => "low" as const,
 			createAgentSessionFn,
 		});
 

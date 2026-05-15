@@ -9,7 +9,7 @@ export const mcpServerSchema = z.object({
   name: z.string().min(1),
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
 });
 
 export const mcpSchema = z.object({
@@ -28,7 +28,7 @@ export const permissionsSchema = z.object({
 });
 
 export const toolsSchema = z.object({
-  tools: z.record(z.object({
+  tools: z.record(z.string(), z.object({
     command: z.string().min(1),
     description: z.string().optional(),
   })).optional(),
@@ -328,7 +328,7 @@ export async function loadJsonConfig(
     if (schema) {
       const result = schema.safeParse(parsed);
       if (!result.success) {
-        const errors = result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+        const errors = result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join(', ');
         throw Object.assign(
           new Error(`Invalid config in ${filename}: ${errors}`),
           { statusCode: 400 }

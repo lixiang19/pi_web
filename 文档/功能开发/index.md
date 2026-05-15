@@ -37,7 +37,7 @@
 | 30 项目注册与内部项目外部仓库 | - | - | - | - | - | - | - |
 | 31 设备注册在线状态与调度 | - | - | - | - | - | - | - |
 | 32 runtime bundle 与设备专属 Skill | - | - | - | - | - | - | - |
-| 33 workspace MCP 查读工具 | - | - | - | - | - | - | - |
+| 33 workspace MCP 查读工具 | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 34 通知与建议中心 | ⚠️ | - | - | - | - | - | - |
 | 35 task review agent 任务回顾 | - | - | - | - | - | - | - |
 | 36 自动化规则运行与跳过 | ◐ | ◐ | ◐ | ◐ | - | - | - |
@@ -64,7 +64,7 @@
 - **21 空间 HTML 作品私有预览**：左侧「空间」入口已接入真实 `SpaceView`，服务端提供 `GET /api/workspace/space` 与 `GET /api/workspace/space/:id/preview-html`；只读取 `空间/<作品名>/index.html`，路径有 `.ridge`、词法和 realpath 越界防护，缺失 `index.html` 返回 404。预览使用 `srcdoc` + `sandbox="allow-scripts"`，无 `allow-same-origin`，并确保 CSP 早于用户 HTML active content，禁止 ridge API/外联请求。已有服务端集成测试、前端组件测试和工作台接线测试。隐藏版本管理依赖工作空间级能力，本任务不新增保存/版本点链路，因此归档项保留为部分完成。
 - **插件与扩展能力真实状态**：
   - **已真实接入**：Agent 注册/发现/选择（`/api/agents`、HomePage/WorkspaceChatTab agent 选择）、自动化规则（作为定时创建普通会话并发送消息的规则系统）、Pi resource catalog 后端可列 prompts/skills/extension commands（`/api/resources`、`buildResourceCatalog`）。
-  - **未在当前工作空间主会话 UI 中完整接入**：Skill 独立功能页仍占位；`WorkspaceChatTab` 当前给 `WorkbenchChatPanel` 传 `commands=[]`、`prompts=[]`、`skills=[]`，因此主工作空间会话的资源选择器/Skill 注入没有真正可用；runtime bundle 与设备专属 Skill、workspace MCP 仍是 spec/未实现。
+  - **未在当前工作空间主会话 UI 中完整接入**：Skill 独立功能页仍占位；`WorkspaceChatTab` 当前给 `WorkbenchChatPanel` 传 `commands=[]`、`prompts=[]`、`skills=[]`，因此主工作空间会话的资源选择器/Skill 注入没有真正可用；runtime bundle 已包含 workspace MCP 配置，但设备专属 Skill 物化和主会话资源选择器仍未完整接入。
   - **旧 `SessionTabContent` 有 resourcePicker 接入，但当前工作空间主界面走 `WorkspaceChatTab`**，不能把旧组件能力当作当前真实可用功能。
 
 > **注**："✅" = 已实现且有测试/验收证据；"◐" = 部分实现/当前工作树证据但未完整验收；"⚠️" = 仅入口/占位或未合并待验证；"-" = 尚未实现或仅存在占位。归档需所有维度通过后方可标记。

@@ -65,6 +65,7 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'token', definition: 'TEXT' },
     { name: 'status', definition: "TEXT NOT NULL DEFAULT 'offline'" },
     { name: 'capabilities_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
+    { name: 'token_hash', definition: 'TEXT' },
     { name: 'last_seen_at', definition: 'INTEGER' },
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },

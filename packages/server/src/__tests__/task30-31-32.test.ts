@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { BundleResource, RuntimeBundle } from "../runtime-bundle.js";
 
 import { app } from "../index.js";
 import { getRidgeDb } from "../db/index.js";
@@ -904,9 +905,11 @@ describe("Task 32 - Runtime Bundle", () => {
     // Materialize the bundle to a temp dir
     const { materializeBundle } = await import("../runtime-bundle.js");
     const targetDir = path.join(os.tmpdir(), `ridge-materialized-${Date.now()}`);
-    const bundleObj = {
+    const bundleObj: RuntimeBundle = {
       manifest: bundleRes.body.manifest,
-      files: new Map(Object.entries(bundleRes.body.files)),
+      files: new Map<string, BundleResource>(
+        Object.entries(bundleRes.body.files) as [string, BundleResource][],
+      ),
     };
     await materializeBundle(bundleObj, targetDir);
 

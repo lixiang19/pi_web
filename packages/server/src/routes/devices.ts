@@ -1,14 +1,12 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import {
-  validateDeviceToken,
-} from "../desktop-bridge.js";
-import {
   heartbeatDevice,
   listDevices,
   registerDevice,
   renameDevice,
   sweepOfflineDevices,
+  validateDeviceToken,
 } from "../devices.js";
 
 const registerDeviceSchema = z.object({
@@ -184,7 +182,7 @@ function serializeDevice(
     name: string;
     deviceType: string;
     status: string;
-    capabilities: Record<string, boolean>;
+    capabilities: Record<string, unknown>;
     lastSeenAt: number | null;
     createdAt: number;
     updatedAt: number;

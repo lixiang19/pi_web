@@ -74,6 +74,11 @@ const listTables = (db: InstanceType<typeof Database>): string[] =>
 			.all() as { name: string }[]
 	).map((row) => row.name);
 
+const listIndexes = (db: InstanceType<typeof Database>, tableName: string): string[] =>
+	(db.prepare(`PRAGMA index_list(${tableName})`).all() as { name: string }[]).map(
+		(row) => row.name,
+	);
+
 describe("ridge db migrations", () => {
 	afterEach(() => {
 		vi.unstubAllEnvs();
@@ -139,8 +144,9 @@ describe("ridge db migrations", () => {
 			]),
 		);
 		expect(listColumns(db, "devices")).toEqual(
-			expect.arrayContaining(["device_id", "name", "device_type", "status", "last_seen_at"]),
+			expect.arrayContaining(["device_id", "name", "device_type", "status", "token_hash", "last_seen_at"]),
 		);
+		expect(listIndexes(db, "devices")).toContain("idx_devices_token_hash");
 		expect(listColumns(db, "projects")).toEqual(
 			expect.arrayContaining(["project_type", "external_origin", "workspace_path", "device_id", "archived_at"]),
 		);
@@ -214,8 +220,9 @@ CREATE TABLE background_jobs (
 		const db = await initializeRidgeDb();
 
 		expect(listColumns(db, "devices")).toEqual(
-			expect.arrayContaining(["device_type", "status", "capabilities_json", "updated_at"]),
+			expect.arrayContaining(["device_type", "status", "capabilities_json", "token_hash", "updated_at"]),
 		);
+		expect(listIndexes(db, "devices")).toContain("idx_devices_token_hash");
 		expect(listColumns(db, "projects")).toEqual(
 			expect.arrayContaining(["project_type", "external_origin", "workspace_path", "archived_at"]),
 		);
