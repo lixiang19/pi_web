@@ -216,6 +216,7 @@ const handleAppendToDraft = (value: string) => {
         :agents="chat.core.agents.value"
         :commands="resourcePicker.filteredCommands.value"
         :composer="chat.composer"
+        :error="chat.error.value"
         :has-more-above="chat.hasMoreAbove.value"
         :interactive-requests="chat.interactiveRequests.value"
         :permission-requests="chat.permissionRequests.value"

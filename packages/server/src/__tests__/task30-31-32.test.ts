@@ -1150,7 +1150,7 @@ describe("Task 31 - WebSocket 相关测试", () => {
     db.prepare("DELETE FROM projects WHERE project_id LIKE 'ws-test-%'").run();
   });
 
-  it("桌面 session stream 端点返回 409 当设备离线", async () => {
+  it("桌面 session events 端点返回 409 当设备离线", async () => {
     const db = await getRidgeDb();
     const sessionId = "ws-test-desktop-sess";
     
@@ -1172,7 +1172,7 @@ describe("Task 31 - WebSocket 相关测试", () => {
        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run("ws-offline-device", "Offline", "desktop", "token", "offline", "{}", Date.now() - 120_000, Date.now(), Date.now());
 
-    const res = await agent.get(`/api/sessions/${sessionId}/stream`);
+    const res = await agent.get(`/api/sessions/${sessionId}/events`);
     expect(res.status).toBe(409);
     expect(res.text).toContain("offline");
     

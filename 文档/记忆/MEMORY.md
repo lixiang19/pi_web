@@ -72,6 +72,8 @@
 - [侧边栏临时隐藏] 隐藏一级导航入口时优先改 `workbenchPrimaryNavItems`，保留真实路由和页面文件，除非明确要求删除能力
 - [消息桥接] Web 想做真实工具回放，server 绝不能把 Pi `toolResult` 压扁成只剩 `role/content/timestamp`；`toolCallId/toolName/details/isError` 缺一个，关联、摘要、专属渲染都会废
 - [会话流桥接] 恢复会话能显示但发送后消息不刷新，优先检查 server 是否真正绑定了 `AgentSession.subscribe()`；如果 SSE 只发 `status` 不发 runtime message 事件，前端恢复链路会正常，发送链路一定失效
+- [AI对话主线API] 会话主链路只保留 `/events`、`/cancel`、`/ask/:requestId`、`/permissions/:requestId`；旧 `/stream`、`/abort`、`/asks/:id/respond`、`/permissions/:id/respond` 不再作为服务端别名存在。desktop 会话的 messages/events/cancel/ask/permissions 都先按 `session_index.run_location` 转发到桌面运行时。
+- [归档会话只读] 归档只读必须前后端双层生效：server 同步 `sessions.archived` 与 `session_index.archived`，归档后 `messages/ask/permissions/cancel` 返回 403 且 desktop 不转发；web 从 session summary/snapshot 派生 `composer.isDisabled`，显示只读原因并保留草稿。
 - [乐观消息去重] Pi SDK 会给 user message 也发 `message_start/message_end`，Web 端已有乐观用户消息时，server SSE 桥接必须过滤这两类 user 事件，否则每次发送都会重复一条 user 消息
 - [Git能力探测] Git 面板显隐不能靠 `getGitStatus()` 报错倒推；要单独提供轻量 `isGitRepository` 探测链路，把“能力判断”和“状态读取”拆开
 - [消息可见性] 多轮会话的历史折叠必须是显式 UI 状态，不能把“最后一轮切片显示”藏在渲染默认值里；否则用户继续输入会误以为旧消息被删，但底层 session/jsonl 其实完整

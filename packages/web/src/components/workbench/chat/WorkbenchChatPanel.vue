@@ -22,6 +22,7 @@ defineProps<{
   agents: AgentSummary[];
   commands: CommandCatalogItem[];
   composer: ChatComposerState;
+  error?: string;
   hasMoreAbove: boolean;
   interactiveRequests: AskInteractiveRequest[];
   permissionRequests: PermissionInteractiveRequest[];
@@ -117,6 +118,7 @@ function handleSelectThinking(value: ThinkingLevel) {
       :commands="commands"
       :composer="composer"
       :current-project-path="currentProjectPath"
+      :error="error || ''"
       :has-visible-resources="hasVisibleResources"
       :is-draft-session="isDraftSession"
       :is-resource-picker-visible="isResourcePickerVisible"

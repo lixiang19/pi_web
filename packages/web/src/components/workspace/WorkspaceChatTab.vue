@@ -137,6 +137,7 @@ const handleSelectFile = (_path: string) => {
           :agents="chat.core.agents.value"
           :commands="[]"
           :composer="chat.composer"
+          :error="chat.error.value"
           :has-more-above="chat.hasMoreAbove.value"
           :interactive-requests="chat.interactiveRequests.value"
           :permission-requests="chat.permissionRequests.value"
