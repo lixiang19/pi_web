@@ -388,9 +388,11 @@ const automationScheduleSchema = z.discriminatedUnion("type", [
 	}),
 ]);
 
-const automationRuleInputSchema = z.object({
+const automationRuleBaseSchema = z.object({
 	name: z.string().min(1).max(80),
 	enabled: z.boolean(),
+	scope: z.enum(["workspace", "project"]),
+	projectId: z.string().min(1).optional(),
 	cwd: z.string().min(1),
 	agent: z.string().optional(),
 	model: z.string().optional(),
@@ -399,10 +401,19 @@ const automationRuleInputSchema = z.object({
 	prompt: z.string().min(1),
 });
 
-const automationRulePatchSchema = automationRuleInputSchema
+const automationRuleInputSchema = automationRuleBaseSchema.refine((payload) => payload.scope !== "project" || Boolean(payload.projectId), {
+	message: "项目自动化必须绑定项目",
+	path: ["projectId"],
+});
+
+const automationRulePatchSchema = automationRuleBaseSchema
 	.partial()
 	.refine((payload) => Object.keys(payload).length > 0, {
 		message: "至少要更新一个字段",
+	})
+	.refine((payload) => payload.scope !== "project" || Boolean(payload.projectId), {
+		message: "项目自动化必须绑定项目",
+		path: ["projectId"],
 	});
 
 const automationToggleSchema = z.object({
@@ -632,6 +643,48 @@ initSessionPayload({
 	projectContextResolver,
 	DEFAULT_SESSION_ROUND_WINDOW,
 	getAutomationStore,
+	dispatchDesktopAutomationRule: async (rule, target) => {
+		const db = await getRidgeDb();
+		const now = Date.now();
+		const sessionId = crypto.randomUUID();
+		db.prepare(
+			`INSERT INTO session_index (
+				session_id, title, session_type, context_type,
+				workspace_path, project_id, device_id, run_location,
+				archived, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			sessionId,
+			rule.name,
+			"workspace",
+			"project",
+			target.cwd,
+			target.projectId,
+			target.deviceId,
+			"desktop",
+			0,
+			now,
+			now,
+		);
+		await forwardRunRequestToDesktop(target.deviceId!, {
+			type: "create_session",
+			sessionId,
+			cwd: target.cwd,
+			title: rule.name,
+			model: rule.model,
+			agent: rule.agent,
+			thinkingLevel: rule.thinkingLevel,
+		});
+		await forwardRunRequestToDesktop(target.deviceId!, {
+			type: "send_message",
+			sessionId,
+			prompt: rule.prompt,
+			model: rule.model,
+			agent: rule.agent,
+			thinkingLevel: rule.thinkingLevel,
+		});
+		return { sessionId };
+	},
 });
 
 function objectPayload(payload: unknown): Record<string, unknown> {
@@ -830,6 +883,8 @@ app.use(
 		getRidgeDb,
 		getJobQueue: () => jobQueue,
 		isConversionEnabled: () => isConversionEnabled?.() ?? false,
+		getAutomationStore,
+		dispatchAutomationRule,
 	}),
 );
 // ===== Workspace Data Routes =====
@@ -1344,7 +1399,7 @@ app.post(
 					payload.title || matchingProject.name,
 					'workspace',
 					'project',
-					defaultWorkspaceDir,
+					sessionCwd,
 					matchingProject.id,
 					matchingProject.deviceId,
 					'desktop',
@@ -1964,8 +2019,9 @@ export async function startServer() {
 	automationScheduler = createAutomationScheduler({
 		store: automationStore,
 		dispatchRule: async (rule) => {
-			await dispatchAutomationRule(rule);
+			const result = await dispatchAutomationRule(rule);
 			await refreshSessionCatalogIndex();
+			return result;
 		},
 	});
 	automationScheduler.start();

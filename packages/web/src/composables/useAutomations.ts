@@ -8,9 +8,10 @@ import {
   toggleAutomation,
   updateAutomation,
 } from "@/lib/api";
-import type { AutomationRule, AutomationRuleInput } from "@/lib/types";
+import type { AutomationRule, AutomationRuleInput, AutomationRun } from "@/lib/types";
 
 const rules = ref<AutomationRule[]>([]);
+const runs = ref<AutomationRun[]>([]);
 const isLoading = ref(false);
 const error = ref("");
 let loadPromise: Promise<AutomationRule[]> | null = null;
@@ -35,6 +36,7 @@ const load = async () => {
   loadPromise = getAutomations()
     .then((response) => {
       rules.value = sortRules(response.rules);
+      runs.value = response.runs;
       return rules.value;
     })
     .catch((caughtError) => {
@@ -75,7 +77,14 @@ const setEnabled = async (id: string, enabled: boolean) => {
   return rule;
 };
 
-const runNow = async (id: string) => runAutomationNow(id);
+const runNow = async (id: string) => {
+  const response = await runAutomationNow(id);
+  runs.value = [
+    response.run,
+    ...runs.value.filter((item) => item.id !== response.run.id),
+  ];
+  return response;
+};
 
 const remove = async (id: string) => {
   await deleteAutomation(id);
@@ -88,6 +97,7 @@ export function useAutomations() {
     isLoading,
     load,
     remove,
+    runs,
     rules,
     runNow,
     save,

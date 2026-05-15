@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import AutomationRuleEditor from "@/components/automation/AutomationRuleEditor.vue";
 
 describe("AutomationRuleEditor", () => {
-	it("does not render project selection", () => {
+	it("renders project scope and run records", async () => {
 		const wrapper = mount(AutomationRuleEditor, {
 			props: {
 				draft: {
 					name: "Test",
 					enabled: true,
+					scope: "project",
+					projectId: "project-1",
 					cwd: "/tmp",
 					agent: "",
 					model: "",
@@ -21,14 +23,24 @@ describe("AutomationRuleEditor", () => {
 				},
 				agentOptions: [],
 				isSaving: false,
-				isRunnable: false,
+				isRunnable: true,
 				modelOptions: [],
 				nextRunText: "Next run",
+				projectOptions: [{ label: "Project 1", value: "project-1" }],
+				recentRuns: [
+					{
+						id: "run-1",
+						automationId: "rule-1",
+						status: "skipped",
+						reason: "项目设备离线，已跳过本次自动化",
+						createdAt: Date.now(),
+					},
+				],
 				thinkingOptions: [],
 			},
 			global: {
 				stubs: {
-					Button: true,
+					Button: { template: "<button v-bind=\"$attrs\"><slot /></button>" },
 					Input: true,
 					Label: { template: "<label><slot /></label>" },
 					Select: { template: "<div><slot /></div>" },
@@ -42,6 +54,11 @@ describe("AutomationRuleEditor", () => {
 		});
 
 		const labelTexts = wrapper.findAll("label").map((el) => el.text());
-		expect(labelTexts).not.toContain("项目");
+		expect(labelTexts).toContain("运行上下文");
+		expect(labelTexts).toContain("绑定项目");
+		expect(labelTexts).toContain("运行记录");
+		expect(wrapper.text()).toContain("项目设备离线");
+		await wrapper.get('[aria-label="重试自动化"]').trigger("click");
+		expect(wrapper.emitted("run")).toHaveLength(1);
 	});
 });

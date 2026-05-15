@@ -759,3 +759,29 @@
 - `useNotifications.test.ts` 覆盖 composable 首次加载、空工作空间、筛选切换、动作刷新和错误回退。
 - `WorkspacePage.test.ts` 覆盖固定入口顺序包含通知、通知入口单例标签、通知更新刷新。
 - `npm run check`、`pnpm --filter @pi/server typecheck`、`pnpm test` 全部通过。
+
+## 2026-05-15 任务 36 自动化规则运行与跳过
+
+### 契约
+
+- 自动化本质是定时创建普通 AI 会话并发送 prompt，不做 DAG、条件分支或复杂编排。
+- `automation_rules.scope` 只能是 `workspace` 或 `project`；项目自动化必须有 `project_id`。
+- `automation_runs` 是运行记录真源，状态为 `success`、`failed`、`skipped`，失败/跳过必须写 `reason`，成功应写 `session_id`。
+- workspace 自动化在服务端运行；server 本地项目自动化在服务端运行；桌面项目自动化必须在项目绑定设备运行。
+- 桌面项目离线或项目归档时，本次触发只写 `skipped` run，不转移到其他设备。
+- 桌面项目在线运行时，服务端写轻量 `session_index(run_location='desktop')`，然后通过 desktop bridge 发送 `create_session` 和 `send_message`。
+- 自动化失败或跳过写 `automation.failed` / `automation.skipped` 通知，关联 `automation`，动作包含打开自动化和重试。
+- 通知中心重试自动化时重新走自动化调度逻辑并写新 run；如果仍失败或跳过，会生成新通知。
+- `automation.skipped` 通知即使没有生产方动作，也必须由通知中心默认派生 `retry`。
+- 桌面项目会话的 `session_index.workspace_path` 写项目实际运行路径，不写默认工作空间路径。
+- 自动化页必须暴露运行上下文、项目绑定和运行历史，不能只隐藏在 cwd 字段里；失败/跳过历史可直接重试。
+- `automation_runs` 需要启动期缺表/缺列 repair，不能只依赖迁移版本号。
+
+### 测试
+
+- `automation-api.test.ts` 覆盖规则列表/创建/启停/删除/立即运行、scope/project 保存、`automation_runs` 写入、离线项目 skipped、通知写入。
+- `notifications-api.test.ts` 覆盖 `automation.skipped` 默认重试动作。
+- `ridge-db-migration.test.ts` 覆盖当前版本库缺失 `automation_runs` 时的自修复。
+- `AutomationRuleEditor.test.ts` 覆盖项目 scope、运行历史展示和历史重试按钮。
+- `npm run check` 通过。
+- `npm run build --workspace @pi/server` 通过。

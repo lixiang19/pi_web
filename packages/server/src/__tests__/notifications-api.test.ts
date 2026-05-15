@@ -232,6 +232,44 @@ describe("notifications api", () => {
 		expect(byId.get("notification-confirmation")).toMatchObject({ type: "confirmation" });
 	});
 
+	it("derives retry for skipped automation notifications without producer actions", async () => {
+		const db = await getRidgeDb();
+		db.prepare(
+			`INSERT INTO notification_events(
+				event_id, event_type, severity, title, body, payload_json,
+				status, created_at, read_at, source, related_type, related_id,
+				actions_json, updated_at, handled_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			"notification-automation-skipped",
+			"automation.skipped",
+			"warning",
+			"自动化已跳过",
+			"项目设备离线",
+			JSON.stringify({ automationId: "automation-1" }),
+			"unread",
+			4000,
+			null,
+			"automation",
+			"automation",
+			"automation-1",
+			"[]",
+			4000,
+			null,
+		);
+
+		const response = await request(createApp(workspaceDir))
+			.get("/api/notifications?filter=unhandled")
+			.expect(200);
+		const notification = response.body.notifications.find(
+			(item: { id: string }) => item.id === "notification-automation-skipped",
+		);
+		expect(notification.type).toBe("warning");
+		expect(notification.actions.map((action: { id: string }) => action.id)).toEqual(
+			expect.arrayContaining(["retry", "open_related", "dismiss", "mark_handled"]),
+		);
+	});
+
 	it("accepts a task update suggestion only when the user chooses accept", async () => {
 		const task = await createTask(workspaceDir, {
 			title: "复盘任务",

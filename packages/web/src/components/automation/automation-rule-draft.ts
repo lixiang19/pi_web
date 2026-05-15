@@ -17,6 +17,8 @@ export function createAutomationDraft(options?: {
   return {
     name: "项目晨报",
     enabled: true,
+    scope: "workspace",
+    projectId: "",
     cwd: options?.projectPath ?? "",
     agent: "",
     model: "",
@@ -35,6 +37,8 @@ export function automationDraftToInput(
   return {
     name: value.name.trim(),
     enabled: value.enabled,
+    scope: value.scope,
+    projectId: value.scope === "project" ? value.projectId : undefined,
     cwd: value.cwd,
     agent: value.agent,
     model: value.model,
@@ -53,6 +57,8 @@ function ruleToDraft(rule: AutomationRule): AutomationRuleDraft {
     id: rule.id,
     name: rule.name,
     enabled: rule.enabled,
+    scope: rule.scope,
+    projectId: rule.projectId || "",
     cwd: rule.cwd,
     agent: rule.agent || "",
     model: rule.model || "",

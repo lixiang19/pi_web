@@ -121,6 +121,21 @@ export function createCoreRouter(deps: CoreDeps) {
 		resourceCatalogQuerySchema,
 		fileTreeQuerySchema,
 	} = deps;
+
+	const ensureAutomationRuleScope = async (payload: Partial<AutomationRuleInput>) => {
+		if (payload.scope === "project") {
+			if (!payload.projectId || !getAutomationStore().getProject(payload.projectId)) {
+				const error = new Error("项目自动化绑定的项目不存在") as HttpError;
+				error.statusCode = 400;
+				throw error;
+			}
+			return;
+		}
+
+		if (payload.cwd) {
+			await ensureManagedProjectScope(payload.cwd);
+		}
+	};
 	router.get("/api/providers", (_req: Request, res: Response) => {
 		res.json(listProviders());
 	});
@@ -146,7 +161,8 @@ export function createCoreRouter(deps: CoreDeps) {
 		"/api/automations",
 		(_req: Request, res: Response, next: NextFunction) => {
 			try {
-				res.json({ rules: getAutomationStore().listRules() });
+				const store = getAutomationStore();
+				res.json({ rules: store.listRules(), runs: store.listRuns() });
 			} catch (error) {
 				next(error);
 			}
@@ -158,9 +174,11 @@ export function createCoreRouter(deps: CoreDeps) {
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
 				const payload = automationRuleInputSchema.parse(req.body ?? {});
-				await ensureManagedProjectScope(payload.cwd);
+				await ensureAutomationRuleScope(payload);
 				const rule = getAutomationStore().createRule({
 					...payload,
+					scope: payload.scope,
+					projectId: payload.projectId || undefined,
 					agent: payload.agent || undefined,
 					model: payload.model || undefined,
 					thinkingLevel: payload.thinkingLevel || undefined,
@@ -177,24 +195,28 @@ export function createCoreRouter(deps: CoreDeps) {
 		"/api/automations/:automationId",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
+				const store = getAutomationStore();
 				const payload = automationRulePatchSchema.parse(req.body ?? {});
-				if (payload.cwd) {
-					await ensureManagedProjectScope(payload.cwd);
-				}
-				const rule = getAutomationStore().updateRule(
-					String(req.params.automationId),
-					{
-						...payload,
-						agent: payload.agent === "" ? null : payload.agent,
-						model: payload.model === "" ? null : payload.model,
-						thinkingLevel: payload.thinkingLevel,
-					},
-				);
-				if (!rule) {
+				const current = store.getRule(String(req.params.automationId));
+				if (!current) {
 					const error = new Error("自动化规则不存在") as HttpError;
 					error.statusCode = 404;
 					throw error;
 				}
+				await ensureAutomationRuleScope({
+					scope: payload.scope ?? current.scope,
+					projectId:
+						payload.projectId === undefined
+							? current.projectId
+							: payload.projectId,
+					cwd: payload.cwd ?? current.cwd,
+				});
+				const rule = store.updateRule(String(req.params.automationId), {
+					...payload,
+					agent: payload.agent === "" ? null : payload.agent,
+					model: payload.model === "" ? null : payload.model,
+					thinkingLevel: payload.thinkingLevel,
+				});
 
 				getAutomationScheduler()?.reschedule();
 				res.json(rule);
@@ -233,7 +255,8 @@ export function createCoreRouter(deps: CoreDeps) {
 		"/api/automations/:automationId/run",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				const rule = getAutomationStore().getRule(
+				const store = getAutomationStore();
+				const rule = store.getRule(
 					String(req.params.automationId),
 				);
 				if (!rule) {
@@ -242,7 +265,27 @@ export function createCoreRouter(deps: CoreDeps) {
 					throw error;
 				}
 
-				res.json(await dispatchAutomationRule(rule));
+				try {
+					const result = await dispatchAutomationRule(rule);
+					const run = store.createRun({
+						automationId: rule.id,
+						status: "success",
+						sessionId: result.sessionId,
+					});
+					res.json({ sessionId: result.sessionId, run });
+				} catch (error) {
+					const status =
+						error instanceof Error && error.name === "AutomationSkippedError"
+							? "skipped"
+							: "failed";
+					const run = store.createRun({
+						automationId: rule.id,
+						status,
+						reason: error instanceof Error ? error.message : String(error),
+					});
+					store.createRunNotification(rule, run);
+					res.json({ run, error: run.reason });
+				}
 			} catch (error) {
 				next(error);
 			}

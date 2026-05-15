@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@/lib/types";
+import type { AutomationScope, ThinkingLevel } from "@/lib/types";
 
 export type AutomationScheduleType = "daily" | "weekly" | "interval";
 
@@ -6,6 +6,8 @@ export interface AutomationRuleDraft {
   id?: string;
   name: string;
   enabled: boolean;
+  scope: AutomationScope;
+  projectId: string;
   cwd: string;
   agent: string;
   model: string;

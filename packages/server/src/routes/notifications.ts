@@ -2,6 +2,8 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { z } from "zod";
 import type { createBackgroundJobQueue } from "../background-jobs.js";
 import type { RidgeDatabase } from "../db/index.js";
+import type { AutomationStore } from "../automations.js";
+import type { AutomationRule } from "@pi/protocol";
 import {
 	createMilestoneInDb,
 	createTaskInDb,
@@ -69,6 +71,8 @@ export interface NotificationsRouterDeps {
 	getRidgeDb: () => Promise<RidgeDatabase>;
 	getJobQueue?: () => BackgroundJobQueue | undefined | Promise<BackgroundJobQueue | undefined>;
 	isConversionEnabled?: () => boolean;
+	getAutomationStore?: () => AutomationStore;
+	dispatchAutomationRule?: (rule: AutomationRule) => Promise<{ sessionId?: string }>;
 }
 
 const filterSchema = z
@@ -270,7 +274,7 @@ const deriveActions = (
 		addAction(actions, { id: "accept_suggestion", label: "接受建议", kind: "accept_suggestion" });
 		addAction(actions, { id: "reject_suggestion", label: "拒绝建议", kind: "reject_suggestion" });
 	}
-	if (type === "failure" && !done) {
+	if ((type === "failure" || row.event_type === "automation.skipped") && !done) {
 		addAction(actions, { id: "retry", label: "重试", kind: "retry" });
 	}
 	if (!done) {
@@ -513,6 +517,42 @@ const retryNotification = async (
 		).run(Date.now(), Date.now(), jobId);
 		if (result.changes === 0) {
 			throw createHttpError("Failed background job record not found", 404);
+		}
+		return;
+	}
+
+	if (notification.eventType === "automation.failed" || notification.eventType === "automation.skipped") {
+		const automationId = notification.related?.type === "automation"
+			? notification.related.id
+			: typeof notification.payload.automationId === "string"
+				? notification.payload.automationId
+				: undefined;
+		if (!automationId) throw createHttpError("Missing automationId for automation retry", 400);
+		if (!deps.getAutomationStore || !deps.dispatchAutomationRule) {
+			throw createHttpError("Automation retry is not available", 503);
+		}
+		const store = deps.getAutomationStore();
+		const rule = store.getRule(automationId);
+		if (!rule) throw createHttpError("Automation rule not found", 404);
+		try {
+			const result = await deps.dispatchAutomationRule(rule);
+			store.createRun({
+				automationId: rule.id,
+				status: "success",
+				sessionId: result.sessionId,
+			});
+		} catch (error) {
+			const status =
+				error instanceof Error && error.name === "AutomationSkippedError"
+					? "skipped"
+					: "failed";
+			const run = store.createRun({
+				automationId: rule.id,
+				status,
+				reason: error instanceof Error ? error.message : String(error),
+			});
+			store.createRunNotification(rule, run);
+			throw error;
 		}
 		return;
 	}

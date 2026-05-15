@@ -147,6 +147,30 @@ const CORE_TABLE_COLUMNS: Record<string, ColumnDefinition[]> = {
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ],
+  automation_rules: [
+    { name: 'automation_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'name', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'enabled', definition: 'INTEGER NOT NULL DEFAULT 1' },
+    { name: 'scope', definition: "TEXT NOT NULL DEFAULT 'workspace'" },
+    { name: 'project_id', definition: 'TEXT' },
+    { name: 'cwd', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'agent_name', definition: 'TEXT' },
+    { name: 'explicit_model', definition: 'TEXT' },
+    { name: 'explicit_thinking_level', definition: 'TEXT' },
+    { name: 'schedule_json', definition: "TEXT NOT NULL DEFAULT '{}'" },
+    { name: 'prompt', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'next_run_at', definition: 'INTEGER' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
+  automation_runs: [
+    { name: 'run_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'automation_id', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'reason', definition: 'TEXT' },
+    { name: 'session_id', definition: 'TEXT' },
+    { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ],
   search_index_status: [
     { name: 'target_path', definition: "TEXT NOT NULL DEFAULT ''" },
     { name: 'target_type', definition: "TEXT NOT NULL DEFAULT 'file'" },
@@ -339,9 +363,26 @@ const ensureRenamedProjectSourceColumn = (db: RidgeDatabase) => {
 };
 
 const repairKnownTableColumns = (db: RidgeDatabase) => {
+  ensureAutomationRunsTable(db);
   for (const [tableName, definitions] of Object.entries(CORE_TABLE_COLUMNS)) {
     ensureColumns(db, tableName, definitions);
   }
+};
+
+const ensureAutomationRunsTable = (db: RidgeDatabase) => {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS automation_runs (
+  run_id TEXT PRIMARY KEY,
+  automation_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  reason TEXT,
+  session_id TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_runs_rule_created
+  ON automation_runs(automation_id, created_at DESC);
+`);
 };
 
 const ensureColumns = (

@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ThinkingLevel } from "@/lib/types";
+import type { AutomationRun, ThinkingLevel } from "@/lib/types";
 import type {
   AutomationOption,
   AutomationRuleDraft,
@@ -28,6 +28,8 @@ const props = defineProps<{
   isRunnable: boolean;
   modelOptions: AutomationOption[];
   nextRunText: string;
+  projectOptions: AutomationOption[];
+  recentRuns: AutomationRun[];
   thinkingOptions: AutomationOption[];
 }>();
 
@@ -70,6 +72,24 @@ const handleAgentChange = (value: unknown) => {
 const handleModelChange = (value: unknown) => {
   updateDraft({ model: String(value) === NONE_VALUE ? "" : String(value) });
 };
+
+const runStatusText = (status: AutomationRun["status"]) => {
+  if (status === "success") {
+    return "成功";
+  }
+  if (status === "skipped") {
+    return "跳过";
+  }
+  return "失败";
+};
+
+const formatRunTime = (value: number) =>
+  new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
 </script>
 
 <template>
@@ -131,6 +151,55 @@ const handleModelChange = (value: unknown) => {
             >
               {{ draft.enabled ? "启用" : "暂停" }}
             </Button>
+          </div>
+        </section>
+
+        <section class="grid gap-4 md:grid-cols-2">
+          <div class="space-y-2">
+            <Label>运行上下文</Label>
+            <Select
+              :model-value="draft.scope"
+              @update:model-value="updateDraft({ scope: String($event) === 'project' ? 'project' : 'workspace' })"
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="workspace">工作空间</SelectItem>
+                <SelectItem value="project">项目</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div v-if="draft.scope === 'project'" class="space-y-2">
+            <Label>绑定项目</Label>
+            <Select
+              :model-value="draft.projectId || NONE_VALUE"
+              @update:model-value="updateDraft({ projectId: String($event) === NONE_VALUE ? '' : String($event) })"
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择项目" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem :value="NONE_VALUE">未选择</SelectItem>
+                <SelectItem
+                  v-for="project in projectOptions"
+                  :key="project.value"
+                  :value="project.value"
+                >
+                  {{ project.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div v-else class="space-y-2">
+            <Label for="automation-cwd">工作目录</Label>
+            <Input
+              id="automation-cwd"
+              :model-value="draft.cwd"
+              @update:model-value="updateDraft({ cwd: String($event) })"
+            />
           </div>
         </section>
 
@@ -274,6 +343,44 @@ const handleModelChange = (value: unknown) => {
             placeholder="请总结这个项目今天需要关注的事情，并给出下一步建议。"
             @update:model-value="updateDraft({ prompt: String($event) })"
           />
+        </section>
+
+        <section class="space-y-2 border-t border-border/50 pt-4">
+          <Label>运行记录</Label>
+          <div v-if="recentRuns.length === 0" class="rounded-lg bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+            还没有运行记录
+          </div>
+          <div v-else class="space-y-2">
+            <div
+              v-for="run in recentRuns"
+              :key="run.id"
+              class="rounded-lg border border-border/50 bg-card/60 px-3 py-2"
+            >
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium">{{ runStatusText(run.status) }}</span>
+                <div class="flex shrink-0 items-center gap-2">
+                  <span class="text-xs text-muted-foreground">{{ formatRunTime(run.createdAt) }}</span>
+                  <Button
+                    v-if="run.status !== 'success'"
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="重试自动化"
+                    :disabled="!isRunnable || isSaving"
+                    @click="emit('run')"
+                  >
+                    <Play class="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+              <p v-if="run.reason" class="mt-1 text-xs text-muted-foreground">
+                {{ run.reason }}
+              </p>
+              <p v-if="run.sessionId" class="mt-1 truncate text-xs text-muted-foreground">
+                会话：{{ run.sessionId }}
+              </p>
+            </div>
+          </div>
         </section>
 
         <section class="flex justify-end border-t border-border/50 pt-4">

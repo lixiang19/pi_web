@@ -140,6 +140,7 @@ describe("ridge db migrations", () => {
 				"background_jobs",
 				"search_index_status",
 				"notification_events",
+				"automation_runs",
 				"app_settings",
 			]),
 		);
@@ -164,6 +165,10 @@ describe("ridge db migrations", () => {
 		expect(listColumns(db, "background_jobs")).toEqual(
 			expect.arrayContaining(["job_id", "job_type", "status", "payload_json", "attempt_count"]),
 		);
+		expect(listColumns(db, "automation_runs")).toEqual(
+			expect.arrayContaining(["run_id", "automation_id", "status", "reason", "session_id", "created_at"]),
+		);
+		expect(listIndexes(db, "automation_runs")).toContain("idx_automation_runs_rule_created");
 		expect(
 			db
 				.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messages'")
@@ -229,6 +234,58 @@ CREATE TABLE background_jobs (
 		expect(listColumns(db, "background_jobs")).toEqual(
 			expect.arrayContaining(["job_type", "payload_json", "attempt_count", "last_error"]),
 		);
+
+		db.close();
+	});
+
+	it("repairs a current-version database that is missing automation run storage", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ridge-db-automation-repair-"));
+		const dbPath = path.join(tempDir, "ridge.db");
+		const legacyDb = new Database(dbPath);
+		legacyDb.exec(`
+CREATE TABLE ridge_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE ridge_schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at INTEGER NOT NULL
+);
+
+CREATE TABLE automation_rules (
+  automation_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  enabled INTEGER NOT NULL,
+  cwd TEXT NOT NULL,
+  schedule_json TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+INSERT INTO ridge_meta(key, value) VALUES('schema_version', '${RIDGE_DB_SCHEMA_VERSION}');
+`);
+		const insertMigration = legacyDb.prepare(
+			"INSERT INTO ridge_schema_migrations(version, name, applied_at) VALUES(?, ?, ?)",
+		);
+		for (let version = 1; version <= RIDGE_DB_SCHEMA_VERSION; version += 1) {
+			insertMigration.run(version, `migration-${version}`, 1);
+		}
+		legacyDb.close();
+		vi.stubEnv("RIDGE_DB_PATH", dbPath);
+
+		const { initializeRidgeDb } = await import("../db/index.js");
+		const db = await initializeRidgeDb();
+
+		expect(listColumns(db, "automation_rules")).toEqual(
+			expect.arrayContaining(["scope", "project_id"]),
+		);
+		expect(listColumns(db, "automation_runs")).toEqual(
+			expect.arrayContaining(["run_id", "automation_id", "status", "session_id", "created_at"]),
+		);
+		expect(listIndexes(db, "automation_runs")).toContain("idx_automation_runs_rule_created");
 
 		db.close();
 	});

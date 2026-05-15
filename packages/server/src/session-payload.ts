@@ -11,7 +11,11 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AutomationRule } from "@pi/protocol";
 import { normalizeThinkingLevel } from "./agents.js";
-import type { AutomationStore } from "./automations.js";
+import {
+	AutomationSkippedError,
+	type AutomationReadyExecutionTarget,
+	type AutomationStore,
+} from "./automations.js";
 import {
 	createFileManager,
 	isPathInsideRoot,
@@ -75,6 +79,10 @@ export interface SessionPayloadDeps {
 	projectContextResolver: ReturnType<typeof createProjectContextResolver>;
 	DEFAULT_SESSION_ROUND_WINDOW: number;
 	getAutomationStore: () => AutomationStore;
+	dispatchDesktopAutomationRule?: (
+		rule: AutomationRule,
+		target: AutomationReadyExecutionTarget,
+	) => Promise<{ sessionId: string }>;
 }
 
 const deps = {} as SessionPayloadDeps;
@@ -116,9 +124,26 @@ export const getAutomationStore = (): AutomationStore => {
 export const dispatchAutomationRule = async (
 	rule: AutomationRule,
 ): Promise<{ sessionId: string }> => {
-	await ensureManagedProjectScope(rule.cwd);
+	const store = getAutomationStore();
+	const target = store.resolveExecutionTarget(rule);
+	if (target.status === "skipped") {
+		throw new AutomationSkippedError(target.reason);
+	}
+	if (target.status === "failed") {
+		throw new Error(target.reason);
+	}
+
+	if (target.runLocation === "desktop") {
+		if (!deps.dispatchDesktopAutomationRule) {
+			throw new Error("桌面自动化调度器尚未初始化");
+		}
+		return deps.dispatchDesktopAutomationRule(rule, target);
+	}
+
+	await ensureManagedProjectScope(target.cwd);
+
 	const record = await createSessionRecord({
-		cwd: rule.cwd,
+		cwd: target.cwd,
 		title: rule.name,
 		model: rule.model,
 	});

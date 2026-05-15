@@ -28,6 +28,11 @@ const formatNextRun = (value?: number) => {
     minute: "2-digit",
   }).format(value);
 };
+
+const formatScope = (rule: AutomationRule) =>
+  rule.scope === "project"
+    ? rule.projectName || "项目"
+    : "工作空间";
 </script>
 
 <template>
@@ -84,7 +89,7 @@ const formatNextRun = (value?: number) => {
 
           <div class="mt-3 flex items-center justify-between gap-2">
             <p class="truncate text-[11px] text-muted-foreground/80">
-              {{ rule.cwd }}
+              {{ formatScope(rule) }} · {{ rule.cwd }}
             </p>
             <Button
               type="button"

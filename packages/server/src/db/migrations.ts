@@ -1,4 +1,4 @@
-export const RIDGE_DB_SCHEMA_VERSION = 22;
+export const RIDGE_DB_SCHEMA_VERSION = 23;
 
 export const RIDGE_DB_BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS ridge_meta (
@@ -132,6 +132,8 @@ CREATE TABLE IF NOT EXISTS automation_rules (
   automation_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   enabled INTEGER NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'workspace',
+  project_id TEXT,
   cwd TEXT NOT NULL,
   agent_name TEXT,
   explicit_model TEXT,
@@ -145,6 +147,21 @@ CREATE TABLE IF NOT EXISTS automation_rules (
 
 CREATE INDEX IF NOT EXISTS idx_automation_rules_next_run_at
   ON automation_rules(enabled, next_run_at);
+
+CREATE INDEX IF NOT EXISTS idx_automation_rules_project
+  ON automation_rules(project_id);
+
+CREATE TABLE IF NOT EXISTS automation_runs (
+  run_id TEXT PRIMARY KEY,
+  automation_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  reason TEXT,
+  session_id TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_runs_rule_created
+  ON automation_runs(automation_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS background_jobs (
   job_id TEXT PRIMARY KEY,
@@ -861,6 +878,27 @@ CREATE INDEX IF NOT EXISTS idx_notification_events_type
   ON notification_events(event_type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_events_related
   ON notification_events(related_type, related_id);
+`,
+  },
+  {
+    version: 23,
+    name: 'automation runs and project scope',
+    sql: `
+-- Column repair adds automation_rules.scope/project_id for existing databases.
+CREATE INDEX IF NOT EXISTS idx_automation_rules_project
+  ON automation_rules(project_id);
+
+CREATE TABLE IF NOT EXISTS automation_runs (
+  run_id TEXT PRIMARY KEY,
+  automation_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  reason TEXT,
+  session_id TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_runs_rule_created
+  ON automation_runs(automation_id, created_at DESC);
 `,
   },
 ];

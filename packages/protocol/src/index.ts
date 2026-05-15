@@ -65,10 +65,16 @@ export type AutomationSchedule =
 			everyMinutes: number;
 	  };
 
+export type AutomationScope = "workspace" | "project";
+export type AutomationRunStatus = "success" | "failed" | "skipped";
+
 export interface AutomationRule {
 	id: string;
 	name: string;
 	enabled: boolean;
+	scope: AutomationScope;
+	projectId?: string;
+	projectName?: string;
 	cwd: string;
 	agent?: string;
 	model?: string;
@@ -83,6 +89,8 @@ export interface AutomationRule {
 export interface AutomationRuleInput {
 	name: string;
 	enabled: boolean;
+	scope: AutomationScope;
+	projectId?: string;
 	cwd: string;
 	agent?: string;
 	model?: string;
@@ -91,12 +99,23 @@ export interface AutomationRuleInput {
 	prompt: string;
 }
 
+export interface AutomationRun {
+	id: string;
+	automationId: string;
+	status: AutomationRunStatus;
+	reason?: string;
+	sessionId?: string;
+	createdAt: number;
+}
+
 export interface AutomationsResponse {
 	rules: AutomationRule[];
+	runs: AutomationRun[];
 }
 
 export interface AutomationRunNowResponse {
-	sessionId: string;
+	sessionId?: string;
+	run: AutomationRun;
 }
 
 export interface RuntimeMcpServerConfig {

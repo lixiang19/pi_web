@@ -19,7 +19,7 @@ beforeAll(async () => {
 });
 
 class ForwardingDesktopSocket extends EventEmitter {
-	readyState = WebSocket.OPEN;
+	readyState: number = WebSocket.OPEN;
 	readonly forwardedPayloads: Array<Record<string, unknown>> = [];
 
 	send(data: string) {

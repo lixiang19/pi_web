@@ -16,14 +16,19 @@ import { usePiChatCore } from "@/composables/usePiChatCore";
 import {
   thinkingOptions as workbenchThinkingOptions,
 } from "@/composables/useWorkbenchSessionState";
+import { useProjects } from "@/composables/useProjects";
 
 const automations = useAutomations();
 const core = usePiChatCore();
+const projectsStore = useProjects();
 
 const selectedId = ref("");
 
 const defaultCwd = computed(() =>
   core.info.value?.chatProjectPath || core.info.value?.workspaceDir || "",
+);
+const draft = ref<AutomationRuleDraft>(
+  createAutomationDraft({ projectPath: defaultCwd.value }),
 );
 
 const modelOptions = computed<AutomationOption[]>(() => core.models.value);
@@ -39,12 +44,35 @@ const thinkingOptions = computed<AutomationOption[]>(() =>
     value: option.value,
   })),
 );
-const draft = ref<AutomationRuleDraft>(
-  createAutomationDraft({ projectPath: defaultCwd.value }),
+const projectOptions = computed<AutomationOption[]>(() =>
+  projectsStore.projects.value
+    .filter((project) => project.projectType === "external" && !project.archivedAt)
+    .map((project) => ({
+      label: project.deviceName
+        ? `${project.name} · ${project.deviceName}`
+        : project.name,
+      value: project.id,
+    })),
+);
+const selectedProject = computed(() =>
+  projectsStore.projects.value.find((project) => project.id === draft.value.projectId),
+);
+const selectedRuns = computed(() =>
+  draft.value.id
+    ? automations.runs.value.filter((run) => run.automationId === draft.value.id)
+    : [],
 );
 
 const canSave = computed(() => {
-  if (!draft.value.name.trim() || !draft.value.cwd || !draft.value.prompt.trim()) {
+  if (!draft.value.name.trim() || !draft.value.prompt.trim()) {
+    return false;
+  }
+
+  if (draft.value.scope === "project") {
+    return Boolean(draft.value.projectId && draft.value.cwd);
+  }
+
+  if (!draft.value.cwd) {
     return false;
   }
 
@@ -145,10 +173,23 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => draft.value.projectId,
+  () => {
+    if (draft.value.scope !== "project") {
+      return;
+    }
+    if (selectedProject.value) {
+      draft.value = { ...draft.value, cwd: selectedProject.value.path };
+    }
+  },
+);
+
 onMounted(async () => {
   await Promise.all([
     automations.load().catch(() => []),
     core.bootPromise.value,
+    projectsStore.load().catch(() => []),
   ]);
 
   if (automations.rules.value[0]) {
@@ -177,6 +218,8 @@ onMounted(async () => {
       :is-saving="automations.isLoading.value"
       :model-options="modelOptions"
       :next-run-text="nextRunText"
+      :project-options="projectOptions"
+      :recent-runs="selectedRuns"
       :thinking-options="thinkingOptions"
       @delete="deleteRule"
       @run="runRule"
