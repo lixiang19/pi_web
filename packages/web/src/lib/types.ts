@@ -17,6 +17,7 @@ export type {
 	CommandCatalogItem,
 	CreateWorktreeRequest,
 	DeleteWorktreeRequest,
+	DeviceItem,
 	DirectoryBrowseResponse,
 	FileEntryCreateRequest,
 	FileEntryMoveRequest,

@@ -814,3 +814,22 @@
 
 - 复跑桌面/设备目标测试时，`task30-31-32.test.ts` 的“upload API 跳过外部仓库路径”暴露 400：外部仓库上传已跳过 RAG，但仍无条件调用 `commitWorkspaceVersionPoint`，隐藏版本点要求文件在 `~/ridge-workspace` 内。
 - 修复在 `routes/workspace-data.ts`：文件页 create/move/delete/upload 先过滤工作空间内文件，只有工作空间文件才创建隐藏版本点；外部仓库文件继续执行真实文件操作，但不进入工作空间隐藏版本。
+
+## 2026-05-16 V2 阶段 4 备份恢复设置错误边界
+
+### 收口结论
+
+- V2 阶段 4 已归档到 `文档/功能开发/归档/46-V2阶段4备份恢复设置错误边界.md`。
+- `GET /api/workspace/backup` 生成 ZIP：`server/ridge.db` + `workspace/**` + `.ridge/graph.kuzu`，排除 `.ridge/rag`、`.ridge/cache`、`.ridge/runtime`、`.ridge/fleeting-attachments`，并跳过符号链接。
+- `backup-manifest.json` 是恢复校验真源，记录 `formatVersion`、`appName`、创建时间、包含/排除路径、可重建索引、文件 `path/size/sha256`。
+- `POST /api/workspace/restore` 先创建 pre-restore 快照，校验 manifest/checksum 后整包替换 `ridge.db` 与 workspace；失败回滚原 DB 和原工作空间。
+- `/api/system/info` 现在返回数据目录、数据库路径、默认工作空间、服务状态和设备在线汇总；设置页展示这些状态，并提供备份下载与恢复包上传。
+- `ErrorBoundary.vue` 已包裹工作台主要 tab，局部异常不再导致整个工作台白屏。
+
+### 验收证据
+
+- `workspace-backup.test.ts`
+- `workspace-backup-api.test.ts`
+- `SettingsTabContent.test.ts`
+- `ErrorBoundary.test.ts`
+- `npm run typecheck`

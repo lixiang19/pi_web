@@ -22,6 +22,7 @@ import {
 } from "lucide-vue-next";
 
 import FileTreePanel from "@/components/common/FileTreePanel.vue";
+import ErrorBoundary from "@/components/common/ErrorBoundary.vue";
 import WorkspaceContentArea from "@/components/workspace/WorkspaceContentArea.vue";
 import HomePage from "@/components/workspace/HomePage.vue";
 import TaskView from "@/components/workspace/TaskView.vue";
@@ -1076,6 +1077,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 		    v-show="activeTabId === tab.id && tab.kind === 'singleton_feature'"
 		    class="h-full"
 		  >
+			<ErrorBoundary :scope="tab.title">
 			<TaskView
 				v-if="tab.featureId === 'tasks'"
 				:workspace-dir="workspaceDir"
@@ -1137,6 +1139,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			<AutomationTabContent v-else-if="tab.featureId === 'automation'" />
 			<SettingsTabContent v-else-if="tab.featureId === 'settings'" />
 			<WorkspaceFeaturePlaceholder v-else :title="tab.title" />
+			</ErrorBoundary>
           </div>
 
           <!-- 主页标签页 -->
@@ -1146,6 +1149,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             v-show="activeTabId === tab.id && tab.kind === 'home'"
             class="h-full"
           >
+			<ErrorBoundary :scope="tab.title">
             <HomePage
               v-if="tab.kind === 'home'"
               :workspace-dir="workspaceDir"
@@ -1163,6 +1167,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
               @open-session="handleOpenSession($event)"
               @open-tasks="handleOpenTasks"
             />
+			</ErrorBoundary>
           </div>
 
           <!-- 会话标签页 -->
@@ -1172,6 +1177,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             v-show="activeTabId === tab.id && (tab.kind === 'conversation' || tab.kind === 'chat')"
             class="h-full"
           >
+			<ErrorBoundary :scope="tab.title">
             <WorkspaceChatTab
               v-if="tab.kind === 'conversation' || tab.kind === 'chat'"
               :session-id="tab.sessionId ?? ''"
@@ -1183,6 +1189,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
               :initial-attachment-ids="tab.initialAttachmentIds"
               @open-chat-tab="handleOpenSession($event)"
             />
+			</ErrorBoundary>
           </div>
 
           <!-- 文件标签页 -->
@@ -1192,6 +1199,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             v-show="activeTabId === tab.id && tab.kind === 'file'"
             class="h-full"
           >
+			<ErrorBoundary :scope="tab.title">
             <WorkspaceContentArea
               v-if="tab.kind === 'file'"
               :tab="preview.tabs.value.find((t) => t.id === tab.id) ?? null"
@@ -1200,6 +1208,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
               @load-more="preview.loadMore"
               @save-status="handleSaveStatusUpdate"
             />
+			</ErrorBoundary>
           </div>
 
           <div
@@ -1208,10 +1217,12 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             v-show="activeTabId === tab.id && tab.kind === 'terminal'"
             class="h-full"
           >
+			<ErrorBoundary :scope="tab.title">
             <TerminalTabContent
               v-if="tab.kind === 'terminal' && tab.terminalId"
               :terminal-id="tab.terminalId"
             />
+			</ErrorBoundary>
           </div>
 
           <div
@@ -1220,12 +1231,14 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             v-show="activeTabId === tab.id && tab.kind === 'space_preview'"
             class="h-full"
           >
+			<ErrorBoundary :scope="tab.title">
             <SpacePreviewTab
               v-if="tab.kind === 'space_preview'"
               :title="tab.title"
               :html="tab.spacePreviewHtml ?? ''"
               :index-path="tab.filePath"
             />
+			</ErrorBoundary>
           </div>
         </template>
       </SplitGrid>

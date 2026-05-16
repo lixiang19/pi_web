@@ -36,6 +36,7 @@ import {
 	getRidgeDb,
 	getStoredWorkspaceDir,
 	initializeRidgeDb,
+	resetRidgeDb,
 } from "./db/index.js";
 import {
 	assertNotRidgeSystemPath,
@@ -136,7 +137,7 @@ import type {
 	SessionRecord,
 } from "./types/index.js";
 import { atomicWriteFile } from "./utils/fs.js";
-import { getRidgeDbPath, toPosixPath } from "./utils/paths.js";
+import { getDataDir, getRidgeDbPath, toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
 import {
 	ensureWorkspaceTemplate,
@@ -829,6 +830,20 @@ app.post(
 const systemRouter = createSystemRouter({
 	port,
 	defaultWorkspaceDir,
+	dataDir: getDataDir(),
+	getRidgeDbPath,
+	getDeviceStatus: async () => {
+		const { listDevices, sweepOfflineDevices } = await import("./devices.js");
+		await sweepOfflineDevices();
+		const devices = await listDevices();
+		return {
+			total: devices.length,
+			online: devices.filter((device) => device.status === "online").length,
+			serverOnline: devices.some(
+				(device) => device.deviceType === "server" && device.status === "online",
+			),
+		};
+	},
 	workspaceChatConfig,
 	terminalManager,
 	terminalCreateSchema,
@@ -935,7 +950,12 @@ app.use(workspaceFilesRouter);
 app.use(createWorkspaceSpaceRouter({ defaultWorkspaceDir }));
 app.use(createWorkspaceSearchRouter({ defaultWorkspaceDir, getRidgeDb }));
 app.use(createWorkspaceGraphRouter({ getGraphRunner: () => graphRunner }));
-app.use(createWorkspaceBackupRouter({ defaultWorkspaceDir, getRidgeDbPath }));
+app.use(createWorkspaceBackupRouter({
+	defaultWorkspaceDir,
+	getRidgeDbPath,
+	resetDatabaseConnection: resetRidgeDb,
+	reopenDatabase: () => getRidgeDb(),
+}));
 app.use("/api/sessions/:sessionId/attachments", createSessionAttachmentsRouter(ensureSessionRecord));
 app.get(
 	"/api/files/content",

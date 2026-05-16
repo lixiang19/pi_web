@@ -133,6 +133,40 @@ export function getSystemInfo() {
 	return request<SystemInfo>("/api/system/info");
 }
 
+export interface WorkspaceRestoreResponse {
+	ok: true;
+	preRestoreSnapshotPath: string;
+	restoredFiles: string[];
+	rebuildStatus: Record<"rag" | "search_chunks", "pending">;
+}
+
+export async function downloadWorkspaceBackup(): Promise<{
+	blob: Blob;
+	fileName: string;
+}> {
+	const response = await fetch("/api/workspace/backup", {
+		credentials: "same-origin",
+	});
+	if (!response.ok) {
+		const text = await response.text();
+		throw new Error(text || `Request failed with status ${response.status}`);
+	}
+	const disposition = response.headers.get("content-disposition") ?? "";
+	const fileNameMatch = /filename="([^"]+)"/.exec(disposition);
+	return {
+		blob: await response.blob(),
+		fileName: fileNameMatch?.[1] ?? "ridge-backup.zip",
+	};
+}
+
+export function restoreWorkspaceBackup(file: File): Promise<WorkspaceRestoreResponse> {
+	return request<WorkspaceRestoreResponse>("/api/workspace/restore", {
+		method: "POST",
+		headers: { "Content-Type": file.type || "application/zip" },
+		body: file,
+	});
+}
+
 export function getProviders() {
 	return request<ProvidersResponse>("/api/providers");
 }

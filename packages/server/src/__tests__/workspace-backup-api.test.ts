@@ -54,3 +54,38 @@ describe("GET /api/workspace/backup", () => {
 		expect(zip.file("workspace/.ridge/rag/chunk-cache.json")).toBeNull();
 	});
 });
+
+describe("POST /api/workspace/restore", () => {
+	it("requires API authentication", async () => {
+		const res = await request(app)
+			.post("/api/workspace/restore")
+			.set("Content-Type", "application/zip")
+			.send(Buffer.from("not-a-zip"));
+
+		expect(res.status).toBe(401);
+	});
+
+	it("restores a downloaded backup and reports snapshot plus rebuild status", async () => {
+		const backupRes = await api
+			.get("/api/workspace/backup")
+			.responseType("blob");
+		expect(backupRes.status).toBe(200);
+
+		await fs.writeFile(path.join(WORKSPACE, "restore-api-before.md"), "# Before", "utf-8");
+
+		const restoreRes = await api
+			.post("/api/workspace/restore")
+			.set("Content-Type", "application/zip")
+			.send(backupRes.body as Buffer);
+
+		expect(restoreRes.status).toBe(200);
+		expect(restoreRes.body).toMatchObject({
+			ok: true,
+			restoredFiles: expect.arrayContaining(["server/ridge.db"]),
+			rebuildStatus: { rag: "pending", search_chunks: "pending" },
+			preRestoreSnapshotPath: expect.stringContaining("pre-restore"),
+		});
+		expect(await fs.access(restoreRes.body.preRestoreSnapshotPath)).toBeUndefined();
+		await expect(fs.access(path.join(WORKSPACE, "restore-api-before.md"))).rejects.toThrow();
+	});
+});

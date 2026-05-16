@@ -12,6 +12,13 @@ import type {
 export interface SystemDeps {
 	port: number;
 	defaultWorkspaceDir: string;
+	dataDir: string;
+	getRidgeDbPath: () => Promise<string>;
+	getDeviceStatus: () => Promise<{
+		total: number;
+		online: number;
+		serverOnline: boolean;
+	}>;
 	workspaceChatConfig: {
 		chatProjectId: string;
 		chatProjectPath: string;
@@ -38,6 +45,9 @@ export function createSystemRouter(deps: SystemDeps) {
 	const {
 		port,
 		defaultWorkspaceDir,
+		dataDir,
+		getRidgeDbPath,
+		getDeviceStatus,
 		workspaceChatConfig,
 		terminalManager,
 		terminalCreateSchema,
@@ -50,16 +60,28 @@ export function createSystemRouter(deps: SystemDeps) {
 		res.json({ ok: true });
 	});
 
-	router.get("/api/system/info", (_req: Request, res: Response) => {
-		res.json({
-			appName: "Pi Web",
-			workspaceDir: defaultWorkspaceDir,
-			chatProjectId: workspaceChatConfig.chatProjectId,
-			chatProjectPath: workspaceChatConfig.chatProjectPath,
-			chatProjectLabel: workspaceChatConfig.chatProjectLabel,
-			apiBase: `http://127.0.0.1:${port}`,
-			sdkVersion: "0.65.2",
-		});
+	router.get("/api/system/info", async (_req: Request, res: Response, next: NextFunction) => {
+		try {
+			res.json({
+				appName: "Pi Web",
+				workspaceDir: defaultWorkspaceDir,
+				defaultWorkspaceDir,
+				dataDir,
+				ridgeDbPath: await getRidgeDbPath(),
+				chatProjectId: workspaceChatConfig.chatProjectId,
+				chatProjectPath: workspaceChatConfig.chatProjectPath,
+				chatProjectLabel: workspaceChatConfig.chatProjectLabel,
+				apiBase: `http://127.0.0.1:${port}`,
+				sdkVersion: "0.65.2",
+				serviceStatus: {
+					api: "online",
+					backup: "ready",
+				},
+				deviceStatus: await getDeviceStatus(),
+			});
+		} catch (error) {
+			next(error);
+		}
 	});
 
 	router.get("/api/terminals", (_req: Request, res: Response) => {

@@ -328,11 +328,23 @@ export interface AgentSummary {
 export interface SystemInfo {
 	appName: string;
 	workspaceDir: string;
+	defaultWorkspaceDir: string;
+	dataDir: string;
+	ridgeDbPath: string;
 	chatProjectId: string;
 	chatProjectPath: string;
 	chatProjectLabel: string;
 	apiBase: string;
 	sdkVersion: string;
+	serviceStatus: {
+		api: "online";
+		backup: "ready" | "busy" | "error";
+	};
+	deviceStatus: {
+		total: number;
+		online: number;
+		serverOnline: boolean;
+	};
 }
 
 export type StreamEventType =

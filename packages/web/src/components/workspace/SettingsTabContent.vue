@@ -1,5 +1,20 @@
 <script setup lang="ts">
-import { MoonStar, Palette, SunMedium, Monitor, Sparkles, Bell, PanelLeftClose, Languages, LogOut } from "lucide-vue-next";
+import {
+  Bell,
+  Database,
+  Download,
+  HardDrive,
+  Languages,
+  LogOut,
+  Monitor,
+  MoonStar,
+  Palette,
+  PanelLeftClose,
+  Server,
+  Sparkles,
+  SunMedium,
+  Upload,
+} from "lucide-vue-next";
 import type { AcceptableValue } from "reka-ui";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
@@ -16,16 +31,28 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useThemePreferences } from "@/composables/useThemePreferences";
-import { getProviders } from "@/lib/api";
+import {
+  downloadWorkspaceBackup,
+  getDevices,
+  getProviders,
+  getSystemInfo,
+  restoreWorkspaceBackup,
+  type WorkspaceRestoreResponse,
+} from "@/lib/api";
 import { logoutAuth } from "@/lib/auth";
 import type { ThemeMode } from "@/stores/settings";
 import { useSettingsStore } from "@/stores/settings";
-import type { ProviderGroup, ThinkingLevel } from "@/lib/types";
+import type { DeviceItem, ProviderGroup, SystemInfo, ThinkingLevel } from "@/lib/types";
 
 const router = useRouter();
 const { mode, setMode, setTheme, themeName } = useThemePreferences();
 const settingsStore = useSettingsStore();
 const providerGroups = ref<ProviderGroup[]>([]);
+const systemInfo = ref<SystemInfo | null>(null);
+const devices = ref<DeviceItem[]>([]);
+const backupStatus = ref<string>("");
+const restoreStatus = ref<WorkspaceRestoreResponse | null>(null);
+const backupError = ref<string>("");
 const DEFAULT_BACKGROUND_MODEL_VALUE = "__ridge-default-background-model__";
 
 const modeOptions: Array<{
@@ -63,6 +90,14 @@ const modelOptions = computed(() =>
   ),
 );
 
+const deviceStatusLabel = computed(() => {
+  const total = systemInfo.value?.deviceStatus.total ?? devices.value.length;
+  const online =
+    systemInfo.value?.deviceStatus.online ??
+    devices.value.filter((device) => device.status === "online").length;
+  return `${online} / ${total} 在线`;
+});
+
 const backgroundModelValue = computed(
   () => settingsStore.backgroundAgentModel || DEFAULT_BACKGROUND_MODEL_VALUE,
 );
@@ -89,14 +124,66 @@ const handleBackgroundThinkingChange = async (value: AcceptableValue) => {
   }
 };
 
+const loadSystemSnapshot = async () => {
+  const [info, deviceResponse] = await Promise.all([
+    getSystemInfo(),
+    getDevices(),
+  ]);
+  systemInfo.value = info;
+  devices.value = deviceResponse.devices;
+};
+
 onMounted(async () => {
   try {
-    const response = await getProviders();
+    const [response] = await Promise.all([
+      getProviders(),
+      loadSystemSnapshot(),
+    ]);
     providerGroups.value = response.providers;
   } catch {
     providerGroups.value = [];
   }
 });
+
+const handleBackupDownload = async () => {
+  backupError.value = "";
+  backupStatus.value = "正在生成备份";
+  try {
+    const backup = await downloadWorkspaceBackup();
+    const link = document.createElement("a");
+    const objectUrl =
+      typeof URL.createObjectURL === "function" ? URL.createObjectURL(backup.blob) : "";
+    link.href = objectUrl;
+    link.download = backup.fileName;
+    if (objectUrl) {
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    }
+    backupStatus.value = `备份已生成：${backup.fileName}`;
+  } catch (error) {
+    backupError.value = error instanceof Error ? error.message : "备份失败";
+    backupStatus.value = "";
+  }
+};
+
+const handleRestoreFileChange = async (event: Event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+
+  backupError.value = "";
+  restoreStatus.value = null;
+  try {
+    restoreStatus.value = await restoreWorkspaceBackup(file);
+    await loadSystemSnapshot();
+  } catch (error) {
+    backupError.value = error instanceof Error ? error.message : "恢复失败";
+  }
+};
 
 const handleLogout = async () => {
   await logoutAuth();
@@ -194,6 +281,90 @@ const themePreviewColors: Record<string, string> = {
                 <div class="mt-0.5 text-[11px] text-muted-foreground">{{ option.desc }}</div>
               </div>
             </button>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Separator class="my-8" />
+
+      <section>
+        <div class="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          <Server class="size-3.5" />
+          系统
+        </div>
+
+        <Card>
+          <CardContent class="divide-y divide-border/60 p-0">
+            <div class="grid gap-1 px-5 py-4">
+              <div class="flex items-center gap-2 text-sm font-medium">
+                <HardDrive class="size-4 text-muted-foreground" />
+                数据目录
+              </div>
+              <div class="break-all text-xs text-muted-foreground">{{ systemInfo?.dataDir || "加载中" }}</div>
+            </div>
+            <div class="grid gap-1 px-5 py-4">
+              <div class="flex items-center gap-2 text-sm font-medium">
+                <Database class="size-4 text-muted-foreground" />
+                数据库
+              </div>
+              <div class="break-all text-xs text-muted-foreground">{{ systemInfo?.ridgeDbPath || "加载中" }}</div>
+            </div>
+            <div class="grid gap-1 px-5 py-4">
+              <div class="text-sm font-medium">默认工作空间</div>
+              <div class="break-all text-xs text-muted-foreground">{{ systemInfo?.defaultWorkspaceDir || systemInfo?.workspaceDir || "加载中" }}</div>
+            </div>
+            <div class="flex items-center justify-between px-5 py-4">
+              <div>
+                <div class="text-sm font-medium">服务状态</div>
+                <div class="mt-1 text-[11px] text-muted-foreground">API 在线，备份服务 {{ systemInfo?.serviceStatus.backup || "加载中" }}</div>
+              </div>
+              <div class="text-xs text-muted-foreground">{{ deviceStatusLabel }}</div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Separator class="my-8" />
+
+      <section>
+        <div class="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          <Database class="size-3.5" />
+          备份恢复
+        </div>
+
+        <Card>
+          <CardContent class="space-y-4 px-5 py-4">
+            <div class="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                data-test="settings-backup-download"
+                @click="handleBackupDownload"
+              >
+                <Download class="mr-2 size-4" />
+                立即备份
+              </Button>
+              <label>
+                <input
+                  data-test="settings-restore-file"
+                  class="sr-only"
+                  type="file"
+                  accept=".zip,application/zip"
+                  @change="handleRestoreFileChange"
+                >
+                <span class="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
+                  <Upload class="size-4" />
+                  选择恢复包
+                </span>
+              </label>
+            </div>
+            <div v-if="backupStatus" class="text-xs text-muted-foreground">{{ backupStatus }}</div>
+            <div v-if="backupError" class="text-xs text-destructive">{{ backupError }}</div>
+            <div v-if="restoreStatus" class="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <div class="font-medium text-foreground">恢复完成</div>
+              <div class="mt-1 break-all">恢复前快照：{{ restoreStatus.preRestoreSnapshotPath }}</div>
+              <div class="mt-1">RAG 与 search_chunks 已标记为待重建。</div>
+            </div>
           </CardContent>
         </Card>
       </section>
