@@ -31,7 +31,8 @@
     "eslint": "^10.2.0",
     "eslint-plugin-vue": "^10.8.0",
     "globals": "^17.4.0",
-    "shadcn-vue": "^2.5.3"
+    "shadcn-vue": "^2.5.3",
+    "wait-on": "^9.0.10"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

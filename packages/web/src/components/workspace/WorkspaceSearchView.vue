@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Activity, AlertTriangle, Brain, Database, FileText, FolderSearch, LoaderCircle, Network, RefreshCcw, Search } from "lucide-vue-next";
+import {
+	AlertTriangle,
+	BookOpen,
+	Brain,
+	Briefcase,
+	CheckCircle2,
+	FileText,
+	Flag,
+	FolderSearch,
+	Layers,
+	LoaderCircle,
+	MessageSquare,
+	RefreshCcw,
+	Search,
+	Sparkles,
+} from "lucide-vue-next";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { getWorkspaceKnowledgeDiagnostics, refreshWorkspaceRag, searchWorkspace } from "@/lib/api";
 import type {
 	WorkspaceKnowledgeDiagnosticsResponse,
@@ -20,7 +27,6 @@ import type {
 	WorkspaceSearchResult,
 	WorkspaceSearchResultType,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -36,40 +42,38 @@ const emit = defineEmits<{
 }>();
 
 const query = ref("");
-const selectedType = ref<WorkspaceSearchResultType | "all">("all");
-const selectedTime = ref<"all" | "today" | "week" | "month">("all");
-const dirFilter = ref("");
-const sortMode = ref<"relevance" | "updated">("relevance");
 const isLoading = ref(false);
 const response = ref<WorkspaceSearchResponse | null>(null);
 const diagnostics = ref<WorkspaceKnowledgeDiagnosticsResponse | null>(null);
 const isDiagnosticsLoading = ref(false);
 const debounceTimer = ref<ReturnType<typeof setTimeout> | null>(null);
 const refreshingId = ref<string | null>(null);
+const selectedType = ref<WorkspaceSearchResultType | "all">("all");
 
-const typeOptions: Array<{ value: WorkspaceSearchResultType | "all"; label: string }> = [
-	{ value: "all", label: "全部类型" },
-	{ value: "file", label: "文件" },
-	{ value: "task", label: "任务" },
-	{ value: "milestone", label: "里程碑" },
-	{ value: "project", label: "项目" },
-	{ value: "session", label: "会话" },
-	{ value: "memory", label: "记忆" },
-	{ value: "wiki", label: "Wiki" },
-	{ value: "space", label: "空间" },
-	{ value: "rag", label: "RAG" },
-];
+const hiddenIssueCount = computed(() => diagnostics.value?.rag.failedTargets.length ?? 0);
+const firstHiddenIssue = computed(() => diagnostics.value?.rag.failedTargets[0] ?? null);
 
-const typeLabelMap = new Map(typeOptions.map((item) => [item.value, item.label]));
+const typeMeta: Record<WorkspaceSearchResultType, { label: string; icon: typeof FileText; color: string }> = {
+	file: { label: "文件", icon: FileText, color: "text-slate-500" },
+	session: { label: "会话", icon: MessageSquare, color: "text-indigo-500" },
+	task: { label: "任务", icon: CheckCircle2, color: "text-sky-500" },
+	milestone: { label: "里程碑", icon: Flag, color: "text-amber-500" },
+	project: { label: "项目", icon: Briefcase, color: "text-purple-500" },
+	space: { label: "空间", icon: Layers, color: "text-teal-500" },
+	memory: { label: "记忆", icon: Brain, color: "text-orange-500" },
+	wiki: { label: "知识", icon: BookOpen, color: "text-emerald-500" },
+	rag: { label: "索引", icon: Sparkles, color: "text-indigo-400" },
+};
 
-const groupedResults = computed(() => {
-	const groups = new Map<WorkspaceSearchResultType, WorkspaceSearchResult[]>();
-	for (const item of response.value?.results ?? []) {
-		const current = groups.get(item.type) ?? [];
-		current.push(item);
-		groups.set(item.type, current);
-	}
-	return Array.from(groups.entries());
+const filteredResults = computed(() => {
+	if (!response.value) return [];
+	if (selectedType.value === "all") return response.value.results;
+	return response.value.results.filter((r) => r.type === selectedType.value);
+});
+
+const resultGroups = computed(() => {
+	if (!response.value) return [];
+	return response.value.groups.filter((g) => g.count > 0);
 });
 
 async function runSearch() {
@@ -82,12 +86,9 @@ async function runSearch() {
 	try {
 		response.value = await searchWorkspace({
 			q: text,
-			type: selectedType.value === "all" ? undefined : selectedType.value,
-			time: selectedTime.value,
-			dir: dirFilter.value.trim() || undefined,
-			sort: sortMode.value,
 			limit: 100,
 		});
+		selectedType.value = "all";
 	} catch (error) {
 		toast.error("搜索失败", {
 			description: error instanceof Error ? error.message : "无法完成搜索。",
@@ -141,23 +142,6 @@ function openResult(item: WorkspaceSearchResult) {
 	}
 }
 
-async function refreshResult(item: WorkspaceSearchResult) {
-	const path = item.path ?? item.sourcePath;
-	if (!path) return;
-	refreshingId.value = item.id;
-	try {
-		await refreshWorkspaceRag(path);
-		await loadDiagnostics();
-		await runSearch();
-	} catch (error) {
-		toast.error("刷新索引失败", {
-			description: error instanceof Error ? error.message : "无法刷新该文件索引。",
-		});
-	} finally {
-		refreshingId.value = null;
-	}
-}
-
 async function refreshDiagnosticTarget(path: string) {
 	refreshingId.value = `diagnostic:${path}`;
 	try {
@@ -185,7 +169,7 @@ function formatTime(value: number) {
 	}).format(new Date(value));
 }
 
-watch([query, selectedType, selectedTime, dirFilter, sortMode], scheduleSearch);
+watch(query, scheduleSearch);
 
 onMounted(() => {
 	query.value = "";
@@ -195,229 +179,167 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-background">
+    <!-- 搜索栏 -->
     <header class="shrink-0 border-b border-subtle px-5 py-4">
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="relative min-w-[260px] flex-1">
-          <Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <div class="mx-auto flex max-w-3xl items-center gap-3">
+        <div class="relative min-w-0 flex-1">
+          <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             v-model="query"
-            class="h-9 pl-8 text-sm"
-            placeholder="搜索文件、任务、记忆、Wiki、空间和 RAG"
+            class="h-10 pl-9 text-body"
+            placeholder="搜索文件、会话、任务、知识..."
           />
         </div>
-        <Select v-model="selectedType">
-          <SelectTrigger class="h-9 w-32 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="item in typeOptions" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="selectedTime">
-          <SelectTrigger class="h-9 w-28 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部时间</SelectItem>
-            <SelectItem value="today">今天</SelectItem>
-            <SelectItem value="week">本周</SelectItem>
-            <SelectItem value="month">本月</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input v-model="dirFilter" class="h-9 w-36 text-xs" placeholder="目录筛选" />
-        <Select v-model="sortMode">
-          <SelectTrigger class="h-9 w-28 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="relevance">相关度</SelectItem>
-            <SelectItem value="updated">最近更新</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div v-if="response" class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <Badge variant="secondary">已索引 {{ response.indexStatus.indexed }}</Badge>
-        <Badge variant="outline">待索引 {{ response.indexStatus.pending }}</Badge>
-        <Badge :variant="response.indexStatus.indexFailed ? 'destructive' : 'outline'">
-          失败 {{ response.indexStatus.indexFailed }}
-        </Badge>
-        <span v-if="isLoading" class="inline-flex items-center gap-1">
-          <LoaderCircle class="size-3 animate-spin" />
+        <span v-if="isLoading" class="inline-flex shrink-0 items-center gap-1.5 text-caption text-muted-foreground">
+          <LoaderCircle class="size-3.5 animate-spin" />
           搜索中
         </span>
       </div>
     </header>
 
     <ScrollArea class="min-h-0 flex-1">
-      <div v-if="!response && !isLoading" class="space-y-5 p-5">
-        <section class="space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-2">
-              <Brain class="size-4 text-muted-foreground" />
-              <h3 class="text-sm font-medium text-foreground">知识诊断</h3>
-              <LoaderCircle v-if="isDiagnosticsLoading" class="size-3.5 animate-spin text-muted-foreground" />
+      <div class="mx-auto max-w-3xl px-5 py-4">
+        <!-- 初始空状态 -->
+        <div v-if="!response && !isLoading" class="flex flex-col items-center py-20">
+          <div class="mb-5 flex size-14 items-center justify-center rounded-xl bg-soft text-muted-foreground">
+            <FolderSearch class="size-7" />
+          </div>
+          <h3 class="text-body-lg font-semibold text-foreground">搜索工作空间</h3>
+          <p class="mt-1.5 max-w-xs text-center text-caption text-muted-foreground">
+            输入关键词查找文件、会话、任务和知识。ridge 会自动索引并实时搜索。
+          </p>
+
+          <div v-if="isDiagnosticsLoading" class="mt-5 flex items-center gap-1.5 text-caption text-muted-foreground">
+            <LoaderCircle class="size-3.5 animate-spin" />
+            正在检查索引状态
+          </div>
+
+          <div
+            v-else-if="firstHiddenIssue"
+            class="mt-5 flex w-full max-w-sm items-center gap-3 rounded-lg border border-subtle bg-soft px-4 py-3"
+          >
+            <AlertTriangle class="size-4 shrink-0 text-destructive" />
+            <div class="min-w-0 flex-1">
+              <p class="text-body-sm text-foreground">
+                {{ hiddenIssueCount }} 个内容暂时搜不到
+              </p>
+              <p class="mt-0.5 text-caption text-muted-foreground">索引可能未就绪，点击重新整理</p>
             </div>
-            <Button variant="outline" size="sm" class="h-8 gap-1.5 text-xs" @click="loadDiagnostics">
-              <RefreshCcw class="size-3.5" />
-              刷新
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-7 shrink-0 gap-1 text-caption"
+              :disabled="refreshingId === `diagnostic:${firstHiddenIssue.path}`"
+              @click="refreshDiagnosticTarget(firstHiddenIssue.path)"
+            >
+              <LoaderCircle v-if="refreshingId === `diagnostic:${firstHiddenIssue.path}`" class="size-3 animate-spin" />
+              <RefreshCcw v-else class="size-3" />
+              整理
             </Button>
           </div>
-
-          <div v-if="diagnostics" class="grid gap-3 lg:grid-cols-3">
-            <div class="rounded-md border border-default p-3">
-              <div class="mb-2 flex items-center gap-2 text-xs font-medium text-foreground">
-                <Activity class="size-3.5 text-muted-foreground" />
-                RAG
-              </div>
-              <div class="flex flex-wrap gap-1.5 text-xs">
-                <Badge variant="secondary">已索引 {{ diagnostics.rag.indexed }}</Badge>
-                <Badge variant="outline">待索引 {{ diagnostics.rag.pending }}</Badge>
-                <Badge :variant="diagnostics.rag.indexFailed ? 'destructive' : 'outline'">失败 {{ diagnostics.rag.indexFailed }}</Badge>
-              </div>
-              <div class="mt-2 text-xs text-muted-foreground">
-                最近索引 {{ diagnostics.rag.latestIndexedAt ? formatTime(diagnostics.rag.latestIndexedAt) : "无记录" }}
-              </div>
-            </div>
-
-            <div class="rounded-md border border-default p-3">
-              <div class="mb-2 flex items-center gap-2 text-xs font-medium text-foreground">
-                <FileText class="size-3.5 text-muted-foreground" />
-                记忆 / Wiki
-              </div>
-              <div class="space-y-1 text-xs text-muted-foreground">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="truncate">{{ diagnostics.memory.memoryPath }}</span>
-                  <Badge :variant="diagnostics.memory.injected ? 'secondary' : 'outline'">{{ diagnostics.memory.injected ? "已注入" : "空" }}</Badge>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <span class="truncate">{{ diagnostics.wiki.indexPath }}</span>
-                  <Badge :variant="diagnostics.wiki.injected ? 'secondary' : 'outline'">{{ diagnostics.wiki.indexStatus }}</Badge>
-                </div>
-                <div>daily {{ diagnostics.memory.dailyCount }} · 最近 {{ diagnostics.memory.latestDailyAt ? formatTime(diagnostics.memory.latestDailyAt) : "无记录" }}</div>
-              </div>
-            </div>
-
-            <div class="rounded-md border border-default p-3">
-              <div class="mb-2 flex items-center gap-2 text-xs font-medium text-foreground">
-                <Database class="size-3.5 text-muted-foreground" />
-                图谱 / MCP
-              </div>
-              <div class="flex flex-wrap gap-1.5 text-xs">
-                <Badge :variant="diagnostics.graph.schemaExists ? 'secondary' : 'outline'">schema {{ diagnostics.graph.schemaExists ? "存在" : "缺失" }}</Badge>
-                <Badge :variant="diagnostics.graph.databaseExists ? 'secondary' : 'outline'">graph {{ diagnostics.graph.databaseExists ? "存在" : "缺失" }}</Badge>
-              </div>
-              <div class="mt-2 flex flex-wrap gap-1.5 text-caption text-muted-foreground">
-                <span v-for="tool in diagnostics.mcp.tools" :key="tool.name" class="rounded-sm bg-muted px-1.5 py-0.5">{{ tool.name }}</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section v-if="diagnostics?.rag.failedTargets.length" class="space-y-2">
-          <div class="flex items-center gap-2">
-            <AlertTriangle class="size-4 text-destructive" />
-            <h3 class="text-sm font-medium text-foreground">索引失败</h3>
-          </div>
-          <div class="divide-y divide-border/50 rounded-md border border-default">
-            <div v-for="target in diagnostics.rag.failedTargets" :key="target.path" class="flex items-center gap-3 px-3 py-2">
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm text-foreground">{{ target.path }}</div>
-                <div class="truncate text-xs text-muted-foreground">{{ target.error || "未知错误" }}</div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                class="h-8 shrink-0 gap-1.5 text-xs"
-                :disabled="refreshingId === `diagnostic:${target.path}`"
-                @click="refreshDiagnosticTarget(target.path)"
-              >
-                <LoaderCircle v-if="refreshingId === `diagnostic:${target.path}`" class="size-3.5 animate-spin" />
-                <RefreshCcw v-else class="size-3.5" />
-                刷新失败索引
-              </Button>
-            </div>
-          </div>
-        </section>
-
-        <section v-if="diagnostics?.backgroundJobs.recentFailures.length" class="space-y-2">
-          <div class="flex items-center gap-2">
-            <Network class="size-4 text-muted-foreground" />
-            <h3 class="text-sm font-medium text-foreground">后台任务</h3>
-            <Badge variant="outline">失败 {{ diagnostics.backgroundJobs.byStatus.failed }}</Badge>
-          </div>
-          <div class="divide-y divide-border/50 rounded-md border border-default">
-            <div v-for="job in diagnostics.backgroundJobs.recentFailures" :key="job.jobId" class="px-3 py-2">
-              <div class="flex min-w-0 items-center gap-2">
-                <span class="truncate text-sm text-foreground">{{ job.jobId }}</span>
-                <Badge variant="outline" class="h-5 shrink-0 text-micro">{{ job.type }}</Badge>
-              </div>
-              <div class="mt-1 truncate text-xs text-muted-foreground">{{ job.lastError || job.relatedId }}</div>
-            </div>
-          </div>
-        </section>
-
-        <div v-if="!diagnostics && !isDiagnosticsLoading" class="flex h-full min-h-[220px] items-center justify-center px-6 text-sm text-muted-foreground">
-          <div class="flex items-center gap-2">
-            <FolderSearch class="size-5" />
-            <span>输入关键词后显示确定结果</span>
-          </div>
         </div>
-      </div>
 
-      <div v-else-if="response && response.results.length === 0" class="flex h-full min-h-[320px] items-center justify-center px-6 text-sm text-muted-foreground">
-        没有匹配结果
-      </div>
-
-      <div v-else class="space-y-6 p-5">
-        <section v-for="[type, items] in groupedResults" :key="type" class="space-y-2">
-          <div class="flex items-center gap-2">
-            <h3 class="text-sm font-medium text-foreground">{{ typeLabelMap.get(type) ?? type }}</h3>
-            <Badge variant="secondary" class="h-5">{{ items.length }}</Badge>
+        <!-- 无结果 -->
+        <div v-else-if="response && filteredResults.length === 0" class="flex flex-col items-center py-20">
+          <div class="mb-4 flex size-12 items-center justify-center rounded-xl bg-subtle text-muted-foreground/50">
+            <Search class="size-6" />
           </div>
-          <div class="divide-y divide-border/50 rounded-md border border-default">
+          <p class="text-body text-muted-foreground">未找到相关内容</p>
+          <p v-if="selectedType !== 'all'" class="mt-1 text-caption text-muted-foreground/60">
+            当前筛选：{{ typeMeta[selectedType].label }}
+          </p>
+        </div>
+
+        <!-- 结果列表 -->
+        <template v-else>
+          <!-- 筛选芯片 -->
+          <div v-if="resultGroups.length > 1" class="mb-4 flex flex-wrap gap-1.5">
             <button
-              v-for="item in items"
-              :key="item.id"
               type="button"
-              :class="cn(
-                'flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-soft',
-                item.type === 'rag' ? 'bg-subtle' : '',
-              )"
-              @click="openResult(item)"
+              class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-caption transition-colors"
+              :class="selectedType === 'all'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-soft text-muted-foreground hover:bg-hover'"
+              @click="selectedType = 'all'"
             >
-              <FileText class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <span class="min-w-0 flex-1">
-                <span class="flex min-w-0 items-center gap-2">
-                  <span class="truncate text-sm font-medium text-foreground">{{ item.title }}</span>
-                  <Badge variant="outline" class="h-5 shrink-0 text-micro">{{ typeLabelMap.get(item.type) }}</Badge>
-                  <span class="shrink-0 text-caption text-muted-foreground">{{ formatTime(item.updatedAt) }}</span>
-                </span>
-                <span class="mt-1 block truncate text-xs text-muted-foreground">
-                  {{ item.sourcePath || item.path || item.targetId }}
-                </span>
-                <span class="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground/90">
-                  {{ item.snippet }}
-                </span>
-                <span v-if="item.headingPath?.length" class="mt-1 block truncate text-caption text-muted-foreground">
-                  {{ item.headingPath.join(" / ") }}<template v-if="item.startLine"> · L{{ item.startLine }}</template>
-                </span>
-              </span>
-              <Button
-                v-if="['file', 'memory', 'wiki', 'rag'].includes(item.type)"
-                variant="ghost"
-                size="icon"
-                class="h-7 w-7 shrink-0"
-                :disabled="refreshingId === item.id"
-                @click.stop="refreshResult(item)"
-              >
-                <LoaderCircle v-if="refreshingId === item.id" class="size-3.5 animate-spin" />
-                <RefreshCcw v-else class="size-3.5" />
-              </Button>
+              全部
+              <span class="tabular-nums">{{ response?.results.length ?? 0 }}</span>
+            </button>
+            <button
+              v-for="group in resultGroups"
+              :key="group.type"
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-caption transition-colors"
+              :class="selectedType === group.type
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-soft text-muted-foreground hover:bg-hover'"
+              @click="selectedType = group.type"
+            >
+              <component :is="typeMeta[group.type].icon" class="size-3.5" />
+              {{ typeMeta[group.type].label }}
+              <span class="tabular-nums">{{ group.count }}</span>
             </button>
           </div>
-        </section>
+
+          <!-- 结果计数 -->
+          <div v-if="selectedType === 'all' && response" class="mb-3 flex items-center justify-between">
+            <span class="text-caption text-muted-foreground">
+              找到 {{ response.results.length }} 个结果
+            </span>
+          </div>
+
+          <!-- 结果卡片 -->
+          <div class="space-y-2">
+            <button
+              v-for="item in filteredResults"
+              :key="item.id"
+              type="button"
+              class="group flex w-full items-start gap-3 rounded-lg border border-subtle bg-card px-3 py-3 text-left transition-all hover:border-default hover:shadow-sm"
+              @click="openResult(item)"
+            >
+              <!-- 类型图标 -->
+              <div
+                class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md"
+                :class="typeMeta[item.type].color.replace('text-', 'bg-').replace('500', '100').replace('400', '100') + ' ' + typeMeta[item.type].color.replace('500', '600').replace('400', '500')"
+              >
+                <component :is="typeMeta[item.type].icon" class="size-4" />
+              </div>
+
+              <!-- 内容 -->
+              <div class="min-w-0 flex-1">
+                <!-- 标题行 -->
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="min-w-0 flex-1 truncate text-body font-medium text-foreground">
+                    {{ item.title }}
+                  </span>
+                  <span class="shrink-0 text-caption text-muted-foreground tabular-nums">
+                    {{ formatTime(item.updatedAt) }}
+                  </span>
+                </div>
+
+                <!-- 路径 / 位置 -->
+                <span
+                  v-if="item.sourcePath || item.path || item.targetId"
+                  class="mt-0.5 block truncate text-caption text-muted-foreground/70"
+                >
+                  {{ item.sourcePath || item.path || item.targetId }}
+                </span>
+
+                <!-- 高亮片段 -->
+                <span v-if="item.snippet" class="mt-1 line-clamp-2 block text-body-sm leading-relaxed text-muted-foreground/80">
+                  {{ item.snippet }}
+                </span>
+
+                <!-- 章节路径 -->
+                <span v-if="item.headingPath?.length" class="mt-1.5 flex items-center gap-1 truncate text-micro text-muted-foreground/50">
+                  <component :is="typeMeta[item.type].icon" class="size-3" />
+                  {{ item.headingPath.join(" / ") }}
+                  <template v-if="item.startLine"> · L{{ item.startLine }}</template>
+                </span>
+              </div>
+            </button>
+          </div>
+        </template>
       </div>
     </ScrollArea>
   </div>

@@ -890,3 +890,18 @@
 - `task54-mobile-tasks.test.ts` 覆盖 Android token 读取任务/项目摘要、状态轻操作、非法状态流转拒绝、越权任务/项目操作拒绝、继续已有处理会话。
 - `mobile-task-api-client.test.ts`、`mobile-task-store.test.ts`、`TasksPage.test.ts` 覆盖移动端 token API、分组、失败回滚、详情和处理会话跳转。
 - `ChatPage.test.ts` 复测轻对话页。
+
+## 2026-05-17 全局搜索极简体验
+
+### 产品结论
+
+- 搜索页是内容查找入口，不是知识系统控制台。
+- 用户概念里没有 `Wiki`、`记忆`、`RAG`、`MCP` 等内部类别；搜索 UI 不展示类型筛选、类型分组或类型标签。
+- 后端仍可保留类型、时间、项目、目录等查询能力给内部调用；前端默认只给一个搜索框和扁平结果列表。
+- 知识诊断继续读真实 `/api/workspace/knowledge/diagnostics`，但只在异常时用用户语言提示「内容暂时搜不到」，并提供「重新整理」动作。
+
+### 验收证据
+
+- `WorkspaceSearchView.vue` 已移除筛选控件、类型分组、索引状态面板和普通结果刷新按钮。
+- `WorkspaceSearchView.test.ts` 覆盖极简空态不暴露内部知识分类、异常重新整理、搜索只传 `q + limit`、普通结果不显示类型标签或手动刷新。
+- `cd packages/web && pnpm exec vitest run src/components/workspace/__tests__/WorkspaceSearchView.test.ts` 通过。

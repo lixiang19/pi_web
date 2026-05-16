@@ -1,6 +1,6 @@
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defineComponent, nextTick } from "vue";
+import { nextTick } from "vue";
 
 import WorkspaceSearchView from "../WorkspaceSearchView.vue";
 import { getWorkspaceKnowledgeDiagnostics, searchWorkspace, refreshWorkspaceRag } from "@/lib/api";
@@ -17,22 +17,12 @@ vi.mock("vue-sonner", () => ({
 	},
 }));
 
-const SelectStub = defineComponent({
-	props: ["modelValue"],
-	emits: ["update:modelValue"],
-	template: `<select :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><slot /></select>`,
-});
-
 const globalStubs = {
 	Badge: { template: "<span><slot /></span>" },
 	Button: { template: "<button v-bind='$attrs'><slot /></button>" },
 	Input: { template: "<input v-bind='$attrs' :value='modelValue' @input=\"$emit('update:modelValue', $event.target.value)\" />", props: ["modelValue"], emits: ["update:modelValue"] },
 	ScrollArea: { template: "<div><slot /></div>" },
-	Select: SelectStub,
-	SelectContent: { template: "<option disabled><slot /></option>" },
-	SelectItem: { props: ["value"], template: "<option :value='value'><slot /></option>" },
-	SelectTrigger: { template: "<span><slot /></span>" },
-	SelectValue: true,
+	AlertTriangle: true,
 	FileText: true,
 	FolderSearch: true,
 	LoaderCircle: true,
@@ -139,7 +129,7 @@ describe("WorkspaceSearchView", () => {
 		vi.mocked(refreshWorkspaceRag).mockResolvedValue({ success: true, indexed: true });
 	});
 
-	it("loads the knowledge diagnostics dashboard before a query is entered", async () => {
+	it("shows a simple empty state without exposing internal knowledge categories", async () => {
 		const wrapper = mount(WorkspaceSearchView, {
 			props: { workspaceDir: "/workspace" },
 			global: { stubs: globalStubs },
@@ -148,22 +138,24 @@ describe("WorkspaceSearchView", () => {
 		await flushAsync();
 
 		expect(getWorkspaceKnowledgeDiagnostics).toHaveBeenCalled();
-		expect(wrapper.text()).toContain("知识诊断");
-		expect(wrapper.text()).toContain("失败 1");
-		expect(wrapper.text()).toContain("记忆/MEMORY.md");
-		expect(wrapper.text()).toContain("Wiki/index.md");
-		expect(wrapper.text()).toContain("read_workspace_file");
-		expect(wrapper.text()).toContain("job-rag-failed");
+		expect(wrapper.text()).toContain("输入关键词查找内容");
+		expect(wrapper.text()).toContain("1 个内容暂时搜不到");
+		expect(wrapper.text()).not.toContain("知识诊断");
+		expect(wrapper.text()).not.toContain("RAG");
+		expect(wrapper.text()).not.toContain("Wiki");
+		expect(wrapper.text()).not.toContain("记忆");
+		expect(wrapper.text()).not.toContain("read_workspace_file");
+		expect(wrapper.text()).not.toContain("job-rag-failed");
 	});
 
-	it("refreshes failed RAG targets from the diagnostics dashboard", async () => {
+	it("refreshes hidden indexing issues from the simple empty state", async () => {
 		const wrapper = mount(WorkspaceSearchView, {
 			props: { workspaceDir: "/workspace" },
 			global: { stubs: globalStubs },
 		});
 
 		await flushAsync();
-		await wrapper.findAll("button").find((button) => button.text().includes("刷新失败索引"))!.trigger("click");
+		await wrapper.findAll("button").find((button) => button.text().includes("重新整理"))!.trigger("click");
 		await flushAsync();
 
 		expect(refreshWorkspaceRag).toHaveBeenCalledWith("笔记/broken.md");
@@ -180,14 +172,16 @@ describe("WorkspaceSearchView", () => {
 		await vi.advanceTimersByTimeAsync(200);
 		await nextTick();
 
-		expect(searchWorkspace).toHaveBeenCalledWith(expect.objectContaining({ q: "alpha" }));
+		expect(searchWorkspace).toHaveBeenCalledWith({ q: "alpha", limit: 100 });
 		expect(wrapper.text()).toContain("alpha.md");
+		expect(wrapper.text()).not.toContain("全部类型");
+		expect(wrapper.text()).not.toContain("文件");
 
 		await wrapper.findAll("button").find((button) => button.text().includes("alpha.md"))!.trigger("click");
 		expect(wrapper.emitted("open-file")?.[0]).toEqual(["/workspace/笔记/alpha.md"]);
 	});
 
-	it("refreshes the selected RAG source and searches again", async () => {
+	it("does not expose manual refresh controls on normal results", async () => {
 		const wrapper = mount(WorkspaceSearchView, {
 			props: { workspaceDir: "/workspace" },
 			global: { stubs: globalStubs },
@@ -197,12 +191,8 @@ describe("WorkspaceSearchView", () => {
 		await vi.advanceTimersByTimeAsync(200);
 		await nextTick();
 
-		const refreshButtons = wrapper.findAll("button").filter((button) => !button.text().includes("alpha.md"));
-		await refreshButtons[0]!.trigger("click");
-		await nextTick();
-
-		expect(refreshWorkspaceRag).toHaveBeenCalledWith("笔记/alpha.md");
-		expect(searchWorkspace).toHaveBeenCalledTimes(2);
+		expect(wrapper.findAll("button")).toHaveLength(1);
+		expect(refreshWorkspaceRag).not.toHaveBeenCalled();
 	});
 
 	it("opens project results through project navigation instead of file navigation", async () => {

@@ -14,10 +14,8 @@ import {
 } from "lucide-vue-next";
 
 import { useNotifications } from "@/composables/useNotifications";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
 	NotificationAction,
 	NotificationEvent,
@@ -190,99 +188,160 @@ const handleAction = async (notification: NotificationEvent, action: Notificatio
 
 <template>
 	<div class="flex h-full min-h-0 flex-col bg-background">
-		<header class="shrink-0 border-b border-default px-5 py-4">
-			<div class="flex items-center justify-between gap-3">
+		<!-- Header -->
+		<header class="shrink-0 border-b border-subtle px-5 py-4">
+			<div class="mx-auto flex max-w-3xl items-center justify-between gap-3">
 				<div class="min-w-0">
-					<h2 class="text-base font-semibold text-foreground">通知与建议</h2>
-					<p class="mt-1 text-xs text-muted-foreground">
-						{{ actionableCount }} 条待处理
+					<div class="flex items-center gap-2">
+						<h2 class="text-body-lg font-semibold text-foreground">通知</h2>
+						<span
+							v-if="actionableCount > 0"
+							class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-caption font-medium text-primary"
+						>
+							<span class="size-1.5 rounded-full bg-primary"></span>
+							{{ actionableCount }} 待处理
+						</span>
+					</div>
+					<p class="mt-0.5 text-caption text-muted-foreground">
+						来自自动化、任务回顾和文件处理的通知与建议
 					</p>
 				</div>
-				<Button variant="outline" size="sm" :disabled="isLoading" @click="load(filter)">
-					<LoaderCircle v-if="isLoading" class="mr-1.5 size-3.5 animate-spin" />
-					<RefreshCcw v-else class="mr-1.5 size-3.5" />
+				<Button
+					variant="outline"
+					size="sm"
+					class="h-8 gap-1.5 text-caption"
+					:disabled="isLoading"
+					@click="load(filter)"
+				>
+					<LoaderCircle v-if="isLoading" class="size-3.5 animate-spin" />
+					<RefreshCcw v-else class="size-3.5" />
 					刷新
 				</Button>
 			</div>
 
-			<Tabs :model-value="filter" class="mt-4">
-				<TabsList class="grid w-full grid-cols-5">
-					<TabsTrigger
-						v-for="item in filterOptions"
-						:key="item.id"
-						:value="item.id"
-						class="gap-1.5"
-						@click="handleFilterChange(item.id)"
-					>
-						<span>{{ item.label }}</span>
-						<span class="text-micro text-muted-foreground">{{ counts[item.id] }}</span>
-					</TabsTrigger>
-				</TabsList>
-			</Tabs>
+			<!-- 筛选芯片 -->
+			<div class="mx-auto mt-4 flex max-w-3xl flex-wrap gap-1.5">
+				<button
+					v-for="item in filterOptions"
+					:key="item.id"
+					type="button"
+					class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-caption transition-colors"
+					:class="filter === item.id ? 'bg-primary text-primary-foreground' : 'bg-soft text-muted-foreground hover:bg-hover'"
+					@click="handleFilterChange(item.id)"
+				>
+					{{ item.label }}
+					<span class="tabular-nums opacity-70">{{ counts[item.id] }}</span>
+				</button>
+			</div>
 		</header>
 
 		<ScrollArea class="min-h-0 flex-1">
-			<div class="space-y-3 p-5">
+			<div class="mx-auto max-w-3xl space-y-3 px-5 py-4">
+				<!-- 错误 -->
 				<div
 					v-if="error"
-					class="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+					class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-body-sm text-destructive"
 				>
 					{{ error }}
 				</div>
 
+				<!-- 空状态 -->
 				<div
 					v-else-if="!isLoading && notifications.length === 0"
-					class="rounded-md border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground"
+					class="flex flex-col items-center py-20"
 				>
-					当前筛选下没有通知
+					<div class="mb-4 flex size-12 items-center justify-center rounded-xl bg-soft text-muted-foreground/50">
+						<Bell class="size-6" />
+					</div>
+					<p class="text-body text-muted-foreground">当前筛选下没有通知</p>
+					<p class="mt-1 text-caption text-muted-foreground/60">新通知会自动出现在这里</p>
 				</div>
 
+				<!-- 加载中 -->
+				<div
+					v-else-if="isLoading"
+					class="flex items-center justify-center gap-2 py-12 text-caption text-muted-foreground"
+				>
+					<LoaderCircle class="size-4 animate-spin" />
+					加载中...
+				</div>
+
+				<!-- 通知列表 -->
 				<article
 					v-for="notification in notifications"
 					:key="notification.id"
-					class="rounded-md border border-border bg-card p-4 shadow-sm"
+					class="group rounded-lg border border-subtle bg-card p-4 transition-all hover:border-default hover:shadow-sm"
 				>
 					<div class="flex items-start gap-3">
+						<!-- 类型图标 -->
 						<div
-							class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+							class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg"
+							:class="{
+								'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400': notification.type === 'suggestion',
+								'bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400': notification.type === 'confirmation',
+								'bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400': notification.type === 'failure',
+								'bg-orange-100 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400': notification.type === 'warning',
+								'bg-blue-100 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400': notification.type === 'info',
+							}"
 						>
 							<component :is="typeIconMap[notification.type]" class="size-4" />
 						</div>
+
 						<div class="min-w-0 flex-1">
+							<!-- 标题行 -->
 							<div class="flex flex-wrap items-center gap-2">
-								<h3 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+								<h3 class="min-w-0 flex-1 truncate text-body font-semibold text-foreground">
 									{{ notification.title }}
 								</h3>
-								<Badge variant="secondary" class="shrink-0">
-									{{ typeLabels[notification.type] }}
-								</Badge>
-								<Badge variant="outline" class="shrink-0">
+								<!-- 状态指示 -->
+								<span class="inline-flex items-center gap-1 text-caption text-muted-foreground">
+									<span
+										class="size-1.5 rounded-full"
+										:class="{
+											'bg-blue-500': notification.status === 'unread',
+											'bg-amber-500': notification.status === 'pending',
+											'bg-emerald-500': notification.status === 'handled',
+											'bg-slate-400': notification.status === 'dismissed',
+											'bg-red-500': notification.status === 'failed',
+										}"
+									></span>
 									{{ statusLabels[notification.status] ?? notification.status }}
-								</Badge>
+								</span>
 							</div>
 
-							<p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+							<!-- 正文 -->
+							<p class="mt-2 whitespace-pre-wrap text-body-sm leading-relaxed text-muted-foreground/80">
 								{{ notification.body }}
 							</p>
 
-							<div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+							<!-- 元数据行 -->
+							<div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground/60">
+								<span class="inline-flex items-center gap-1">
+									<component :is="typeIconMap[notification.type]" class="size-3" />
+									{{ typeLabels[notification.type] }}
+								</span>
 								<span>{{ sourceLabel(notification.source) }}</span>
-								<span>{{ formatTime(notification.createdAt) }}</span>
-								<span v-if="notification.related" class="max-w-full truncate">
+								<span class="tabular-nums">{{ formatTime(notification.createdAt) }}</span>
+								<span
+									v-if="notification.related"
+									class="max-w-full truncate"
+								>
 									{{ relatedLabel(notification) }}
 								</span>
 							</div>
 
+							<!-- 操作按钮 -->
 							<div v-if="notification.actions.length" class="mt-4 flex flex-wrap gap-2">
 								<Button
 									v-for="action in notification.actions"
 									:key="action.id"
 									size="sm"
-									:variant="action.kind === 'accept_suggestion' ? 'default' : 'outline'"
+									:variant="action.kind === 'accept_suggestion' || action.kind === 'mark_handled' ? 'default' : 'outline'"
 									:disabled="isActionPending(notification, action)"
+									class="h-7 gap-1.5 text-caption"
 									@click="handleAction(notification, action)"
 								>
-									<component :is="actionIcon(action)" class="mr-1.5 size-3.5" />
+									<component :is="actionIcon(action)" class="size-3.5" />
 									{{ action.label }}
 								</Button>
 							</div>
