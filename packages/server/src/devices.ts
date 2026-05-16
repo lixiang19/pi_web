@@ -14,12 +14,49 @@ export interface DeviceRecord {
 }
 
 export type RegisteredDeviceRecord = DeviceRecord & { token: string };
+export type DeviceType = "server" | "desktop" | "android";
 
 export const DEVICE_TOKEN_BYTES = 32;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
+const DEVICE_TYPES = new Set<DeviceType>(["server", "desktop", "android"]);
+const ANDROID_CAPABILITIES = new Set(["mobile_capture", "camera", "microphone"]);
 
 function generateToken(): string {
   return `rdt_${crypto.randomBytes(DEVICE_TOKEN_BYTES).toString("base64url")}`;
+}
+
+function httpError(message: string, statusCode: number, code: string) {
+  return Object.assign(new Error(message), { statusCode, code });
+}
+
+export function normalizeDeviceType(value: string): DeviceType {
+  const normalized = value.trim().toLowerCase();
+  if (!DEVICE_TYPES.has(normalized as DeviceType)) {
+    throw httpError(`Unsupported device type: ${value}`, 400, "UNSUPPORTED_DEVICE_TYPE");
+  }
+  return normalized as DeviceType;
+}
+
+export function normalizeDeviceCapabilities(
+  deviceType: DeviceType,
+  capabilities: Record<string, unknown> = {},
+): Record<string, unknown> {
+  if (deviceType !== "android") {
+    return { ...capabilities };
+  }
+
+  const normalized: Record<string, boolean> = {};
+
+  for (const [key, value] of Object.entries(capabilities)) {
+    if (typeof value !== "boolean") {
+      throw httpError(`Invalid capability value for ${key}`, 400, "INVALID_DEVICE_CAPABILITY");
+    }
+    if (ANDROID_CAPABILITIES.has(key)) {
+      normalized[key] = value;
+    }
+  }
+
+  return normalized;
 }
 
 export function hashDeviceToken(token: string): string {
@@ -87,7 +124,8 @@ export async function registerDevice(params: {
   const tokenHash = hashDeviceToken(token);
   const deviceId = params.deviceId?.trim() || `device-${crypto.randomBytes(12).toString("base64url")}`;
   const name = params.name.trim();
-  const capabilities = params.capabilities || {};
+  const deviceType = normalizeDeviceType(params.deviceType);
+  const capabilities = normalizeDeviceCapabilities(deviceType, params.capabilities);
   const existing = db
     .prepare("SELECT created_at FROM devices WHERE device_id = ?")
     .get(deviceId) as { created_at: number } | undefined;
@@ -110,7 +148,7 @@ export async function registerDevice(params: {
   ).run(
     deviceId,
     name,
-    params.deviceType,
+    deviceType,
     JSON.stringify(capabilities),
     tokenHash,
     now,
@@ -121,7 +159,7 @@ export async function registerDevice(params: {
   return {
     deviceId,
     name,
-    deviceType: params.deviceType,
+    deviceType,
     token,
     status: "online",
     capabilities,

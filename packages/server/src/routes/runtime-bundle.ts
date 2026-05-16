@@ -16,7 +16,7 @@ export interface RuntimeBundleDeps {
 const deviceRegistrationSchema = z.object({
 	deviceId: z.string().trim().min(1).max(120).optional(),
 	name: z.string().trim().min(1).max(120),
-	deviceType: z.string().trim().min(1).max(40).default("desktop"),
+	deviceType: z.enum(["server", "desktop", "android"]).default("desktop"),
 	capabilities: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -139,6 +139,10 @@ export function createRuntimeBundleRouter(deps: RuntimeBundleDeps) {
 				res.status(401).json({ error: "Unauthorized device" });
 				return;
 			}
+			if (device.deviceType === "android") {
+				res.status(403).json({ error: "Android devices do not receive runtime bundles" });
+				return;
+			}
 			res.json(buildRuntimeBundle({
 				baseUrl: requestBaseUrl(req),
 				defaultWorkspaceDir: deps.defaultWorkspaceDir,
@@ -184,12 +188,16 @@ export function createDeviceRegistrationRouter(deps: RuntimeBundleDeps) {
 					updatedAt: device.updatedAt,
 				},
 				token: device.token,
-				runtimeBundle: buildRuntimeBundle({
-					baseUrl: requestBaseUrl(req),
-					defaultWorkspaceDir: deps.defaultWorkspaceDir,
-					device,
-					token: device.token,
-				}),
+				...(device.deviceType === "android"
+					? {}
+					: {
+							runtimeBundle: buildRuntimeBundle({
+								baseUrl: requestBaseUrl(req),
+								defaultWorkspaceDir: deps.defaultWorkspaceDir,
+								device,
+								token: device.token,
+							}),
+						}),
 			});
 		} catch (error) {
 			next(error);

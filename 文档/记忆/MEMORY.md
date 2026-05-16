@@ -34,6 +34,7 @@
 - [状态矩阵同步] 文档状态矩阵必须与代码真源同步；巡查发现脱节时立即修正，不能持续用 `-` 掩盖已实现代码
 - [废弃字段清理] 废弃字段（如 `session_index.readonly`、`automations`、`automation_runs`）应立即从 schema/migration/bootstrap/test 全链路移除；项目无用户时不需要兼容/迁移旧数据
 - [Android移动端边界] `packages/mobile` 是移动端 Vue 真源，根目录 `android/` 只是 Capacitor 壳；移动端第一版只保留捕捉、轻对话、任务和必要设置，不复用桌面工作台、多标签、文件树或终端。
+- [Android设备连接边界] Android 可用服务地址直接注册 `deviceType=android` 并 REST 心跳；公共注册路径只接受 Android，capability 固定为 `mobile_capture/camera/microphone`，剔除 `skill_android`，且 Android 永不接收 runtime bundle。
 
 ## 功能实现经验
 

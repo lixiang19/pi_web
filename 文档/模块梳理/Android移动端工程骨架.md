@@ -26,7 +26,14 @@
 
 - 服务地址：`src/lib/api/mobile-api-client.ts`，未配置时抛出 `MOBILE_SERVICE_URL_MISSING`，禁止静默请求。
 - Android 设备注册状态：`src/lib/device/device-storage.ts`，保存 deviceId、一次性返回 token 和设备名。
+- 设备连接：`src/lib/device/android-device-client.ts` 使用保存的服务地址注册 `deviceType=android`，capability 固定为 `mobile_capture`、`camera`、`microphone`；注册成功后持久化 token，App 启动时已有注册状态则执行 REST 心跳。
 - 媒体草稿队列：`src/lib/media/media-draft-storage.ts`，保存失败待重试捕捉草稿及附件 URI。
+
+## 服务连接
+
+- 设置页保存 ridge 服务地址并触发 Android 设备注册/重新注册。
+- 未配置服务地址时禁止注册和心跳，直接抛出 `MOBILE_SERVICE_URL_MISSING`。
+- 移动端只消费设备注册与心跳 API；不请求 runtime bundle，不启用 `skill_android`。
 
 ## 构建与验证
 

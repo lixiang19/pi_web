@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
 import App from "@/app/App.vue";
 import { mainNavItems, mobileRoutes } from "@/router/routes";
@@ -7,6 +7,7 @@ import { mainNavItems, mobileRoutes } from "@/router/routes";
 afterEach(() => {
   document.documentElement.className = "";
   window.localStorage.clear();
+  vi.restoreAllMocks();
 });
 
 describe("mobile shell route contract", () => {
@@ -36,6 +37,51 @@ describe("mobile shell route contract", () => {
       "对话",
       "任务",
     ]);
+  });
+
+  it("heartbeats with persisted Android registration when the app starts", async () => {
+    window.localStorage.setItem(
+      "ridge.mobile.serviceBaseUrl",
+      "https://ridge.example.com",
+    );
+    window.localStorage.setItem(
+      "ridge.mobile.deviceRegistration",
+      JSON.stringify({
+        deviceId: "android-shell",
+        token: "rdt_shell_token",
+        name: "Pixel",
+      }),
+    );
+    const fetcher = vi.spyOn(window, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: mobileRoutes,
+    });
+    router.push("/");
+    await router.isReady();
+
+    mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://ridge.example.com/api/devices/heartbeat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          deviceId: "android-shell",
+          token: "rdt_shell_token",
+        }),
+      }),
+    );
   });
 });
 

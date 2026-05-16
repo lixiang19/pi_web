@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { onMounted } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import { Button } from "@/components/ui/button";
+import { createMobileApiClient } from "@/lib/api/mobile-api-client";
+import { createAndroidDeviceClient } from "@/lib/device/android-device-client";
+import { createDeviceStorage } from "@/lib/device/device-storage";
 import { mainNavItems, settingsNavItem } from "@/router/routes";
 
 const route = useRoute();
@@ -11,6 +15,20 @@ const openRoute = async (routeName: string) => {
     await router.push({ name: routeName });
   }
 };
+
+onMounted(() => {
+  const api = createMobileApiClient();
+  const device = createAndroidDeviceClient({
+    api,
+    storage: createDeviceStorage(),
+  });
+  if (!api.getServiceBaseUrl() || !device.getRegistration()) {
+    return;
+  }
+  void device.heartbeat().catch((error: unknown) => {
+    console.warn("[mobile] Android heartbeat failed", error);
+  });
+});
 </script>
 
 <template>

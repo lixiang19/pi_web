@@ -1,8 +1,11 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import {
+  getDevice,
   heartbeatDevice,
   listDevices,
+  normalizeDeviceCapabilities,
+  normalizeDeviceType,
   registerDevice,
   renameDevice,
   sweepOfflineDevices,
@@ -12,7 +15,7 @@ import {
 const registerDeviceSchema = z.object({
   deviceId: z.string().min(1),
   name: z.string().min(1),
-  deviceType: z.enum(["server", "desktop"]),
+  deviceType: z.enum(["server", "desktop", "android"]),
   capabilities: z.record(z.string(), z.boolean()).optional(),
 });
 
@@ -148,6 +151,102 @@ export function createDeviceRouter() {
           throw error;
         }
         res.json({ ok: true });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  return router;
+}
+
+export function createPublicAndroidDeviceRouter() {
+  const router = express.Router();
+
+  router.post(
+    "/register",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        if (req.body?.deviceType !== "android") {
+          next();
+          return;
+        }
+
+        const payload = registerDeviceSchema.parse(req.body ?? {});
+        const deviceType = normalizeDeviceType(payload.deviceType);
+        const capabilities = normalizeDeviceCapabilities(
+          deviceType,
+          payload.capabilities,
+        );
+        const device = await registerDevice({
+          deviceId: payload.deviceId,
+          name: payload.name,
+          deviceType,
+          capabilities,
+        });
+
+        res.status(201).json({
+          ...serializeDevice(device),
+          token: device.token,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/heartbeat",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const payload = heartbeatSchema.parse(req.body ?? {});
+        const device = await getDevice(payload.deviceId);
+        if (device?.deviceType !== "android") {
+          next();
+          return;
+        }
+
+        const valid = await validateDeviceToken(payload.deviceId, payload.token);
+        if (!valid) {
+          const error = new Error("Invalid device token") as {
+            statusCode: number;
+          } & Error;
+          error.statusCode = 401;
+          throw error;
+        }
+
+        await heartbeatDevice(payload.deviceId);
+        res.json({ ok: true });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/:deviceId/bundle",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const deviceId = String(req.params.deviceId);
+        const device = await getDevice(deviceId);
+        if (device?.deviceType !== "android") {
+          next();
+          return;
+        }
+
+        const token = String(req.query.token || "");
+        const valid = await validateDeviceToken(deviceId, token);
+        if (!valid) {
+          const error = new Error("Invalid device token") as {
+            statusCode: number;
+          } & Error;
+          error.statusCode = 401;
+          throw error;
+        }
+
+        res.status(403).json({
+          error: "Android devices do not receive runtime bundles",
+        });
       } catch (error) {
         next(error);
       }

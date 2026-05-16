@@ -54,7 +54,7 @@ import { createGitRouter } from "./routes/git.js";
 import { createSystemRouter } from "./routes/system.js";
 import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
 import { createProjectRouter } from "./routes/projects.js";
-import { createDeviceRouter, createServerDeviceRouter } from "./routes/devices.js";
+import { createDeviceRouter, createPublicAndroidDeviceRouter, createServerDeviceRouter } from "./routes/devices.js";
 import { createDesktopForwardRouter } from "./routes/desktop-forward.js";
 import { createBundleRouter } from "./routes/bundle.js";
 import {
@@ -755,6 +755,7 @@ app.post("/api/auth/login", authRuntime.login);
 app.post("/api/auth/logout", authRuntime.logout);
 app.use(createRuntimeBundleRouter({ defaultWorkspaceDir, getRidgeDb }));
 app.use(createWorkspaceMcpRouter({ defaultWorkspaceDir, getRidgeDb }));
+app.use("/api/devices", createPublicAndroidDeviceRouter());
 app.use(authRuntime.requireApiAuth);
 app.use(createDeviceRegistrationRouter({ defaultWorkspaceDir, getRidgeDb }));
 

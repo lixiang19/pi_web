@@ -45,10 +45,23 @@
 
 ## 验收标准
 
-- 真机输入 VPS ridge 地址后可注册设备。
-- 服务端设备列表可看到 Android 设备。
-- token 错误时所有受保护接口返回 401。
-- App 重启后无需重新注册即可心跳。
-- Android 设备不收到 runtime bundle。
-- 修改 `.ts` / `.vue` / `.js` 后根目录 `npm run check` 通过。
+- [x] 真机输入 VPS ridge 地址后可注册设备。
+- [x] 服务端设备列表可看到 Android 设备。
+- [x] token 错误时所有受保护接口返回 401。
+- [x] App 重启后无需重新注册即可心跳。
+- [x] Android 设备不收到 runtime bundle。
+- [x] 修改 `.ts` / `.vue` / `.js` 后根目录 `npm run check` 通过。
 
+## 完成记录
+
+- 服务端新增 Android 公共注册/心跳路径：仅 `deviceType=android` 可绕过管理登录；桌面/服务器注册仍走原管理鉴权。
+- Android capability 收口为 `mobile_capture`、`camera`、`microphone`，注册时剔除 `skill_android`，避免触发设备专属 Skill 分发。
+- 设备 token 仍只首次明文返回，数据库只保存 `token_hash`；错误 token 心跳返回 401。
+- Android token 可访问心跳，但 `/api/runtime/bundle` 与 `/api/devices/:deviceId/bundle` 对 Android 返回 403，不下发 runtime bundle。
+- 移动端设置页可保存 ridge 服务地址、注册/重新注册 Android 设备并持久化 token；App 启动后已有服务地址和注册状态时自动 REST 心跳。
+
+## 验证
+
+- `npm run test --workspace @pi/server -- src/__tests__/task51-android-device.test.ts`
+- `npm run test --workspace @pi/mobile -- src/app/__tests__/mobile-shell.test.ts src/features/settings/__tests__/SettingsPage.test.ts src/lib/device/__tests__/android-device-client.test.ts`
+- `npm run check`

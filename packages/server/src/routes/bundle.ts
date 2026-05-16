@@ -99,6 +99,13 @@ export function createBundleRouter(defaultWorkspaceDir: string) {
 					error.statusCode = 404;
 					throw error;
 				}
+				if (device.deviceType === "android") {
+					const error = new Error("Android devices do not receive runtime bundles") as {
+						statusCode: number;
+					} & Error;
+					error.statusCode = 403;
+					throw error;
+				}
 
 				// Validate projectPath from projects table if provided
 				let projectPath: string | undefined;

@@ -4,6 +4,7 @@
 
 - **runtime-bundle.ts**：Bundle 生成、Skill 过滤、文件物化、配置校验（Zod schema）。
 - **routes/bundle.ts**：REST API 路由，设备 token 校验 + projectPath 边界校验 + ack 哈希/版本比对。
+- Android 设备不接收 runtime bundle：`/api/runtime/bundle` 和 `/api/devices/:deviceId/bundle` 对 `device_type=android` 返回 403。
 
 ## Bundle Manifest
 
@@ -53,6 +54,8 @@ function filterSkillsByDevice(skills, device) {
 }
 ```
 
+Android 设备的 capability 固定收口到 `mobile_capture`、`camera`、`microphone`，不会保存 `skill_android`，因此既不匹配设备专属 Skill，也不进入 bundle 下发链路。
+
 ## 物化策略（安全边界）
 
 - `materializeBundle(bundle, targetDir)`：将 manifest + files 写入目标目录
@@ -67,6 +70,7 @@ function filterSkillsByDevice(skills, device) {
 - `GET /api/devices/:deviceId/bundle` — 返回 { manifest, files }
   - 支持 `?projectPath=` 参数，仅下发项目级覆盖后的 bundle
   - 每次请求写入 `device_bundle_served` 表（bundleId + contentHash + version + projectId + projectPath）
+  - Android 设备即使 token 正确也返回 403，不写入 served 记录。
 - `POST /api/devices/:deviceId/bundle/ack` — 桌面端确认接收
   - 必须携带 token + bundleId + contentHash + bundleVersion
   - 与最后一条 `device_bundle_served` 记录逐字段比对：
@@ -84,3 +88,4 @@ function filterSkillsByDevice(skills, device) {
 - 不读取用户真实 `~/.pi` 作为 ridge 全局配置
 - 物化时旧文件被清理、权限恢复、符号链接重建
 - Bundle ack 严格比对 served 记录，错误 hash/version 拒绝并结构化记录
+- Android 设备注册后不返回 runtime bundle，主动请求 bundle 返回 403。
