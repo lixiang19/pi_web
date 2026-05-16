@@ -45,6 +45,7 @@
 | 38 AI 对话主线闭环 | ✅ | ✅ | ✅ | ✅ | ✅ | ◐ | ✅ |
 | 45 V2 阶段 3 桌面端与本机项目上线闭环 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 46 V2 阶段 4 备份恢复设置错误边界 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
+| 47 V2 阶段 5 知识系统可诊断化 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 
 ### 真实实现口径（2026-05-12）
 
@@ -65,6 +66,7 @@
 - **35 task review agent 任务回顾**：`task-review.ts` 扫描任务、里程碑、任务绑定处理会话、未绑定任务的最新未归档处理会话索引和最近 daily，生成过期任务、长期阻塞、审核确认、处理会话无进展、daily 不一致、可拆分任务、里程碑延期风险等 `task_review.suggestion` 通知；不直接修改正式任务或里程碑。`POST /api/workspace/tasks/review` 手动入队，服务启动后 `task.review` worker 处理队列，scheduler 每 6 小时定期入队并依赖队列去重。任务页可触发回顾，短周期自动刷新等待异步建议落库，并在任务/里程碑详情显示关联建议；接受建议通过事务内 claim 防重复，且只有用户接受后才写正式对象。`task-review.test.ts` 和 `TaskView.test.ts` 覆盖。
 - **36 自动化规则运行与跳过**：`automation_rules` 支持 workspace/project scope，项目规则绑定 `project_id` 并从项目记录解析真实运行目录；`automation_runs` 记录 success/failed/skipped、reason、session_id；调度器和立即运行都会写运行记录。workspace 自动化在服务端创建普通会话并发送 prompt；服务器本地项目在服务端运行；桌面项目在线时写 server 侧 `session_index` 并通过 desktop bridge 发送 `create_session` + `send_message`；桌面项目离线或归档时跳过并写原因。失败/跳过写 `automation.failed` / `automation.skipped` 通知，关联自动化并提供打开/重试动作。自动化页暴露运行上下文、项目绑定和运行历史。`automation-api.test.ts`、`AutomationRuleEditor.test.ts`、`npm run check`、`npm run build --workspace @pi/server` 覆盖。
 - **37/46 V2 阶段 4 备份恢复设置错误边界**：`workspace-backup.ts` 生成带 manifest/checksum 的 ZIP 备份包，包含 `ridge.db`、工作空间、正式附件、Kuzu 图谱和隐藏版本，排除 RAG/cache/runtime/fleeting 临时目录并跳过符号链接；`POST /api/workspace/restore` 先写 pre-restore 快照，校验包后整包恢复 `ridge.db` 与 workspace，失败回滚。设置页展示数据目录、数据库路径、默认工作空间、API/备份状态和设备在线汇总，提供备份下载和恢复包上传；`ErrorBoundary` 覆盖工作台主要标签页。服务端与组件测试已覆盖。
+- **47 V2 阶段 5 知识系统可诊断化**：`GET /api/workspace/knowledge/diagnostics` 聚合 RAG 队列/失败目标、记忆与 Wiki 注入状态、图谱 schema/database、workspace MCP 只读工具边界、后台任务状态和未处理通知；搜索页无查询时展示知识诊断面板，并可直接刷新失败 RAG 目标。服务端集成测试和搜索页组件测试已覆盖。
 - **17 文件页与正式附件目录**：左侧导航“文件”入口存在，`WorkspacePage.vue` 中已接入 `FilesView.vue` 真实文件页。V2 阶段 2 已补齐文件页上传、新建文件夹、重命名、移动、删除、状态展示、失败重试、重新转换入口；`useWorkspaceFiles` 统一消费文件 API，操作后刷新当前目录。
 - **18 文件处理状态与临时文件边界**：`PATCH /status`、`POST /retry` API 完整实现，含状态流转校验、原子通知、错误可见。上传自动注册 pending、删除同步清理、.ridge 严格隔离均已实现且有测试覆盖。
 - **21 空间 HTML 作品私有预览**：左侧「空间」入口已接入真实 `SpaceView`，服务端提供 `GET /api/workspace/space` 与 `GET /api/workspace/space/:id/preview-html`；只读取 `空间/<作品名>/index.html`，路径有 `.ridge`、词法和 realpath 越界防护，缺失 `index.html` 返回 404。预览使用 `srcdoc` + `sandbox="allow-scripts"`，无 `allow-same-origin`，并确保 CSP 早于用户 HTML active content，禁止 ridge API/外联请求。V2 阶段 2 已补齐 `index.html` 文本编辑保存、RAG immediate pending 和隐藏版本点。

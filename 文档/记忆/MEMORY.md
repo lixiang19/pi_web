@@ -91,6 +91,7 @@
 - [RAG向量契约] RAG embedding 使用 SiliconFlow `Qwen/Qwen3-VL-Embedding-8B`；配置从 `app_settings` 的 `siliconflow_embedding_*` 或 `SILICONFLOW_*` 环境变量读取。索引阶段缺 Key/远端失败必须写 `index_failed` 和通知；搜索阶段只允许旧 chunk 做精确文本命中，不能把历史 96 维本地 hash 向量继续混入语义相似度。
 - [图片RAG契约] 图片原文件是 RAG 一等源：上传 `.png/.jpg/.jpeg/.webp/.bmp/.gif/.tif/.tiff` 后直接用 Qwen3-VL 图片 embedding 入库；图片 OCR 转换产物 `.md` 仍作为独立文本 RAG 源入库，二者互补，不能只依赖 OCR 代表图片 RAG。
 - [全局搜索边界] 全局搜索聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间和 RAG，但不搜索外部项目文件内容，也不读取 Pi 会话正文；项目注册信息可以出现，外部项目文件路径不能作为 file/RAG 结果泄露。
+- [知识诊断入口] V2 阶段 5 的知识健康状态统一从 `GET /api/workspace/knowledge/diagnostics` 读取；搜索页空查询态展示 RAG 队列/失败目标、记忆/Wiki 注入、图谱、MCP 只读工具、后台任务和通知，禁止前端另造诊断协议或伪造图谱/MCP 状态。
 - [workspace MCP边界] workspace MCP 只能由设备 token 访问，工具必须保持只读；读文件必须同时做 workspace 词法边界和 realpath 边界，并拒绝任何隐藏路径段，外部仓库文件内容不能通过 MCP 暴露。
 - [runtime bundle URL] runtime bundle 里携带设备 token 的 MCP URL 不能直接信任非本机 Host header；公网部署必须显式配置 origin 形式的 `RIDGE_PUBLIC_BASE_URL` 或 `RIDGE_SERVER_BASE_URL`。
 - [术语边界] 用户可见文案不要把会话列表记录说成“会话摘要”；内部类型可以存在，但产品语义只能说“会话/会话列表数据”

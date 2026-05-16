@@ -57,6 +57,7 @@ import type {
 	ValidateWorktreeResponse,
 	WorktreeApiInfo,
 	WorktreesResponse,
+	WorkspaceKnowledgeDiagnosticsResponse,
 	WorkspaceSearchResponse,
 } from "./types";
 
@@ -508,6 +509,10 @@ export function searchWorkspace(options: {
 	if (options.limit) params.set("limit", String(options.limit));
 	if (options.sort) params.set("sort", options.sort);
 	return request<WorkspaceSearchResponse>(`/api/workspace/search?${params.toString()}`);
+}
+
+export function getWorkspaceKnowledgeDiagnostics() {
+	return request<WorkspaceKnowledgeDiagnosticsResponse>("/api/workspace/knowledge/diagnostics");
 }
 
 export function refreshWorkspaceRag(path: string) {

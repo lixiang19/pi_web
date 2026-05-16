@@ -87,6 +87,7 @@ export type {
 	ValidateWorktreeResponse,
 	WorktreeApiInfo,
 	WorktreesResponse,
+	WorkspaceKnowledgeDiagnosticsResponse,
 	WorkspaceSearchResponse,
 	WorkspaceSearchResult,
 	WorkspaceSearchResultType,

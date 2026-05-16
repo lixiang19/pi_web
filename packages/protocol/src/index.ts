@@ -518,6 +518,68 @@ export interface WorkspaceSearchResponse {
 	};
 }
 
+export interface WorkspaceKnowledgeDiagnosticsResponse {
+	rag: {
+		pending: number;
+		indexed: number;
+		indexFailed: number;
+		latestIndexedAt: number | null;
+		failedTargets: Array<{
+			path: string;
+			error: string;
+			updatedAt: number;
+			notificationId: string | null;
+		}>;
+	};
+	memory: {
+		memoryPath: string;
+		exists: boolean;
+		size: number;
+		updatedAt: number | null;
+		injected: boolean;
+		dailyCount: number;
+		latestDailyAt: number | null;
+	};
+	wiki: {
+		indexPath: string;
+		exists: boolean;
+		size: number;
+		updatedAt: number | null;
+		injected: boolean;
+		indexStatus: "pending" | "indexed" | "index_failed" | "missing";
+	};
+	graph: {
+		graphPath: string;
+		schemaExists: boolean;
+		databaseExists: boolean;
+		updatedAt: number | null;
+		correctionsEndpoint: string;
+	};
+	mcp: {
+		endpoint: string;
+		boundary: "read_only_workspace_visible_assets";
+		tools: Array<{ name: string; title: string }>;
+	};
+	backgroundJobs: {
+		byStatus: Record<"pending" | "running" | "completed" | "failed" | "cancelled", number>;
+		byType: Array<Record<"pending" | "running" | "completed" | "failed" | "cancelled", number> & { type: string }>;
+		recentFailures: Array<{
+			jobId: string;
+			type: string;
+			relatedType: string;
+			relatedId: string;
+			lastError: string;
+			updatedAt: number;
+			notificationId: string | null;
+		}>;
+	};
+	notifications: {
+		unhandled: number;
+		ragFailures: number;
+		backgroundFailures: number;
+	};
+}
+
 export interface FileSaveRequest {
 	root: string;
 	path: string;

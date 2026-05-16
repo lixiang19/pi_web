@@ -49,6 +49,67 @@ export interface WorkspaceSearchResponse {
 	};
 }
 
+type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export interface WorkspaceKnowledgeDiagnosticsResponse {
+	rag: WorkspaceSearchResponse["indexStatus"] & {
+		latestIndexedAt: number | null;
+		failedTargets: Array<{
+			path: string;
+			error: string;
+			updatedAt: number;
+			notificationId: string | null;
+		}>;
+	};
+	memory: {
+		memoryPath: string;
+		exists: boolean;
+		size: number;
+		updatedAt: number | null;
+		injected: boolean;
+		dailyCount: number;
+		latestDailyAt: number | null;
+	};
+	wiki: {
+		indexPath: string;
+		exists: boolean;
+		size: number;
+		updatedAt: number | null;
+		injected: boolean;
+		indexStatus: "pending" | "indexed" | "index_failed" | "missing";
+	};
+	graph: {
+		graphPath: string;
+		schemaExists: boolean;
+		databaseExists: boolean;
+		updatedAt: number | null;
+		correctionsEndpoint: string;
+	};
+	mcp: {
+		endpoint: string;
+		boundary: "read_only_workspace_visible_assets";
+		tools: Array<{ name: string; title: string }>;
+	};
+	backgroundJobs: {
+		byStatus: Record<JobStatus, number>;
+		byType: Array<Record<JobStatus, number> & { type: string }>;
+		recentFailures: Array<{
+			jobId: string;
+			type: string;
+			relatedType: string;
+			relatedId: string;
+			lastError: string;
+			updatedAt: number;
+			notificationId: string | null;
+		}>;
+	};
+	notifications: {
+		unhandled: number;
+		ragFailures: number;
+		backgroundFailures: number;
+	};
+}
+
 export interface WorkspaceSearchDeps {
 	defaultWorkspaceDir: string;
 	getRidgeDb: () => Promise<RidgeDatabase>;
@@ -98,6 +159,13 @@ const TYPE_PRIORITY: Record<WorkspaceSearchType, number> = {
 
 const SKIP_DIRS = new Set([".ridge", ".git", "node_modules", ".originals"]);
 const TEXT_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".html", ".json"]);
+const JOB_STATUSES: JobStatus[] = ["pending", "running", "completed", "failed", "cancelled"];
+const MCP_TOOLS = [
+	{ name: "rag_search", title: "Search workspace RAG chunks" },
+	{ name: "graph_search", title: "Search workspace graph" },
+	{ name: "file_search", title: "Search visible workspace files" },
+	{ name: "read_workspace_file", title: "Read a visible workspace file" },
+];
 
 function normalize(value: string): string {
 	return toPosixPath(path.resolve(value));
@@ -113,6 +181,13 @@ function workspaceTargetLike(workspaceDir: string): string {
 
 function relativePath(targetPath: string, workspaceDir: string): string {
 	return toPosixPath(path.relative(workspaceDir, targetPath));
+}
+
+function diagnosticsPath(targetPath: string, workspaceDir: string): string {
+	const normalized = normalize(targetPath);
+	return isInsideWorkspace(normalized, workspaceDir)
+		? relativePath(normalized, workspaceDir)
+		: normalized;
 }
 
 function isInsideWorkspace(targetPath: string, workspaceDir: string): boolean {
@@ -469,6 +544,297 @@ function getIndexStatus(db: RidgeDatabase, workspaceDir: string): WorkspaceSearc
 	};
 }
 
+async function fileSummary(filePath: string): Promise<{ exists: boolean; size: number; updatedAt: number | null; text: string }> {
+	const stats = await fs.stat(filePath).catch(() => null);
+	if (!stats?.isFile()) return { exists: false, size: 0, updatedAt: null, text: "" };
+	const text = await fs.readFile(filePath, "utf-8").catch(() => "");
+	return {
+		exists: true,
+		size: stats.size,
+		updatedAt: Number(stats.mtimeMs),
+		text,
+	};
+}
+
+function stripTopHeading(text: string): string {
+	return text.replace(/^#\s+[^\n]*\n?/, "").trim();
+}
+
+async function collectMarkdownStats(root: string): Promise<{ count: number; latestAt: number | null }> {
+	let count = 0;
+	let latestAt: number | null = null;
+	const visit = async (dir: string): Promise<void> => {
+		const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+		for (const entry of entries) {
+			if (entry.name.startsWith(".")) continue;
+			const fullPath = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				await visit(fullPath);
+				continue;
+			}
+			if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".md") continue;
+			const stats = await fs.stat(fullPath).catch(() => null);
+			if (!stats) continue;
+			count += 1;
+			const updatedAt = Number(stats.mtimeMs);
+			latestAt = latestAt === null ? updatedAt : Math.max(latestAt, updatedAt);
+		}
+	};
+	await visit(root);
+	return { count, latestAt };
+}
+
+async function latestTreeMtime(root: string): Promise<number | null> {
+	const stats = await fs.stat(root).catch(() => null);
+	if (!stats) return null;
+	let latest = Number(stats.mtimeMs);
+	const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+	for (const entry of entries) {
+		const fullPath = path.join(root, entry.name);
+		const child = entry.isDirectory()
+			? await latestTreeMtime(fullPath)
+			: await fs.stat(fullPath).then((item) => Number(item.mtimeMs)).catch(() => null);
+		if (child !== null) latest = Math.max(latest, child);
+	}
+	return latest;
+}
+
+function emptyJobCounts(): Record<JobStatus, number> {
+	return { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 };
+}
+
+function getNotificationCounts(db: RidgeDatabase): WorkspaceKnowledgeDiagnosticsResponse["notifications"] {
+	const unhandled = db.prepare(
+		`SELECT COUNT(*) AS count
+		 FROM notification_events
+		 WHERE status NOT IN ('handled', 'dismissed')`,
+	).get() as { count: number } | undefined;
+	const ragFailures = db.prepare(
+		`SELECT COUNT(*) AS count
+		 FROM notification_events
+		 WHERE event_type = 'rag.index_failed'
+		   AND status NOT IN ('handled', 'dismissed')`,
+	).get() as { count: number } | undefined;
+	const backgroundFailures = db.prepare(
+		`SELECT COUNT(*) AS count
+		 FROM notification_events
+		 WHERE event_type = 'background_job.failed'
+		   AND status NOT IN ('handled', 'dismissed')`,
+	).get() as { count: number } | undefined;
+	return {
+		unhandled: unhandled?.count ?? 0,
+		ragFailures: ragFailures?.count ?? 0,
+		backgroundFailures: backgroundFailures?.count ?? 0,
+	};
+}
+
+function getBackgroundJobDiagnostics(db: RidgeDatabase): WorkspaceKnowledgeDiagnosticsResponse["backgroundJobs"] {
+	const byStatus = emptyJobCounts();
+	const statusRows = db.prepare(
+		`SELECT status, COUNT(*) AS count
+		 FROM background_jobs
+		 GROUP BY status`,
+	).all() as Array<{ status: JobStatus; count: number }>;
+	for (const row of statusRows) {
+		if (JOB_STATUSES.includes(row.status)) byStatus[row.status] = row.count;
+	}
+
+	const typeRows = db.prepare(
+		`SELECT job_type, status, COUNT(*) AS count
+		 FROM background_jobs
+		 GROUP BY job_type, status
+		 ORDER BY job_type ASC`,
+	).all() as Array<{ job_type: string; status: JobStatus; count: number }>;
+	const typeMap = new Map<string, Record<JobStatus, number> & { type: string }>();
+	for (const row of typeRows) {
+		const current = typeMap.get(row.job_type) ?? { type: row.job_type, ...emptyJobCounts() };
+		if (JOB_STATUSES.includes(row.status)) current[row.status] = row.count;
+		typeMap.set(row.job_type, current);
+	}
+
+	const recentFailures = db.prepare(
+		`SELECT
+		   job_id,
+		   job_type,
+		   related_type,
+		   related_id,
+		   last_error,
+		   updated_at,
+		   (
+		     SELECT event_id
+		     FROM notification_events
+		     WHERE status NOT IN ('handled', 'dismissed')
+		       AND (
+		         (related_type = 'background_job' AND related_id = background_jobs.job_id)
+		         OR related_id = background_jobs.related_id
+		       )
+		     ORDER BY created_at DESC
+		     LIMIT 1
+		   ) AS notification_id
+		 FROM background_jobs
+		 WHERE status = 'failed'
+		 ORDER BY updated_at DESC
+		 LIMIT 5`,
+	).all() as Array<{
+		job_id: string;
+		job_type: string;
+		related_type: string;
+		related_id: string;
+		last_error: string | null;
+		updated_at: number;
+		notification_id: string | null;
+	}>;
+
+	return {
+		byStatus,
+		byType: Array.from(typeMap.values()),
+		recentFailures: recentFailures.map((row) => ({
+			jobId: row.job_id,
+			type: row.job_type,
+			relatedType: row.related_type,
+			relatedId: row.related_id,
+			lastError: row.last_error ?? "",
+			updatedAt: row.updated_at,
+			notificationId: row.notification_id,
+		})),
+	};
+}
+
+function getRagDiagnostics(
+	db: RidgeDatabase,
+	workspaceDir: string,
+): WorkspaceKnowledgeDiagnosticsResponse["rag"] {
+	const status = getIndexStatus(db, workspaceDir);
+	const latest = db.prepare(
+		`SELECT MAX(indexed_at) AS latest_indexed_at
+		 FROM search_index_status
+		 WHERE workspace_path = ?
+		    OR (workspace_path = '' AND (target_path = ? OR target_path LIKE ? ESCAPE '\\'))`,
+	).get(workspaceDir, workspaceDir, workspaceTargetLike(workspaceDir)) as { latest_indexed_at: number | null } | undefined;
+	const failedRows = db.prepare(
+		`SELECT
+		   target_path,
+		   source_path,
+		   error,
+		   updated_at,
+		   (
+		     SELECT event_id
+		     FROM notification_events
+		     WHERE event_type = 'rag.index_failed'
+		       AND status NOT IN ('handled', 'dismissed')
+		       AND related_id = search_index_status.target_path
+		     ORDER BY created_at DESC
+		     LIMIT 1
+		   ) AS notification_id
+		 FROM search_index_status
+		 WHERE status = 'index_failed'
+		   AND (
+		     workspace_path = ?
+		     OR (workspace_path = '' AND (target_path = ? OR target_path LIKE ? ESCAPE '\\'))
+		   )
+		 ORDER BY updated_at DESC
+		 LIMIT 8`,
+	).all(workspaceDir, workspaceDir, workspaceTargetLike(workspaceDir)) as Array<{
+		target_path: string;
+		source_path: string;
+		error: string | null;
+		updated_at: number;
+		notification_id: string | null;
+	}>;
+
+	return {
+		...status,
+		latestIndexedAt: latest?.latest_indexed_at ?? null,
+		failedTargets: failedRows.map((row) => ({
+			path: row.source_path || diagnosticsPath(row.target_path, workspaceDir),
+			error: row.error ?? "",
+			updatedAt: row.updated_at,
+			notificationId: row.notification_id,
+		})),
+	};
+}
+
+async function getMemoryDiagnostics(workspaceDir: string): Promise<WorkspaceKnowledgeDiagnosticsResponse["memory"]> {
+	const memoryPath = path.join(workspaceDir, "记忆", "MEMORY.md");
+	const memory = await fileSummary(memoryPath);
+	const daily = await collectMarkdownStats(path.join(workspaceDir, "记忆", "daily"));
+	return {
+		memoryPath: "记忆/MEMORY.md",
+		exists: memory.exists,
+		size: memory.size,
+		updatedAt: memory.updatedAt,
+		injected: stripTopHeading(memory.text).length > 0,
+		dailyCount: daily.count,
+		latestDailyAt: daily.latestAt,
+	};
+}
+
+async function getWikiDiagnostics(
+	db: RidgeDatabase,
+	workspaceDir: string,
+): Promise<WorkspaceKnowledgeDiagnosticsResponse["wiki"]> {
+	const indexPath = path.join(workspaceDir, "Wiki", "index.md");
+	const wiki = await fileSummary(indexPath);
+	const statusRow = db.prepare(
+		`SELECT status
+		 FROM search_index_status
+		 WHERE target_path = ?
+		 LIMIT 1`,
+	).get(indexPath) as { status: "pending" | "indexed" | "index_failed" } | undefined;
+	return {
+		indexPath: "Wiki/index.md",
+		exists: wiki.exists,
+		size: wiki.size,
+		updatedAt: wiki.updatedAt,
+		injected: stripTopHeading(wiki.text).length > 0,
+		indexStatus: statusRow?.status ?? "missing",
+	};
+}
+
+async function getGraphDiagnostics(workspaceDir: string): Promise<WorkspaceKnowledgeDiagnosticsResponse["graph"]> {
+	const graphRoot = path.join(workspaceDir, ".ridge", "graph.kuzu");
+	const schemaPath = path.join(graphRoot, "schema.cypher");
+	const databasePath = path.join(graphRoot, "database.kuzu");
+	const [schemaStats, databaseStats, updatedAt] = await Promise.all([
+		fs.stat(schemaPath).catch(() => null),
+		fs.stat(databasePath).catch(() => null),
+		latestTreeMtime(graphRoot),
+	]);
+	return {
+		graphPath: ".ridge/graph.kuzu",
+		schemaExists: schemaStats?.isFile() === true,
+		databaseExists: databaseStats?.isDirectory() === true || databaseStats?.isFile() === true,
+		updatedAt,
+		correctionsEndpoint: "/api/workspace/graph/corrections",
+	};
+}
+
+export async function getWorkspaceKnowledgeDiagnostics(
+	deps: WorkspaceSearchDeps,
+): Promise<WorkspaceKnowledgeDiagnosticsResponse> {
+	const workspaceDir = normalize(deps.defaultWorkspaceDir);
+	const db = await deps.getRidgeDb();
+	const [memory, wiki, graph] = await Promise.all([
+		getMemoryDiagnostics(workspaceDir),
+		getWikiDiagnostics(db, workspaceDir),
+		getGraphDiagnostics(workspaceDir),
+	]);
+
+	return {
+		rag: getRagDiagnostics(db, workspaceDir),
+		memory,
+		wiki,
+		graph,
+		mcp: {
+			endpoint: "/api/workspace/mcp",
+			boundary: "read_only_workspace_visible_assets",
+			tools: MCP_TOOLS,
+		},
+		backgroundJobs: getBackgroundJobDiagnostics(db),
+		notifications: getNotificationCounts(db),
+	};
+}
+
 export function createWorkspaceSearchRouter(deps: WorkspaceSearchDeps) {
 	const router = express.Router();
 
@@ -495,6 +861,14 @@ export function createWorkspaceSearchRouter(deps: WorkspaceSearchDeps) {
 			}
 			const result = await refreshRagTarget(targetPath, { workspaceDir, event: "manual" });
 			res.json(result);
+		} catch (error) {
+			next(error);
+		}
+	});
+
+	router.get("/api/workspace/knowledge/diagnostics", async (_req: Request, res: Response, next: NextFunction) => {
+		try {
+			res.json(await getWorkspaceKnowledgeDiagnostics(deps));
 		} catch (error) {
 			next(error);
 		}

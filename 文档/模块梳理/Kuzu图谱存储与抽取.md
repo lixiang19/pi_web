@@ -102,7 +102,18 @@ Body: { "correction": "..." }
 
 服务端把用户自然语言纠错作为 graph agent 输入，解析为同一套实体/关系 JSON 后写入 Kuzu。用户不直接编辑 Kuzu。
 
-## 7. 备份与隐藏版本
+## 7. 用户可见诊断
+
+V2 阶段 5 起，`GET /api/workspace/knowledge/diagnostics` 返回图谱状态：
+
+- `.ridge/graph.kuzu/schema.cypher` 是否存在。
+- `.ridge/graph.kuzu/database.kuzu` 是否存在。
+- 图谱目录最近更新时间。
+- 纠错入口 `/api/workspace/graph/corrections`。
+
+诊断只说明当前图谱维护状态，不伪造图谱节点，也不提供复杂画布。
+
+## 8. 备份与隐藏版本
 
 - `GET /api/workspace/backup` 会生成服务器备份 ZIP，实际写入工作空间、`ridge.db` 和 `.ridge/graph.kuzu`。
 - 服务器完整备份清单包含 `.ridge/graph.kuzu`，并由备份下载链路消费该清单。
@@ -110,16 +121,17 @@ Body: { "correction": "..." }
 - 备份打包显式跳过符号链接，避免 workspace 内链接把外部文件纳入备份。
 - 内置隐藏 Git exclude 包含 `.ridge`，因此图谱不进入隐藏版本管理。
 
-## 8. 相关文件
+## 9. 相关文件
 
 - `packages/server/src/graph-store.ts`
 - `packages/server/src/graph-agent.ts`
 - `packages/server/src/routes/workspace-graph.ts`
+- `packages/server/src/routes/workspace-search.ts`
 - `packages/server/src/rag-worker.ts`
 - `packages/server/src/workspace-backup.ts`
 - `packages/server/src/iso-git-service.ts`
 
-## 9. 测试
+## 10. 测试
 
 - `graph-store.test.ts`：Kuzu schema、证据关系、80 字证据截断、真实嵌入式 Kuzu 写入和纠错写入。
 - `graph-agent.test.ts`：抽取来源边界、输出 schema 解析、维护 runner、内部项目根目录符号链接越界防护。

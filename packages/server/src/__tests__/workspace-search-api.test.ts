@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { getRidgeDb } from "../db/index.js";
 import { markRagTargetPending, indexPendingTarget } from "../rag-indexer.js";
-import { searchWorkspace } from "../routes/workspace-search.js";
+import { getWorkspaceKnowledgeDiagnostics, searchWorkspace } from "../routes/workspace-search.js";
 
 const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
 const TEST_ROOT = path.join(WORKSPACE, "workspace-search-test");
@@ -149,5 +149,127 @@ describe("workspace global search api", () => {
 		expect(projectRes.results.every((item) => item.projectId === "project-internal-alpha")).toBe(true);
 		expect(projectRes.results.some((item) => item.type === "file" && item.sourcePath === "项目/internal-alpha/spec.md")).toBe(true);
 		expect(projectRes.results.some((item) => item.type === "rag" && item.sourcePath === "项目/internal-alpha/spec.md")).toBe(true);
+	});
+
+	it("exposes knowledge diagnostics across rag, memory, graph, mcp, jobs and notifications", async () => {
+		const db = await getRidgeDb();
+		const now = Date.now();
+		const failedTarget = path.join(TEST_ROOT, "笔记", "broken.md");
+		await fs.writeFile(path.join(TEST_ROOT, "记忆", "MEMORY.md"), "# MEMORY\n\nalpha memory", "utf-8");
+		await fs.mkdir(path.join(TEST_ROOT, "记忆", "daily", "2026", "05"), { recursive: true });
+		await fs.writeFile(path.join(TEST_ROOT, "记忆", "daily", "2026", "05", "2026-05-16.md"), "# Daily", "utf-8");
+		await fs.writeFile(path.join(TEST_ROOT, "Wiki", "index.md"), "# Wiki\n\nalpha wiki", "utf-8");
+		await fs.mkdir(path.join(TEST_ROOT, ".ridge", "graph.kuzu", "database.kuzu"), { recursive: true });
+		await fs.writeFile(path.join(TEST_ROOT, ".ridge", "graph.kuzu", "schema.cypher"), "CREATE NODE TABLE Concept(id STRING);", "utf-8");
+
+		db.prepare(
+			`INSERT INTO search_index_status(
+				target_path, target_type, status, workspace_path, source_path, refresh_policy,
+				last_event, content_hash, indexed_at, error, updated_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			failedTarget,
+			"file",
+			"index_failed",
+			TEST_ROOT,
+			"笔记/broken.md",
+			"immediate",
+			"manual",
+			"hash-broken",
+			null,
+			"embedding provider missing",
+			now - 3000,
+		);
+		db.prepare(
+			`INSERT INTO background_jobs(
+				job_id, job_type, related_type, related_id, status, payload_json, result_json,
+				attempt_count, retry_count, max_attempts, last_error, run_after, next_retry_at,
+				locked_at, locked_by, completed_at, notify_on_failure, created_at, updated_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			"job-knowledge-failed",
+			"rag.index",
+			"file",
+			failedTarget,
+			"failed",
+			"{}",
+			null,
+			3,
+			3,
+			3,
+			"embedding provider missing",
+			null,
+			null,
+			null,
+			null,
+			null,
+			1,
+			now - 4000,
+			now - 2000,
+		);
+		db.prepare(
+			`INSERT INTO notification_events(
+				event_id, event_type, source, severity, title, body, related_type, related_id,
+				actions_json, payload_json, status, created_at, updated_at, read_at, handled_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			"notification-rag-broken",
+			"rag.index_failed",
+			"rag",
+			"error",
+			"RAG 索引失败",
+			"embedding provider missing",
+			"file",
+			failedTarget,
+			JSON.stringify([{ id: "retry", label: "重试" }]),
+			JSON.stringify({ filePath: failedTarget }),
+			"unread",
+			now - 1000,
+			now - 1000,
+			null,
+			null,
+		);
+
+		const diagnostics = await getWorkspaceKnowledgeDiagnostics({ defaultWorkspaceDir: TEST_ROOT, getRidgeDb });
+
+		expect(diagnostics.rag.indexFailed).toBe(1);
+		expect(diagnostics.rag.failedTargets[0]).toMatchObject({
+			path: "笔记/broken.md",
+			error: "embedding provider missing",
+			notificationId: "notification-rag-broken",
+		});
+		expect(diagnostics.memory).toMatchObject({
+			memoryPath: "记忆/MEMORY.md",
+			exists: true,
+			injected: true,
+			dailyCount: 1,
+		});
+		expect(diagnostics.wiki).toMatchObject({
+			indexPath: "Wiki/index.md",
+			exists: true,
+			injected: true,
+		});
+		expect(diagnostics.graph).toMatchObject({
+			graphPath: ".ridge/graph.kuzu",
+			schemaExists: true,
+			databaseExists: true,
+			correctionsEndpoint: "/api/workspace/graph/corrections",
+		});
+		expect(diagnostics.mcp.tools.map((tool) => tool.name)).toEqual([
+			"rag_search",
+			"graph_search",
+			"file_search",
+			"read_workspace_file",
+		]);
+		expect(diagnostics.backgroundJobs.byStatus.failed).toBeGreaterThanOrEqual(1);
+		expect(diagnostics.backgroundJobs.recentFailures[0]).toMatchObject({
+			jobId: "job-knowledge-failed",
+			type: "rag.index",
+			notificationId: "notification-rag-broken",
+		});
+		expect(diagnostics.notifications).toMatchObject({
+			unhandled: 1,
+			ragFailures: 1,
+		});
 	});
 });
