@@ -1466,14 +1466,19 @@ describe("Task 30 - 边界修复", () => {
   }, 60000);
 
   it("外部仓库注册失败时服务器不残留目录", async () => {
+    const repoName = "nonexistent-repo-67890";
+    const targetDir = path.join(os.homedir(), "ridge-projects", repoName);
+    await fs.rm(targetDir, { recursive: true, force: true });
+
     // Try to clone an invalid repo
     const res = await agent
       .post("/api/workspace/projects/github")
-      .send({ url: "https://github.com/nonexistent-user-12345/nonexistent-repo-67890" });
+      .send({ url: `https://github.com/nonexistent-user-12345/${repoName}` });
     
     // Should fail (404 or 400)
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
+    await expect(fs.stat(targetDir)).rejects.toThrow();
   });
 
   it("桌面设备路径注册需校验设备存在", async () => {

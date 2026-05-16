@@ -1,130 +1,116 @@
 # 41 Python 通用转化服务契约消费实现
 
-## 目标
+> **状态**：已完成（2026-05-13）<br>
+> **定位**：ridge Node 后端消费独立 Python 通用转化服务 API 契约的完整实现。
 
-将 ridge Node 后端从自研 PDF/Word/音频/图片转换栈，迁移为调用独立 Python 通用转化服务（按 `40-Python通用转化服务API契约.md` 消费）。
+---
 
-## 范围
+## 1. 实现范围
 
-- ✅ 实现契约 TypeScript 类型（请求/响应/产物/错误/回调）
-- ✅ 实现真 HTTP 契约客户端 `ConversionServiceClient`（multipart 上传、查询、取消、产物下载/inline 解析）
-- ✅ 实现配置加载/保存（`python_converter_base_url`、`api_key`、`callback_token`）
-- ✅ 改造 `file-conversion-worker.ts`：worker 提交任务到 Python 服务，启动补偿轮询，回调/轮询共用 `handleConversionResult`
-- ✅ 实现回调 webhook 路由 `POST /api/webhooks/conversion`，带 token 验签
-- ✅ 产物落盘（`<name>.md`、`<name>.metadata.json` + `_ridge`、`<name>.assets/`）、原文件归档 `.originals/`
-- ✅ 错误映射到 ridge 行为（retry 策略、通知用户）
-- ✅ `workspace-data.ts` 上传触发和 `isConvertibleExtension` 按契约扩展名更新
-- ✅ 测试：契约客户端 HTTP 交互（fake server）、worker 调用流程、产物落盘、错误处理、幂等性
+### 1.1 已完成模块
 
-## 不做
+| 模块 | 路径 | 职责 |
+|------|------|------|
+| 类型定义 + HTTP 客户端 | `packages/server/src/conversion-service-client.ts` | 契约 TypeScript 类型、`ConversionServiceClient`（multipart 上传、查询、取消、产物下载/inline 解析）、错误映射、配置读写（`app_settings` 表）、产物落盘（含 `_ridge` 和 `mdHash`） |
+| 后台 Worker | `packages/server/src/file-conversion-worker.ts` | `file.convert` worker：调用 Python 服务、阻塞补偿轮询（30s 间隔 / 10min 最大）、全局持续补偿扫描（60s 间隔）、`handleConversionResult` 幂等 |
+| 回调 Webhook | `packages/server/src/routes/conversion-webhook.ts` | `POST /api/webhooks/conversion`，token 验签、workspace 路径遍历校验、调用 `handleConversionResult` |
+| 上传触发 | `packages/server/src/routes/workspace-data.ts` | 上传后按 `isConvertibleExtension` 入队 `file.convert`（仅在 `isConversionEnabled() === true` 时） |
+| 手动重转换 | `packages/server/src/routes/workspace-files.ts` | `POST /api/workspace/files/convert` 重置为 `pending` 并重新入队，支持 `.originals/` 回退与编辑守卫 |
+| 入口集成 | `packages/server/src/index.ts` | `startServer` 中从 `app_settings` 读取配置、创建 `ConversionServiceClient`、注册 webhook 路由、启动 worker、暴露 `isConversionEnabled` |
+| 持久化表 | `python_conversion_jobs`（migration 12） | 持久化 `python_job_id`、`client_job_id`、`status`，支持进程重启后恢复轮询和持续扫描 |
 
-- ❌ Python 服务本身实现（属于独立项目）
-- ❌ 前端直接调用 Python 服务（仍通过 Node 代理）
-- ❌ 实时流式转录（首版只支持异步 job 模型）
+### 1.2 已废弃模块
 
-## 技术方案
+- `packages/server/src/file-converter.ts`：旧 JS 自研 PDF/Word/HTML 解析栈，不再被任何业务代码调用，仅保留为历史参考。
 
-### 新增模块
+---
 
-1. **`packages/server/src/conversion-service-client.ts`**
-   - 契约全部 TypeScript 类型（按文档第10节）
-   - `ConversionServiceClient` 类：覆盖 `health`、`capabilities`、`createConversion`（multipart + JSON）、`getConversion`、`cancelConversion`、`downloadArtifact`、`listArtifacts`、`downloadArtifacts`（inline 自动解析 + 非 inline HTTP 下载）
-   - `ConversionServiceError` 及 `mapErrorToRidgeAction`（按文档 7.2 错误码表映射 retry 策略和用户消息）
-   - `loadConversionServiceConfig` / `saveConversionServiceConfig`（基于 `app_settings` 表）
-   - `deriveTaskFromExtension`、`isConvertibleExtension`、`deriveConversionOutputPaths`、`generateClientJobId`、`writeArtifactsToWorkspace`（落盘 + `_ridge` 字段追加）
+## 2. 关键修复（第四轮 reviewer 必须项）
 
-2. **`packages/server/src/file-conversion-worker.ts`**（重写）
-   - `processOne` 流程：
-     1. 校验 `file_processing_status` 为 `pending`
-     2. `UPDATE status = converting`
-     3. `deriveTaskFromExtension` 决定 task 类型
-     4. `conversionClient.createConversionWithFile`（multipart 上传 + `callbackUrl` + `clientJobId` + `metadata.ridgeFileId`）
-     5. 记录 `pythonJobId` 到 background job `result_json`
-     6. 启动补偿轮询（间隔 30s，最大 10min），轮询到终态调用 `handleConversionResult`
-   - `handleConversionResult`（幂等，可被 worker 轮询和 webhook 回调同时调用）：
-     - 若状态已是终态则跳过
-     - `succeeded` → `downloadArtifacts` → `writeArtifactsToWorkspace` → `UPDATE status = converted` → `jobQueue.complete`
-     - `failed/canceled` → `mapErrorToRidgeAction` → `UPDATE status = convert_failed` → 写 `notification_events` → `jobQueue.fail`
+### 2.1 callbackBaseUrl 不再默认 localhost（必须项 #1）
 
-3. **`packages/server/src/routes/conversion-webhook.ts`**
-   - `POST /api/webhooks/conversion`
-   - 校验 `?token=` 与 `callbackToken`
-   - 从 payload 的 `metadata.ridgeFileId` 或 `clientJobId` 关联本地文件
-   - 找不到关联记录时返回 `200`（避免 Python 服务重试风暴）
-   - 构造 `ConversionJob` 调用 `handleConversionResult`
+**修复前**：未配置 `callbackBaseUrl` 时默认使用 `http://127.0.0.1:${port}/api/webhooks/conversion`，向 Python 服务传递不可达的回调地址。
+**修复后**：`callbackBaseUrl` 仅在显式配置时才设置 `callbackUrl`；未配置时传 `undefined`，Python 服务无回调，ridge 纯依赖补偿轮询。
 
-4. **`packages/server/src/index.ts`**（集成点）
-   - `startServer` 中：
-     1. `loadConversionServiceConfig` 读取配置
-     2. 若配置存在，创建 `ConversionServiceClient`
-     3. 构造 `callbackBaseUrl = http://127.0.0.1:${port}/api/webhooks/conversion`
-     4. 传入 `fileConversionWorker`
-     5. `startServer` 末尾（`listenHttpServer` 之前）注册 webhook 路由（需 `conversionClient` 存在）
+### 2.2 logical path 与 actual source path 严格分离（必须项 #2）
 
-### 旧模块废弃
+**修复前**：`workspace-files.ts` 将 `.originals/` 实际路径塞进 `payload.sourcePath`，worker 当作逻辑路径使用。
+**修复后**：
+- `manual convert` / `retry` 的 job payload 不再包含 `sourcePath`（仅含 `workspaceDir`）。
+- Worker 使用 `job.relatedId` 作为逻辑主键（DB 状态机/file_processing_status）。
+- `resolveActualSourcePath(logicalPath)` 在 worker 内部解析 `.originals/` fallback，仅用于 Python 上传。
 
-- `file-converter.ts` 及其 `convertFileToStandard` 不再被 worker 调用，但保留用于：
-  - `workspace-files.ts` 的 `POST /api/workspace/files/convert` 手动转换 API（后续可再迁移）
-  - 现有 `pdf-word-conversion.test.ts` 单元测试
-- `isConvertibleExtension` 已从 `file-converter.ts` 迁移到 `conversion-service-client.ts`，`workspace-data.ts` 和 `workspace-files.ts` 已更新 import
+### 2.3 writeArtifactsToWorkspace 支持 already-archived（必须项 #3）
 
-### 产物落盘规则（按契约 9.3 节）
+**修复前**：`writeArtifactsToWorkspace` 固定 `fs.rename(sourcePath, archivedTo)`，logical source 不存在时抛出 ENOENT。
+**修复后**：
+- 先检查 sourcePath 是否存在；不存在时检查 `.originals/` fallback。
+- 如果 source 已在 `.originals/` 中，跳过归档步骤（`archivedTo = null`）。
+- Metadata `_ridge.sourcePath` 始终是 logical path，不变成 `.originals/` 实际路径。
+
+### 2.4 manual / retry / upload 增加 conversion enabled gate（必须项 #4）
+
+**修复前**：`POST /convert`、`POST /retry` 在 Python 服务未启用时仍然改状态并入队，返回虚假 `enqueued: true`。
+**修复后**：
+- `workspace-files.ts` 增加 `isConversionEnabled?: () => boolean` 依赖。
+- `POST /convert` 和 `POST /retry` 开头检查 `deps.isConversionEnabled?.()`，未启用返回 `503`。
+- `index.ts` 创建 router 时传入 `isConversionEnabled`。
+
+### 2.5 Transient retry 耗尽后必须 convert_failed（必须项 #5）
+
+**修复前**：transient retry 无限回到 `pending`，可能死循环。
+**修复后**：`handleConversionResult` 检查 `background_jobs.attempt_count >= max_attempts`；耗尽后直接调用 `failConversion`，`file_processing_status` 进入 `convert_failed` 并写 `notification_events`，三表状态一致。
+
+### 2.6 Artifact 落盘 staging + atomic rollback（必须项 #6）
+
+**修复前**：中途失败只 rollback 原文件，不保护旧 `.md/.metadata.json/.assets`。
+**修复后**：
+- Stage 1：备份旧产物到 `.ridge-staging-<basename>-<timestamp>/`。
+- Stage 2：写入新产物到 `.tmp-<basename>-<timestamp>/`。
+- Stage 3：原子提交（归档 → 移动产物 → 清理 staging）。
+- 失败时 rollback：恢复旧产物、恢复归档的原文件、清理临时目录。
+
+### 2.7 Webhook realpath 父级逐级解析（必须项 #7）
+
+**修复前**：`assertWebhookPathSafe` 对不存在目标直接降级到 `path.resolve`，不检测父级 symlink 绕过。
+**修复后**：逐级向上 `fs.realpath` 已存在父目录，将 resolved 后缀拼接到 realParent 上；同时 `realpath(workspaceDir)` 确保比较基准正确。
+
+### 2.8 downloadArtifact 与 downloadArtifacts 约束一致（必须项 #8）
+
+**修复前**：`downloadArtifact()` 无 timeout、无 maxSize、错误类型为原生 Error。
+**修复后**：
+- `downloadArtifact(jobId, artifactId, opts)` 支持 `timeoutMs`（`AbortController`）和 `maxSizeBytes`。
+- 大小超限抛出 `ConversionServiceError("file_too_large", 413)`。
+- `downloadSingleArtifact` fallback 调用时同样传递 `opts`。
+
+---
+
+## 3. 测试覆盖
+
+### 3.1 已存在并通过的测试
+
+| 测试文件 | 覆盖点 | 状态 |
+|---------|--------|------|
+| `conversion-service-client.test.ts` | Fake HTTP Server 全端点、401 错误、配置读写、类型校验 | 26 项通过 |
+| `file-conversion-worker.test.ts` | Worker 成功路径、失败路径、无 status 跳过、非 pending 拒绝、幂等、retry 去重 | 6 项通过 |
+| `conversion-comprehensive.test.ts`（新增） | Transient retry 耗尽后 convert_failed+通知、staging+rollback 保护旧产物、already-archived source 支持、downloadArtifact timeout 约束、webhook 空 token 拒绝 | 5 项通过 |
+| `file-upload-convert-trigger.test.ts` | 未配置时不 enqueue | 1 项通过 |
+| `manual-convert-api.test.ts` | pending 返回 note、converted 编辑守卫、force 覆盖、.originals 回退、404 缺失 | 6 项通过 |
+| `file-conversion-e2e.test.ts` | 树状态继承、DOCX 树状态、enqueue 行为、retry 清除旧 job | 5 项通过 |
+| `pdf-word-conversion.test.ts` | 旧自研栈单元测试（保留历史） | 8 项通过 |
+
+---
+
+## 4. 构建与测试状态
 
 ```
-附件/report.pdf          ← 原文件（转换前）
-附件/report.md           ← 从 artifact "report.md" 写入
-附件/report.assets/
-  ├── img-001.png        ← 从 artifact "img-001.png" 下载写入
-附件/report.metadata.json ← 从 artifact "report.metadata.json" 写入，并追加 _ridge 字段
-附件/.originals/report.pdf ← Node 移动原文件归档
+npm run build --workspace @pi/server   ✓ 0 errors
+npm run check                           ✓ 0 errors, 22 warnings（历史 any）
+cd packages/server && pnpm test         ✓ 36 files, 352~353 tests passed
 ```
 
-metadata.json 追加 `_ridge`：
-```json
-{
-  "engine": "markitdown",
-  "...": "...",
-  "_ridge": {
-    "sourcePath": "附件/report.pdf",
-    "workspacePath": "附件/report.md",
-    "archivedAt": "2024-06-01T12:00:13Z",
-    "archivedTo": "附件/.originals/report.pdf"
-  }
-}
-```
+---
 
-## 测试策略
+## 5. 仍需注意事项
 
-1. `conversion-service-client.test.ts`（TDD，先写测试后实现）：
-   - 类型校验（`ConversionTask`、`Artifact`、`ErrorDetail`）
-   - `ConversionServiceClient` 构造、错误映射
-   - Fake HTTP Server 测试全部端点（`health`、`capabilities`、`createConversion`、`getConversion`、`cancel`、`downloadArtifact`、`listArtifacts`、`downloadArtifacts` inline + non-inline）
-   - 401 错误抛出 `ConversionServiceError`
-   - 配置读写 `loadConversionServiceConfig` / `saveConversionServiceConfig`
-
-2. `file-conversion-worker.test.ts`（重写）：
-   - Mock `ConversionServiceClient` 测试 worker 成功路径（multipart 提交 → 轮询 → 落盘 → `converted`）
-   - Mock 失败路径（Python 返回 `failed` → `convert_failed` + notification）
-   - 无 `file_processing_status` 记录时跳过
-   - 非 `pending` 状态（如 `convert_failed`）时 worker 拒绝自动重试
-   - `handleConversionResult` 幂等性测试
-   - retry enqueue 去重逻辑
-
-3. `file-upload-convert-trigger.test.ts`（更新）：
-   - `.txt` 现在也是 convertible，测试更新为确认会 enqueue
-
-4. `file-conversion-e2e.test.ts`、`manual-convert-api.test.ts`、`pdf-word-conversion.test.ts`：
-   - 这些测试调用的是旧的 `convertFileToStandard`（手动转换 API），仍保留并通过。
-
-## 验收标准
-
-- [x] `npm run check` 通过（lint + typecheck），0 error
-- [x] `cd packages/server && pnpm test` 转换相关测试全部通过
-- [x] 新增契约类型、HTTP 客户端、worker、webhook 路由、配置体系完整实现
-- [x] 产物落盘包含 `_ridge` 字段
-- [x] 回调 webhook 带 token 验签，找不到记录返回 200
-- [x] 补偿轮询按契约实现（30s 间隔 / 10min 最大）
-- [x] 文档已更新 `文档/模块梳理/Python通用转化服务接口契约.md`
-- [x] 任务文档已完成
-- [ ] 完成后归档到 `文档/功能开发/归档/`
-- [ ] `MEMORY.md` 已更新架构决策
+1. **前端界面**：Web 前端仍需展示 `file_processing_status` 的 `converting` 状态（当前可能只展示 `pending`/`converted`/`convert_failed`）。

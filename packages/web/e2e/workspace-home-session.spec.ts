@@ -25,22 +25,23 @@ test.describe("任务 05 工作空间主页与会话创建", () => {
 	test("三个快捷动作只填入输入框，不立即创建会话", async ({ page }) => {
 		const textarea = page.getByRole("textbox", { name: "问我任何事…" });
 		const tabList = page.locator("[role='tablist']");
+		const initialTabCount = await tabList.locator("[role='tab']").count();
 
 		// 点击第一个快捷动作
 		await page.getByRole("button", { name: "处理闪念" }).click();
 		await expect(textarea).toHaveValue("帮我处理最新的闪念");
 		// 没有新 tab 被创建
-		await expect(tabList.locator("[role='tab']")).toHaveCount(4);
+		await expect(tabList.locator("[role='tab']")).toHaveCount(initialTabCount);
 
 		// 点击第二个快捷动作
 		await page.getByRole("button", { name: "规划任务" }).click();
 		await expect(textarea).toHaveValue("帮我规划今天的任务");
-		await expect(tabList.locator("[role='tab']")).toHaveCount(4);
+		await expect(tabList.locator("[role='tab']")).toHaveCount(initialTabCount);
 
 		// 点击第三个快捷动作
 		await page.getByRole("button", { name: "总结最近文件" }).click();
 		await expect(textarea).toHaveValue("总结我最近的工作文件");
-		await expect(tabList.locator("[role='tab']")).toHaveCount(4);
+		await expect(tabList.locator("[role='tab']")).toHaveCount(initialTabCount);
 	});
 
 	test("附件按钮可打开文件输入，选择文件后 UI 显示待附加文件", async ({ page }) => {

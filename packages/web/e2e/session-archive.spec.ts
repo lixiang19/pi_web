@@ -31,10 +31,16 @@ test.describe("06 会话索引归档与只读状态", () => {
 		expect(ridgeSession).toBeTruthy();
 
 		// 1. 创建会话
+		const systemInfoRes = await page.request.get(`${BASE_URL}/api/system/info`, {
+			headers: { Cookie: `ridge_session=${ridgeSession}` },
+		});
+		expect(systemInfoRes.status()).toBe(200);
+		const systemInfo = (await systemInfoRes.json()) as { workspaceDir: string };
+
 		const createRes = await page.request.post(`${BASE_URL}/api/sessions`, {
 			headers: { Cookie: `ridge_session=${ridgeSession}` },
 			data: {
-				cwd: "/Users/lixiang/Documents/myCode/openchamber",
+				cwd: systemInfo.workspaceDir,
 				title: "归档验收测试会话",
 			},
 		});

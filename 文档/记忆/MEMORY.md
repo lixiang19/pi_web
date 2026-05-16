@@ -123,6 +123,7 @@
 - [前端类型收敛] 当后端 enum（如 priority `normal/important/urgent`）与前端遗留类型（含 `low/medium/high`）不一致时，必须同步清理前端类型声明和所有引用该类型的测试/组件/composable；只改后端 schema 不改前端类型会在运行时/类型检查时留下隐患。
 - [原生依赖安装契约] 仓库使用 `pnpm 10` 时，`better-sqlite3`、`node-pty` 这类原生包不能只写进 dependencies；必须在根 `package.json` 的 `pnpm.onlyBuiltDependencies` 中显式放行，否则 install 后会出现“包存在但 `.node` 绑定缺失”，server 在运行原生模块时直接失败
 - [包管理器一致性] 既然仓库已经锁定 `pnpm` 并依赖 `pnpm.onlyBuiltDependencies` 管原生包，README/开发文档里的安装命令也必须统一写成 `pnpm install`；继续写 `npm install` 会把“依赖声明正确但本地缺包/缺绑定”的问题伪装成代码故障。
+- [上线门禁文档] V2 阶段 6 后，`文档/功能开发/` 根目录只允许保留 `index.md`；功能矩阵不能再用 `-`、`◐`、`⚠️` 表示上线前缺口，缺口要么补齐，要么删除入口，要么用 `N/A` 明确不适用，并由 `release-gate.test.ts` 守住。
 - [Vitest DB隔离] server 测试隔离目录不能用 `process.pid + Date.now()` 拼接；同 fork/同毫秒会碰撞并引发 SQLite `database is locked`。必须用 `mkdtempSync` 创建唯一 HOME/DB，并在 `resetRidgeDb()` 里关闭旧连接后再清空单例。
 - [终端重启竞态] PTY restart 不能让旧进程的 `onData/onExit` 继续写回共享 record；事件处理必须校验“当前活跃 PTY 实例”，否则旧进程退出会把新终端覆盖成 exited
 - [终端开发代理] 终端页面如果只有光标、没有 prompt 和输入回显，优先检查 WebSocket 是否真的附着到 PTY；Vite `/api` 代理必须显式 `ws: true`，否则 REST 正常但 `/api/terminals/:id/stream` 不通

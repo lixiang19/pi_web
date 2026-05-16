@@ -7,6 +7,7 @@ import { getRidgeDb } from './db/index.js';
 import type { Project } from './types/index.js';
 
 const execFileAsync = promisify(execFile);
+const GITHUB_REACHABILITY_TIMEOUT_MS = 5_000;
 
 export interface CreateInternalProjectInput {
   name: string;
@@ -320,6 +321,8 @@ export async function cloneGithubRepo(
     suffix++;
   }
 
+  await assertGithubRepoReachable(url);
+
   // 7. Clone the repository
   try {
     await fs.mkdir(path.dirname(targetDir), { recursive: true });
@@ -365,6 +368,47 @@ export async function cloneGithubRepo(
       console.error(`[project-service] Failed to clean up unregistered clone dir ${targetDir}:`, cleanupError);
     }
     throw regError;
+  }
+}
+
+async function assertGithubRepoReachable(url: string): Promise<void> {
+  try {
+    await execFileAsync("git", ["ls-remote", "--exit-code", url, "HEAD"], {
+      timeout: GITHUB_REACHABILITY_TIMEOUT_MS,
+    });
+  } catch (error) {
+    const stderr = (error as { stderr?: string }).stderr || "";
+    const message = (error as Error).message || "";
+    const killedByTimeout = /timed out/i.test(message);
+
+    if (stderr.includes("Authentication failed") || stderr.includes("could not read Username")) {
+      throw Object.assign(
+        new Error("GitHub authentication failed: repository may be private or require credentials"),
+        { statusCode: 401, code: "GITHUB_AUTH" },
+      );
+    }
+    if (stderr.includes("Repository not found") || stderr.includes("not found") || stderr.includes("does not exist")) {
+      throw Object.assign(new Error("GitHub repository not found"), {
+        statusCode: 404,
+        code: "GITHUB_NOT_FOUND",
+      });
+    }
+    if (
+      killedByTimeout ||
+      stderr.includes("Could not resolve host") ||
+      stderr.includes("unable to access") ||
+      stderr.includes("Failed to connect")
+    ) {
+      throw Object.assign(new Error("GitHub is unreachable: check network connection"), {
+        statusCode: 503,
+        code: "GITHUB_NETWORK",
+      });
+    }
+
+    throw Object.assign(new Error(`GitHub repository check failed: ${message}`), {
+      statusCode: 400,
+      code: "GITHUB_REACHABILITY",
+    });
   }
 }
 

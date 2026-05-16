@@ -189,7 +189,7 @@ https://ridge.local/api/webhooks/conversion
 | `modelSize` | `string` | `base` | 模型尺寸：`tiny`, `base`, `small`, `medium`, `large` |
 | `segmentDuration` | `number` | `30` | 分段时长（秒），用于输出时间戳切片 |
 | `diarization` | `boolean` | `false` | 是否启用说话人分离 |
-| `format` | `string` | `srt` | 输出格式：`srt`, `vtt`, `json`, `txt` |
+| `format` | `string` | `srt` | 输出格式：`srt`, `vtt`, `json`, `txt`, `markdown` |
 
 #### 3.4.3 `image.ocr`
 
