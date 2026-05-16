@@ -9,9 +9,9 @@
 - `packages/server/src/index.ts`
   - `POST /api/sessions`
   - `GET /api/sessions/:sessionId/messages`
-  - `POST /api/sessions/:sessionId/messages`
-  - `GET /api/sessions/:sessionId/events`
-  - `POST /api/sessions/:sessionId/cancel`
+- `POST /api/sessions/:sessionId/messages`
+- `GET /api/sessions/:sessionId/events`
+- `POST /api/sessions/:sessionId/cancel`
   - `POST /api/sessions/:sessionId/ask/:requestId`
   - `POST /api/sessions/:sessionId/permissions/:requestId`
 - `packages/web/src/composables/usePerSessionChat.ts`
@@ -30,6 +30,9 @@
 - `POST /api/sessions/:sessionId/permissions/:requestId` 提交 permission 决策。
 - `POST /api/sessions/:sessionId/archive` 同时更新 `sessions.archived` 与 `session_index.archived`；纯 desktop 会话只存在于 `session_index` 时也必须可归档。
 - 归档只读边界覆盖 `messages/ask/permissions/cancel`；归档会话返回 403，不依赖前端隐藏。
+- Android 轻对话复用现有 `/api/sessions` 主线：移动端以 Android 设备 `Bearer` token 访问 `/api/sessions*`；无 token 的 Web/桌面 Cookie 鉴权保持原逻辑，有无效 Bearer token 时返回 401。
+- Android token 创建普通会话时服务端强制使用默认工作空间、`run_location='server'` 和普通 `workspace` session；移动端不得传 `cwd`、`parentSessionId`、`projectId`、`taskId`、`runLocation/run_location`、`deviceId` 或 `task-agent`。
+- Android SSE 使用 `GET /api/sessions/:sessionId/events?token=<android-token>`，因为原生 `EventSource` 不能设置 Authorization header；消息发送、附件上传和取消仍使用 Bearer header。
 - desktop 会话在 `session_index.run_location = 'desktop'` 时，`events/messages/cancel/ask/permissions` 都必须先走桌面 WebSocket 转发，不读取本地 Pi session 文件。
 - task processing session 通过 `workspace_tasks.processing_session_id` 和 `session_index.session_type/task_id` 识别；`PATCH /api/sessions/:sessionId` 与 `POST /api/sessions/:sessionId/messages` 对显式普通 Agent 返回 400，只允许 `task-agent`。
 - task processing session 的 Agent 边界必须早于本地 Pi runtime 加载/恢复执行，避免普通 Agent 请求先触发模型/API key 选择或 session 文件读取。
@@ -76,3 +79,5 @@
   - resource catalog 为空时传入空列表，摘要显示「无可用资源」，不显示假资源入口。
 - `packages/web/src/composables/__tests__/usePerSessionChat.test.ts`
   - prompt/skill/command 注入后的主会话草稿通过 `sendMessage` 发送为真实 payload。
+- `packages/server/src/__tests__/task53-mobile-chat.test.ts`
+  - Android token 创建普通 server 会话、拒绝移动端指定 cwd/分叉/task-only agent、错误 Bearer token 不创建会话、移动端 token 可调用 messages/cancel。

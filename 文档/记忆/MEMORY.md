@@ -855,3 +855,20 @@
 - `task52-mobile-capture.test.ts` 覆盖 Android token 成功创建闪念和附件、错误 token 不写入、非法附件不产生半条闪念。
 - `media-draft-storage.test.ts`、`capture-attachment.test.ts`、`recording-state.test.ts`、`mobile-capture-submitter.test.ts`、`CapturePage.test.ts` 覆盖移动端草稿、附件转换、录音状态、失败保留和捕捉页提交。
 - `npm run check` 通过。
+
+## 2026-05-16 任务 53 Android 轻对话
+
+### 收口结论
+
+- Android 轻对话复用现有 `/api/sessions`、`/messages`、`/attachments`、`/events`、`/cancel` 主线，不新增移动端会话模型。
+- 服务端允许有效 Android 设备 `Bearer` token 访问 `/api/sessions*`；无效 Bearer token 返回 401，普通 Web/桌面 Cookie 鉴权保持原逻辑。
+- Android token 创建会话时服务端默认使用当前默认工作空间，写普通 `workspace` 会话，并在 `session_index` 中收口为 `run_location='server'`。
+- Android 创建会话拒绝 `cwd`、分叉、桌面/项目/task-only 相关参数和 `task-agent`，避免移动端暴露服务器路径或创建任务处理会话。
+- 移动端轻对话实现包含基础会话列表、新建/继续、文本发送、图片/录音附件上传、SSE 合并、取消生成和失败草稿保留。
+- 原生 `EventSource` 不能设置 Authorization header，因此移动端 SSE 使用 `?token=<android-token>`，其他会话请求继续使用 Bearer header。
+
+### 验收证据
+
+- `task53-mobile-chat.test.ts` 覆盖 Android token 创建普通 server 会话、拒绝 cwd/分叉/task-only agent、错误 token 不创建会话、messages/cancel 入口。
+- `mobile-chat-api-client.test.ts`、`mobile-chat-sse.test.ts`、`mobile-chat-store.test.ts` 覆盖移动端 token API、SSE 合并、发送失败保留和最终回复清草稿。
+- `ChatPage.test.ts` 覆盖移动端新建会话、发送文本、流式回复展示、取消生成和发送失败草稿保留。

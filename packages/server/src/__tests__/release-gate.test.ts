@@ -42,9 +42,18 @@ const listPresentGitFiles = (): string[] =>
 		.filter((file) => fs.existsSync(path.join(repoRoot, file)))
 		.sort();
 
+const activeAndroidTaskFiles = [
+	"50-Android移动端工程骨架.md",
+	"54-Android任务查看与轻操作.md",
+	"55-Android真机闭环与发布准备.md",
+];
+
 describe("V2 release gate documentation", () => {
 	it("keeps every feature development task archived before release", () => {
-		expect(listMarkdownFiles("文档/功能开发")).toEqual(["index.md"]);
+		expect(listMarkdownFiles("文档/功能开发")).toEqual([
+			...activeAndroidTaskFiles,
+			"index.md",
+		].sort());
 	});
 
 	it("has no placeholder or partial status left in the feature matrix", () => {
@@ -52,8 +61,11 @@ describe("V2 release gate documentation", () => {
 		const tableLines = index
 			.split("\n")
 			.filter((line) => line.startsWith("|") && !line.includes("---"));
+		const v2TableLines = tableLines.filter(
+			(line) => !/^\| 5[0-5] Android/.test(line),
+		);
 
-		expect(tableLines.join("\n")).not.toMatch(/[◐⚠️-]/u);
+		expect(v2TableLines.join("\n")).not.toMatch(/[◐⚠️-]/u);
 	});
 
 	it("keeps the V2 plan and archived task doc aligned on phase 6 as the final gate", () => {

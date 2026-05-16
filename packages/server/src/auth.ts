@@ -17,6 +17,8 @@ type LoginFailureRecord = {
 
 export type AuthRuntime = ReturnType<typeof createAuthRuntime>;
 
+export type ApiBearerAuthorizer = (req: Request) => boolean | Promise<boolean>;
+
 function parseCookieHeader(cookieHeader: string | undefined) {
 	const cookies = new Map<string, string>();
 	if (!cookieHeader) {
@@ -67,7 +69,10 @@ function buildCookie(sessionId: string, maxAgeSeconds: number) {
 	return parts.join("; ");
 }
 
-export function createAuthRuntime(options: { adminPassword: string }) {
+export function createAuthRuntime(options: {
+	adminPassword: string;
+	isApiBearerAuthorized?: ApiBearerAuthorizer;
+}) {
 	const sessions = new Map<string, SessionRecord>();
 	const failures = new Map<string, LoginFailureRecord>();
 
@@ -141,12 +146,16 @@ export function createAuthRuntime(options: { adminPassword: string }) {
 		res.json({ authenticated: isAuthenticatedCookieHeader(req.headers.cookie) });
 	};
 
-	const requireApiAuth = (req: Request, res: Response, next: NextFunction) => {
+	const requireApiAuth = async (req: Request, res: Response, next: NextFunction) => {
 		if (!req.path.startsWith("/api/")) {
 			next();
 			return;
 		}
 		if (isAuthenticatedCookieHeader(req.headers.cookie)) {
+			next();
+			return;
+		}
+		if (options.isApiBearerAuthorized && await options.isApiBearerAuthorized(req)) {
 			next();
 			return;
 		}

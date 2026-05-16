@@ -31,6 +31,9 @@
 - 附件转换：`src/lib/media/capture-attachment.ts` 把录音、拍照和相册 `File` 转为本地待上传附件，`recorder` 产物为 `audio`，`camera/gallery` 产物为 `photo`。
 - 录音状态：`src/lib/media/recording-state.ts` 固定为 `idle -> recording -> preview -> uploading -> done/failed`，预览录音可删除并回到 `idle`。
 - 移动捕捉提交：`src/lib/media/mobile-capture-submitter.ts` 使用已保存 Android 注册信息向服务端提交，提交中先写本地 `uploading` 草稿，成功删除，失败改为 `failed` 并保留可重试草稿。
+- 轻对话 API：`src/lib/chat/mobile-chat-api-client.ts` 复用 `/api/sessions`、`/messages`、`/attachments` 和 `/cancel`，所有请求带 Android Bearer token；附件由本地 base64 草稿转回 `File` 后通过现有会话附件接口上传。
+- 轻对话 SSE：`src/lib/chat/mobile-chat-sse.ts` 订阅 `/api/sessions/:sessionId/events?token=<android-token>`，合并 `snapshot/status/message_start/message_end/error` 到移动端消息流。
+- 轻对话状态：`src/lib/chat/mobile-chat-store.ts` 管理基础会话列表、当前会话、消息流、发送状态、错误和 composer；`src/lib/chat/mobile-chat-draft-storage.ts` 在发送失败或 SSE error 时保留文本与附件草稿，最终 assistant 消息到达后清空本次待发送草稿。
 
 ## 服务连接
 
@@ -39,6 +42,7 @@
 - 移动端只消费设备注册与心跳 API；不请求 runtime bundle，不启用 `skill_android`。
 - 移动捕捉消费 `POST /api/mobile/captures`，请求体包含 `deviceId`、`token`、文字和附件 base64；服务端只接受 Android 设备 token。
 - `POST /api/mobile/captures` 内部写现有 `fleeting_notes` 和 `fleeting_attachments`，附件目录固定为 `.ridge/fleeting-attachments/{noteId}/`，并触发现有 fleeting analysis；失败时清理已创建的闪念和临时附件。
+- 移动轻对话不新增移动端会话模型；Android token 创建会话时，服务端默认使用 `~/ridge-workspace` 对应的当前默认工作空间，固定为普通 server 会话，不允许移动端传服务器路径、桌面项目、分叉或 task-only agent。
 
 ## 构建与验证
 
@@ -48,6 +52,7 @@
 - Android debug APK：`npm run android:debug --workspace @pi/mobile`。
 - 根目录 `npm run check` 已包含 `@pi/mobile` 的 `vue-tsc` 检查。
 - 任务 52 验收覆盖 `task52-mobile-capture.test.ts`、移动端媒体草稿/转换/状态机/提交器测试和 `CapturePage.test.ts`。
+- 任务 53 验收覆盖 `task53-mobile-chat.test.ts`、`mobile-chat-api-client.test.ts`、`mobile-chat-sse.test.ts`、`mobile-chat-store.test.ts` 和 `ChatPage.test.ts`。
 
 ## 当前环境注意
 

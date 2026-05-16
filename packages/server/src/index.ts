@@ -146,7 +146,7 @@ import {
 	resolveDefaultWorkspaceDir,
 } from "./workspace-chat.js";
 import { createWorktreeService } from "./worktree-service.js";
-import { ensureServerDevice } from "./devices.js";
+import { authenticateDeviceToken, ensureServerDevice, type DeviceRecord } from "./devices.js";
 import {
 	forwardRunRequestToDesktop,
 	isDesktopOnline,
@@ -177,7 +177,41 @@ function resolveAdminPassword(): string {
 	return "ridge-admin";
 }
 
-export const authRuntime = createAuthRuntime({ adminPassword: resolveAdminPassword() });
+function extractBearerToken(req: Request): string | undefined {
+	const auth = req.headers.authorization;
+	if (auth?.startsWith("Bearer ")) {
+		return auth.slice("Bearer ".length).trim();
+	}
+	return undefined;
+}
+
+function extractSessionDeviceToken(req: Request): string | undefined {
+	const bearer = extractBearerToken(req);
+	if (bearer) {
+		return bearer;
+	}
+	const queryToken = req.query?.token;
+	return typeof queryToken === "string" ? queryToken.trim() : undefined;
+}
+
+async function getAndroidDeviceFromSessionRequest(req: Request): Promise<DeviceRecord | null> {
+	const token = extractSessionDeviceToken(req);
+	if (!token) {
+		return null;
+	}
+	const device = await authenticateDeviceToken(token);
+	return device?.deviceType === "android" ? device : null;
+}
+
+export const authRuntime = createAuthRuntime({
+	adminPassword: resolveAdminPassword(),
+	isApiBearerAuthorized: async (req) => {
+		if (!req.path.startsWith("/api/sessions")) {
+			return false;
+		}
+		return Boolean(await getAndroidDeviceFromSessionRequest(req));
+	},
+});
 
 export const app = express();
 app.use(cors());
@@ -1391,6 +1425,34 @@ app.post(
 	async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const payload = createSessionSchema.parse(req.body ?? {});
+			const androidDevice = await getAndroidDeviceFromSessionRequest(req);
+
+			if (androidDevice) {
+				const rawPayload = req.body && typeof req.body === "object"
+					? req.body as Record<string, unknown>
+					: {};
+				const forbiddenKeys = [
+					"cwd",
+					"parentSessionId",
+					"projectId",
+					"taskId",
+					"sessionType",
+					"runLocation",
+					"run_location",
+					"deviceId",
+				];
+				const forbiddenKey = forbiddenKeys.find((key) => rawPayload[key] !== undefined);
+				if (forbiddenKey) {
+					const error = new Error(`Android mobile sessions cannot set ${forbiddenKey}`) as HttpError;
+					error.statusCode = 400;
+					throw error;
+				}
+				if (payload.agent === TASK_SESSION_AGENT_NAME) {
+					const error = new Error("Android mobile sessions cannot use task-only agent") as HttpError;
+					error.statusCode = 400;
+					throw error;
+				}
+			}
 
 			// 禁止分叉任务处理会话 — 在查找 parent session 前检查
 			if (payload.parentSessionId) {
@@ -1410,7 +1472,9 @@ app.post(
 				: null;
 
 			const sessionCwd =
-				normalizeOptionalFsPath(payload.cwd) || parentSession?.cwd || "";
+				androidDevice
+					? defaultWorkspaceDir
+					: normalizeOptionalFsPath(payload.cwd) || parentSession?.cwd || "";
 			if (!sessionCwd) {
 				const error = new Error("Session project is required") as HttpError;
 				error.statusCode = 400;
@@ -1511,6 +1575,37 @@ app.post(
 				projectContextResolver,
 				workspaceChatConfig,
 			});
+			if (androidDevice) {
+				const db = await getRidgeDb();
+				db.prepare(
+					`INSERT INTO session_index (
+						session_id, title, session_type, context_type,
+						workspace_path, project_id, device_id, run_location,
+						archived, created_at, updated_at
+					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					ON CONFLICT(session_id) DO UPDATE SET
+						title = excluded.title,
+						session_type = excluded.session_type,
+						context_type = excluded.context_type,
+						workspace_path = excluded.workspace_path,
+						project_id = excluded.project_id,
+						device_id = excluded.device_id,
+						run_location = excluded.run_location,
+						updated_at = excluded.updated_at`,
+				).run(
+					record.id,
+					normalizeString(record.session.sessionName) || payload.title || "移动端会话",
+					"workspace",
+					"workspace",
+					defaultWorkspaceDir,
+					workspaceChatConfig.chatProjectId,
+					null,
+					"server",
+					0,
+					record.createdAt,
+					record.updatedAt,
+				);
+			}
 			res.status(201).json(await toSessionSnapshot(record, {}));
 		} catch (error) {
 			next(error);

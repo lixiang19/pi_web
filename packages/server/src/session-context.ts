@@ -676,7 +676,7 @@ export const applySessionAgentSelection = async (
 		findModel(agent?.model) ||
 		record.session.model ||
 		null;
-	if (chosenModel) {
+	if (chosenModel && chosenModel.provider !== "unknown" && chosenModel.id !== "unknown") {
 		await record.session.setModel(chosenModel);
 	}
 	record.resolvedModelSpec = formatModelSpec(
