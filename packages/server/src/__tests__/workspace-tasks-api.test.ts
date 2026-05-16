@@ -473,25 +473,19 @@ describe("workspace tasks processing session api", () => {
 
 		const app = createApp(workspaceDir, deps);
 
-		const msRes = await request(app)
-			.post("/api/workspace/milestones")
-			.send({ title: "M", goal: "g", acceptanceCriteria: "a", projectId: "nonexistent" });
-		// eslint-disable-next-line no-console
-		if (msRes.status !== 201) console.log("DEBUG milestone create:", msRes.status, msRes.body);
-		expect(msRes.status).toBe(201);
+			const msRes = await request(app)
+				.post("/api/workspace/milestones")
+				.send({ title: "M", goal: "g", acceptanceCriteria: "a", projectId: "nonexistent" });
+			expect(msRes.status).toBe(201);
 
-		const createRes = await request(app)
-			.post("/api/workspace/tasks")
-			.send({ title: "未知项目任务", priority: "normal", acceptanceCriteria: "标准", milestoneId: msRes.body.milestone.id });
-		// eslint-disable-next-line no-console
-		if (createRes.status !== 201) console.log("DEBUG task create:", createRes.status, createRes.body);
-		expect(createRes.status).toBe(201);
+			const createRes = await request(app)
+				.post("/api/workspace/tasks")
+				.send({ title: "未知项目任务", priority: "normal", acceptanceCriteria: "标准", milestoneId: msRes.body.milestone.id });
+			expect(createRes.status).toBe(201);
 
-		const psRes = await request(app)
-			.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`);
-		// eslint-disable-next-line no-console
-		if (psRes.status !== 404) console.log("DEBUG processing session:", psRes.status, psRes.body);
-		expect(psRes.status).toBe(404);
+			const psRes = await request(app)
+				.post(`/api/workspace/tasks/${createRes.body.task.id}/processing-session`);
+			expect(psRes.status).toBe(404);
 	});
 
 	it("POST uses defaultWorkspaceDir when task has no projectId", async () => {

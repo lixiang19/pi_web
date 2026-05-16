@@ -72,7 +72,7 @@ describe("session indexer — refreshSessionCatalog internal project exclusion",
 		// Mock SessionManager.listAll to return a fake session at repoDir
 		const { SessionManager } = await import("@mariozechner/pi-coding-agent");
 		const originalListAll = SessionManager.listAll;
-		SessionManager.listAll = vi.fn(async () => [
+		const listAllResult = [
 			{
 				id: `refresh-sess-${Date.now()}`,
 				name: "Refresh Test Session",
@@ -84,7 +84,8 @@ describe("session indexer — refreshSessionCatalog internal project exclusion",
 				firstMessage: null,
 				allMessagesText: "",
 			},
-		] as any);
+		] satisfies Awaited<ReturnType<typeof SessionManager.listAll>>;
+		SessionManager.listAll = vi.fn(async () => listAllResult);
 
 		try {
 			await refreshSessionCatalog({
@@ -135,7 +136,7 @@ describe("session indexer — refreshSessionCatalog internal project exclusion",
 		const { SessionManager } = await import("@mariozechner/pi-coding-agent");
 		const originalListAll = SessionManager.listAll;
 		const sessionId = `refresh-sess-internal-${Date.now()}`;
-		SessionManager.listAll = vi.fn(async () => [
+		const listAllResult = [
 			{
 				id: sessionId,
 				name: "Internal Path Session",
@@ -147,7 +148,8 @@ describe("session indexer — refreshSessionCatalog internal project exclusion",
 				firstMessage: null,
 				allMessagesText: "",
 			},
-		] as any);
+		] satisfies Awaited<ReturnType<typeof SessionManager.listAll>>;
+		SessionManager.listAll = vi.fn(async () => listAllResult);
 
 		try {
 			await refreshSessionCatalog({

@@ -17,6 +17,7 @@ export default [
 			"**/.pi-web/**",
 			"**/.pi/**",
 			"**/.agents/**",
+			"android/app/src/main/assets/public/**",
 			"**/docs/**",
 			"**/文档/**",
 			"eslint.config.js",

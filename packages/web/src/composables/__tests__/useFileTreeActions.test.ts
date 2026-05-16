@@ -55,7 +55,11 @@ describe("useFileTreeActions", () => {
 	// ── handleDelete ────────────────────────────────────────────
 
 	it("handleDelete 成功时：调用 trashFileEntry + refreshTree + toast.success", async () => {
-		mockTrashFileEntry.mockResolvedValue({} as any);
+		mockTrashFileEntry.mockResolvedValue({
+			root: "/workspace",
+			path: "/workspace/foo.ts",
+			trashedAt: Date.now(),
+		});
 
 		await handleDelete(makeEntry("foo.ts"));
 
@@ -79,7 +83,7 @@ describe("useFileTreeActions", () => {
 	// ── handleRename ────────────────────────────────────────────
 
 	it("handleRename 成功时：调用 moveFileEntry + refreshTree + toast.success", async () => {
-		mockMoveFileEntry.mockResolvedValue({} as any);
+		mockMoveFileEntry.mockResolvedValue({ entry: makeEntry("new.ts") });
 
 		await handleRename({ oldPath: "/workspace/old.ts", newName: "new.ts" });
 
@@ -104,7 +108,9 @@ describe("useFileTreeActions", () => {
 	// ── handleCreateFolderInTree ────────────────────────────────
 
 	it("handleCreateFolderInTree 成功时：调用 createFileEntry + refreshTree + toast.success", async () => {
-		mockCreateFileEntry.mockResolvedValue({} as any);
+		mockCreateFileEntry.mockResolvedValue({
+			entry: makeEntry("utils", "directory", "/workspace/src/utils"),
+		});
 
 		await handleCreateFolderInTree({
 			parentPath: "/workspace/src",

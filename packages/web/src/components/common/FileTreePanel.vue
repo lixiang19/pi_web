@@ -101,6 +101,16 @@ const getFavoritePath = (favorite: { id: string; data?: Record<string, unknown> 
 	return typeof path === "string" ? path : favorite.id;
 };
 
+const createFileEntryFromPath = (filePath: string, name: string): FileTreeEntry => ({
+	path: filePath,
+	name,
+	kind: "file",
+	relativePath: filePath,
+	size: null,
+	modifiedAt: 0,
+	extension: filePath.includes(".") ? filePath.slice(filePath.lastIndexOf(".")) : "",
+});
+
 const isFavorited = (path: string): boolean =>
 	fileFavorites.value.some((f) => getFavoritePath(f) === path);
 
@@ -481,10 +491,10 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
               class="group relative w-full rounded-lg border border-transparent transition-all duration-200 ease-out hover:border-accent hover:bg-accent/50"
             >
               <button
-                type="button"
-                class="flex w-full items-center gap-3 px-3 py-2.5 pr-12 text-left"
-                @click="emit('select', { path: getFavoritePath(favorite), name: favorite.name, kind: 'file' } as any)"
-              >
+	                type="button"
+	                class="flex w-full items-center gap-3 px-3 py-2.5 pr-12 text-left"
+	                @click="emit('select', createFileEntryFromPath(getFavoritePath(favorite), favorite.name))"
+	              >
                 <div
                   class="flex items-center justify-center size-9 rounded-lg bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 shrink-0 transition-transform duration-200 group-hover:scale-105"
                 >
@@ -554,10 +564,10 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
           <div v-else class="py-2">
             <div
               v-for="file in recentFiles"
-              :key="file.path"
-              class="group flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-accent/50 transition-colors"
-              @click="emit('select', { path: file.path, name: file.name, kind: 'file' } as any)"
-            >
+	              :key="file.path"
+	              class="group flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-accent/50 transition-colors"
+	              @click="emit('select', createFileEntryFromPath(file.path, file.name))"
+	            >
               <Clock class="size-4 shrink-0 text-muted-foreground" />
               <div class="min-w-0 flex-1">
                 <span class="block truncate text-sm">{{ file.name }}</span>

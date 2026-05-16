@@ -26,12 +26,13 @@ test.describe("文件树功能 E2E 测试", () => {
 	// 辅助函数：获取文件树面板内的文件行（外层 div，含 cursor-pointer class）
 	const getFileRows = (page: import("@playwright/test").Page) =>
 		page.locator('[data-state="active"][role="tabpanel"] .cursor-pointer');
+	const screenshotPath = (name: string) => `test-results/e2e-screenshots/${name}`;
 
 	// ===== A. 文件树浏览 =====
 
 	test("A1: 加载根目录", async ({ page }) => {
 		await page.waitForTimeout(3000);
-		await page.screenshot({ path: "e2e/screenshots/A1-file-tree-loaded.png" });
+		await page.screenshot({ path: screenshotPath("A1-file-tree-loaded.png") });
 		// 验证文件树面板存在且有内容（通过 aria-labelledby 中的 files 标识）
 		const treeContent = page.locator('[role="tabpanel"][id$="-content-files"]');
 		await expect(treeContent).toBeVisible();
@@ -44,7 +45,7 @@ test.describe("文件树功能 E2E 测试", () => {
 			await dirRow.click();
 			await page.waitForTimeout(1000);
 			await page.screenshot({
-				path: "e2e/screenshots/A2-directory-expanded.png",
+				path: screenshotPath("A2-directory-expanded.png"),
 			});
 		}
 	});
@@ -60,7 +61,7 @@ test.describe("文件树功能 E2E 测试", () => {
 			await dirRow.click();
 			await page.waitForTimeout(500);
 			await page.screenshot({
-				path: "e2e/screenshots/A3-directory-collapsed.png",
+				path: screenshotPath("A3-directory-collapsed.png"),
 			});
 		}
 	});
@@ -79,7 +80,7 @@ test.describe("文件树功能 E2E 测试", () => {
 			}
 		}
 		await page.waitForTimeout(2000);
-		await page.screenshot({ path: "e2e/screenshots/A6-refresh.png" });
+		await page.screenshot({ path: screenshotPath("A6-refresh.png") });
 	});
 
 	// ===== C. 收藏 =====
@@ -90,7 +91,7 @@ test.describe("文件树功能 E2E 测试", () => {
 		if (await favTab.isVisible()) {
 			await favTab.click();
 			await page.waitForTimeout(1000);
-			await page.screenshot({ path: "e2e/screenshots/C3-favorites-tab.png" });
+			await page.screenshot({ path: screenshotPath("C3-favorites-tab.png") });
 			const emptyText = page.locator("text=暂无收藏");
 			const hasEmpty = await emptyText.isVisible().catch(() => false);
 			expect(
@@ -112,7 +113,7 @@ test.describe("文件树功能 E2E 测试", () => {
 				await searchInput.fill("md");
 				await page.waitForTimeout(1500);
 				await page.screenshot({
-					path: "e2e/screenshots/D1-search-results.png",
+					path: screenshotPath("D1-search-results.png"),
 				});
 				const hasResults =
 					(await page.locator("text=未找到").count()) > 0 ||
@@ -130,7 +131,7 @@ test.describe("文件树功能 E2E 测试", () => {
 		if (await recentTab.isVisible()) {
 			await recentTab.click();
 			await page.waitForTimeout(1000);
-			await page.screenshot({ path: "e2e/screenshots/E1-recent-files.png" });
+			await page.screenshot({ path: screenshotPath("E1-recent-files.png") });
 		}
 	});
 
@@ -143,7 +144,7 @@ test.describe("文件树功能 E2E 测试", () => {
 			await fileRow.click({ button: "right" });
 			await page.waitForTimeout(500);
 			await page.screenshot({
-				path: "e2e/screenshots/G1-file-context-menu.png",
+				path: screenshotPath("G1-file-context-menu.png"),
 			});
 			const menuItems = page.locator('[role="menuitem"]');
 			const count = await menuItems.count();
@@ -158,7 +159,7 @@ test.describe("文件树功能 E2E 测试", () => {
 			await dirRow.click({ button: "right" });
 			await page.waitForTimeout(500);
 			await page.screenshot({
-				path: "e2e/screenshots/G2-dir-context-menu.png",
+				path: screenshotPath("G2-dir-context-menu.png"),
 			});
 			const menuItems = page.locator('[role="menuitem"]');
 			const count = await menuItems.count();
@@ -180,7 +181,7 @@ test.describe("文件树功能 E2E 测试", () => {
 			if (await renameItem.isVisible()) {
 				await renameItem.click();
 				await page.waitForTimeout(300);
-				await page.screenshot({ path: "e2e/screenshots/B2-rename-input.png" });
+				await page.screenshot({ path: screenshotPath("B2-rename-input.png") });
 				const editInput = page.locator('input[type="text"]');
 				await expect(editInput).toBeVisible();
 				await editInput.press("Escape");
@@ -200,7 +201,7 @@ test.describe("文件树功能 E2E 测试", () => {
 			if (await deleteItem.isVisible()) {
 				await deleteItem.click();
 				await page.waitForTimeout(500);
-				await page.screenshot({ path: "e2e/screenshots/B4-delete-dialog.png" });
+				await page.screenshot({ path: screenshotPath("B4-delete-dialog.png") });
 				const dialog = page.locator('[role="alertdialog"]');
 				await expect(dialog).toBeVisible();
 				const cancelBtn = page.locator('[role="alertdialog"] button').first();
@@ -222,7 +223,7 @@ test.describe("文件树功能 E2E 测试", () => {
 				await createFolderItem.click();
 				await page.waitForTimeout(300);
 				await page.screenshot({
-					path: "e2e/screenshots/B6-create-folder-input.png",
+					path: screenshotPath("B6-create-folder-input.png"),
 				});
 				const editInput = page.locator('input[type="text"]');
 				await expect(editInput).toBeVisible();

@@ -8,8 +8,15 @@ coverage
 *.log
 *.tsbuildinfo
 .pi-lens
+test-results
+packages/web/test-results
+playwright-report
+packages/web/playwright-report
+packages/web/e2e/screenshots
 packages/web/node_modules
 packages/web/dist
+packages/mobile/node_modules
+packages/mobile/dist
 packages/server/node_modules
 packages/desktop/node_modules
 packages/desktop/src-tauri/target

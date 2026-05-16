@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(__dirname, "../../../..");
@@ -12,6 +13,33 @@ const listMarkdownFiles = (relativeDir: string): string[] =>
 		.readdirSync(path.join(repoRoot, relativeDir), { withFileTypes: true })
 		.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
 		.map((entry) => entry.name)
+		.sort();
+
+const listFilesRecursive = (relativeDir: string): string[] => {
+	const root = path.join(repoRoot, relativeDir);
+	const files: string[] = [];
+	const visit = (current: string) => {
+		for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+			const absolutePath = path.join(current, entry.name);
+			if (entry.isDirectory()) {
+				visit(absolutePath);
+				continue;
+			}
+			files.push(path.relative(repoRoot, absolutePath));
+		}
+	};
+	visit(root);
+	return files.sort();
+};
+
+const listPresentGitFiles = (): string[] =>
+	execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	})
+		.split("\n")
+		.filter(Boolean)
+		.filter((file) => fs.existsSync(path.join(repoRoot, file)))
 		.sort();
 
 describe("V2 release gate documentation", () => {
@@ -39,5 +67,26 @@ describe("V2 release gate documentation", () => {
 		expect(archivedTask).toContain("根目录 `npm run check` 通过");
 		expect(archivedTask).toContain("根目录 `pnpm test` 通过");
 		expect(archivedTask).toContain("关键 E2E");
+	});
+
+	it("keeps generated and temporary files out of tracked source paths", () => {
+		const sourceFiles = [
+			...listFilesRecursive("packages/server/src"),
+			...listFilesRecursive("packages/web/src"),
+		];
+		const presentGitFiles = listPresentGitFiles();
+
+		expect(sourceFiles.filter((file) => file.endsWith(".tmp"))).toEqual([]);
+		expect(presentGitFiles.filter((file) => file.endsWith(".tmp"))).toEqual([]);
+		expect(presentGitFiles.filter((file) => file.startsWith("test-results/"))).toEqual([]);
+		expect(presentGitFiles.filter((file) => file.startsWith("packages/web/test-results/"))).toEqual([]);
+		expect(presentGitFiles.filter((file) => file.startsWith("packages/web/e2e/screenshots/"))).toEqual([]);
+	});
+
+	it("keeps E2E screenshots under ignored test-results output", () => {
+		const fileTreeSpec = readText("packages/web/e2e/file-tree.spec.ts");
+
+		expect(fileTreeSpec).not.toContain('"e2e/screenshots/');
+		expect(fileTreeSpec).toContain("test-results/e2e-screenshots/");
 	});
 });

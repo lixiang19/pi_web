@@ -3,7 +3,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import express from "express";
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFleetingRouter } from "../routes/fleeting.js";
 import { createTempDir } from "../test/helpers.js";
 
@@ -396,13 +396,13 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.attach("files", Buffer.from("content"), { filename: "doc.txt" });
 
 		// Monkey-patch db.prepare to throw on INSERT so the copy succeeds but transaction fails
-		const originalPrepare = db.prepare.bind(db);
-		(db as any).prepare = function(sql: string) {
-			if (sql.includes("INSERT INTO workspace_tasks")) {
-				throw new Error("Simulated DB failure");
-			}
-			return originalPrepare(sql);
-		};
+			const originalPrepare = db.prepare.bind(db);
+			const prepareSpy = vi.spyOn(db, "prepare").mockImplementation((sql: string) => {
+				if (sql.includes("INSERT INTO workspace_tasks")) {
+					throw new Error("Simulated DB failure");
+				}
+				return originalPrepare(sql);
+			});
 
 		const res = await request(app)
 			.post(`/api/fleeting/${noteId}/process/task`)
@@ -410,8 +410,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 
 		expect(res.status).toBe(500);
 
-		// Restore db.prepare
-		(db as any).prepare = originalPrepare;
+			prepareSpy.mockRestore();
 
 		// Formal file was written but note must still exist because INSERT failed
 		const list = await request(app).get("/api/fleeting");

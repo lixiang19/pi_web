@@ -33,6 +33,7 @@
 - [P0修复] 审查发现的严重问题（安全/命名冲突）必须立即修复，不拖到下次迭代
 - [状态矩阵同步] 文档状态矩阵必须与代码真源同步；巡查发现脱节时立即修正，不能持续用 `-` 掩盖已实现代码
 - [废弃字段清理] 废弃字段（如 `session_index.readonly`、`automations`、`automation_runs`）应立即从 schema/migration/bootstrap/test 全链路移除；项目无用户时不需要兼容/迁移旧数据
+- [Android移动端边界] `packages/mobile` 是移动端 Vue 真源，根目录 `android/` 只是 Capacitor 壳；移动端第一版只保留捕捉、轻对话、任务和必要设置，不复用桌面工作台、多标签、文件树或终端。
 
 ## 功能实现经验
 
@@ -124,6 +125,7 @@
 - [原生依赖安装契约] 仓库使用 `pnpm 10` 时，`better-sqlite3`、`node-pty` 这类原生包不能只写进 dependencies；必须在根 `package.json` 的 `pnpm.onlyBuiltDependencies` 中显式放行，否则 install 后会出现“包存在但 `.node` 绑定缺失”，server 在运行原生模块时直接失败
 - [包管理器一致性] 既然仓库已经锁定 `pnpm` 并依赖 `pnpm.onlyBuiltDependencies` 管原生包，README/开发文档里的安装命令也必须统一写成 `pnpm install`；继续写 `npm install` 会把“依赖声明正确但本地缺包/缺绑定”的问题伪装成代码故障。
 - [上线门禁文档] V2 阶段 6 后，`文档/功能开发/` 根目录只允许保留 `index.md`；功能矩阵不能再用 `-`、`◐`、`⚠️` 表示上线前缺口，缺口要么补齐，要么删除入口，要么用 `N/A` 明确不适用，并由 `release-gate.test.ts` 守住。
+- [上线产物边界] Playwright `test-results`、`playwright-report`、临时 `.tmp` 源码文件和固定截图输出都不得进入源码真源；E2E 若需截图必须写入已忽略的 `test-results/`，并由 `release-gate.test.ts` 守住。
 - [Vitest DB隔离] server 测试隔离目录不能用 `process.pid + Date.now()` 拼接；同 fork/同毫秒会碰撞并引发 SQLite `database is locked`。必须用 `mkdtempSync` 创建唯一 HOME/DB，并在 `resetRidgeDb()` 里关闭旧连接后再清空单例。
 - [终端重启竞态] PTY restart 不能让旧进程的 `onData/onExit` 继续写回共享 record；事件处理必须校验“当前活跃 PTY 实例”，否则旧进程退出会把新终端覆盖成 exited
 - [终端开发代理] 终端页面如果只有光标、没有 prompt 和输入回显，优先检查 WebSocket 是否真的附着到 PTY；Vite `/api` 代理必须显式 `ws: true`，否则 REST 正常但 `/api/terminals/:id/stream` 不通

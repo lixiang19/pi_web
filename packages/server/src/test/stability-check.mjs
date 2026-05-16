@@ -19,8 +19,12 @@ for (const file of files) {
 	results.set(file, { passed: 0, failed: 0 });
 }
 
+const writeLine = (...parts) => {
+	process.stdout.write(`${parts.join(" ")}\n`);
+};
+
 for (let run = 1; run <= RUNS; run += 1) {
-	console.log(`\n=== Stability run ${run}/${RUNS} ===`);
+	writeLine(`\n=== Stability run ${run}/${RUNS} ===`);
 	for (const file of files) {
 		const absPath = path.join(testDir, file);
 		try {
@@ -37,7 +41,7 @@ for (let run = 1; run <= RUNS; run += 1) {
 	}
 }
 
-console.log("\n\n=== Stability Report ===");
+writeLine("\n\n=== Stability Report ===");
 const unstable = [];
 for (const [file, stats] of results) {
 	if (stats.failed > 0) {
@@ -45,10 +49,10 @@ for (const [file, stats] of results) {
 	}
 }
 if (unstable.length === 0) {
-	console.log("All files stable across", RUNS, "runs!");
+	writeLine("All files stable across", RUNS, "runs!");
 } else {
-	console.log("Unstable files:");
+	writeLine("Unstable files:");
 	for (const line of unstable) {
-		console.log("  " + line);
+		writeLine("  " + line);
 	}
 }

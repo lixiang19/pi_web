@@ -237,14 +237,13 @@ async function runAnalysis(
 
 		const rawJson = extractJsonFromResponse(responseText);
 		return parseAnalysisResult(rawJson);
-	} finally {
-		// Best effort cleanup of the temp session
-		try {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			await (sessionManager as any).shutdown?.();
-		} catch {
-			// Ignore cleanup errors
-		}
+		} finally {
+			// Best effort cleanup of the temp session
+			try {
+				await (sessionManager as { shutdown?: () => Promise<void> | void }).shutdown?.();
+			} catch {
+				// Ignore cleanup errors
+			}
 	}
 }
 

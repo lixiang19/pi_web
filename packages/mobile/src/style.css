@@ -1,0 +1,187 @@
+@import "@fontsource-variable/manrope";
+@import "@fontsource/ibm-plex-mono";
+@import "tailwindcss";
+@import "./theme/theme-contract.css";
+@import "./theme/default.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--background);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.mobile-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 32%),
+    var(--background);
+}
+
+.mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem 0.75rem;
+}
+
+.mobile-header strong {
+  display: block;
+  font-size: 1.25rem;
+  letter-spacing: 0;
+}
+
+.brand-kicker,
+.eyebrow {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.mobile-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1rem 6rem;
+}
+
+.mobile-screen h1 {
+  max-width: 12ch;
+  margin: 0;
+  color: var(--foreground);
+  font-size: 2rem;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.screen-copy {
+  max-width: 34rem;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.quick-action,
+.task-group,
+.settings-row,
+.message-draft {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+
+.quick-action {
+  min-height: 5.5rem;
+  display: grid;
+  place-items: center;
+  gap: 0.45rem;
+  padding: 0.75rem;
+}
+
+.quick-action span {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.message-draft {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.task-groups,
+.settings-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.task-group,
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0.85rem 1rem;
+}
+
+.settings-row-action {
+  justify-content: space-between;
+}
+
+.bottom-nav {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+  padding: 0.55rem 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 96%, transparent);
+}
+
+.bottom-nav-item {
+  min-height: 3.25rem;
+  border: 0;
+  border-radius: var(--radius);
+  display: grid;
+  place-items: center;
+  gap: 0.2rem;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.bottom-nav-item span {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.bottom-nav-item.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}

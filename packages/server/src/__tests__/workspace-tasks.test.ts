@@ -439,12 +439,9 @@ describe("workspace task system", () => {
 		const forkRes = await api.post("/api/sessions").send({
 			parentSessionId: fakeSessionId,
 			cwd: WORKSPACE,
-		});
+			});
 
-		// eslint-disable-next-line no-console
-		if (forkRes.status !== 409) console.log("forkRes", forkRes.status, forkRes.text);
-
-		expect(forkRes.status).toBe(409);
+			expect(forkRes.status).toBe(409);
 		expect(forkRes.text).toContain("任务处理会话不允许分叉");
 	});
 

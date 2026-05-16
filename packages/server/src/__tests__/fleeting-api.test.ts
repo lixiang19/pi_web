@@ -502,13 +502,13 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		// Monkey-patch fs.readFile to succeed on first call, fail on second call
 		let callCount = 0;
 		const originalReadFile = fs.readFile;
-		const readFileSpy = vi.spyOn(fs, "readFile").mockImplementation(async (filepath, ...args) => {
-			callCount++;
-			if (callCount === 2) {
-				throw new Error("Simulated read failure on second attachment");
-			}
-			return originalReadFile(filepath, ...(args as any[]));
-		});
+			const readFileSpy = vi.spyOn(fs, "readFile").mockImplementation(async (...args: Parameters<typeof fs.readFile>) => {
+				callCount++;
+				if (callCount === 2) {
+					throw new Error("Simulated read failure on second attachment");
+				}
+				return originalReadFile(...args);
+			});
 
 		try {
 			const res = await request(app)
