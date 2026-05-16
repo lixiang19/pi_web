@@ -107,7 +107,7 @@ watch(
             </Button>
           </div>
 
-          <div class="min-w-0 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          <div class="min-w-0 rounded-md border border-default bg-subtle px-3 py-2 text-xs leading-5 text-muted-foreground">
             <div class="font-medium text-foreground/70">当前选择</div>
             <p class="mt-1 break-all" :title="selectedPath">
               {{ selectedPath || "-" }}

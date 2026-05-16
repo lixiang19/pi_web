@@ -36,11 +36,11 @@ const formatScope = (rule: AutomationRule) =>
 </script>
 
 <template>
-  <aside class="flex min-h-0 flex-col border-r border-border/50 bg-muted/10">
+  <aside class="flex min-h-0 flex-col border-r border-default bg-subtle">
     <div class="flex h-14 shrink-0 items-center justify-between px-4">
       <div>
         <h2 class="text-sm font-semibold tracking-tight">规则</h2>
-        <p class="text-[11px] text-muted-foreground">到时间后创建普通会话</p>
+        <p class="text-caption text-muted-foreground">到时间后创建普通会话</p>
       </div>
       <Button
         type="button"
@@ -66,7 +66,7 @@ const formatScope = (rule: AutomationRule) =>
           class="w-full rounded-lg border px-3 py-3 text-left transition-colors"
           :class="rule.id === selectedId
             ? 'border-primary/40 bg-primary/10'
-            : 'border-border/50 bg-card/60 hover:bg-accent/40'"
+            : 'border-default bg-card/60 hover:bg-soft'"
           @click="emit('select', rule.id)"
         >
           <div class="flex items-start justify-between gap-3">
@@ -74,7 +74,7 @@ const formatScope = (rule: AutomationRule) =>
               <p class="truncate text-sm font-semibold text-foreground">
                 {{ rule.name }}
               </p>
-              <div class="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+              <div class="mt-1 flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
                 <Clock class="size-3 shrink-0" />
                 <span class="truncate">{{ formatNextRun(rule.nextRunAt) }}</span>
               </div>
@@ -88,7 +88,7 @@ const formatScope = (rule: AutomationRule) =>
           </div>
 
           <div class="mt-3 flex items-center justify-between gap-2">
-            <p class="truncate text-[11px] text-muted-foreground/80">
+            <p class="truncate text-caption text-muted-foreground/80">
               {{ formatScope(rule) }} · {{ rule.cwd }}
             </p>
             <Button

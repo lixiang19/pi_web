@@ -10,12 +10,12 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="flex h-9 items-center gap-0.5 border-b border-border/40 bg-background px-2">
+  <div class="flex h-9 items-center gap-0.5 border-b border-subtle bg-background px-2">
     <Tooltip>
       <TooltipTrigger as-child>
         <button
           type="button"
-          class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+          class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-body text-muted-foreground transition-colors hover:bg-soft hover:text-foreground"
           @click="$emit('open-terminal')"
         >
           <TerminalSquare class="size-4" />
@@ -29,7 +29,7 @@ defineEmits<{
       <TooltipTrigger as-child>
         <button
           type="button"
-          class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+          class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-body text-muted-foreground transition-colors hover:bg-soft hover:text-foreground"
           @click="$emit('open-automation')"
         >
           <Bot class="size-4" />
@@ -43,7 +43,7 @@ defineEmits<{
       <TooltipTrigger as-child>
         <button
           type="button"
-          class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+          class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-body text-muted-foreground transition-colors hover:bg-soft hover:text-foreground"
           @click="$emit('open-settings')"
         >
           <Settings2 class="size-4" />

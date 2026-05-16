@@ -76,7 +76,7 @@ const handleDelete = async () => {
           <p class="font-mono text-xs break-all text-foreground">{{ worktreeRoot }}</p>
         </div>
 
-        <div class="text-[13px] text-muted-foreground">
+        <div class="text-body text-muted-foreground">
           <p class="font-medium text-foreground mb-1">将同时删除：</p>
           <ul class="list-disc pl-4 space-y-0.5">
             <li>worktree 目录</li>

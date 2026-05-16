@@ -69,12 +69,12 @@ const appendBlockToDraft = (payload: {
 
 <template>
   <div class="grid h-full min-h-0 grid-cols-2 bg-background">
-    <section class="min-h-0 border-r border-border/40">
-      <div class="flex h-10 items-center justify-between border-b border-border/40 px-3">
-        <span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+    <section class="min-h-0 border-r border-subtle">
+      <div class="flex h-10 items-center justify-between border-b border-subtle px-3">
+        <span class="text-caption font-semibold uppercase tracking-[0.18em] text-foreground/70">
           Markdown
         </span>
-        <Badge variant="outline" class="text-[10px] uppercase">
+        <Badge variant="outline" class="text-micro uppercase">
           {{ statusLabel }}
         </Badge>
       </div>
@@ -86,10 +86,10 @@ const appendBlockToDraft = (payload: {
       />
     </section>
 
-    <section class="min-h-0 bg-muted/10">
+    <section class="min-h-0 bg-subtle">
       <ScrollArea class="h-full">
         <div class="space-y-4 px-4 py-4">
-          <div v-if="!content.trim()" class="rounded-2xl border border-dashed border-border/50 bg-background/70 px-5 py-6 text-sm text-muted-foreground">
+          <div v-if="!content.trim()" class="rounded-2xl border border-dashed border-default bg-background/70 px-5 py-6 text-sm text-muted-foreground">
             开始输入 Markdown 内容，右侧会按块渲染，并支持把块上下文发给 AI。
           </div>
 

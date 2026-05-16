@@ -252,7 +252,7 @@ const currentAgentLabel = computed(() => {
         >
           <SelectTrigger
             size="sm"
-            class="h-7 w-full max-w-xs gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+            class="h-7 w-full max-w-xs gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground"
           >
             <SelectValue placeholder="选择工作目录..." />
           </SelectTrigger>
@@ -341,7 +341,7 @@ const currentAgentLabel = computed(() => {
             >
               <SelectTrigger
                 size="sm"
-                class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+                class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground"
               >
                 <Brain class="size-3.5 shrink-0" />
                 <span class="font-medium">{{ currentModelLabel }}</span>
@@ -363,7 +363,7 @@ const currentAgentLabel = computed(() => {
             >
               <SelectTrigger
                 size="sm"
-                class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+                class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground"
               >
                 <Lightbulb class="size-3.5 shrink-0" />
                 <span class="font-medium">{{ currentThinkingLabel }}</span>
@@ -385,7 +385,7 @@ const currentAgentLabel = computed(() => {
             >
               <SelectTrigger
                 size="sm"
-                class="h-8 max-w-[160px] gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+                class="h-8 max-w-[160px] gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground"
               >
                 <Bot class="size-3.5 shrink-0" />
                 <span class="truncate font-medium">{{ currentAgentLabel }}</span>

@@ -51,7 +51,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 </script>
 
 <template>
-  <header class="flex h-10 shrink-0 items-center justify-between border-b border-border/50 bg-background px-3">
+  <header class="flex h-10 shrink-0 items-center justify-between border-b border-default bg-background px-3">
     <!-- 左侧：标题 -->
     <div class="min-w-0 flex-1">
       <input

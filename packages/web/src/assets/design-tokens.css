@@ -1,0 +1,98 @@
+/* === ridge 设计 Token 规范 === */
+/* 本文件定义语义化工具类，供全站统一使用。 */
+
+/* === 字号阶梯 === */
+/* 用途说明：
+ *   text-micro   : 10px — 计数 badge、极小标签
+ *   text-caption : 11px — 元数据、时间戳、描述文字
+ *   text-body-sm : 12px — 紧凑列表项、按钮文字、小标签
+ *   text-body    : 13px — 侧边栏入口、正文（紧凑区域）
+ *   text-body-lg : 15px — 聊天消息正文
+ *   text-hero    : 16px — 大输入框、Hero 区域
+ */
+
+@utility text-micro {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+@utility text-caption {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@utility text-body-sm {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@utility text-body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@utility text-body-lg {
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+@utility text-hero {
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+/* === 边框透明度标准 === */
+/* 规范（使用 Tailwind opacity modifier）：
+ *   border-border/30  — border-subtle : 装饰性边框，卡片外轮廓
+ *   border-border/50  — border-default: 组件级边框，输入框、按钮
+ *   border-border/80  — border-strong : 强调边框，分割线、拖拽区域
+ */
+
+/* === 背景透明度标准 === */
+/* 规范（使用 Tailwind opacity modifier）：
+ *   bg-muted/20  — bg-subtle : 极淡背景，空状态、禁用态
+ *   bg-muted/40  — bg-soft   : 柔和背景，hover 态、附件列表
+ *   bg-muted/60  — bg-hover : 强调 hover，交互元素悬浮
+ *   bg-accent/40 — bg-active: 当前激活项背景（保留 accent 语义）
+ */
+
+/* === 边框语义工具类 === */
+@utility border-subtle {
+  border-color: color-mix(in oklab, var(--border), transparent 70%);
+}
+
+@utility border-default {
+  border-color: color-mix(in oklab, var(--border), transparent 50%);
+}
+
+@utility border-strong {
+  border-color: color-mix(in oklab, var(--border), transparent 20%);
+}
+
+/* === 背景语义工具类 === */
+@utility bg-subtle {
+  background-color: color-mix(in oklab, var(--muted), transparent 80%);
+}
+
+@utility bg-soft {
+  background-color: color-mix(in oklab, var(--muted), transparent 60%);
+}
+
+@utility bg-hover {
+  background-color: color-mix(in oklab, var(--muted), transparent 40%);
+}
+
+/* === 间距快捷 === */
+/* 常用离散值统一为语义变量（供 CSS 变量使用，非 Tailwind utility） */
+@theme inline {
+  --spacing-px: 1px;
+  --spacing-0-5: 0.125rem;
+  --spacing-1: 0.25rem;
+  --spacing-1-5: 0.375rem;
+  --spacing-2: 0.5rem;
+  --spacing-2-5: 0.625rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+}

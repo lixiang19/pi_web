@@ -45,10 +45,10 @@ const markdownLinkOptions: LinkOptions = {
 const SafeHtmlNodeRenderer = (rendererProps: HtmlNodeRendererProps) => {
   return h("div", {
     class:
-      "rounded-xl border border-border/50 bg-muted/40 px-4 py-3 text-left",
+      "rounded-xl border border-default bg-soft px-4 py-3 text-left",
   }, [
     h("p", {
-      class: "mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground",
+      class: "mb-2 text-caption font-medium uppercase tracking-[0.18em] text-muted-foreground",
     }, "原始 HTML 已按文本显示"),
     h("pre", {
       class: "overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-6 text-foreground/90",
@@ -76,10 +76,10 @@ const closeComposer = () => {
 </script>
 
 <template>
-  <article class="group rounded-2xl border border-border/40 bg-card/70 px-4 py-4 shadow-sm transition-colors hover:border-border/70">
+  <article class="group rounded-2xl border border-subtle bg-card/70 px-4 py-4 shadow-sm transition-colors hover:border-strong">
     <div class="mb-3 flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="truncate text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
+        <p class="truncate text-caption font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
           {{ props.block.kind }} · {{ props.block.startLine }}-{{ props.block.endLine }}
         </p>
         <p class="mt-1 truncate text-sm font-medium text-foreground/90">
@@ -105,7 +105,7 @@ const closeComposer = () => {
       </div>
     </div>
 
-    <div class="markdown-preview-block max-w-none break-words text-sm leading-7 text-foreground/88 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:pointer-events-none [&_a]:text-primary [&_blockquote]:border-l-2 [&_blockquote]:border-border/60 [&_blockquote]:pl-4 [&_code]:rounded-md [&_code]:bg-muted/70 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_hr]:border-border/50 [&_img]:hidden [&_li]:marker:text-muted-foreground [&_ol]:pl-5 [&_p]:text-foreground/88 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-border/50 [&_pre]:bg-muted/60 [&_pre]:p-4 [&_table]:w-full [&_table]:border-collapse [&_tbody_tr]:border-t [&_tbody_tr]:border-border/40 [&_td]:border [&_td]:border-border/40 [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-border/40 [&_th]:bg-muted/40 [&_th]:px-3 [&_th]:py-2 [&_ul]:pl-5">
+    <div class="markdown-preview-block max-w-none break-words text-sm leading-7 text-foreground/88 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:pointer-events-none [&_a]:text-primary [&_blockquote]:border-l-2 [&_blockquote]:border-default [&_blockquote]:pl-4 [&_code]:rounded-md [&_code]:bg-hover [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_hr]:border-default [&_img]:hidden [&_li]:marker:text-muted-foreground [&_ol]:pl-5 [&_p]:text-foreground/88 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-default [&_pre]:bg-hover [&_pre]:p-4 [&_table]:w-full [&_table]:border-collapse [&_tbody_tr]:border-t [&_tbody_tr]:border-subtle [&_td]:border [&_td]:border-subtle [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-subtle [&_th]:bg-soft [&_th]:px-3 [&_th]:py-2 [&_ul]:pl-5">
       <Markdown
         :content="props.block.source"
         :harden-options="markdownHardenOptions"

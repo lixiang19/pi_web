@@ -15,7 +15,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-    <div class="flex size-14 items-center justify-center rounded-2xl bg-muted/60">
+    <div class="flex size-14 items-center justify-center rounded-2xl bg-hover">
       <FileQuestion class="size-6 text-muted-foreground/50" />
     </div>
     <div class="space-y-1">

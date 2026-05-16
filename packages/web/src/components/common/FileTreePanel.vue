@@ -283,7 +283,7 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
 <template>
   <div class="flex flex-1 min-h-0 flex-col overflow-hidden bg-background">
     <Tabs v-model="activeTab" class="flex-1 flex flex-col min-h-0">
-      <TabsList class="mx-3 mt-2 h-8 w-auto grid grid-cols-4 border border-border/50 bg-transparent p-0.5">
+      <TabsList class="mx-3 mt-2 h-8 w-auto grid grid-cols-4 border border-default bg-transparent p-0.5">
         <TabsTrigger value="files" class="rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
           <FolderTree class="size-3.5" />
         </TabsTrigger>
@@ -343,7 +343,7 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
               <ContextMenu v-else>
                 <ContextMenuTrigger as-child>
                   <div
-                    class="group relative transition-all duration-200 ease-out hover:bg-accent/50"
+                    class="group relative transition-all duration-200 ease-out hover:bg-soft"
                     :class="[
                       node.entry.kind === 'file' ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
                       isExpanded(node.entry.path) && node.entry.kind === 'directory' ? 'bg-accent/30' : '',
@@ -440,7 +440,7 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
                             n.depth > node.depth,
                         )
                       "
-                      class="pb-1 pl-10 text-[10px] text-muted-foreground/50 italic"
+                      class="pb-1 pl-10 text-micro text-muted-foreground/50 italic"
                       :style="{ paddingLeft: `${(node.depth + 1) * 14 + 12}px` }"
                     >
                       空文件夹
@@ -488,7 +488,7 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
             <div
               v-for="favorite in fileFavorites"
               :key="favorite.id"
-              class="group relative w-full rounded-lg border border-transparent transition-all duration-200 ease-out hover:border-accent hover:bg-accent/50"
+              class="group relative w-full rounded-lg border border-transparent transition-all duration-200 ease-out hover:border-accent hover:bg-soft"
             >
               <button
 	                type="button"
@@ -514,7 +514,7 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
       <TabsContent value="search" class="flex-1 overflow-hidden m-0 mt-0">
         <div class="flex h-full flex-col">
           <div class="shrink-0 px-3 pt-3 pb-2">
-            <div class="flex h-8 items-center gap-2 rounded-md border border-border/50 bg-muted/30 px-3 text-muted-foreground">
+            <div class="flex h-8 items-center gap-2 rounded-md border border-default bg-soft px-3 text-muted-foreground">
               <Search class="size-3.5" />
               <input
                 v-model="searchQuery"
@@ -538,7 +538,7 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
               <div
                 v-for="node in searchResults"
                 :key="node.entry.path"
-                class="group flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-accent/50 transition-colors"
+                class="group flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-soft transition-colors"
                 @click="emit('select', node.entry)"
               >
                 <component
@@ -571,7 +571,7 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
               <Clock class="size-4 shrink-0 text-muted-foreground" />
               <div class="min-w-0 flex-1">
                 <span class="block truncate text-sm">{{ file.name }}</span>
-                <span class="block truncate text-[10px] text-muted-foreground font-mono">{{ file.relativePath }}</span>
+                <span class="block truncate text-micro text-muted-foreground font-mono">{{ file.relativePath }}</span>
               </div>
             </div>
           </div>

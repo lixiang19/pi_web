@@ -102,7 +102,7 @@ const handleRetry = () => {
           v-for="(content, index) in textContents"
           :key="index"
           :content="content.text"
-          class="max-w-none break-words text-[15px] leading-6 [&:not(:last-child)]:mb-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-2 [&_code]:break-words"
+          class="max-w-none break-words text-body-lg leading-6 [&:not(:last-child)]:mb-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-2 [&_code]:break-words"
         />
         <div class="mt-1 flex justify-end">
           <Tooltip v-if="isForkDisabled">
@@ -110,7 +110,7 @@ const handleRetry = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground/40 cursor-not-allowed"
+                class="h-6 gap-1 px-1.5 text-caption text-muted-foreground/40 cursor-not-allowed"
                 disabled
               >
                 <Pencil class="size-3" />
@@ -125,7 +125,7 @@ const handleRetry = () => {
             v-else
             variant="ghost"
             size="sm"
-            class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+            class="h-6 gap-1 px-1.5 text-caption text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
             @click="handleEdit"
           >
             <Pencil class="size-3" />
@@ -140,7 +140,7 @@ const handleRetry = () => {
             v-for="(content, index) in finalTextContents"
             :key="`final-text-${index}`"
             :content="content.text"
-            class="max-w-none break-words text-[15px] leading-7 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_code]:break-words"
+            class="max-w-none break-words text-body-lg leading-7 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_code]:break-words"
           />
         </div>
 
@@ -164,7 +164,7 @@ const handleRetry = () => {
         <Button
           variant="ghost"
           size="sm"
-          class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+          class="h-6 gap-1 px-1.5 text-caption text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
           :class="isCopied ? '!text-primary' : ''"
           @click="handleCopy"
         >
@@ -178,7 +178,7 @@ const handleRetry = () => {
             <Button
               variant="ghost"
               size="sm"
-              class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground/40 cursor-not-allowed"
+              class="h-6 gap-1 px-1.5 text-caption text-muted-foreground/40 cursor-not-allowed"
               disabled
             >
               <RefreshCw class="size-3" />
@@ -193,7 +193,7 @@ const handleRetry = () => {
           v-else
           variant="ghost"
           size="sm"
-          class="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+          class="h-6 gap-1 px-1.5 text-caption text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
           @click="handleRetry"
         >
           <RefreshCw class="size-3" />

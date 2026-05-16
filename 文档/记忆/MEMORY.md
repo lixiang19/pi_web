@@ -17,6 +17,7 @@
 - [配置存储] `ridge-settings.json` 已退役；设置、项目、收藏、当前工作空间路径等 ridge 运行状态统一落到 `~/.pi/ridge.db`
 - [chat 初始化契约] `<workspace>/chat` 只允许是目录；已存在但不是目录时必须直接失败，不能吞掉错误继续复制
 - [单用户认证] VPS 个人部署采用固定密码登录，登录成功后使用服务端内存 Session 和 `ridge_session` HttpOnly Cookie；除 `/api/auth/session|login|logout` 外，其余 `/api/*` 和终端 WebSocket 都必须鉴权。当前固定密码写在服务端，仓库或镜像泄露即视为密码泄露。
+- [云化架构] 多用户商业化采用“中心控制面 + 每用户专属 VPS runtime”，不是共享数据库多租户；中心只管账号、VPS、路由、升级、备份和计费，用户 workspace、Pi 会话正文、RAG、图谱和 `~/.pi/ridge.db` 留在用户 VPS。
 - [重型转换服务边界] 文档/PDF/Word/音频/图片等重型解析与转换长期由独立 Python 通用转化服务承载（基于 MarkItDown/Whisper/OCR 等），ridge Node 后端只做 workspace 安全校验、`file_processing_status` 状态机、`background_jobs` 队列调度、产物落盘（`.md/.assets/.metadata.json/.originals`）；Node 不自研 PDF/Word 解析栈、不内嵌模型推理。Python 服务按 `文档/功能开发/40-Python通用转化服务API契约.md` 接口独立开发，多 client/多 project 可用，不属于 ridge 专属。
 
 ## 规范与教训

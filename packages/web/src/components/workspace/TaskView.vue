@@ -595,10 +595,10 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-full overflow-hidden">
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div class="flex shrink-0 items-center justify-between gap-4 border-b border-border/40 px-4 py-3">
+      <div class="flex shrink-0 items-center justify-between gap-4 border-b border-subtle px-4 py-3">
         <div>
           <h2 class="text-sm font-semibold">任务</h2>
-          <p class="text-[11px] text-muted-foreground">
+          <p class="text-caption text-muted-foreground">
             待处理 {{ stats.pending }} · 进行中 {{ stats.inProgress }} · 阻塞 {{ stats.blocked }} · 审核中 {{ stats.reviewing }} · 完成 {{ stats.done }}
           </p>
         </div>
@@ -676,13 +676,13 @@ onBeforeUnmount(() => {
             <section
               v-for="column in statusColumns"
               :key="column.key"
-              class="min-h-[420px] flex-1 rounded-xl border border-border/50 bg-muted/20 p-3"
+              class="min-h-[420px] flex-1 rounded-xl border border-default bg-subtle p-3"
               @dragover.prevent
               @drop="handleDropOnStatus(column.key)"
             >
               <div class="mb-3 flex items-center justify-between">
                 <h3 class="text-xs font-semibold">{{ column.label }}</h3>
-                <span class="text-[11px] text-muted-foreground">{{ filteredTasksByStatus[column.key].length }}</span>
+                <span class="text-caption text-muted-foreground">{{ filteredTasksByStatus[column.key].length }}</span>
               </div>
               <div class="space-y-2">
                 <button
@@ -690,7 +690,7 @@ onBeforeUnmount(() => {
                   :key="task.id"
                   type="button"
                   draggable="true"
-                  class="w-full cursor-grab rounded-lg border border-border/50 bg-card p-3 text-left shadow-sm hover:bg-accent/30 active:cursor-grabbing"
+                  class="w-full cursor-grab rounded-lg border border-default bg-card p-3 text-left shadow-sm hover:bg-soft active:cursor-grabbing"
                   :style="{ borderLeftColor: milestoneColor(task.milestoneId ?? ''), borderLeftWidth: '4px' }"
                   @dragstart="draggedTask = task"
                   @dragover.prevent
@@ -699,11 +699,11 @@ onBeforeUnmount(() => {
                 >
                   <div class="flex items-start justify-between gap-2">
                     <p class="text-xs font-medium">{{ task.title }}</p>
-                    <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{{ priorityLabel(task.priority) }}</span>
+                    <span class="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">{{ priorityLabel(task.priority) }}</span>
                   </div>
-                  <p class="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{{ task.acceptanceCriteria }}</p>
-                  <p class="mt-1 text-[10px] text-muted-foreground">{{ projectName(task.projectId) }}</p>
-                  <p class="mt-2 text-[10px] text-muted-foreground">{{ formatDate(task.dueDate) }}</p>
+                  <p class="mt-1 line-clamp-2 text-caption text-muted-foreground">{{ task.acceptanceCriteria }}</p>
+                  <p class="mt-1 text-micro text-muted-foreground">{{ projectName(task.projectId) }}</p>
+                  <p class="mt-2 text-micro text-muted-foreground">{{ formatDate(task.dueDate) }}</p>
                 </button>
               </div>
             </section>
@@ -715,13 +715,13 @@ onBeforeUnmount(() => {
             <button type="button" class="mb-2 text-left text-xs font-semibold hover:text-primary" @click="openMilestone(group.milestone)">
               {{ group.milestone.title }} · {{ group.tasks.length }}
             </button>
-            <div class="overflow-hidden rounded-xl border border-border/50">
-              <button v-for="task in group.tasks" :key="task.id" type="button" class="flex w-full items-center gap-3 border-b border-border/30 px-3 py-2 text-left last:border-b-0 hover:bg-accent/30" @click="openTask(task)">
-                <span class="w-16 text-[11px] text-muted-foreground">{{ priorityLabel(task.priority) }}</span>
-                <span class="w-20 text-[11px] text-muted-foreground">{{ statusLabel(task.status) }}</span>
+            <div class="overflow-hidden rounded-xl border border-default">
+              <button v-for="task in group.tasks" :key="task.id" type="button" class="flex w-full items-center gap-3 border-b border-subtle px-3 py-2 text-left last:border-b-0 hover:bg-soft" @click="openTask(task)">
+                <span class="w-16 text-caption text-muted-foreground">{{ priorityLabel(task.priority) }}</span>
+                <span class="w-20 text-caption text-muted-foreground">{{ statusLabel(task.status) }}</span>
                 <span class="min-w-0 flex-1 text-sm">{{ task.title }}</span>
-                <span class="w-24 text-[11px] text-muted-foreground">{{ projectName(task.projectId) }}</span>
-                <span class="text-[11px] text-muted-foreground">{{ formatDate(task.dueDate) }}</span>
+                <span class="w-24 text-caption text-muted-foreground">{{ projectName(task.projectId) }}</span>
+                <span class="text-caption text-muted-foreground">{{ formatDate(task.dueDate) }}</span>
               </button>
             </div>
           </section>
@@ -736,22 +736,22 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="grid gap-3 lg:grid-cols-[1fr_260px]">
-            <div class="overflow-hidden rounded-xl border border-border/50">
-              <div class="grid grid-cols-7 border-b border-border/40 bg-muted/30">
-                <div v-for="label in weekLabels" :key="label" class="px-2 py-2 text-center text-[11px] font-medium text-muted-foreground">{{ label }}</div>
+            <div class="overflow-hidden rounded-xl border border-default">
+              <div class="grid grid-cols-7 border-b border-subtle bg-soft">
+                <div v-for="label in weekLabels" :key="label" class="px-2 py-2 text-center text-caption font-medium text-muted-foreground">{{ label }}</div>
               </div>
               <div class="grid grid-cols-7">
-                <div v-for="cell in calendarCells" :key="cell.key" class="min-h-28 border-b border-r border-border/30 p-2 last:border-r-0" :class="cell.isCurrentMonth ? 'bg-background' : 'bg-muted/20 text-muted-foreground'">
-                  <p class="mb-1 text-[11px] font-medium">{{ cell.date.getDate() }}</p>
-                  <button v-for="task in cell.tasks" :key="task.id" type="button" class="mb-1 block w-full rounded px-1.5 py-1 text-left text-[11px] hover:opacity-80" :style="{ backgroundColor: `${milestoneColor(task.milestoneId ?? '')}22`, borderLeft: `3px solid ${milestoneColor(task.milestoneId ?? '')}` }" @click="openTask(task)">
+                <div v-for="cell in calendarCells" :key="cell.key" class="min-h-28 border-b border-r border-subtle p-2 last:border-r-0" :class="cell.isCurrentMonth ? 'bg-background' : 'bg-subtle text-muted-foreground'">
+                  <p class="mb-1 text-caption font-medium">{{ cell.date.getDate() }}</p>
+                  <button v-for="task in cell.tasks" :key="task.id" type="button" class="mb-1 block w-full rounded px-1.5 py-1 text-left text-caption hover:opacity-80" :style="{ backgroundColor: `${milestoneColor(task.milestoneId ?? '')}22`, borderLeft: `3px solid ${milestoneColor(task.milestoneId ?? '')}` }" @click="openTask(task)">
                     {{ task.title }}
                   </button>
                 </div>
               </div>
             </div>
-            <aside class="rounded-xl border border-border/50 p-4">
+            <aside class="rounded-xl border border-default p-4">
               <h3 class="mb-3 text-xs font-semibold">无截止日期</h3>
-              <button v-for="task in undatedTasks" :key="task.id" type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent/40" @click="openTask(task)">
+              <button v-for="task in undatedTasks" :key="task.id" type="button" class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-soft" @click="openTask(task)">
                 {{ task.title }}
               </button>
             </aside>
@@ -759,7 +759,7 @@ onBeforeUnmount(() => {
         </TabsContent>
 
         <TabsContent value="milestones" class="m-0 min-h-0 flex-1 overflow-auto p-4">
-          <div class="mb-4 grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-[160px_1fr_1fr_130px_140px_auto]">
+          <div class="mb-4 grid gap-2 rounded-xl border border-default p-3 md:grid-cols-[160px_1fr_1fr_130px_140px_auto]">
             <Input v-model="newMilestoneTitle" class="h-8 text-xs" placeholder="里程碑标题" />
             <Input v-model="newMilestoneGoal" class="h-8 text-xs" placeholder="目标" />
             <Input v-model="newMilestoneAcceptanceCriteria" class="h-8 text-xs" placeholder="完成标准" />
@@ -773,11 +773,11 @@ onBeforeUnmount(() => {
             <Button size="sm" class="h-8 text-xs" :disabled="!newMilestoneTitle.trim() || !newMilestoneGoal.trim() || !newMilestoneAcceptanceCriteria.trim()" @click="handleAddMilestone">新建里程碑</Button>
           </div>
           <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <article v-for="milestone in milestones" :key="milestone.id" class="rounded-xl border border-border/50 bg-card p-4">
+            <article v-for="milestone in milestones" :key="milestone.id" class="rounded-xl border border-default bg-card p-4">
               <button type="button" class="block w-full text-left" @click="openMilestone(milestone)">
                 <h3 class="text-sm font-semibold">{{ milestone.title }}</h3>
-                <p class="mt-1 text-[11px] text-muted-foreground">{{ statusLabel(milestone.status) }} · {{ milestone.taskCount }} 个任务 · {{ formatDate(milestone.dueDate) }}</p>
-                <p class="mt-1 text-[10px] text-muted-foreground">{{ projectName(milestone.projectId) }}</p>
+                <p class="mt-1 text-caption text-muted-foreground">{{ statusLabel(milestone.status) }} · {{ milestone.taskCount }} 个任务 · {{ formatDate(milestone.dueDate) }}</p>
+                <p class="mt-1 text-micro text-muted-foreground">{{ projectName(milestone.projectId) }}</p>
                 <p class="mt-3 text-xs text-muted-foreground">目标：{{ milestone.goal }}</p>
                 <p class="mt-1 text-xs text-muted-foreground">完成标准：{{ milestone.acceptanceCriteria }}</p>
               </button>
@@ -794,19 +794,19 @@ onBeforeUnmount(() => {
           <SheetTitle class="text-base">{{ selectedTask.title }}</SheetTitle>
         </SheetHeader>
         <div v-if="selectedReviewNotifications.length" class="space-y-2">
-          <article v-for="notification in selectedReviewNotifications" :key="notification.id" class="rounded-md border border-border bg-muted/30 p-3">
+          <article v-for="notification in selectedReviewNotifications" :key="notification.id" class="rounded-md border border-border bg-soft p-3">
             <div class="flex items-start gap-2">
               <Sparkles class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div class="min-w-0 flex-1">
                 <p class="text-xs font-semibold">{{ notification.title }}</p>
-                <p class="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-muted-foreground">{{ notification.body }}</p>
+                <p class="mt-1 whitespace-pre-wrap text-caption leading-5 text-muted-foreground">{{ notification.body }}</p>
                 <div class="mt-2 flex flex-wrap gap-2">
                   <Button
                     v-for="action in notification.actions.filter((item) => item.id === 'accept_suggestion' || item.id === 'reject_suggestion')"
                     :key="action.id"
                     size="sm"
                     :variant="action.id === 'accept_suggestion' ? 'default' : 'outline'"
-                    class="h-7 gap-1 text-[11px]"
+                    class="h-7 gap-1 text-caption"
                     :disabled="isReviewActionPending(notification, action.id)"
                     @click="handleReviewAction(notification, action.id)"
                   >
@@ -851,7 +851,7 @@ onBeforeUnmount(() => {
           <Input v-model="editTaskDueDate" type="date" class="h-8 text-xs" />
           <Textarea v-model="editTaskBlockedReason" class="min-h-16 text-xs" placeholder="阻塞原因（可选）" />
         </div>
-        <p class="text-[11px] text-muted-foreground">当前里程碑：{{ selectedTaskMilestone?.title ?? '未知' }} · 项目：{{ projectName(selectedTask.projectId) }}</p>
+        <p class="text-caption text-muted-foreground">当前里程碑：{{ selectedTaskMilestone?.title ?? '未知' }} · 项目：{{ projectName(selectedTask.projectId) }}</p>
         <div class="flex gap-2">
           <Button size="sm" class="h-8 flex-1 text-xs" @click="saveSelectedTask">保存</Button>
           <Button
@@ -872,19 +872,19 @@ onBeforeUnmount(() => {
           <SheetTitle class="text-base">{{ selectedMilestone.title }}</SheetTitle>
         </SheetHeader>
         <div v-if="selectedReviewNotifications.length" class="space-y-2">
-          <article v-for="notification in selectedReviewNotifications" :key="notification.id" class="rounded-md border border-border bg-muted/30 p-3">
+          <article v-for="notification in selectedReviewNotifications" :key="notification.id" class="rounded-md border border-border bg-soft p-3">
             <div class="flex items-start gap-2">
               <Sparkles class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div class="min-w-0 flex-1">
                 <p class="text-xs font-semibold">{{ notification.title }}</p>
-                <p class="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-muted-foreground">{{ notification.body }}</p>
+                <p class="mt-1 whitespace-pre-wrap text-caption leading-5 text-muted-foreground">{{ notification.body }}</p>
                 <div class="mt-2 flex flex-wrap gap-2">
                   <Button
                     v-for="action in notification.actions.filter((item) => item.id === 'accept_suggestion' || item.id === 'reject_suggestion')"
                     :key="action.id"
                     size="sm"
                     :variant="action.id === 'accept_suggestion' ? 'default' : 'outline'"
-                    class="h-7 gap-1 text-[11px]"
+                    class="h-7 gap-1 text-caption"
                     :disabled="isReviewActionPending(notification, action.id)"
                     @click="handleReviewAction(notification, action.id)"
                   >
@@ -921,7 +921,7 @@ onBeforeUnmount(() => {
         </div>
         <div>
           <p class="mb-2 text-xs font-medium">其下任务</p>
-          <button v-for="task in selectedMilestoneTasks" :key="task.id" type="button" class="mb-1 block w-full rounded border border-border/40 px-2 py-1.5 text-left text-xs hover:bg-accent/40" @click="openTask(task)">
+          <button v-for="task in selectedMilestoneTasks" :key="task.id" type="button" class="mb-1 block w-full rounded border border-subtle px-2 py-1.5 text-left text-xs hover:bg-soft" @click="openTask(task)">
             {{ task.title }} · {{ statusLabel(task.status) }}
           </button>
         </div>

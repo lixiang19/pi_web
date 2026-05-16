@@ -32,7 +32,7 @@ const trackClass = computed(() =>
     @click="toggle"
   >
     <span
-      class="pointer-events-none block size-4 rounded-full bg-white shadow-sm transition-transform duration-150"
+      class="pointer-events-none block size-4 rounded-full bg-primary-foreground shadow-sm transition-transform duration-150"
       :class="checked ? 'translate-x-[18px]' : 'translate-x-[2px]'"
     />
   </button>

@@ -81,14 +81,14 @@ const previewIcon = computed(() => {
       />
 
       <div v-else class="flex h-full min-h-0 flex-col bg-background">
-        <div class="flex h-10 items-center justify-between gap-2 border-b border-border/40 px-3">
+        <div class="flex h-10 items-center justify-between gap-2 border-b border-subtle px-3">
           <div class="flex items-center gap-2">
             <component :is="previewIcon" class="size-3.5 text-muted-foreground" />
             <span class="text-xs font-semibold uppercase tracking-wider text-foreground/70">
               {{ previewTitle }}
             </span>
           </div>
-          <Badge variant="outline" class="text-[10px] uppercase">只读</Badge>
+          <Badge variant="outline" class="text-micro uppercase">只读</Badge>
         </div>
 
         <div class="min-h-0 flex-1">
@@ -97,7 +97,7 @@ const previewIcon = computed(() => {
               <img
                 :src="blobUrl"
                 alt="文件预览"
-                class="max-h-full max-w-full rounded-xl border border-border/40 bg-card object-contain shadow-sm"
+                class="max-h-full max-w-full rounded-xl border border-subtle bg-card object-contain shadow-sm"
               />
             </div>
           </ScrollArea>
@@ -105,7 +105,7 @@ const previewIcon = computed(() => {
           <ScrollArea v-else-if="previewKind === 'audio'" class="h-full">
             <div class="flex min-h-full flex-col items-center justify-center gap-4 p-6">
               <FileAudio class="size-16 text-muted-foreground/40" />
-              <div class="w-full max-w-md rounded-xl border border-border/40 bg-card p-4 shadow-sm">
+              <div class="w-full max-w-md rounded-xl border border-subtle bg-card p-4 shadow-sm">
                 <audio
                   controls
                   class="w-full"
@@ -141,12 +141,12 @@ const previewIcon = computed(() => {
 
     <div
       v-if="isLargeFile && (previewKind === 'code' || previewKind === 'text')"
-      class="flex items-center justify-between gap-3 border-t border-border/40 bg-muted/10 px-3 py-2"
+      class="flex items-center justify-between gap-3 border-t border-subtle bg-subtle px-3 py-2"
     >
       <div class="min-w-0">
         <p class="text-xs font-medium text-foreground/80">大文件模式</p>
-        <p class="text-[11px] text-muted-foreground">已加载 {{ previewLineCount }} 行，只按需继续读取后续内容。</p>
-        <p v-if="displayError" class="mt-1 text-[11px] text-destructive">
+        <p class="text-caption text-muted-foreground">已加载 {{ previewLineCount }} 行，只按需继续读取后续内容。</p>
+        <p v-if="displayError" class="mt-1 text-caption text-destructive">
           {{ displayError }}
         </p>
       </div>

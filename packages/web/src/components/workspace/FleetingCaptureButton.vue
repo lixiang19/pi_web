@@ -440,7 +440,7 @@ onUnmounted(() => {
 
 <template>
   <div class="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
-    <div v-if="open" class="w-[min(calc(100vw-2.5rem),420px)] rounded-xl border border-border/60 bg-card p-4 shadow-2xl">
+    <div v-if="open" class="w-[min(calc(100vw-2.5rem),420px)] rounded-xl border border-default bg-card p-4 shadow-2xl">
       <div class="mb-3 flex items-center justify-between">
         <div class="flex items-center gap-2 text-sm font-semibold">
           <Lightbulb class="size-4 text-amber-500" />
@@ -456,8 +456,8 @@ onUnmounted(() => {
         <button
           v-for="action in actions"
           :key="action.id"
-          class="flex flex-col items-center gap-1 rounded-lg border p-2 text-[11px] transition-colors"
-          :class="mode === action.id ? 'border-primary bg-primary/10 text-primary' : 'border-border/60 hover:bg-muted'"
+          class="flex flex-col items-center gap-1 rounded-lg border p-2 text-caption transition-colors"
+          :class="mode === action.id ? 'border-primary bg-primary/10 text-primary' : 'border-default hover:bg-muted'"
           @click="setMode(action.id)"
         >
           <component :is="action.icon" class="size-4" />
@@ -524,7 +524,7 @@ onUnmounted(() => {
       </div>
 
       <div class="mt-3 flex items-center justify-between">
-        <span class="text-[11px] text-muted-foreground">
+        <span class="text-caption text-muted-foreground">
           {{ mode === 'text' ? '保存后不打断当前工作' : '采集结果进入服务器闪念' }}
         </span>
         <Button size="sm" class="h-8 gap-1.5" :disabled="!canSave" @click="save">

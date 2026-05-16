@@ -64,7 +64,7 @@ const stringifyResult = (value: unknown) => {
             <div
               v-for="question in askArguments.questions"
               :key="question.id"
-              class="rounded-md border border-border/60 bg-background/70 px-3 py-2"
+              class="rounded-md border border-default bg-background/70 px-3 py-2"
             >
               <p class="text-sm font-medium text-foreground">
                 {{ question.question }}

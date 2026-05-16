@@ -24,11 +24,11 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex h-9 min-h-9 items-center border-b border-border/70 bg-background">
+  <div class="flex h-9 min-h-9 items-center border-b border-strong bg-background">
     <!-- 新建按钮 -->
     <button
       type="button"
-      class="flex h-full shrink-0 items-center px-3 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+      class="flex h-full shrink-0 items-center px-3 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
       title="新建终端"
       @click="emit('create')"
     >
@@ -47,11 +47,11 @@ const emit = defineEmits<{
         <ContextMenuTrigger as-child>
           <button
             type="button"
-            class="group relative flex h-9 min-w-0 max-w-[200px] shrink-0 items-center gap-1.5 border-r border-border/50 px-3 text-left transition-colors"
+            class="group relative flex h-9 min-w-0 max-w-[200px] shrink-0 items-center gap-1.5 border-r border-default px-3 text-left transition-colors"
             :class="
               terminal.id === activeId
-                ? 'bg-muted/60 text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-primary'
-                : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                ? 'bg-hover text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-primary'
+                : 'text-muted-foreground hover:bg-soft hover:text-foreground'
             "
             @click="emit('activate', terminal.id)"
           >

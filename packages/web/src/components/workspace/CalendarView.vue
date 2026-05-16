@@ -165,9 +165,9 @@ const handleDayClick = (day: (typeof calendarDays.value)[0]) => {
 <template>
   <div class="flex h-full flex-col overflow-hidden">
     <!-- 标题栏 -->
-    <div class="flex items-center justify-between border-b border-border/40 px-4 py-3">
+    <div class="flex items-center justify-between border-b border-subtle px-4 py-3">
       <h2 class="text-sm font-semibold">日历</h2>
-      <Button variant="ghost" size="sm" class="h-6 text-[11px]" @click="goToday">
+      <Button variant="ghost" size="sm" class="h-6 text-caption" @click="goToday">
         今天
       </Button>
     </div>
@@ -192,7 +192,7 @@ const handleDayClick = (day: (typeof calendarDays.value)[0]) => {
         <div
           v-for="day in weekDays"
           :key="day"
-          class="py-1 text-center text-[10px] text-muted-foreground font-medium"
+          class="py-1 text-center text-micro text-muted-foreground font-medium"
         >
           {{ day }}
         </div>
@@ -207,7 +207,7 @@ const handleDayClick = (day: (typeof calendarDays.value)[0]) => {
           class="relative flex h-12 items-center justify-center rounded-md text-xs transition-colors"
           :class="{
             'text-muted-foreground/40': !day.isCurrentMonth,
-            'hover:bg-accent/40': day.isCurrentMonth,
+            'hover:bg-soft': day.isCurrentMonth,
             'bg-primary text-primary-foreground font-bold': day.isToday,
             'text-foreground font-medium': day.isCurrentMonth && !day.isToday,
           }"
@@ -224,14 +224,14 @@ const handleDayClick = (day: (typeof calendarDays.value)[0]) => {
     </div>
 
     <!-- 当月日记列表 -->
-    <div v-if="journalEntries.length > 0" class="border-t border-border/40 p-4">
+    <div v-if="journalEntries.length > 0" class="border-t border-subtle p-4">
       <h3 class="mb-2 text-xs font-semibold text-muted-foreground">本月日记</h3>
       <div class="space-y-1">
         <button
           v-for="entry in journalEntries"
           :key="entry"
           type="button"
-          class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent/40 transition-colors"
+          class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-soft transition-colors"
           @click="emit('open-file', `${workspaceDir}/日记/${currentYear}/${String(currentMonth).padStart(2, '0')}/${entry}.md`)"
         >
           <FileText class="size-3.5 shrink-0 text-muted-foreground" />

@@ -103,7 +103,7 @@ const ItemComponent = computed(() =>
       <div v-if="isEditing" class="flex-1 py-0.5">
         <Input
           :model-value="editingTitle"
-          class="h-6 w-full border-none bg-background px-1 text-[13px] shadow-none focus-visible:ring-1"
+          class="h-6 w-full border-none bg-background px-1 text-body shadow-none focus-visible:ring-1"
           @update:model-value="emit('updateEditingTitle', String($event))"
           @keydown.enter.prevent="emit('saveRename', node.session.id)"
           @keydown.esc.prevent="emit('cancelRename')"
@@ -114,7 +114,7 @@ const ItemComponent = computed(() =>
 
       <div v-else class="flex min-w-0 flex-1 items-center gap-1.5">
         <p
-          class="truncate text-[13px] leading-tight font-medium"
+          class="truncate text-body leading-tight font-medium"
           :class="
             isActive
               ? 'text-foreground'

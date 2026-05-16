@@ -72,7 +72,7 @@ const statusIcon = (file: GitFileStatusItem) => {
   <div class="flex flex-col flex-1 min-h-0">
     <!-- Header -->
     <div
-      class="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-accent/40"
+      class="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-soft"
       :class="files.length === 0 ? 'cursor-default hover:bg-transparent opacity-70' : 'cursor-pointer'"
       role="button"
       :tabindex="files.length === 0 ? -1 : 0"
@@ -86,17 +86,17 @@ const statusIcon = (file: GitFileStatusItem) => {
           @update:model-value="handleToggleAll"
           @click.stop
         />
-        <span class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span class="text-caption font-semibold uppercase tracking-wider text-muted-foreground">
           Changes
         </span>
         <span
           v-if="files.length > 0"
-          class="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground tabular-nums"
+          class="rounded bg-muted px-1.5 py-0.5 text-micro font-bold text-muted-foreground tabular-nums"
         >
           {{ files.length }}
         </span>
       </div>
-      <span class="text-[10px] text-muted-foreground tabular-nums">
+      <span class="text-micro text-muted-foreground tabular-nums">
         {{ selectedPaths.size }}/{{ files.length }}
       </span>
     </div>
@@ -111,7 +111,7 @@ const statusIcon = (file: GitFileStatusItem) => {
       <div
         v-for="file in files"
         :key="file.path"
-        class="group flex items-center gap-2 px-3 py-1 transition-colors hover:bg-accent/50"
+        class="group flex items-center gap-2 px-3 py-1 transition-colors hover:bg-soft"
       >
         <Checkbox
           :model-value="selectedPaths.has(file.path)"
@@ -122,11 +122,11 @@ const statusIcon = (file: GitFileStatusItem) => {
           class="size-3.5 shrink-0"
           :class="statusColor(file)"
         />
-        <span class="min-w-0 flex-1 truncate text-[13px] text-foreground">
+        <span class="min-w-0 flex-1 truncate text-body text-foreground">
           {{ file.path }}
         </span>
         <span
-          class="shrink-0 text-[9px] font-bold uppercase tracking-wider"
+          class="shrink-0 text-micro font-bold uppercase tracking-wider"
           :class="statusColor(file)"
         >
           {{ statusLabel(file) }}

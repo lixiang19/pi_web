@@ -4,24 +4,16 @@ import {
 	BookOpen,
 	Bell,
 	Bot,
-	Database,
 	Files,
 	Inbox,
-	FilePlus2,
-	FolderPlus,
-	LayoutGrid,
 	ListTodo,
 	MonitorPlay,
 	Search,
 	Settings2,
 	TerminalSquare,
-	Plus,
-	ChevronDown,
-	ChevronRight,
-	Archive,
 } from "lucide-vue-next";
 
-import FileTreePanel from "@/components/common/FileTreePanel.vue";
+import WorkspaceSidebar from "@/components/workspace/WorkspaceSidebar.vue";
 import ErrorBoundary from "@/components/common/ErrorBoundary.vue";
 import WorkspaceContentArea from "@/components/workspace/WorkspaceContentArea.vue";
 import HomePage from "@/components/workspace/HomePage.vue";
@@ -54,6 +46,7 @@ import { NO_AGENT_VALUE } from "@/composables/useWorkbenchSessionState";
 import { provideWorkspaceTasks } from "@/composables/useWorkspaceTasks";
 import { provideWorkspaceInbox } from "@/composables/useInbox";
 import { usePiChatCore } from "@/composables/usePiChatCore";
+import type { FixedEntry } from "@/components/workspace/WorkspaceSidebar.vue";
 import { useTerminalContextOptions } from "@/composables/useTerminalContextOptions";
 import { useTerminalPool } from "@/composables/useTerminalPool";
 import { useDashboard } from "@/composables/useDashboard";
@@ -64,16 +57,12 @@ import { useSettingsStore } from "@/stores/settings";
 import { useProjects } from "@/composables/useProjects";
 import {
 	buildSidebarProjects,
-	getRecentProjectSessions,
 	isProjectOffline,
 	isProjectArchived,
 } from "@/lib/session-sidebar";
 import type { SessionProjectView } from "@/lib/session-sidebar";
 import { createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem, uploadSessionAttachments, deleteSession, endSession } from "@/lib/api";
 import { createSession as createSessionApi } from "@/lib/api";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { FileTreeEntry, ThinkingLevel } from "@/lib/types";
 import { toast } from "vue-sonner";
 import FilesView from "@/components/workspace/FilesView.vue";
@@ -383,14 +372,14 @@ function handleNewTab(payload: { paneGroupId: string }) {
 }
 
 /** 打开单例功能标签页到当前活跃面板 */
-function handleOpenSingletonFeature(featureId: SingletonFeatureId) {
+function handleOpenSingletonFeature(featureId: string) {
 	splitPanes.openTab(
 		splitPanes.activePaneGroupId.value,
-		createSingletonFeatureTab(featureId, featureLabelMap[featureId]),
+		createSingletonFeatureTab(featureId as SingletonFeatureId, featureLabelMap[featureId as SingletonFeatureId]),
 	);
 }
 
-function handleFixedEntry(entry: (typeof fixedEntries)[number]) {
+function handleFixedEntry(entry: FixedEntry) {
 	if (entry.type === "terminal") {
 		void handleOpenTerminal();
 		return;
@@ -814,246 +803,40 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
   <div class="flex h-screen min-h-0 flex-col bg-background text-foreground">
     <div class="flex min-h-0 flex-1">
     <!-- 左侧面板 -->
-    <aside class="flex w-[260px] shrink-0 flex-col border-r border-border/50 bg-background">
-      <!-- 固定视图入口 -->
-      <div class="shrink-0 space-y-0.5 px-2 pt-3 pb-2">
-        <button
-          v-for="entry in fixedEntries"
-          :key="entry.id"
-          data-test="workspace-fixed-entry"
-          type="button"
-          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-          @click="handleFixedEntry(entry)"
-        >
-          <component :is="entry.icon" class="size-4" />
-          <span class="flex-1">{{ entry.label }}</span>
-          <Badge v-if="entry.id === 'moments' && inboxCount > 0" variant="secondary" class="h-4 min-w-4 px-1 text-[10px]">
-            {{ inboxCount }}
-          </Badge>
-          <Badge v-else-if="entry.id === 'notifications' && notificationCount > 0" variant="secondary" class="h-4 min-w-4 px-1 text-[10px]">
-            {{ notificationCount }}
-          </Badge>
-        </button>
-      </div>
-
-		<Separator class="mx-3" />
-
-		<!-- 项目列表 -->
-		<div v-if="sidebarProjects.length" class="shrink-0 px-2 py-2">
-			<div class="px-2.5 pb-1 text-[11px] font-medium text-muted-foreground">项目</div>
-			<div
-				v-for="project in sidebarProjects"
-				:key="project.id"
-				class="mb-1"
-				:data-test="'project-item-' + project.id"
-			>
-				<div class="flex w-full items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground">
-					<button
-						type="button"
-						class="flex flex-1 items-center gap-1 text-left min-w-0"
-						@click="toggleProjectExpand(project.id)"
-					>
-						<component
-							:is="expandedProjectIds.has(project.id) ? ChevronDown : ChevronRight"
-							class="size-3.5 shrink-0"
-						/>
-						<span class="truncate" data-test="project-label">{{ project.label }}</span>
-						<span class="truncate text-[10px] text-muted-foreground/70" data-test="project-path">{{ project.pathLabel || project.projectRoot }}</span>
-						<span
-							v-if="project.deviceName"
-							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
-							data-test="project-device"
-						>
-							{{ project.deviceName }}
-						</span>
-						<span
-							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
-							data-test="project-type"
-						>
-							{{
-								project.projectType === 'workspace'
-									? '工作空间'
-									: project.projectType === 'external'
-										? '外部仓库'
-										: '项目'
-							}}
-						</span>
-						<span
-							v-if="project.externalOrigin"
-							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
-							data-test="project-source"
-						>
-							{{ project.externalOrigin === 'github' ? 'GitHub' : '本地文件夹' }}
-						</span>
-						<span
-							v-if="project.isGit"
-							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
-							data-test="project-git"
-						>
-							Git
-						</span>
-						<span
-							v-if="!project.isOnline"
-							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
-							data-test="project-offline"
-						>
-							离线
-						</span>
-						<span
-							v-else-if="project.archivedAt"
-							class="ml-1 rounded px-1 py-0.5 text-[10px] bg-muted text-muted-foreground"
-							data-test="project-archived"
-						>
-							归档
-						</span>
-					</button>
-					<button
-						v-if="project.isOnline && !project.archivedAt"
-						type="button"
-						class="shrink-0 rounded p-0.5 hover:bg-accent/60"
-						data-test="project-new-session"
-						@click="handleOpenProjectHome(project)"
-					>
-						<Plus class="size-3.5" />
-					</button>
-				</div>
-				<!-- 项目会话 -->
-				<div v-if="expandedProjectIds.has(project.id) && !isProjectOffline(project) && !isProjectArchived(project)" class="ml-4 space-y-0.5">
-					<button
-						v-for="session in (showAllProjectSessionIds.has(project.id) ? project.sessions.filter(s => !s.archived).sort((a,b) => b.updatedAt - a.updatedAt) : getRecentProjectSessions(project, 3))"
-						:key="session.id"
-						type="button"
-						class="flex w-full min-w-0 items-center rounded-md px-2.5 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-						@click="handleOpenProjectSession(session.id)"
-					>
-						<span class="truncate">{{ session.title || '未命名会话' }}</span>
-					</button>
-					<button
-						v-if="project.sessions.filter(s => !s.archived).length > 3"
-						type="button"
-						class="flex w-full items-center rounded-md px-2.5 py-1 text-left text-[11px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-						data-test="project-toggle-more"
-						@click="toggleShowAllSessions(project.id)"
-					>
-						<span class="truncate">{{ showAllProjectSessionIds.has(project.id) ? '收起' : '展开更多' }}</span>
-					</button>
-				</div>
-			</div>
-		</div>
-
-		<Separator v-if="sidebarProjects.length" class="mx-3" />
-
-		<!-- 工作空间会话 -->
-		<div v-if="sortedWorkspaceSessions.length" class="shrink-0 px-2 py-2">
-		  <div class="px-2.5 pb-1 text-[11px] font-medium text-muted-foreground">工作空间会话</div>
-		  <button
-		    v-for="session in sortedWorkspaceSessions"
-		    :key="session.id"
-		    type="button"
-		    class="flex w-full min-w-0 items-center rounded-md px-2.5 py-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-		    @click="handleOpenSession(session.id)"
-		  >
-		    <span class="truncate">{{ session.title || '未命名会话' }}</span>
-		  </button>
-		</div>
-
-		<Separator v-if="sortedWorkspaceSessions.length" class="mx-3" />
-
-		<!-- 新建按钮行 -->
-		<div class="shrink-0 px-3 py-2">
-		  <div class="flex items-center justify-between gap-2">
-			<Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                type="button"
-                class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                @click="handleCreateNote()"
-              >
-                <FilePlus2 class="size-3.5" />
-                新建
-              </button>
-			</TooltipTrigger>
-			<TooltipContent side="top">新建笔记</TooltipContent>
-		  </Tooltip>
-
-		  <Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                type="button"
-                class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                @click="handleCreateFolder"
-              >
-                <FolderPlus class="size-3.5" />
-                文件夹
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">新建文件夹</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                type="button"
-                class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                @click="handleCreateCanvas"
-              >
-                <LayoutGrid class="size-3.5" />
-                Canvas
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">新建 Canvas</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                type="button"
-                class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                @click="handleCreateBase"
-              >
-                <Database class="size-3.5" />
-                Base
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">新建数据库</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-
-      <!-- 文件树 -->
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <FileTreePanel
-          :nodes="visibleNodes"
-          :is-root-loading="isDirectoryLoading(rootPath)"
-          :error="fileTreeError"
-          :is-expanded="isDirectoryExpanded"
-          :is-loading="isDirectoryLoading"
-          :recent-files="recentFiles"
-          :is-recent-loading="isRecentLoading"
-          :root-path="rootPath"
-          @select="handleSelectFile"
-          @toggle-expand="handleToggleExpand"
-          @toggle-favorite="handleToggleFavorite"
-          @refresh="refreshTree"
-          @rename="handleRename"
-          @delete="handleDelete"
-          @create-folder="handleCreateFolderInTree"
-        />
-      </div>
-
-      <!-- 归档入口 -->
-      <div class="shrink-0 px-2 py-2">
-        <button
-          type="button"
-          data-test="workspace-archived-entry"
-          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-          @click="handleOpenArchived"
-        >
-          <Archive class="size-4" />
-          <span class="flex-1">归档</span>
-        </button>
-      </div>
-    </aside>
+    <WorkspaceSidebar
+      :fixed-entries="fixedEntries"
+      :sidebar-projects="sidebarProjects"
+      :sorted-workspace-sessions="sortedWorkspaceSessions"
+      :inbox-count="inboxCount"
+      :notification-count="notificationCount"
+      :expanded-project-ids="expandedProjectIds"
+      :show-all-project-session-ids="showAllProjectSessionIds"
+      :visible-nodes="visibleNodes"
+      :root-path="rootPath"
+      :file-tree-error="fileTreeError"
+      :is-directory-expanded="isDirectoryExpanded"
+      :is-directory-loading="isDirectoryLoading"
+      :recent-files="recentFiles"
+      :is-recent-loading="isRecentLoading"
+      @fixed-entry-click="handleFixedEntry($event)"
+      @toggle-project-expand="toggleProjectExpand($event)"
+      @open-project-home="handleOpenProjectHome($event)"
+      @open-project-session="handleOpenProjectSession($event)"
+      @toggle-show-all-sessions="toggleShowAllSessions($event)"
+      @open-session="handleOpenSession($event)"
+      @create-note="handleCreateNote()"
+      @create-folder="handleCreateFolder()"
+      @create-canvas="handleCreateCanvas()"
+      @create-base="handleCreateBase()"
+      @open-archived="handleOpenArchived()"
+      @select-file="handleSelectFile($event)"
+      @toggle-expand="handleToggleExpand($event)"
+      @toggle-favorite="handleToggleFavorite($event)"
+      @refresh-tree="refreshTree()"
+      @rename="handleRename($event)"
+      @delete="handleDelete($event)"
+      @create-folder-in-tree="handleCreateFolderInTree($event)"
+    />
 
     <!-- 中间分屏区域 -->
     <main class="flex min-h-0 flex-1 overflow-hidden">

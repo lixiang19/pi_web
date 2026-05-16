@@ -56,7 +56,7 @@ const flushSave = async () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div class="flex shrink-0 items-center justify-between border-b border-border/40 px-3 py-2 text-xs text-muted-foreground">
+    <div class="flex shrink-0 items-center justify-between border-b border-subtle px-3 py-2 text-xs text-muted-foreground">
       <span>
         <template v-if="saveStatus === 'unsaved'">未保存</template>
         <template v-else-if="saveStatus === 'saving'">保存中...</template>

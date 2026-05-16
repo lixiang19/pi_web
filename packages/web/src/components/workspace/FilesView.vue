@@ -193,7 +193,7 @@ const navigateToSegment = (index: number) => {
 <template>
   <div class="flex h-full min-h-0 flex-col bg-background">
     <!-- Header -->
-    <header class="shrink-0 border-b border-border/40 px-4 py-3">
+    <header class="shrink-0 border-b border-subtle px-4 py-3">
       <div class="flex flex-wrap items-center gap-2 text-sm">
         <div class="flex min-w-0 flex-1 items-center gap-2">
           <button
@@ -272,7 +272,7 @@ const navigateToSegment = (index: number) => {
           :key="entry.path"
           type="button"
           data-test="file-row"
-          class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
+          class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-soft"
           @click="handleClick(entry)"
           @keydown.enter.prevent="handleClick(entry)"
           @keydown.space.prevent="handleClick(entry)"
@@ -317,7 +317,7 @@ const navigateToSegment = (index: number) => {
           role="button"
           tabindex="0"
           data-test="file-row"
-          class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-soft cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           @click="handleClick(entry)"
           @keydown.enter.prevent="handleClick(entry)"
           @keydown.space.prevent="handleClick(entry)"
@@ -359,7 +359,7 @@ const navigateToSegment = (index: number) => {
           >
             <span
               v-if="entry.processingError"
-              class="max-w-[120px] truncate text-[10px] text-destructive"
+              class="max-w-[120px] truncate text-micro text-destructive"
               :title="entry.processingError"
             >
               {{ entry.processingError }}
@@ -391,7 +391,7 @@ const navigateToSegment = (index: number) => {
           <Badge
             v-if="entry.processingStatus"
             :variant="statusVariantMap[entry.processingStatus] ?? 'secondary'"
-            class="shrink-0 text-[10px]"
+            class="shrink-0 text-micro"
           >
             {{ statusLabelMap[entry.processingStatus] ?? entry.processingStatus }}
           </Badge>

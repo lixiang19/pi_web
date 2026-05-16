@@ -352,7 +352,7 @@ const sortIndicator = (colId: string) => {
 
   <div v-else-if="data" class="flex h-full flex-col overflow-hidden">
     <!-- 标题栏 + 视图切换 -->
-    <div class="flex items-center gap-2 border-b border-border/40 px-4 py-2.5">
+    <div class="flex items-center gap-2 border-b border-subtle px-4 py-2.5">
       <Database class="size-4 text-muted-foreground" />
       <span class="text-sm font-semibold">{{ data.name }}</span>
 
@@ -365,7 +365,7 @@ const sortIndicator = (colId: string) => {
           <Button
             :variant="view.id === data.activeViewId ? 'secondary' : 'ghost'"
             size="sm"
-            class="h-6 text-[11px]"
+            class="h-6 text-caption"
             @click="switchView(view.id)"
           >
             {{ view.name }}
@@ -406,7 +406,7 @@ const sortIndicator = (colId: string) => {
       <div class="ml-auto flex items-center gap-1">
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
-            <Button variant="outline" size="sm" class="h-6 gap-1 text-[11px]">
+            <Button variant="outline" size="sm" class="h-6 gap-1 text-caption">
               <Plus class="size-3" />
               添加列
             </Button>
@@ -420,7 +420,7 @@ const sortIndicator = (colId: string) => {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <span v-if="isSaving" class="text-[10px] text-muted-foreground">保存中...</span>
+        <span v-if="isSaving" class="text-micro text-muted-foreground">保存中...</span>
       </div>
     </div>
 
@@ -432,7 +432,7 @@ const sortIndicator = (colId: string) => {
             <th
               v-for="col in data.columns"
               :key="col.id"
-              class="group/col border-b border-r border-border/40 px-3 py-2 text-left text-xs font-semibold text-muted-foreground"
+              class="group/col border-b border-r border-subtle px-3 py-2 text-left text-xs font-semibold text-muted-foreground"
             >
               <div class="flex items-center justify-between gap-1">
                 <div class="flex items-center gap-1 min-w-0 flex-1">
@@ -440,7 +440,7 @@ const sortIndicator = (colId: string) => {
                   <Input
                     v-if="editingColName === col.id"
                     v-model="colNameValue"
-                    class="h-5 w-24 text-[11px] font-semibold"
+                    class="h-5 w-24 text-caption font-semibold"
                     autofocus
                     @blur="commitRenameCol"
                     @keydown.enter="commitRenameCol"
@@ -464,23 +464,23 @@ const sortIndicator = (colId: string) => {
                   <Trash2 class="size-3" />
                 </button>
               </div>
-              <div class="mt-0.5 text-[10px] font-normal text-muted-foreground/60">
+              <div class="mt-0.5 text-micro font-normal text-muted-foreground/60">
                 {{ col.type }}
               </div>
             </th>
-            <th class="w-10 border-b border-border/40" />
+            <th class="w-10 border-b border-subtle" />
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="row in sortedRows"
             :key="row.id"
-            class="group border-b border-border/30 hover:bg-accent/20"
+            class="group border-b border-subtle hover:bg-soft"
           >
             <td
               v-for="col in data.columns"
               :key="col.id"
-              class="border-r border-border/20 px-3 py-2"
+              class="border-r border-subtle px-3 py-2"
             >
               <!-- 文件引用行首列 -->
               <button
@@ -569,11 +569,11 @@ const sortIndicator = (colId: string) => {
         <div
           v-for="(group, groupIdx) in kanbanGroups"
           :key="groupIdx"
-          class="flex-1 min-w-[200px] rounded-lg border border-border/50 bg-muted/20 p-3"
+          class="flex-1 min-w-[200px] rounded-lg border border-default bg-subtle p-3"
         >
           <div class="mb-3 flex items-center gap-1.5">
             <span class="text-xs font-semibold">{{ group }}</span>
-            <span class="text-[10px] text-muted-foreground ml-auto">
+            <span class="text-micro text-muted-foreground ml-auto">
               {{ (rowsByKanbanGroup[group] ?? []).length }}
             </span>
           </div>
@@ -581,12 +581,12 @@ const sortIndicator = (colId: string) => {
             <div
               v-for="row in rowsByKanbanGroup[group] ?? []"
               :key="row.id"
-              class="rounded-md border border-border/40 bg-card p-2.5"
+              class="rounded-md border border-subtle bg-card p-2.5"
             >
               <p class="text-xs font-medium text-foreground">
                 {{ getRowTitle(row) }}
               </p>
-              <div class="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <div class="mt-1.5 flex items-center gap-1.5 text-micro text-muted-foreground">
                 <template v-for="col in data.columns.filter(c => !isFirstColumn(c.id) && c.id !== kanbanGroupColumn?.id)" :key="col.id">
                   <span v-if="row.cells[col.id]">{{ col.name }}: {{ row.cells[col.id] }}</span>
                 </template>
@@ -596,11 +596,11 @@ const sortIndicator = (colId: string) => {
         </div>
         <div
           v-if="(rowsByKanbanGroup['未分组'] ?? []).length > 0"
-          class="flex-1 min-w-[200px] rounded-lg border border-border/50 border-dashed bg-muted/10 p-3"
+          class="flex-1 min-w-[200px] rounded-lg border border-default border-dashed bg-subtle p-3"
         >
           <div class="mb-3 flex items-center gap-1.5">
             <span class="text-xs font-semibold text-muted-foreground">未分组</span>
-            <span class="text-[10px] text-muted-foreground ml-auto">
+            <span class="text-micro text-muted-foreground ml-auto">
               {{ rowsByKanbanGroup["未分组"]?.length ?? 0 }}
             </span>
           </div>
@@ -608,7 +608,7 @@ const sortIndicator = (colId: string) => {
             <div
               v-for="row in rowsByKanbanGroup['未分组'] ?? []"
               :key="row.id"
-              class="rounded-md border border-border/40 bg-card p-2.5"
+              class="rounded-md border border-subtle bg-card p-2.5"
             >
               <p class="text-xs font-medium text-foreground">
                 {{ getRowTitle(row) }}
@@ -625,14 +625,14 @@ const sortIndicator = (colId: string) => {
         <div
           v-for="row in galleryRows"
           :key="row.id"
-          class="rounded-lg border border-border/50 bg-card p-4 hover:shadow-sm transition-shadow"
+          class="rounded-lg border border-default bg-card p-4 hover:shadow-sm transition-shadow"
         >
           <p class="text-sm font-medium text-foreground">
             {{ getRowTitle(row) }}
           </p>
           <div class="mt-2 space-y-1">
             <template v-for="col in data.columns.filter(c => !isFirstColumn(c.id))" :key="col.id">
-              <p v-if="row.cells[col.id] != null" class="text-[11px] text-muted-foreground">
+              <p v-if="row.cells[col.id] != null" class="text-caption text-muted-foreground">
                 {{ col.name }}: {{ row.cells[col.id] }}
               </p>
             </template>
@@ -650,14 +650,14 @@ const sortIndicator = (colId: string) => {
         <div
           v-for="[date, rows] in Object.entries(calendarRowsByDate).sort()"
           :key="date"
-          class="rounded-lg border border-border/50 bg-card p-3"
+          class="rounded-lg border border-default bg-card p-3"
         >
           <h3 class="text-xs font-semibold text-muted-foreground mb-2">{{ date }}</h3>
           <div class="space-y-1.5">
             <div
               v-for="row in rows"
               :key="row.id"
-              class="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent/30 transition-colors"
+              class="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-soft transition-colors"
             >
               <span class="text-sm text-foreground">
                 {{ getRowTitle(row) }}

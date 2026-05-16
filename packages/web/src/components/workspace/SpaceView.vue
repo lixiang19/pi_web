@@ -40,11 +40,11 @@ const formatSize = (value: number) => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-background">
-    <header class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border/40 px-4">
+    <header class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-subtle px-4">
       <div class="flex min-w-0 items-center gap-2">
         <FileCode2 class="size-4 text-muted-foreground" />
         <span class="text-sm font-semibold text-foreground">空间</span>
-        <Badge variant="secondary" class="text-[10px]">{{ works.length }}</Badge>
+        <Badge variant="secondary" class="text-micro">{{ works.length }}</Badge>
       </div>
       <Button
         type="button"
@@ -87,19 +87,19 @@ const formatSize = (value: number) => {
           :key="work.id"
           type="button"
           data-test="space-work-row"
-          class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           @click="emit('open-preview', work)"
         >
           <FileCode2 class="size-4 shrink-0 text-muted-foreground" />
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-medium text-foreground">{{ work.name }}</div>
-            <div class="mt-0.5 truncate text-[11px] text-muted-foreground">{{ work.indexPath }}</div>
+            <div class="mt-0.5 truncate text-caption text-muted-foreground">{{ work.indexPath }}</div>
           </div>
-          <div class="hidden shrink-0 items-center gap-2 text-[11px] text-muted-foreground md:flex">
+          <div class="hidden shrink-0 items-center gap-2 text-caption text-muted-foreground md:flex">
             <span>{{ formatSize(work.size) }}</span>
             <span>{{ formatUpdatedAt(work.modifiedAt) }}</span>
           </div>
-          <Badge variant="outline" class="hidden shrink-0 gap-1 text-[10px] sm:inline-flex">
+          <Badge variant="outline" class="hidden shrink-0 gap-1 text-micro sm:inline-flex">
             <ShieldCheck class="size-3" />
             私有
           </Badge>

@@ -29,11 +29,11 @@ const { status: gitStatus } = useGitRepositoryStatus(toRef(() => props.rootDir))
           :is="activeTab === 'git' ? GitBranch : FolderKanban"
           class="size-3.5 text-foreground/40"
         />
-        <h3 class="text-[10px] font-black uppercase tracking-widest text-foreground/60">
+        <h3 class="text-micro font-black uppercase tracking-widest text-foreground/60">
           {{ activeTab === 'git' ? gitStatus?.label || 'Git' : 'Files' }}
         </h3>
       </div>
-      <span class="text-[9px] font-black uppercase opacity-30 tabular-nums">
+      <span class="text-micro font-black uppercase opacity-30 tabular-nums">
         {{ projectLabel }}
       </span>
     </div>
@@ -41,7 +41,7 @@ const { status: gitStatus } = useGitRepositoryStatus(toRef(() => props.rootDir))
     <!-- Tab 导航 -->
     <Tabs v-model="activeTab" class="flex flex-1 flex-col overflow-hidden">
       <TabsList
-        class="mx-3 h-8 w-auto grid grid-cols-2 border border-border/50 bg-transparent p-0.5"
+        class="mx-3 h-8 w-auto grid grid-cols-2 border border-default bg-transparent p-0.5"
       >
         <TabsTrigger
           value="git"

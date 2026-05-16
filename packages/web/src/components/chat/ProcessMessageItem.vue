@@ -40,7 +40,7 @@ const getImageSrc = (content: unknown) =>
         <Markdown
           v-if="isTextContent(content)"
           :content="content.text"
-          class="max-w-none break-words text-[14px] leading-6 text-foreground/90 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+          class="max-w-none break-words text-body-lg leading-6 text-foreground/90 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
         />
 
         <ThinkingCard

@@ -69,23 +69,23 @@ const sandboxedHtml = computed(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-background">
-    <div class="flex h-10 items-center justify-between gap-3 border-b border-border/40 px-3">
+    <div class="flex h-10 items-center justify-between gap-3 border-b border-subtle px-3">
       <div class="flex min-w-0 items-center gap-2">
         <Globe class="size-3.5 text-muted-foreground" />
         <span class="truncate text-xs font-semibold uppercase tracking-wider text-foreground/70">
           HTML 预览
         </span>
-        <Badge variant="outline" class="text-[10px] uppercase">
+        <Badge variant="outline" class="text-micro uppercase">
           Sandbox
         </Badge>
       </div>
-      <div class="text-[11px] text-muted-foreground">
+      <div class="text-caption text-muted-foreground">
         脚本、外链与宿主 DOM 隔离
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 bg-muted/20 p-3">
-      <div class="h-full overflow-hidden rounded-2xl border border-border/40 bg-white shadow-sm">
+    <div class="min-h-0 flex-1 bg-subtle p-3">
+      <div class="h-full overflow-hidden rounded-2xl border border-subtle bg-white shadow-sm">
         <iframe
           :key="fileName"
           :srcdoc="sandboxedHtml"

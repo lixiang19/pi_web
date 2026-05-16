@@ -38,7 +38,7 @@ async function submitLogin() {
 
 <template>
   <main class="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
-    <form class="w-full max-w-sm rounded-3xl border border-border/60 bg-card/95 p-8 shadow-2xl shadow-black/10" @submit.prevent="submitLogin">
+    <form class="w-full max-w-sm rounded-3xl border border-strong bg-card/95 p-8 shadow-2xl shadow-black/10" @submit.prevent="submitLogin">
       <div class="space-y-2">
         <p class="text-sm font-medium text-muted-foreground">ridge private workspace</p>
         <h1 class="text-2xl font-semibold tracking-tight">输入访问密码</h1>

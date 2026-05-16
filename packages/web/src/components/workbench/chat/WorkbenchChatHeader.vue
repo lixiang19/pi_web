@@ -41,7 +41,7 @@ const emit = defineEmits<{
       <Badge
         v-if="isDraftSession"
         variant="outline"
-        class="shrink-0 text-[10px]"
+        class="shrink-0 text-micro"
       >
         Draft
       </Badge>

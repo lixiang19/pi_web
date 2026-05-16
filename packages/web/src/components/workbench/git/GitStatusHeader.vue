@@ -32,7 +32,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-2.5">
+  <div class="flex items-center justify-between gap-2 border-b border-default px-3 py-2.5">
     <!-- 分支信息 -->
     <div class="flex min-w-0 items-center gap-2">
       <GitBranch class="size-3.5 shrink-0 text-muted-foreground" />
@@ -43,13 +43,13 @@ const emit = defineEmits<{
       <!-- ahead / behind badges -->
       <span
         v-if="ahead > 0"
-        class="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary tabular-nums"
+        class="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-micro font-bold text-primary tabular-nums"
       >
         <ArrowUp class="size-2.5" />{{ ahead }}
       </span>
       <span
         v-if="behind > 0"
-        class="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground tabular-nums"
+        class="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-micro font-bold text-muted-foreground tabular-nums"
       >
         <ArrowDown class="size-2.5" />{{ behind }}
       </span>

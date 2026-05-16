@@ -251,7 +251,7 @@ onMounted(() => {
         <div class="mb-3 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <div class="flex h-6 w-6 items-center justify-center rounded-md bg-primary">
-              <span class="text-[11px] font-bold italic text-primary-foreground">R</span>
+              <span class="text-caption font-bold italic text-primary-foreground">R</span>
             </div>
             <span class="text-sm font-bold tracking-tight text-sidebar-foreground">ridge</span>
           </div>
@@ -301,7 +301,7 @@ onMounted(() => {
           <SidebarGroupLabel class="px-2">浏览项目</SidebarGroupLabel>
           <SidebarGroupContent>
             <div v-if="projects.length === 0" class="py-12 text-center">
-              <p class="text-[12px] text-sidebar-foreground/30">无已添加项目</p>
+              <p class="text-body-sm text-sidebar-foreground/30">无已添加项目</p>
             </div>
 
             <SidebarMenu v-else class="space-y-1">
@@ -318,7 +318,7 @@ onMounted(() => {
                           :is="isProjectCollapsed(project.id) ? ChevronRight : ChevronDown"
                           class="size-3.5 shrink-0 text-sidebar-foreground/40 transition-transform"
                         />
-                        <span class="truncate text-[13px] font-bold tracking-tight text-sidebar-foreground/80 uppercase">
+                        <span class="truncate text-body font-bold tracking-tight text-sidebar-foreground/80 uppercase">
                           {{ project.label }}
                         </span>
                       </button>
@@ -364,7 +364,7 @@ onMounted(() => {
                       v-if="project.groups.length === 0"
                       class="mx-2 rounded-md bg-sidebar-accent/20 px-3 py-3"
                     >
-                      <p class="text-[12px] text-sidebar-foreground/50">暂无会话</p>
+                      <p class="text-body-sm text-sidebar-foreground/50">暂无会话</p>
                     </div>
 
                     <template v-for="group in project.groups" :key="group.key">
@@ -373,7 +373,7 @@ onMounted(() => {
                         v-if="group.kind !== 'project-root'"
                         class="group/gh flex items-center justify-between pl-5 pr-2 py-1.5"
                       >
-                        <span class="text-[10px] font-bold tracking-wider text-sidebar-foreground/25 uppercase">
+                        <span class="text-micro font-bold tracking-wider text-sidebar-foreground/25 uppercase">
                           {{ group.label }}
                         </span>
                         <div class="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/gh:opacity-100">
@@ -433,7 +433,7 @@ onMounted(() => {
                         v-if="group.kind === 'worktree' && group.tree.length === 0"
                         class="mx-2 rounded-md bg-sidebar-accent/10 px-3 py-2"
                       >
-                        <p class="text-[11px] text-sidebar-foreground/30">暂无会话</p>
+                        <p class="text-caption text-sidebar-foreground/30">暂无会话</p>
                       </div>
 
                       <div
@@ -443,7 +443,7 @@ onMounted(() => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          class="h-7 px-2 text-[12px] text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                          class="h-7 px-2 text-body-sm text-sidebar-foreground/60 hover:text-sidebar-foreground"
                           @click="toggleGroupExpansion(group.key)"
                         >
                           展开更多（还有 {{ getHiddenCount(group.tree.length, group.key) }} 条）
@@ -466,7 +466,7 @@ onMounted(() => {
               @click="router.push('/settings')"
             >
               <Settings class="size-4" />
-              <span class="text-[13px] font-medium">设置</span>
+              <span class="text-body font-medium">设置</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

@@ -45,21 +45,21 @@ const sandboxedHtml = computed(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-background">
-    <header class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border/40 px-4">
+    <header class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-subtle px-4">
       <div class="flex min-w-0 items-center gap-2">
         <FileCode2 class="size-4 shrink-0 text-muted-foreground" />
         <div class="min-w-0">
           <div class="truncate text-sm font-medium text-foreground">{{ title }}</div>
-          <div v-if="indexPath" class="truncate text-[11px] text-muted-foreground">{{ indexPath }}</div>
+          <div v-if="indexPath" class="truncate text-caption text-muted-foreground">{{ indexPath }}</div>
         </div>
       </div>
-      <Badge variant="outline" class="shrink-0 gap-1 text-[10px]">
+      <Badge variant="outline" class="shrink-0 gap-1 text-micro">
         <ShieldCheck class="size-3" />
         Private
       </Badge>
     </header>
 
-    <div class="min-h-0 flex-1 bg-muted/20">
+    <div class="min-h-0 flex-1 bg-subtle">
       <iframe
         :key="indexPath || title"
         :srcdoc="sandboxedHtml"

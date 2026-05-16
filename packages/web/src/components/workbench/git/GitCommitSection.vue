@@ -18,11 +18,11 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="border-t border-border/50 px-3 py-3">
+  <div class="border-t border-default px-3 py-3">
     <Textarea
       :model-value="commitMessage"
       placeholder="Commit message..."
-      class="mb-2 min-h-[64px] resize-none text-[13px]"
+      class="mb-2 min-h-[64px] resize-none text-body"
       @update:model-value="emit('update:commitMessage', $event as string)"
     />
 
@@ -37,7 +37,7 @@ const emit = defineEmits<{
         Commit
         <span
           v-if="selectedCount > 0"
-          class="ml-1 text-[10px] opacity-70 tabular-nums"
+          class="ml-1 text-micro opacity-70 tabular-nums"
         >
           ({{ selectedCount }})
         </span>

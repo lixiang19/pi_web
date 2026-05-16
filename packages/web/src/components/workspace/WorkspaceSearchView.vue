@@ -195,7 +195,7 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-background">
-    <header class="shrink-0 border-b border-border/40 px-5 py-4">
+    <header class="shrink-0 border-b border-subtle px-5 py-4">
       <div class="flex flex-wrap items-center gap-2">
         <div class="relative min-w-[260px] flex-1">
           <Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -266,7 +266,7 @@ onMounted(() => {
           </div>
 
           <div v-if="diagnostics" class="grid gap-3 lg:grid-cols-3">
-            <div class="rounded-md border border-border/60 p-3">
+            <div class="rounded-md border border-default p-3">
               <div class="mb-2 flex items-center gap-2 text-xs font-medium text-foreground">
                 <Activity class="size-3.5 text-muted-foreground" />
                 RAG
@@ -281,7 +281,7 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="rounded-md border border-border/60 p-3">
+            <div class="rounded-md border border-default p-3">
               <div class="mb-2 flex items-center gap-2 text-xs font-medium text-foreground">
                 <FileText class="size-3.5 text-muted-foreground" />
                 记忆 / Wiki
@@ -299,7 +299,7 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="rounded-md border border-border/60 p-3">
+            <div class="rounded-md border border-default p-3">
               <div class="mb-2 flex items-center gap-2 text-xs font-medium text-foreground">
                 <Database class="size-3.5 text-muted-foreground" />
                 图谱 / MCP
@@ -308,7 +308,7 @@ onMounted(() => {
                 <Badge :variant="diagnostics.graph.schemaExists ? 'secondary' : 'outline'">schema {{ diagnostics.graph.schemaExists ? "存在" : "缺失" }}</Badge>
                 <Badge :variant="diagnostics.graph.databaseExists ? 'secondary' : 'outline'">graph {{ diagnostics.graph.databaseExists ? "存在" : "缺失" }}</Badge>
               </div>
-              <div class="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+              <div class="mt-2 flex flex-wrap gap-1.5 text-caption text-muted-foreground">
                 <span v-for="tool in diagnostics.mcp.tools" :key="tool.name" class="rounded-sm bg-muted px-1.5 py-0.5">{{ tool.name }}</span>
               </div>
             </div>
@@ -320,7 +320,7 @@ onMounted(() => {
             <AlertTriangle class="size-4 text-destructive" />
             <h3 class="text-sm font-medium text-foreground">索引失败</h3>
           </div>
-          <div class="divide-y divide-border/50 rounded-md border border-border/60">
+          <div class="divide-y divide-border/50 rounded-md border border-default">
             <div v-for="target in diagnostics.rag.failedTargets" :key="target.path" class="flex items-center gap-3 px-3 py-2">
               <div class="min-w-0 flex-1">
                 <div class="truncate text-sm text-foreground">{{ target.path }}</div>
@@ -347,11 +347,11 @@ onMounted(() => {
             <h3 class="text-sm font-medium text-foreground">后台任务</h3>
             <Badge variant="outline">失败 {{ diagnostics.backgroundJobs.byStatus.failed }}</Badge>
           </div>
-          <div class="divide-y divide-border/50 rounded-md border border-border/60">
+          <div class="divide-y divide-border/50 rounded-md border border-default">
             <div v-for="job in diagnostics.backgroundJobs.recentFailures" :key="job.jobId" class="px-3 py-2">
               <div class="flex min-w-0 items-center gap-2">
                 <span class="truncate text-sm text-foreground">{{ job.jobId }}</span>
-                <Badge variant="outline" class="h-5 shrink-0 text-[10px]">{{ job.type }}</Badge>
+                <Badge variant="outline" class="h-5 shrink-0 text-micro">{{ job.type }}</Badge>
               </div>
               <div class="mt-1 truncate text-xs text-muted-foreground">{{ job.lastError || job.relatedId }}</div>
             </div>
@@ -376,14 +376,14 @@ onMounted(() => {
             <h3 class="text-sm font-medium text-foreground">{{ typeLabelMap.get(type) ?? type }}</h3>
             <Badge variant="secondary" class="h-5">{{ items.length }}</Badge>
           </div>
-          <div class="divide-y divide-border/50 rounded-md border border-border/60">
+          <div class="divide-y divide-border/50 rounded-md border border-default">
             <button
               v-for="item in items"
               :key="item.id"
               type="button"
               :class="cn(
-                'flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-accent/35',
-                item.type === 'rag' ? 'bg-muted/15' : '',
+                'flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-soft',
+                item.type === 'rag' ? 'bg-subtle' : '',
               )"
               @click="openResult(item)"
             >
@@ -391,8 +391,8 @@ onMounted(() => {
               <span class="min-w-0 flex-1">
                 <span class="flex min-w-0 items-center gap-2">
                   <span class="truncate text-sm font-medium text-foreground">{{ item.title }}</span>
-                  <Badge variant="outline" class="h-5 shrink-0 text-[10px]">{{ typeLabelMap.get(item.type) }}</Badge>
-                  <span class="shrink-0 text-[11px] text-muted-foreground">{{ formatTime(item.updatedAt) }}</span>
+                  <Badge variant="outline" class="h-5 shrink-0 text-micro">{{ typeLabelMap.get(item.type) }}</Badge>
+                  <span class="shrink-0 text-caption text-muted-foreground">{{ formatTime(item.updatedAt) }}</span>
                 </span>
                 <span class="mt-1 block truncate text-xs text-muted-foreground">
                   {{ item.sourcePath || item.path || item.targetId }}
@@ -400,7 +400,7 @@ onMounted(() => {
                 <span class="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground/90">
                   {{ item.snippet }}
                 </span>
-                <span v-if="item.headingPath?.length" class="mt-1 block truncate text-[11px] text-muted-foreground">
+                <span v-if="item.headingPath?.length" class="mt-1 block truncate text-caption text-muted-foreground">
                   {{ item.headingPath.join(" / ") }}<template v-if="item.startLine"> · L{{ item.startLine }}</template>
                 </span>
               </span>

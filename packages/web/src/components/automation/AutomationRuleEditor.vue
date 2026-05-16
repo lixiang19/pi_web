@@ -98,7 +98,7 @@ const formatRunTime = (value: number) =>
       <div class="min-w-0">
         <div class="flex items-center gap-2">
           <CalendarClock class="size-4 text-primary" />
-          <p class="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">
+          <p class="text-caption font-black uppercase tracking-[0.24em] text-primary/70">
             Scheduled Chat
           </p>
         </div>
@@ -329,7 +329,7 @@ const formatRunTime = (value: number) =>
             </div>
           </div>
 
-          <div class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <div class="rounded-lg bg-soft px-3 py-2 text-xs text-muted-foreground">
             下一次会话：{{ nextRunText }}
           </div>
         </section>
@@ -345,16 +345,16 @@ const formatRunTime = (value: number) =>
           />
         </section>
 
-        <section class="space-y-2 border-t border-border/50 pt-4">
+        <section class="space-y-2 border-t border-default pt-4">
           <Label>运行记录</Label>
-          <div v-if="recentRuns.length === 0" class="rounded-lg bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+          <div v-if="recentRuns.length === 0" class="rounded-lg bg-soft px-3 py-3 text-sm text-muted-foreground">
             还没有运行记录
           </div>
           <div v-else class="space-y-2">
             <div
               v-for="run in recentRuns"
               :key="run.id"
-              class="rounded-lg border border-border/50 bg-card/60 px-3 py-2"
+              class="rounded-lg border border-default bg-card/60 px-3 py-2"
             >
               <div class="flex items-center justify-between gap-3 text-sm">
                 <span class="font-medium">{{ runStatusText(run.status) }}</span>
@@ -383,7 +383,7 @@ const formatRunTime = (value: number) =>
           </div>
         </section>
 
-        <section class="flex justify-end border-t border-border/50 pt-4">
+        <section class="flex justify-end border-t border-default pt-4">
           <Button
             type="button"
             variant="destructive"

@@ -190,7 +190,7 @@ const handleAction = async (notification: NotificationEvent, action: Notificatio
 
 <template>
 	<div class="flex h-full min-h-0 flex-col bg-background">
-		<header class="shrink-0 border-b border-border/60 px-5 py-4">
+		<header class="shrink-0 border-b border-default px-5 py-4">
 			<div class="flex items-center justify-between gap-3">
 				<div class="min-w-0">
 					<h2 class="text-base font-semibold text-foreground">通知与建议</h2>
@@ -215,7 +215,7 @@ const handleAction = async (notification: NotificationEvent, action: Notificatio
 						@click="handleFilterChange(item.id)"
 					>
 						<span>{{ item.label }}</span>
-						<span class="text-[10px] text-muted-foreground">{{ counts[item.id] }}</span>
+						<span class="text-micro text-muted-foreground">{{ counts[item.id] }}</span>
 					</TabsTrigger>
 				</TabsList>
 			</Tabs>

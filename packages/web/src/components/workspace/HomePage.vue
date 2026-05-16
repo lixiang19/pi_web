@@ -200,7 +200,7 @@ const agentOptions = computed(() => {
           <p class="sr-only">开始对话</p>
           <form class="mx-auto w-full max-w-2xl" @submit.prevent="handleSubmit">
             <div
-              class="rounded-2xl border border-border/50 bg-card p-2.5 shadow-sm ring-1 ring-border/20 transition-all duration-200 focus-within:border-primary/30 focus-within:ring-primary/20"
+              class="rounded-2xl border border-default bg-card p-2.5 shadow-sm ring-1 ring-border/20 transition-all duration-200 focus-within:border-primary/30 focus-within:ring-primary/20"
             >
               <!-- 快捷动作 -->
               <div class="mb-2 flex flex-wrap gap-2 px-2 pt-1">
@@ -209,7 +209,7 @@ const agentOptions = computed(() => {
                   :key="action.label"
                   type="button"
                   data-testid="home-quick-action"
-                  class="inline-flex items-center gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-subtle bg-subtle px-2.5 py-1 text-body-sm text-muted-foreground transition-colors hover:bg-soft hover:text-foreground"
                   @click="handleQuickAction(action.draft)"
                 >
                   <component :is="action.icon" class="size-3.5" />
@@ -222,7 +222,7 @@ const agentOptions = computed(() => {
                 <Textarea
                   v-model="draftText"
                   placeholder="问我任何事…"
-                  class="min-h-[84px] max-h-[180px] min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[16px] leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/50 focus-visible:ring-0"
+                  class="min-h-[84px] max-h-[180px] min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-hero leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/50 focus-visible:ring-0"
                   :rows="isExpanded ? 4 : 3"
                   @focus="handleFocus"
                   @blur="handleBlur"
@@ -243,14 +243,14 @@ const agentOptions = computed(() => {
                 <div
                   v-for="(file, index) in pendingAttachments"
                   :key="`${file.name}-${index}`"
-                  class="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-[12px] text-muted-foreground"
+                  class="flex items-center gap-2 rounded-md bg-soft px-2 py-1 text-body-sm text-muted-foreground"
                   data-testid="home-pending-attachment"
                 >
                   <Paperclip class="size-3" />
                   <span class="min-w-0 flex-1 truncate">{{ file.name }}</span>
                   <button
                     type="button"
-                    class="shrink-0 rounded p-0.5 hover:bg-accent/60"
+                    class="shrink-0 rounded p-0.5 hover:bg-hover"
                     @click="removeAttachment(index)"
                   >
                     <X class="size-3" />
@@ -259,11 +259,11 @@ const agentOptions = computed(() => {
               </div>
 
               <!-- 底栏控件：附件 + 选择器 -->
-              <div class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/20 px-1 pt-2">
+              <div class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-subtle px-1 pt-2">
                 <button
                   type="button"
                   data-testid="home-attachment-btn"
-                  class="inline-flex h-7 items-center gap-1 rounded-md border border-border/40 bg-muted/35 px-2 text-[12px] text-muted-foreground shadow-none hover:bg-muted/60"
+                  class="inline-flex h-7 items-center gap-1 rounded-md border border-subtle bg-soft px-2 text-body-sm text-muted-foreground shadow-none hover:bg-hover"
                   @click="handleAttachmentClick"
                 >
                   <Paperclip class="size-3.5" />
@@ -278,7 +278,7 @@ const agentOptions = computed(() => {
                 />
 
                 <Select v-model="selectedModel">
-                  <SelectTrigger class="h-7 w-auto min-w-[180px] max-w-[260px] gap-1.5 rounded-md border-border/40 bg-muted/35 px-2.5 text-[13px] shadow-none ring-0 hover:bg-muted/60 focus:ring-0">
+                  <SelectTrigger class="h-7 w-auto min-w-[180px] max-w-[260px] gap-1.5 rounded-md border-subtle bg-soft px-2.5 text-body shadow-none ring-0 hover:bg-hover focus:ring-0">
                     <Sparkles class="size-3.5 text-primary/70" />
                     <SelectValue placeholder="模型" />
                   </SelectTrigger>
@@ -295,7 +295,7 @@ const agentOptions = computed(() => {
                 </Select>
 
                 <Select v-model="selectedAgent">
-                  <SelectTrigger class="h-7 w-auto min-w-[160px] max-w-[240px] gap-1.5 rounded-md border-border/40 bg-muted/35 px-2.5 text-[13px] shadow-none ring-0 hover:bg-muted/60 focus:ring-0">
+                  <SelectTrigger class="h-7 w-auto min-w-[160px] max-w-[240px] gap-1.5 rounded-md border-subtle bg-soft px-2.5 text-body shadow-none ring-0 hover:bg-hover focus:ring-0">
                     <MessageSquare class="size-3.5 text-foreground/50" />
                     <SelectValue placeholder="Agent" />
                   </SelectTrigger>
@@ -312,7 +312,7 @@ const agentOptions = computed(() => {
                 </Select>
 
                 <Select v-model="selectedThinkingLevel">
-                  <SelectTrigger class="h-7 w-auto min-w-[120px] max-w-[160px] gap-1.5 rounded-md border-border/40 bg-muted/35 px-2.5 text-[13px] shadow-none ring-0 hover:bg-muted/60 focus:ring-0">
+                  <SelectTrigger class="h-7 w-auto min-w-[120px] max-w-[160px] gap-1.5 rounded-md border-subtle bg-soft px-2.5 text-body shadow-none ring-0 hover:bg-hover focus:ring-0">
                     <Lightbulb class="size-3.5 text-foreground/50" />
                     <SelectValue placeholder="思考" />
                   </SelectTrigger>
@@ -336,7 +336,7 @@ const agentOptions = computed(() => {
         <div data-testid="home-info-grid" class="grid w-full grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_280px]">
 
           <!-- 左侧：最近事情混合时间线 -->
-          <Card class="border border-border/50 bg-card shadow-sm">
+          <Card class="border border-default bg-card shadow-sm">
             <CardHeader class="px-4 pt-4 pb-2">
               <CardTitle class="text-sm font-semibold text-foreground">最近事情</CardTitle>
             </CardHeader>
@@ -352,15 +352,15 @@ const agentOptions = computed(() => {
                   v-for="item in visibleActivity"
                   :key="item.id"
                   type="button"
-                  class="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
+                  class="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-soft"
                   @click="handleActivityClick(item)"
                 >
                   <component :is="kindIconMap[item.kind]" class="size-3.5 shrink-0 text-muted-foreground" />
-                  <span class="min-w-0 flex-1 truncate text-[13px] text-foreground">{{ item.title }}</span>
-                  <Badge variant="outline" class="h-4 shrink-0 px-1 text-[9px] font-normal text-muted-foreground">
+                  <span class="min-w-0 flex-1 truncate text-body text-foreground">{{ item.title }}</span>
+                  <Badge variant="outline" class="h-4 shrink-0 px-1 text-micro font-normal text-muted-foreground">
                     {{ kindLabelMap[item.kind] }}
                   </Badge>
-                  <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  <span class="shrink-0 text-caption tabular-nums text-muted-foreground">
                     {{ formatDate(item.timestamp) }}
                   </span>
                 </button>
@@ -371,7 +371,7 @@ const agentOptions = computed(() => {
           <!-- 右侧：最近文件 + AI 建议占位 -->
           <div class="flex flex-col gap-4">
             <!-- 最近文件 -->
-            <Card class="border border-border/50 bg-card shadow-sm">
+            <Card class="border border-default bg-card shadow-sm">
               <CardHeader class="px-4 pt-4 pb-2">
                 <CardTitle class="text-sm font-semibold text-foreground">最近文件</CardTitle>
               </CardHeader>
@@ -384,18 +384,18 @@ const agentOptions = computed(() => {
                     v-for="file in visibleRecentFiles"
                     :key="file.path"
                     type="button"
-                    class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
+                    class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-soft"
                     @click="emit('open-file', file.path)"
                   >
                     <component :is="fileIconByExtension(file.extension)" class="size-3.5 shrink-0 text-muted-foreground" />
-                    <span class="min-w-0 flex-1 truncate text-[13px] text-foreground">{{ file.name }}</span>
+                    <span class="min-w-0 flex-1 truncate text-body text-foreground">{{ file.name }}</span>
                   </button>
                 </div>
               </CardContent>
             </Card>
 
             <!-- AI 建议占位 -->
-            <Card class="border border-border/30 bg-muted/20 shadow-none">
+            <Card class="border border-subtle bg-subtle shadow-none">
               <CardHeader class="px-4 pt-4 pb-2">
                 <div class="flex items-center gap-1.5">
                   <Sparkles class="size-3.5 text-primary/60" />

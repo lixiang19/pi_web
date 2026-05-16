@@ -262,7 +262,7 @@ const themePreviewColors: Record<string, string> = {
               :class="
                 mode === option.value
                   ? 'border-primary/50 bg-primary/8 text-foreground shadow-sm'
-                  : 'border-border/60 bg-card text-foreground/80 hover:border-border hover:bg-muted/50'
+                  : 'border-default bg-card text-foreground/80 hover:border-strong hover:bg-hover'
               "
               @click="setMode(option.value)"
             >
@@ -278,7 +278,7 @@ const themePreviewColors: Record<string, string> = {
               </div>
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium leading-tight">{{ option.label }}</div>
-                <div class="mt-0.5 text-[11px] text-muted-foreground">{{ option.desc }}</div>
+                <div class="mt-0.5 text-caption text-muted-foreground">{{ option.desc }}</div>
               </div>
             </button>
           </CardContent>
@@ -316,7 +316,7 @@ const themePreviewColors: Record<string, string> = {
             <div class="flex items-center justify-between px-5 py-4">
               <div>
                 <div class="text-sm font-medium">服务状态</div>
-                <div class="mt-1 text-[11px] text-muted-foreground">API 在线，备份服务 {{ systemInfo?.serviceStatus.backup || "加载中" }}</div>
+                <div class="mt-1 text-caption text-muted-foreground">API 在线，备份服务 {{ systemInfo?.serviceStatus.backup || "加载中" }}</div>
               </div>
               <div class="text-xs text-muted-foreground">{{ deviceStatusLabel }}</div>
             </div>
@@ -360,7 +360,7 @@ const themePreviewColors: Record<string, string> = {
             </div>
             <div v-if="backupStatus" class="text-xs text-muted-foreground">{{ backupStatus }}</div>
             <div v-if="backupError" class="text-xs text-destructive">{{ backupError }}</div>
-            <div v-if="restoreStatus" class="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <div v-if="restoreStatus" class="rounded-md border border-strong bg-soft px-3 py-2 text-xs text-muted-foreground">
               <div class="font-medium text-foreground">恢复完成</div>
               <div class="mt-1 break-all">恢复前快照：{{ restoreStatus.preRestoreSnapshotPath }}</div>
               <div class="mt-1">RAG 与 search_chunks 已标记为待重建。</div>
@@ -381,7 +381,7 @@ const themePreviewColors: Record<string, string> = {
           <CardContent class="flex items-center justify-between gap-4 px-5 py-4">
             <div>
               <div class="text-sm font-medium">退出登录</div>
-              <div class="mt-1 text-[11px] text-muted-foreground">清除当前浏览器的登录会话。</div>
+              <div class="mt-1 text-caption text-muted-foreground">清除当前浏览器的登录会话。</div>
             </div>
             <Button variant="outline" @click="handleLogout">退出</Button>
           </CardContent>
@@ -405,7 +405,7 @@ const themePreviewColors: Record<string, string> = {
                 </div>
                 <div>
                   <div class="text-sm font-medium">通知</div>
-                  <div class="text-[11px] text-muted-foreground">接收工作台消息提醒</div>
+                  <div class="text-caption text-muted-foreground">接收工作台消息提醒</div>
                 </div>
               </div>
               <Switch
@@ -421,7 +421,7 @@ const themePreviewColors: Record<string, string> = {
                 </div>
                 <div>
                   <div class="text-sm font-medium">折叠侧边栏</div>
-                  <div class="text-[11px] text-muted-foreground">默认收起左侧导航</div>
+                  <div class="text-caption text-muted-foreground">默认收起左侧导航</div>
                 </div>
               </div>
               <Switch
@@ -437,7 +437,7 @@ const themePreviewColors: Record<string, string> = {
                 </div>
                 <div>
                   <div class="text-sm font-medium">语言</div>
-                  <div class="text-[11px] text-muted-foreground">界面显示语言</div>
+                  <div class="text-caption text-muted-foreground">界面显示语言</div>
                 </div>
               </div>
               <Select
@@ -461,7 +461,7 @@ const themePreviewColors: Record<string, string> = {
                 </div>
                 <div>
                   <div class="text-sm font-medium">后台整理模型</div>
-                  <div class="text-[11px] text-muted-foreground">summary / memory agent 使用</div>
+                  <div class="text-caption text-muted-foreground">summary / memory agent 使用</div>
                 </div>
               </div>
               <Select
@@ -491,7 +491,7 @@ const themePreviewColors: Record<string, string> = {
                 </div>
                 <div>
                   <div class="text-sm font-medium">后台思考强度</div>
-                  <div class="text-[11px] text-muted-foreground">后台整理任务默认使用低强度</div>
+                  <div class="text-caption text-muted-foreground">后台整理任务默认使用低强度</div>
                 </div>
               </div>
               <Select
@@ -530,7 +530,7 @@ const themePreviewColors: Record<string, string> = {
               <div class="text-sm font-medium">ridge</div>
               <div class="text-xs text-muted-foreground">v0.1.0</div>
             </div>
-            <p class="mt-1.5 text-[11px] text-muted-foreground">你的 AI 工作平台</p>
+            <p class="mt-1.5 text-caption text-muted-foreground">你的 AI 工作平台</p>
           </CardContent>
         </Card>
       </section>

@@ -98,7 +98,7 @@ const hasTextContent = computed(() => textContents.value.length > 0);
 
           <div
             v-if="askDetails.dismissed"
-            class="rounded-md border border-border/60 bg-background/70 px-3 py-2 text-xs text-muted-foreground"
+            class="rounded-md border border-default bg-background/70 px-3 py-2 text-xs text-muted-foreground"
           >
             用户取消了这次提问
           </div>
@@ -106,7 +106,7 @@ const hasTextContent = computed(() => textContents.value.length > 0);
           <div
             v-for="row in getAskResultRows()"
             :key="row.question.id"
-            class="rounded-md border border-border/60 bg-background/70 px-3 py-2"
+            class="rounded-md border border-default bg-background/70 px-3 py-2"
           >
             <p class="text-sm font-medium text-foreground">
               {{ row.question.question }}

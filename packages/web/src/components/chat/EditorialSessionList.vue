@@ -49,7 +49,7 @@ const tagToneMap: Record<Session["tag"], string> = {
 
       <div class="flex items-start justify-between gap-2">
         <h3 
-          class="min-w-0 flex-1 truncate text-[13.5px] font-semibold tracking-tight text-[#191919]"
+          class="min-w-0 flex-1 truncate text-body font-semibold tracking-tight text-[#191919]"
           :class="{ 'opacity-100': activeId === session.id, 'opacity-80 transition-opacity group-hover:opacity-100': activeId !== session.id }"
         >
           {{ session.title }}
@@ -58,7 +58,7 @@ const tagToneMap: Record<Session["tag"], string> = {
       </div>
 
       <p 
-        class="line-clamp-2 text-[12px] leading-[1.6] text-[#78716c]"
+        class="line-clamp-2 text-body-sm leading-[1.6] text-[#78716c]"
         :class="{ 'text-[#57534e] transition-colors group-hover:text-[#44403c]': activeId !== session.id }"
       >
         {{ session.preview }}
@@ -66,12 +66,12 @@ const tagToneMap: Record<Session["tag"], string> = {
 
       <div class="mt-1 flex items-center gap-2">
         <span 
-          class="inline-flex rounded-md border border-black/5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+          class="inline-flex rounded-md border border-black/5 px-1.5 py-0.5 text-micro font-bold uppercase tracking-wider"
           :class="tagToneMap[session.tag]"
         >
           {{ session.tag }}
         </span>
-        <span class="text-[10px] font-medium text-[#a8a29e] uppercase tracking-wide italic">
+        <span class="text-micro font-medium text-[#a8a29e] uppercase tracking-wide italic">
           {{ session.updatedAt }}
         </span>
       </div>

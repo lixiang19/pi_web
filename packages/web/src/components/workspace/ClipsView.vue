@@ -59,7 +59,7 @@ onMounted(load);
         <Badge v-if="clips.length > 0" variant="secondary">{{ clips.length }}</Badge>
       </div>
 
-      <div class="flex h-9 items-center gap-2 rounded-md border border-border/50 bg-muted/30 px-3">
+      <div class="flex h-9 items-center gap-2 rounded-md border border-default bg-soft px-3">
         <Search class="size-4 text-muted-foreground" />
         <input v-model="searchQuery" type="text" placeholder="搜索标题、链接、正文..." class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50" />
       </div>
@@ -73,20 +73,20 @@ onMounted(load);
         {{ error }}
       </div>
 
-      <div v-else-if="clips.length === 0" class="flex flex-col items-center rounded-lg border border-border/50 bg-card py-12">
-        <div class="mb-3 flex size-12 items-center justify-center rounded-full bg-muted/40">
+      <div v-else-if="clips.length === 0" class="flex flex-col items-center rounded-lg border border-default bg-card py-12">
+        <div class="mb-3 flex size-12 items-center justify-center rounded-full bg-soft">
           <Bookmark class="size-5 text-muted-foreground/40" />
         </div>
         <p class="text-sm text-muted-foreground">还没有剪藏</p>
         <p class="mt-1 text-xs text-muted-foreground/60">可以从闪念处理为剪藏</p>
       </div>
 
-      <div v-else-if="filteredClips.length === 0" class="rounded-lg border border-border/50 bg-card py-8 text-center text-sm text-muted-foreground">
+      <div v-else-if="filteredClips.length === 0" class="rounded-lg border border-default bg-card py-8 text-center text-sm text-muted-foreground">
         没有匹配的剪藏
       </div>
 
       <div v-else class="space-y-3">
-        <article v-for="clip in filteredClips" :key="clip.id" class="rounded-lg border border-border/50 bg-card p-4">
+        <article v-for="clip in filteredClips" :key="clip.id" class="rounded-lg border border-default bg-card p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <h2 class="truncate text-sm font-semibold text-foreground">{{ clip.title }}</h2>
@@ -95,10 +95,10 @@ onMounted(load);
                 {{ clip.url }}
               </a>
             </div>
-            <span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">{{ formatDate(clip.createdAt) }}</span>
+            <span class="shrink-0 text-caption text-muted-foreground tabular-nums">{{ formatDate(clip.createdAt) }}</span>
           </div>
           <p class="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{{ clip.content }}</p>
-          <p v-if="clip.source" class="mt-3 text-[11px] text-muted-foreground/70">来源：{{ clip.source }}</p>
+          <p v-if="clip.source" class="mt-3 text-caption text-muted-foreground/70">来源：{{ clip.source }}</p>
         </article>
       </div>
     </div>

@@ -212,20 +212,20 @@ const handleSelectFile = (_path: string) => {
         class="w-72 flex shrink-0 flex-col bg-secondary overflow-hidden"
       >
         <Tabs v-model="rightActiveTab" class="flex h-full flex-col">
-          <TabsList class="mx-2 mt-2 h-8 w-auto grid grid-cols-4 border border-border/50 bg-transparent p-0.5 shrink-0">
-            <TabsTrigger value="summary" class="text-[11px] font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
+          <TabsList class="mx-2 mt-2 h-8 w-auto grid grid-cols-4 border border-default bg-transparent p-0.5 shrink-0">
+            <TabsTrigger value="summary" class="text-caption font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <FileText class="mr-1 size-3" />
               摘要
             </TabsTrigger>
-            <TabsTrigger value="files" class="text-[11px] font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <TabsTrigger value="files" class="text-caption font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <FolderTree class="mr-1 size-3" />
               文件
             </TabsTrigger>
-            <TabsTrigger value="git" class="text-[11px] font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <TabsTrigger value="git" class="text-caption font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <GitBranch class="mr-1 size-3" />
               Git
             </TabsTrigger>
-            <TabsTrigger value="diff" class="text-[11px] font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <TabsTrigger value="diff" class="text-caption font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <FileDiff class="mr-1 size-3" />
               Diff
             </TabsTrigger>
@@ -236,7 +236,7 @@ const handleSelectFile = (_path: string) => {
               <ScrollArea class="h-full px-3 py-2">
                 <div class="space-y-3">
                   <div>
-                    <h4 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">会话信息</h4>
+                    <h4 class="text-micro font-semibold uppercase tracking-wider text-muted-foreground mb-1">会话信息</h4>
                     <div class="space-y-1 text-xs text-foreground/80">
                       <p><span class="text-muted-foreground">标题:</span> {{ chat.currentSessionTitle.value }}</p>
                       <p><span class="text-muted-foreground">ID:</span> {{ chat.sessionId.value || '-' }}</p>
@@ -246,28 +246,28 @@ const handleSelectFile = (_path: string) => {
                   </div>
                   <Separator class="bg-border/30" />
                   <div>
-                    <h4 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">运行位置</h4>
+                    <h4 class="text-micro font-semibold uppercase tracking-wider text-muted-foreground mb-1">运行位置</h4>
                     <p class="text-xs text-foreground/80 break-all">{{ chat.fileTreeRoot.value || '未选择' }}</p>
                   </div>
                   <Separator class="bg-border/30" />
                   <div>
-                    <h4 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">模型</h4>
+                    <h4 class="text-micro font-semibold uppercase tracking-wider text-muted-foreground mb-1">模型</h4>
                     <p class="text-xs text-foreground/80">{{ chat.effectiveModel.value || '默认' }}</p>
                   </div>
                   <Separator class="bg-border/30" />
                   <div>
-                    <h4 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Agent</h4>
+                    <h4 class="text-micro font-semibold uppercase tracking-wider text-muted-foreground mb-1">Agent</h4>
                     <p class="text-xs text-foreground/80">{{ chat.effectiveAgent.value || '无' }}</p>
                   </div>
                   <Separator class="bg-border/30" />
                   <div>
-                    <h4 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">资源</h4>
+                    <h4 class="text-micro font-semibold uppercase tracking-wider text-muted-foreground mb-1">资源</h4>
                     <p class="text-xs text-foreground/80">{{ resourceStatusLabel }}</p>
                   </div>
                   <template v-if="isTaskSession">
                     <Separator class="bg-border/30" />
                     <div class="rounded border border-yellow-500/20 bg-yellow-500/10 px-2 py-1.5">
-                      <p class="text-[11px] text-yellow-600 dark:text-yellow-400">任务会话：编辑/重试已禁用</p>
+                      <p class="text-caption text-yellow-600 dark:text-yellow-400">任务会话：编辑/重试已禁用</p>
                     </div>
                   </template>
                 </div>

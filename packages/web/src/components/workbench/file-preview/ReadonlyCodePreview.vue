@@ -111,19 +111,19 @@ const lineCount = computed(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-background">
-    <div class="flex h-10 items-center justify-between gap-3 border-b border-border/40 px-3">
+    <div class="flex h-10 items-center justify-between gap-3 border-b border-subtle px-3">
       <div class="flex min-w-0 items-center gap-2">
         <Code2 class="size-3.5 text-muted-foreground" />
         <span class="truncate text-xs font-semibold uppercase tracking-wider text-foreground/70">
           代码预览
         </span>
-        <Badge variant="outline" class="text-[10px] uppercase">
+        <Badge variant="outline" class="text-micro uppercase">
           {{ languageLabel }}
         </Badge>
       </div>
-      <div class="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+      <div class="flex shrink-0 items-center gap-2 text-caption text-muted-foreground">
         <span>{{ lineCount }} 行</span>
-        <Badge variant="outline" class="text-[10px] uppercase">只读</Badge>
+        <Badge variant="outline" class="text-micro uppercase">只读</Badge>
       </div>
     </div>
 
@@ -137,7 +137,7 @@ const lineCount = computed(() => {
         <div class="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {{ highlightError }}
         </div>
-        <pre class="mt-4 overflow-x-auto rounded-xl border border-border/40 bg-muted/30 px-4 py-4 font-mono text-xs leading-6 text-foreground/90">{{ props.content || "空文件" }}</pre>
+        <pre class="mt-4 overflow-x-auto rounded-xl border border-subtle bg-soft px-4 py-4 font-mono text-xs leading-6 text-foreground/90">{{ props.content || "空文件" }}</pre>
       </div>
 
       <div v-else-if="hasHighlightedHtml" class="min-w-max">
