@@ -80,6 +80,24 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 		fileOpenSchema,
 	} = deps;
 
+	const isWorkspaceFile = (filePath: string): boolean => {
+		const relative = path.relative(defaultWorkspaceDir, path.resolve(filePath));
+		return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+	};
+
+	const commitWorkspaceFilesVersionPoint = async (
+		files: string[],
+		message: string,
+	): Promise<void> => {
+		const workspaceFiles = files.filter(isWorkspaceFile);
+		if (workspaceFiles.length === 0) return;
+		await commitWorkspaceVersionPoint({
+			workspaceDir: defaultWorkspaceDir,
+			files: workspaceFiles,
+			message,
+		});
+	};
+
 	router.get(
 		"/api/workspace/journal",
 		async (req: Request, res: Response, next: NextFunction) => {
@@ -291,11 +309,10 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 			try {
 				const payload = fileEntryCreateSchema.parse(req.body ?? {});
 				const entry = await fileManager.createEntry(payload);
-				await commitWorkspaceVersionPoint({
-					workspaceDir: defaultWorkspaceDir,
-					files: [entry.path],
-					message: `${entry.kind === "directory" ? "新建文件夹" : "新建文件"} ${entry.relativePath || entry.name}`,
-				});
+				await commitWorkspaceFilesVersionPoint(
+					[entry.path],
+					`${entry.kind === "directory" ? "新建文件夹" : "新建文件"} ${entry.relativePath || entry.name}`,
+				);
 				res.status(201).json({
 					entry,
 				});
@@ -337,11 +354,10 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 					).run(newPrefix, oldPrefix, Date.now(), `${likePrefix}%`);
 					await moveRagTarget(oldPrefix, newPrefix, { workspaceDir: defaultWorkspaceDir });
 				}
-				await commitWorkspaceVersionPoint({
-					workspaceDir: defaultWorkspaceDir,
-					files: [oldPosixPath, newPosixPath],
-					message: `移动文件 ${path.basename(newPosixPath)}`,
-				});
+				await commitWorkspaceFilesVersionPoint(
+					[oldPosixPath, newPosixPath],
+					`移动文件 ${path.basename(newPosixPath)}`,
+				);
 
 				res.json({
 					entry,
@@ -372,11 +388,10 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 				const escapedPrefix = dirPrefix.replace(/[%_\\]/g, (c) => `\\${c}`);
 				db.prepare("DELETE FROM file_processing_status WHERE file_path LIKE ? ESCAPE '\\'").run(`${escapedPrefix}%`);
 				await removeRagTarget(trashedPath);
-				await commitWorkspaceVersionPoint({
-					workspaceDir: defaultWorkspaceDir,
-					files: [trashedPath],
-					message: `删除文件 ${path.basename(trashedPath)}`,
-				});
+				await commitWorkspaceFilesVersionPoint(
+					[trashedPath],
+					`删除文件 ${path.basename(trashedPath)}`,
+				);
 				res.json(payload);
 			} catch (error) {
 				next(error);
@@ -452,11 +467,10 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 						}
 					}
 				}
-				await commitWorkspaceVersionPoint({
-					workspaceDir: defaultWorkspaceDir,
-					files: entries.map((entry) => entry.path),
-					message: `上传文件 ${entries.map((entry) => entry.name).join(", ")}`,
-				});
+				await commitWorkspaceFilesVersionPoint(
+					entries.map((entry) => entry.path),
+					`上传文件 ${entries.map((entry) => entry.name).join(", ")}`,
+				);
 
 				res.status(201).json({
 					entries,

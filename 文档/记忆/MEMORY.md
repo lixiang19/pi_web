@@ -788,3 +788,29 @@
 - `AutomationRuleEditor.test.ts` 覆盖项目 scope、运行历史展示和历史重试按钮。
 - `npm run check` 通过。
 - `npm run build --workspace @pi/server` 通过。
+
+## 2026-05-15 V2 阶段 3 桌面端与本机项目上线闭环
+
+### 收口结论
+
+- V2 阶段 3 已归档到 `文档/功能开发/归档/45-V2阶段3桌面端与本机项目上线闭环.md`。
+- `文档/功能开发/index.md` 已把 Task 14、30、31、32 和阶段 3 汇总项标为完成；30/31/32 单项任务已移入 `文档/功能开发/归档/`。
+- 阶段 3 的完成口径不是新增兼容层，而是确认当前真实链路：设备注册/token/心跳/离线清理、WebSocket 调度、runtime bundle 下载/物化/ack、桌面会话 SSE 回传、离线拒绝、桌面采集入口、不读取用户真实 `~/.pi` 作为 ridge 全局配置。
+
+### 验收证据
+
+- `task30-31-32.test.ts` 覆盖项目注册、设备注册、离线拒绝、bundle 生成、bundle ack 完整链路、真实 WebSocket E2E、server 不保存桌面消息正文。
+- `websocket-e2e.test.ts` 覆盖真实 ws 连接、ping/pong、run_request/run_result 和 SSE 回传。
+- `desktop-bundle-sync.test.ts` 覆盖桌面端 bundle sync、物化目录和 ack。
+- `security-guards.test.ts` 覆盖桌面会话 ask、permission、cancel、归档只读边界。
+- `desktop-bridge.test.ts` 与 `FleetingCaptureButton.test.ts` 覆盖 Tauri 桌面桥接、采集入口、离线和未登录限制。
+
+### 文档同步
+
+- `文档/项目设计/V2最终上线计划.md` 阶段 3 已标归档。
+- `文档/开发进展/项目完成情况可视化.html` 已移除“桌面端真实物化闭环”为剩余缺口的陈旧描述。
+
+### 阶段 3 复验修复
+
+- 复跑桌面/设备目标测试时，`task30-31-32.test.ts` 的“upload API 跳过外部仓库路径”暴露 400：外部仓库上传已跳过 RAG，但仍无条件调用 `commitWorkspaceVersionPoint`，隐藏版本点要求文件在 `~/ridge-workspace` 内。
+- 修复在 `routes/workspace-data.ts`：文件页 create/move/delete/upload 先过滤工作空间内文件，只有工作空间文件才创建隐藏版本点；外部仓库文件继续执行真实文件操作，但不进入工作空间隐藏版本。

@@ -18,7 +18,7 @@
 | 11 规划工具与完成确认边界 | - | ✅ | - | - | ✅ | - | ✅ |
 | 12 闪念数据模型与 Web 入口 | ✅ | ✅ | ✅ | ✅ | ✅ | - | - |
 | 13 闪念临时附件生命周期 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
-| 14 桌面采集入口 | - | - | - | - | - | - | - |
+| 14 桌面采集入口 | ✅ | ✅ | ✅ | ✅ | ✅ | ◐ | ✅ |
 | 15 fleeting agent 分析建议 | ✅ | ✅ | ✅ | ✅ | ✅ | - | - |
 | 16 闪念处理为正式对象 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 17 文件页与正式附件目录 | ⚠️ | - | - | - | - | - | - |
@@ -34,15 +34,16 @@
 | 27 memory agent MEMORY 维护与注入 | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 28 Kuzu 图谱存储与抽取 | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 29 Wiki 夜间维护与 index 注入 | - | ✅ | ✅ | - | ✅ | - | ✅ |
-| 30 项目注册与内部项目外部仓库 | - | - | - | - | - | - | - |
-| 31 设备注册在线状态与调度 | - | - | - | - | - | - | - |
-| 32 runtime bundle 与设备专属 Skill | - | ✅ | ✅ | - | ✅ | - | ✅ |
+| 30 项目注册与内部项目外部仓库 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
+| 31 设备注册在线状态与调度 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 32 runtime bundle 与设备专属 Skill | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 33 workspace MCP 查读工具 | - | ✅ | ✅ | - | ✅ | - | ✅ |
 | 34 通知与建议中心 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 35 task review agent 任务回顾 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 36 自动化规则运行与跳过 | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | 37 备份恢复设置主题收尾 | ◐ | - | - | ◐ | - | - | - |
 | 38 AI 对话主线闭环 | ✅ | ✅ | ✅ | ✅ | ✅ | ◐ | ✅ |
+| 45 V2 阶段 3 桌面端与本机项目上线闭环 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 真实实现口径（2026-05-12）
 
@@ -57,6 +58,8 @@
 - **27 memory agent MEMORY 维护与注入**：`memory.maintain` 在 summary 后维护 `记忆/MEMORY.md`；消息入口支持显式“记住/忘掉”立即改写；服务端过滤敏感信息；新会话启动和 resource reload 注入 `MEMORY.md` 与 `Wiki/index.md` XML 块，空文件不注入，并包含“记忆可能过时，当前用户最新话语和当前文件事实优先”提醒。`workspace-memory.test.ts` 覆盖。
 - **28 Kuzu 图谱存储与抽取**：`graph-store.ts` 使用 Kuzu Node.js 客户端写入 `.ridge/graph.kuzu/database.kuzu`，初始化写 `.ridge/graph.kuzu/schema.cypher`；schema 包含 Project/File/Task/Person/Org/Concept/Tech/Source/Decision 节点和带 `evidence/source_path/confidence/updated_at` 的 EvidenceRelation，证据统一截断为 80 字以内。`graph-agent.ts` 只从已索引 Markdown 标准产物、daily 和内部项目 Markdown 收集输入，排除外部项目、`.ridge`、`.originals` 和非 Markdown 原件；直接读取来源前校验 `realpath`，防止内部项目根目录符号链接越界；`rag-worker.ts` 夜间链路在 deferred RAG 后触发 graph runner；`POST /api/workspace/graph/corrections` 支持用户自然语言纠错后由 graph agent 写回，并有 HTTP 集成测试。`GET /api/workspace/backup` 生成真实备份 ZIP，包含 `.ridge/graph.kuzu`，排除可重建缓存并跳过符号链接；隐藏 Git exclude 包含 `.ridge`。测试覆盖真实 Kuzu 写入读回、graph store/schema/纠错、source 边界与 symlink 防护、夜间顺序、纠错 API、备份 ZIP/API、隐藏 Git exclude 和初始化 schema 文件。
 - **29 Wiki 夜间维护与 index 注入**：`wiki-agent.ts` 收集当前 `Wiki/**/*.md`、`记忆/MEMORY.md`、daily、已索引 Markdown RAG chunk 和 Kuzu 图谱快照；Wiki agent 严格返回 JSON，只允许相对 `Wiki/` 的 `.md` 路径，拒绝绝对路径、`..`、`Wiki/` 前缀、隐藏路径和符号链接写入路径。`rag-worker.ts` 夜间链路为 deferred RAG -> graph -> Wiki -> immediate RAG，保证 Wiki 写入或未索引保留页在本轮进入 RAG；删除 Wiki 页同步清理 RAG target。`runtime-bundle.ts` 和普通会话注入均读取当前真源 `记忆/MEMORY.md` 与 `Wiki/index.md`，空 index 不注入。`wiki-agent.test.ts`、`graph-worker.test.ts`、`task30-31-32.test.ts` 覆盖。
+- **14 桌面采集入口**：Tauri 桌面端菜单栏/托盘采集入口已覆盖文字、剪贴板、当前选区、浏览器网址、区域/窗口/全屏截图、文件和录音。Rust 端通过 `pbpaste`、sentinel + Cmd+C、AppleScript/System Events、`screencapture` 获取本机内容；前端 `FleetingCaptureButton.vue` 统一保存到闪念，未登录或离线时明确拒绝。`desktop-bridge.test.ts`、`FleetingCaptureButton.test.ts` 与 Rust 单测覆盖桥接、元数据和截图命令。
+- **30/31/32 项目注册、设备在线状态与 runtime bundle**：内部项目、外部仓库、GitHub 克隆、设备绑定、归档/删除规则已实现；桌面设备注册返回 token，心跳/WS 双通道维护在线状态，离线设备项目禁止新建、继续和查看会话；runtime bundle 支持设备专属 Skill 过滤、项目覆盖、物化、contentHash/bundleVersion/projectPath/materializedHash ack 校验。Web 对桌面项目的 create/send/messages/runtime/events/ask/permission/cancel 均走 desktop bridge，服务器只写轻量 `session_index`，不保存桌面消息正文。`task30-31-32.test.ts`、`websocket-e2e.test.ts`、`desktop-bundle-sync.test.ts`、`security-guards.test.ts` 覆盖。
 - **34 通知与建议中心**：左侧「通知」固定入口已接入 `NotificationCenterView.vue`，展示未处理数、筛选、列表和动作；`GET /api/notifications` 与 `POST /api/notifications/:eventId/actions` 支持忽略、标记已处理、重试、接受/拒绝建议、打开关联对象。`notification_events` 扩展 source/related/actions/handled 字段；文件处理失败、RAG 失败、后台任务最终失败写入关联对象和动作。新增通知 API 与前端组件测试，并通过全量测试。
 - **35 task review agent 任务回顾**：`task-review.ts` 扫描任务、里程碑、任务绑定处理会话、未绑定任务的最新未归档处理会话索引和最近 daily，生成过期任务、长期阻塞、审核确认、处理会话无进展、daily 不一致、可拆分任务、里程碑延期风险等 `task_review.suggestion` 通知；不直接修改正式任务或里程碑。`POST /api/workspace/tasks/review` 手动入队，服务启动后 `task.review` worker 处理队列，scheduler 每 6 小时定期入队并依赖队列去重。任务页可触发回顾，短周期自动刷新等待异步建议落库，并在任务/里程碑详情显示关联建议；接受建议通过事务内 claim 防重复，且只有用户接受后才写正式对象。`task-review.test.ts` 和 `TaskView.test.ts` 覆盖。
 - **36 自动化规则运行与跳过**：`automation_rules` 支持 workspace/project scope，项目规则绑定 `project_id` 并从项目记录解析真实运行目录；`automation_runs` 记录 success/failed/skipped、reason、session_id；调度器和立即运行都会写运行记录。workspace 自动化在服务端创建普通会话并发送 prompt；服务器本地项目在服务端运行；桌面项目在线时写 server 侧 `session_index` 并通过 desktop bridge 发送 `create_session` + `send_message`；桌面项目离线或归档时跳过并写原因。失败/跳过写 `automation.failed` / `automation.skipped` 通知，关联自动化并提供打开/重试动作。自动化页暴露运行上下文、项目绑定和运行历史。`automation-api.test.ts`、`AutomationRuleEditor.test.ts`、`npm run check`、`npm run build --workspace @pi/server` 覆盖。
@@ -69,6 +72,6 @@
   - **已真实接入**：Agent 注册/发现/选择（`/api/agents`、HomePage/WorkspaceChatTab agent 选择）、自动化规则（作为定时创建普通会话并发送消息的规则系统）、Pi resource catalog 后端可列 prompts/skills/extension commands（`/api/resources`、`buildResourceCatalog`）、runtime bundle（设备 token 鉴权、设备专属 Skill 过滤、启动上下文 `MEMORY.md + Wiki/index.md`）。
   - **当前工作空间主会话 UI 已接入**：`WorkspaceChatTab` 已使用 `useWorkbenchResourcePicker` 消费 `GET /api/resources`，把 commands/prompts/skills 传入 `WorkbenchChatPanel`，并支持 prompt / skill / extension command 写入当前 composer 草稿后提交。资源刷新携带当前 cwd 和 sessionId，空 catalog 显示真实空状态。
   - **V2 阶段 1 阻塞已收口**：旧 `SessionTabContent` / `SessionTabArea` resource picker 双轨已删除；主会话资源注入提交链路和空 catalog 均有测试覆盖。
-  - **仍待后续阶段验证**：Skill 独立功能页仍占位；runtime bundle 服务端生成和设备专属 Skill 过滤已实现，但桌面端物化后的主会话资源选择器仍需在 V2 桌面端闭环阶段做端到端验收。
+  - **V2 阶段 3 已收口**：runtime bundle 服务端生成、设备专属 Skill 过滤、桌面物化/ack、WebSocket 转发、SSE 回传、离线拒绝和桌面采集均已归档；Skill 独立功能页仍是后续知识/资源管理入口问题，不阻塞阶段 3。
 
 > **注**："✅" = 已实现且有测试/验收证据；"◐" = 部分实现/当前工作树证据但未完整验收；"⚠️" = 仅入口/占位或未合并待验证；"-" = 尚未实现或仅存在占位。归档需所有维度通过后方可标记。

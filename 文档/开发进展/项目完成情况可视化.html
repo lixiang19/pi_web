@@ -578,7 +578,7 @@
               <h1>第一版主闭环已成型，收尾集中在用户可见完整性。</h1>
             </div>
             <p class="lead">
-              现在项目不再是只有设计稿或框架：工作台、会话、任务、闪念、文件处理、RAG、搜索、记忆、图谱、Wiki、设备、runtime bundle、workspace MCP、通知与任务回顾都有当前代码和测试证据。剩余风险主要在自动化运行历史、备份恢复设置、主会话资源选择器、文件页上传/附件管理和桌面端真实物化闭环。
+              现在项目不再是只有设计稿或框架：工作台、会话、任务、闪念、文件处理、RAG、搜索、记忆、图谱、Wiki、设备、runtime bundle、workspace MCP、通知与任务回顾都有当前代码和测试证据。V2 阶段 3 桌面端与本机项目闭环已归档，剩余风险主要在备份恢复设置、知识系统诊断入口和最终上线质量门禁。
             </p>
           </div>
 
@@ -586,28 +586,28 @@
             <div class="panel score-card">
               <div class="score-ring" aria-label="完成度估算 78%">
                 <div>
-                  <strong>78%</strong>
+                  <strong>82%</strong>
                   <span>一版闭环完成度估算</span>
                 </div>
               </div>
               <div class="legend">
                 <div class="legend-row">
                   <span>已成型</span>
-                  <div class="track"><span class="fill done" style="width: 78%"></span></div>
-                  <b>31</b>
+                  <div class="track"><span class="fill done" style="width: 82%"></span></div>
+                  <b>33</b>
                 </div>
                 <div class="legend-row">
                   <span>部分完成</span>
-                  <div class="track"><span class="fill partial" style="width: 10%"></span></div>
-                  <b>4</b>
+                  <div class="track"><span class="fill partial" style="width: 8%"></span></div>
+                  <b>3</b>
                 </div>
                 <div class="legend-row">
                   <span>明显缺口</span>
-                  <div class="track"><span class="fill gap" style="width: 10%"></span></div>
-                  <b>4</b>
+                  <div class="track"><span class="fill gap" style="width: 8%"></span></div>
+                  <b>3</b>
                 </div>
               </div>
-              <p class="small">数字按 39 个功能开发任务粗略归类；“已成型”要求至少有模块契约、当前代码入口和测试/验收线索，不代表 UX 已最终完成。</p>
+              <p class="small">数字按功能开发矩阵粗略归类；“已成型”要求至少有模块契约、当前代码入口和测试/验收线索，不代表 UX 已最终完成。</p>
             </div>
             <div class="panel metric">
               <span>当前工作树</span>
@@ -666,7 +666,7 @@
               </div>
               <div class="item">
                 <strong>设备与运行基础</strong>
-                <p>设备 token、在线状态、runtime bundle、设备专属 Skill 过滤、外部项目设备绑定和 WebSocket 转发均有模块契约。</p>
+                <p>设备 token、在线状态、runtime bundle、设备专属 Skill 过滤、外部项目设备绑定、WebSocket 转发和离线拒绝均已归档到 V2 阶段 3。</p>
               </div>
               <div class="item">
                 <strong>通知与任务回顾</strong>
@@ -685,8 +685,8 @@
                 <p>私有预览、安全边界和 RAG 接入已完成；隐藏版本管理关系仍只算部分完成。</p>
               </div>
               <div class="item">
-                <strong>自动化</strong>
-                <p>规则 CRUD、调度和手动运行入口已有；运行历史、跳过记录、失败通知闭环仍不完整。</p>
+                <strong>知识系统诊断</strong>
+                <p>RAG、图谱、Wiki 和 MCP 后台链路已成型；用户可见的健康诊断、失败刷新和状态解释仍需继续收口。</p>
               </div>
               <div class="item">
                 <strong>备份恢复与设置</strong>
@@ -697,12 +697,12 @@
             <div class="panel column gap-col">
               <h3>明显缺口</h3>
               <div class="item">
-                <strong>桌面端资源物化验收</strong>
-                <p>主工作区会话已接入 resource catalog；桌面端 runtime bundle 物化后的资源选择器仍需端到端验收。</p>
+                <strong>备份恢复闭环</strong>
+                <p>备份 API 和图谱备份已有测试；整包恢复、恢复前快照、校验信息和设置页入口仍是上线缺口。</p>
               </div>
               <div class="item">
-                <strong>桌面端真实闭环</strong>
-                <p>Tauri 只能打包；桌面 runtime bundle 物化、sidecar 运行和本机项目真实调度仍需要端到端验证。</p>
+                <strong>错误边界</strong>
+                <p>工作台、会话、文件、任务和设置页还需要统一用户可见错误边界，不能只依赖接口返回或日志。</p>
               </div>
               <div class="item">
                 <strong>音频图片 Markdown 处理</strong>
@@ -745,9 +745,9 @@
             </div>
             <div class="matrix-row">
               <strong>M3 闪念采集</strong>
-              <p>Web 闪念、临时附件、分析建议、处理为正式对象；桌面采集需继续端到端复验。</p>
+              <p>Web 闪念、临时附件、分析建议、处理为正式对象和桌面采集入口均已成型。</p>
               <span class="meta">Inbox / FleetingCaptureButton / fleeting routes</span>
-              <span class="badge partial-b">接近完成</span>
+              <span class="badge done-b">完成</span>
             </div>
             <div class="matrix-row">
               <strong>M4 文件与空间</strong>
@@ -775,9 +775,9 @@
             </div>
             <div class="matrix-row">
               <strong>M8 项目设备</strong>
-              <p>项目注册、设备在线、runtime bundle、workspace MCP 已成型；桌面本机真实运行仍需整体验收。</p>
+              <p>项目注册、设备在线、runtime bundle、桌面本机调度、SSE 回传、离线拒绝和 workspace MCP 已成型。</p>
               <span class="meta">projects / devices / runtime-bundle</span>
-              <span class="badge partial-b">后端完成</span>
+              <span class="badge done-b">完成</span>
             </div>
             <div class="matrix-row">
               <strong>M9 通知自动化</strong>
@@ -836,28 +836,28 @@
           </div>
           <div class="risk-grid">
             <div class="risk">
-              <strong>1. 桌面端资源物化验收</strong>
-              <p>主工作区会话已经消费 `/api/resources`；下一步要验证桌面 runtime bundle 物化后，设备专属 Skill 与主会话资源选择器一致可用。</p>
+              <strong>1. 备份恢复</strong>
+              <p>把备份、恢复前快照、整包恢复、校验信息和设置页入口作为一条功能交付。</p>
             </div>
             <div class="risk">
-              <strong>2. 自动化运行闭环</strong>
-              <p>补 `automation_runs` 业务写入、跳过原因、失败通知和运行历史视图。</p>
+              <strong>2. 知识系统诊断入口</strong>
+              <p>补索引队列、失败文件、图谱/Wiki 状态、MCP 边界和手动刷新结果的用户可见解释。</p>
             </div>
             <div class="risk">
               <strong>3. 文件页完整操作</strong>
               <p>补上传入口、正式附件管理、移动/重命名的用户界面和失败可见性。</p>
             </div>
             <div class="risk">
-              <strong>4. 备份恢复</strong>
-              <p>把备份、恢复前快照、整包恢复、校验信息和设置页入口作为一条功能交付。</p>
+              <strong>4. 错误边界</strong>
+              <p>统一工作台、会话、文件、任务、设置的错误展示、重试入口和关联对象。</p>
             </div>
             <div class="risk">
-              <strong>5. 桌面端端到端验收</strong>
-              <p>验证设备在线、bundle 物化、本机项目会话、SSE 转发和离线拒绝。</p>
+              <strong>5. 上线安全与生产启动</strong>
+              <p>检查单用户认证、`RIDGE_ADMIN_PASSWORD`、端口、数据目录权限、数据库迁移和打包流程。</p>
             </div>
             <div class="risk">
-              <strong>6. 功能矩阵刷新</strong>
-              <p>`文档/功能开发/index.md` 局部仍有 2026-05-12 的陈旧行，需按当前模块梳理统一校准。</p>
+              <strong>6. 全量验收脚本</strong>
+              <p>沉淀 `npm run check`、`pnpm test`、关键 E2E 和人工验收清单的最终门禁记录。</p>
             </div>
           </div>
         </section>
@@ -887,13 +887,13 @@
               <strong>阶段 2</strong>
               <p>文件、附件、空间与隐藏版本：上传、转换、预览、版本点、RAG 同步全闭环。</p>
               <span class="meta">资产沉淀</span>
-              <span class="badge partial-b">核心</span>
+              <span class="badge done-b">已归档</span>
             </div>
             <div class="matrix-row">
               <strong>阶段 3</strong>
               <p>桌面端与本机项目上线闭环：runtime bundle 物化、本机 Pi 运行、SSE 转发和离线拒绝。</p>
               <span class="meta">桌面真实运行</span>
-              <span class="badge partial-b">核心</span>
+              <span class="badge done-b">已归档</span>
             </div>
             <div class="matrix-row">
               <strong>阶段 4</strong>
