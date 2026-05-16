@@ -23,6 +23,7 @@ export interface MobileApiClient {
   requireServiceBaseUrl(): string;
   get(path: string, init?: RequestInit): Promise<Response>;
   post(path: string, body: unknown, init?: RequestInit): Promise<Response>;
+  patch(path: string, body: unknown, init?: RequestInit): Promise<Response>;
 }
 
 function normalizeServiceBaseUrl(value: string) {
@@ -79,11 +80,27 @@ export function createMobileApiClient(
     });
   };
 
+  const patch = async (path: string, body: unknown, init: RequestInit = {}) => {
+    const baseUrl = requireServiceBaseUrl();
+    const apiPath = path.startsWith("/") ? path : `/${path}`;
+    const headers = new Headers(init.headers);
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    return fetcher(`${baseUrl}${apiPath}`, {
+      ...init,
+      method: "PATCH",
+      headers,
+      body: JSON.stringify(body),
+    });
+  };
+
   return {
     getServiceBaseUrl,
     setServiceBaseUrl,
     requireServiceBaseUrl,
     get,
     post,
+    patch,
   };
 }

@@ -203,10 +203,80 @@ async function getAndroidDeviceFromSessionRequest(req: Request): Promise<DeviceR
 	return device?.deviceType === "android" ? device : null;
 }
 
+function workspaceRequestPath(req: Request): string {
+	const requestPath = `${req.baseUrl ?? ""}${req.path}`;
+	return requestPath.length > 1 ? requestPath.replace(/\/+$/, "") : requestPath;
+}
+
+function isAndroidWorkspaceReadPath(req: Request): boolean {
+	const requestPath = workspaceRequestPath(req);
+	if (req.method !== "GET") {
+		return false;
+	}
+	if (requestPath === "/api/workspace/tasks") {
+		return true;
+	}
+	if (requestPath === "/api/workspace/projects") {
+		return true;
+	}
+	return /^\/api\/workspace\/tasks\/[^/]+(?:\/processing-session)?$/.test(requestPath);
+}
+
+function isAndroidTaskStatusPatch(req: Request): boolean {
+	return req.method === "PATCH" && /^\/api\/workspace\/tasks\/[^/]+$/.test(workspaceRequestPath(req));
+}
+
+function isAndroidTaskProcessingSessionRequest(req: Request): boolean {
+	return req.method === "POST" && /^\/api\/workspace\/tasks\/[^/]+\/processing-session$/.test(workspaceRequestPath(req));
+}
+
+function isAndroidWorkspaceRequest(req: Request): boolean {
+	const requestPath = workspaceRequestPath(req);
+	return requestPath.startsWith("/api/workspace/tasks") || requestPath.startsWith("/api/workspace/projects");
+}
+
+async function enforceAndroidWorkspaceBoundary(req: Request, res: Response, next: NextFunction) {
+	try {
+		const androidDevice = await getAndroidDeviceFromSessionRequest(req);
+		if (!androidDevice) {
+			next();
+			return;
+		}
+
+		if (isAndroidWorkspaceReadPath(req) || isAndroidTaskProcessingSessionRequest(req)) {
+			next();
+			return;
+		}
+
+		if (isAndroidTaskStatusPatch(req)) {
+			const rawPayload = req.body && typeof req.body === "object"
+				? req.body as Record<string, unknown>
+				: {};
+			const keys = Object.keys(rawPayload);
+			const invalidKey = keys.find((key) => key !== "status" && key !== "actor");
+			if (invalidKey || typeof rawPayload.status !== "string") {
+				res.status(403).json({ error: "Android mobile task requests can only update status" });
+				return;
+			}
+			if (rawPayload.actor !== undefined && rawPayload.actor !== "user") {
+				res.status(403).json({ error: "Android mobile task requests can only use user actor" });
+				return;
+			}
+			req.body = { status: rawPayload.status, actor: "user" };
+			next();
+			return;
+		}
+
+		res.status(403).json({ error: "Android mobile token is not allowed for this workspace operation" });
+	} catch (error) {
+		next(error);
+	}
+}
+
 export const authRuntime = createAuthRuntime({
 	adminPassword: resolveAdminPassword(),
 	isApiBearerAuthorized: async (req) => {
-		if (!req.path.startsWith("/api/sessions")) {
+		if (!req.path.startsWith("/api/sessions") && !isAndroidWorkspaceRequest(req)) {
 			return false;
 		}
 		return Boolean(await getAndroidDeviceFromSessionRequest(req));
@@ -941,11 +1011,13 @@ const workspaceTasksRouter = createWorkspaceTasksRouter(defaultWorkspaceDir, {
 	workspaceChatConfig,
 	getJobQueue: () => jobQueue,
 });
+app.use("/api/workspace/tasks", enforceAndroidWorkspaceBoundary);
 app.use("/api/workspace/tasks", workspaceTasksRouter);
 const workspaceMilestonesRouter =
 	createWorkspaceMilestonesRouter(defaultWorkspaceDir);
 app.use("/api/workspace/milestones", workspaceMilestonesRouter);
 // ===== New Workspace Projects Router (Task 30) =====
+app.use("/api/workspace/projects", enforceAndroidWorkspaceBoundary);
 app.use("/api/workspace/projects", createProjectRouter(defaultWorkspaceDir));
 // ===== Device Router (Task 31) =====
 app.use("/api/devices", createDeviceRouter());

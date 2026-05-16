@@ -872,3 +872,20 @@
 - `task53-mobile-chat.test.ts` 覆盖 Android token 创建普通 server 会话、拒绝 cwd/分叉/task-only agent、错误 token 不创建会话、messages/cancel 入口。
 - `mobile-chat-api-client.test.ts`、`mobile-chat-sse.test.ts`、`mobile-chat-store.test.ts` 覆盖移动端 token API、SSE 合并、发送失败保留和最终回复清草稿。
 - `ChatPage.test.ts` 覆盖移动端新建会话、发送文本、流式回复展示、取消生成和发送失败草稿保留。
+
+## 2026-05-16 任务 54 Android 任务查看与轻操作
+
+### 收口结论
+
+- Android 任务页复用现有工作区任务和处理会话 API，不新增移动端任务模型。
+- 服务端允许有效 Android `Bearer` token 访问受限工作区任务入口：任务列表/详情、项目摘要 GET、任务状态 PATCH、处理会话 GET/POST。
+- Android token 的任务 PATCH 被前置守卫收口为 `{ status, actor: "user" }`；标题、优先级、项目绑定、里程碑、blockedReason、sortOrder、删除任务、项目创建/修改/删除均返回 403。
+- 移动端 `TasksPage.vue` 按待办、进行中、审核中、已完成展示任务；`blocked` 保留服务端原状态并归入移动端“进行中”组，不改写任务状态。
+- 移动端状态操作走服务端状态机，失败时 `mobile-task-store.ts` 回滚乐观更新并保留错误信息。
+- 任务处理会话按钮调用 `POST /api/workspace/tasks/:taskId/processing-session`，成功后进入 `/chat?sessionId=<id>`；轻对话页会选择 query 中的会话并加载消息。
+
+### 验收证据
+
+- `task54-mobile-tasks.test.ts` 覆盖 Android token 读取任务/项目摘要、状态轻操作、非法状态流转拒绝、越权任务/项目操作拒绝、继续已有处理会话。
+- `mobile-task-api-client.test.ts`、`mobile-task-store.test.ts`、`TasksPage.test.ts` 覆盖移动端 token API、分组、失败回滚、详情和处理会话跳转。
+- `ChatPage.test.ts` 复测轻对话页。

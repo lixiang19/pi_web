@@ -33,7 +33,9 @@
 - 移动捕捉提交：`src/lib/media/mobile-capture-submitter.ts` 使用已保存 Android 注册信息向服务端提交，提交中先写本地 `uploading` 草稿，成功删除，失败改为 `failed` 并保留可重试草稿。
 - 轻对话 API：`src/lib/chat/mobile-chat-api-client.ts` 复用 `/api/sessions`、`/messages`、`/attachments` 和 `/cancel`，所有请求带 Android Bearer token；附件由本地 base64 草稿转回 `File` 后通过现有会话附件接口上传。
 - 轻对话 SSE：`src/lib/chat/mobile-chat-sse.ts` 订阅 `/api/sessions/:sessionId/events?token=<android-token>`，合并 `snapshot/status/message_start/message_end/error` 到移动端消息流。
-- 轻对话状态：`src/lib/chat/mobile-chat-store.ts` 管理基础会话列表、当前会话、消息流、发送状态、错误和 composer；`src/lib/chat/mobile-chat-draft-storage.ts` 在发送失败或 SSE error 时保留文本与附件草稿，最终 assistant 消息到达后清空本次待发送草稿。
+- 轻对话状态：`src/lib/chat/mobile-chat-store.ts` 管理基础会话列表、当前会话、消息流、发送状态、错误和 composer；`src/lib/chat/mobile-chat-draft-storage.ts` 在发送失败或 SSE error 时保留文本与附件草稿，最终 assistant 消息到达后清空本次待发送草稿；`/chat?sessionId=<id>` 会选择对应会话并加载消息，用于任务处理会话跳转。
+- 移动任务 API：`src/lib/tasks/mobile-task-api-client.ts` 使用 Android Bearer token 读取 `/api/workspace/tasks`、`/api/workspace/projects`，只通过 `PATCH /api/workspace/tasks/:taskId` 提交 `{ status, actor: "user" }`，并用 `POST /api/workspace/tasks/:taskId/processing-session` 打开或继续任务处理会话。
+- 移动任务状态：`src/lib/tasks/mobile-task-store.ts` 管理任务、项目摘要、当前详情、状态分组、乐观状态更新和失败回滚；`blocked` 保留服务端原状态并归入移动端“进行中”组。
 
 ## 服务连接
 
@@ -43,6 +45,7 @@
 - 移动捕捉消费 `POST /api/mobile/captures`，请求体包含 `deviceId`、`token`、文字和附件 base64；服务端只接受 Android 设备 token。
 - `POST /api/mobile/captures` 内部写现有 `fleeting_notes` 和 `fleeting_attachments`，附件目录固定为 `.ridge/fleeting-attachments/{noteId}/`，并触发现有 fleeting analysis；失败时清理已创建的闪念和临时附件。
 - 移动轻对话不新增移动端会话模型；Android token 创建会话时，服务端默认使用 `~/ridge-workspace` 对应的当前默认工作空间，固定为普通 server 会话，不允许移动端传服务器路径、桌面项目、分叉或 task-only agent。
+- 移动任务不新增任务模型；Android token 只获得工作区任务的读、状态轻操作、处理会话入口和项目摘要读权限。任务删除、任务字段编辑、项目创建/修改/删除仍禁止。
 
 ## 构建与验证
 
@@ -53,6 +56,7 @@
 - 根目录 `npm run check` 已包含 `@pi/mobile` 的 `vue-tsc` 检查。
 - 任务 52 验收覆盖 `task52-mobile-capture.test.ts`、移动端媒体草稿/转换/状态机/提交器测试和 `CapturePage.test.ts`。
 - 任务 53 验收覆盖 `task53-mobile-chat.test.ts`、`mobile-chat-api-client.test.ts`、`mobile-chat-sse.test.ts`、`mobile-chat-store.test.ts` 和 `ChatPage.test.ts`。
+- 任务 54 验收覆盖 `task54-mobile-tasks.test.ts`、`mobile-task-api-client.test.ts`、`mobile-task-store.test.ts`、`TasksPage.test.ts`，并复测 `ChatPage.test.ts` 的处理会话 query 入口。
 
 ## 当前环境注意
 

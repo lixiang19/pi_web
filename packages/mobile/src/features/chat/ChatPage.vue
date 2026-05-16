@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import {
   Camera,
   Image,
@@ -30,6 +31,7 @@ import {
 
 const api = createMobileApiClient();
 const deviceStorage = createDeviceStorage();
+const route = useRoute() as ReturnType<typeof useRoute> | undefined;
 const chatApi = createMobileChatApiClient({
   api,
   registration: () => deviceStorage.getRegistration(),
@@ -96,7 +98,13 @@ async function addFiles(
 }
 
 onMounted(() => {
-  void store.loadSessions();
+  void (async () => {
+    await store.loadSessions();
+    const routeSessionId = route && typeof route.query["sessionId"] === "string" ? route.query["sessionId"] : "";
+    if (routeSessionId) {
+      await selectSession(routeSessionId);
+    }
+  })();
 });
 
 onBeforeUnmount(() => {

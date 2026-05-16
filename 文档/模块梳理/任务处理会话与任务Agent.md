@@ -18,6 +18,9 @@
 - `packages/web/src/components/workspace/TaskView.vue` — 任务详情处理会话按钮
 - `packages/web/src/components/workspace/TaskView.vue` — 任务回顾触发按钮与任务/里程碑详情关联建议
 - `packages/web/src/pages/WorkspacePage.vue` — 监听 `open-session` 打开会话标签
+- `packages/mobile/src/lib/tasks/mobile-task-api-client.ts` — Android token 调用任务状态轻操作和处理会话入口
+- `packages/mobile/src/features/tasks/TasksPage.vue` — Android 任务详情「开始处理/继续处理」按钮，成功后跳转 `/chat?sessionId=<id>`
+- `packages/mobile/src/features/chat/ChatPage.vue` — 识别 query 中的 `sessionId` 并加载对应任务处理会话消息
 
 ## 数据模型
 
@@ -53,6 +56,7 @@ GET  /api/workspace/tasks/:taskId/processing-session
 - 会话强制选择 `task-agent`。
 - 创建成功后写入 `workspace_tasks.processing_session_id`。
 - 创建成功后调用 `upsertTaskSessionIndexRecord`，用 `INSERT ... ON CONFLICT(session_id) DO UPDATE` 补齐/修正 `session_index`，避免只更新已有索引导致任务会话在列表、搜索或回顾链路中缺少 `session_type/task_id`。
+- Android 设备可用有效 Bearer token 调用 `POST/GET /api/workspace/tasks/:taskId/processing-session`，但不能通过 `/api/sessions` 自行创建 task-only 会话。
 
 `GET` 行为：
 - 返回 `{ sessionId }`；无会话时 404。
@@ -86,6 +90,7 @@ PATCH /api/workspace/tasks/:taskId
 
 - `updateTaskSchema` 已移除 `processingSessionId` 字段，禁止通过普通 PATCH 修改。
 - 内部使用 `setTaskProcessingSessionId` 更新。
+- Android 设备 token 只能 PATCH `{ status, actor: "user" }`；标题、优先级、项目绑定、里程碑、blockedReason、sortOrder 等字段均由服务端前置守卫拒绝。
 
 ### 任务回顾
 
@@ -108,6 +113,7 @@ POST /api/workspace/tasks/review
 - `TaskView.vue` 在任务/里程碑详情内展示关联 `task_review.suggestion`，支持接受/拒绝；接受后刷新任务列表与建议列表，并重建当前详情对象引用。
 - `TaskView.vue` 建议动作成功后发出 `notificationsUpdated`，由 `WorkspacePage` 刷新左侧通知计数。
 - `WorkspacePage.vue` 监听 `@open-session="handleOpenSession($event)"`。
+- Android `TasksPage.vue` 复用同一处理会话 API，按钮文案同样区分「开始处理/继续处理」，完成状态禁用；成功后进入移动端轻对话页并携带 `sessionId` query。
 
 ## 边界
 
@@ -115,6 +121,7 @@ POST /api/workspace/tasks/review
 - 有 deviceId 且离线的项目禁止启动处理会话；本地 server-folder 项目（无 deviceId）不受 `isOnline=false` 影响。
 - 普通 `/api/agents` 返回列表过滤掉 `mode === 'task'` 的 agent，避免普通会话误选。
 - 普通会话不能选择 `task-agent`；任务处理会话不能切换到普通 Agent。
+- Android token 的任务权限是读与轻操作：允许任务列表/详情、项目摘要 GET、任务状态 PATCH、处理会话 GET/POST；不允许删除任务、编辑任务字段、创建任务、修改项目或绕过 task-agent。
 - task review agent 只生成建议通知；正式对象变更只能通过用户接受通知建议进入既有任务系统状态机。
 - 任务回顾建议的重复控制以同一 workspace 队列活跃任务去重，以及同一对象同一 suggestionType 未处理通知去重为边界。
 - `workspace_tasks.processing_session_id` 是任务处理会话的优先真源；`session_index.session_type/task_id` 是会话列表、搜索、回顾兜底和路由层早期识别的索引投影，不能替代任务绑定真源。
@@ -142,6 +149,12 @@ POST /api/workspace/tasks/review
   - 失败不 emit openSession
   - 任务页触发 task review
   - 任务详情展示关联回顾建议并执行建议动作
+- 移动端：`task54-mobile-tasks.test.ts` / `mobile-task-api-client.test.ts` / `mobile-task-store.test.ts` / `TasksPage.test.ts` / `ChatPage.test.ts`
+  - Android token 可读取现有任务和项目摘要
+  - Android token 只允许状态轻操作，非法状态机流转由服务端拒绝
+  - 移动端状态更新失败回滚本地任务
+  - Android token 可继续已有处理会话
+  - 任务页打开处理会话后跳转移动端对话页
 - 后端：`task-review.test.ts`
   - 扫描任务、里程碑、任务绑定处理会话、处理会话索引和最近 daily 生成建议
   - 建议不会直接修改任务
