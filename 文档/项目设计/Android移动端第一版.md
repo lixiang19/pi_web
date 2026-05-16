@@ -155,19 +155,13 @@ android/
 
 ### 闪念 API
 
-优先复用现有闪念 API：
-
-- `POST /api/fleeting`
-- `POST /api/fleeting/:noteId/attachments`
-- `GET /api/fleeting/suggestions`
-
-如移动端需要更稳定的原子提交，再新增窄接口：
+移动端使用窄接口：
 
 ```
 POST /api/mobile/captures
 ```
 
-该接口只负责一次性创建闪念并上传附件，内部仍写入 `fleeting_notes` 和 `fleeting_attachments`，不得另建一套移动端闪念模型。
+该接口只负责一次性创建闪念并上传附件，请求必须包含 Android `deviceId + token`。内部仍写入 `fleeting_notes` 和 `fleeting_attachments`，附件落在 `.ridge/fleeting-attachments/{noteId}/`，并触发现有 fleeting analysis；不得另建一套移动端闪念模型。
 
 ### 会话 API
 

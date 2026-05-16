@@ -50,24 +50,28 @@ export async function storeFleetingAttachment(
 	const storedName = `${attachmentId}-${safeName}`;
 	const storedPath = path.join(dir, storedName);
 
-	await fs.writeFile(storedPath, buffer, { mode: 0o600 });
-
 	const createdAt = Date.now();
-	db.prepare(
-		`INSERT INTO fleeting_attachments (
-			attachment_id, note_id, original_name, stored_name, stored_path, mime_type, size, sha256, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	).run(
-		attachmentId,
-		noteId,
-		originalName,
-		storedName,
-		storedPath,
-		mimeType,
-		buffer.length,
-		sha256,
-		createdAt,
-	);
+	try {
+		await fs.writeFile(storedPath, buffer, { mode: 0o600 });
+		db.prepare(
+			`INSERT INTO fleeting_attachments (
+				attachment_id, note_id, original_name, stored_name, stored_path, mime_type, size, sha256, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			attachmentId,
+			noteId,
+			originalName,
+			storedName,
+			storedPath,
+			mimeType,
+			buffer.length,
+			sha256,
+			createdAt,
+		);
+	} catch (error) {
+		await fs.rm(storedPath, { force: true }).catch(() => undefined);
+		throw error;
+	}
 
 	return {
 		attachment_id: attachmentId,

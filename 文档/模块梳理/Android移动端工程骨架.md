@@ -27,13 +27,18 @@
 - 服务地址：`src/lib/api/mobile-api-client.ts`，未配置时抛出 `MOBILE_SERVICE_URL_MISSING`，禁止静默请求。
 - Android 设备注册状态：`src/lib/device/device-storage.ts`，保存 deviceId、一次性返回 token 和设备名。
 - 设备连接：`src/lib/device/android-device-client.ts` 使用保存的服务地址注册 `deviceType=android`，capability 固定为 `mobile_capture`、`camera`、`microphone`；注册成功后持久化 token，App 启动时已有注册状态则执行 REST 心跳。
-- 媒体草稿队列：`src/lib/media/media-draft-storage.ts`，保存失败待重试捕捉草稿及附件 URI。
+- 媒体草稿队列：`src/lib/media/media-draft-storage.ts`，保存失败待重试捕捉草稿、附件 URI、文件名、MIME、大小和 base64 内容；删除附件只影响该附件，不清空文字或其他附件。
+- 附件转换：`src/lib/media/capture-attachment.ts` 把录音、拍照和相册 `File` 转为本地待上传附件，`recorder` 产物为 `audio`，`camera/gallery` 产物为 `photo`。
+- 录音状态：`src/lib/media/recording-state.ts` 固定为 `idle -> recording -> preview -> uploading -> done/failed`，预览录音可删除并回到 `idle`。
+- 移动捕捉提交：`src/lib/media/mobile-capture-submitter.ts` 使用已保存 Android 注册信息向服务端提交，提交中先写本地 `uploading` 草稿，成功删除，失败改为 `failed` 并保留可重试草稿。
 
 ## 服务连接
 
 - 设置页保存 ridge 服务地址并触发 Android 设备注册/重新注册。
 - 未配置服务地址时禁止注册和心跳，直接抛出 `MOBILE_SERVICE_URL_MISSING`。
 - 移动端只消费设备注册与心跳 API；不请求 runtime bundle，不启用 `skill_android`。
+- 移动捕捉消费 `POST /api/mobile/captures`，请求体包含 `deviceId`、`token`、文字和附件 base64；服务端只接受 Android 设备 token。
+- `POST /api/mobile/captures` 内部写现有 `fleeting_notes` 和 `fleeting_attachments`，附件目录固定为 `.ridge/fleeting-attachments/{noteId}/`，并触发现有 fleeting analysis；失败时清理已创建的闪念和临时附件。
 
 ## 构建与验证
 
@@ -42,6 +47,7 @@
 - Capacitor 同步：`npm run cap:sync --workspace @pi/mobile`。
 - Android debug APK：`npm run android:debug --workspace @pi/mobile`。
 - 根目录 `npm run check` 已包含 `@pi/mobile` 的 `vue-tsc` 检查。
+- 任务 52 验收覆盖 `task52-mobile-capture.test.ts`、移动端媒体草稿/转换/状态机/提交器测试和 `CapturePage.test.ts`。
 
 ## 当前环境注意
 

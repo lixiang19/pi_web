@@ -60,3 +60,21 @@
 - 服务端现有闪念列表能看到移动端创建的闪念和附件。
 - 修改 `.ts` / `.vue` / `.js` 后根目录 `npm run check` 通过。
 
+## 完成记录
+
+- 新增公开 Android token 窄接口 `POST /api/mobile/captures`，位于认证中间件前，只接受已注册 Android 设备的 `deviceId + token`。
+- 接口内部仍写现有 `fleeting_notes`，`capture_type=mobile_capture`，并触发现有 fleeting analysis。
+- 附件仍写现有 `fleeting_attachments`，文件落在 `.ridge/fleeting-attachments/{noteId}/`，不进入文件页、RAG 或 MCP。
+- 移动端捕捉页支持文字、录音、拍照、相册选择、附件预览删除和组合保存。
+- 本地草稿队列保存文字、附件元数据和 base64 内容；提交失败时保留草稿，成功后清理。
+- 附件写入失败时清理已落盘文件；移动捕捉接口失败时删除已创建的闪念与附件，避免半条闪念或孤儿附件。
+
+## 验收证据
+
+- `packages/server/src/__tests__/task52-mobile-capture.test.ts`
+- `packages/mobile/src/lib/media/__tests__/media-draft-storage.test.ts`
+- `packages/mobile/src/lib/media/__tests__/capture-attachment.test.ts`
+- `packages/mobile/src/lib/media/__tests__/recording-state.test.ts`
+- `packages/mobile/src/lib/media/__tests__/mobile-capture-submitter.test.ts`
+- `packages/mobile/src/features/capture/__tests__/CapturePage.test.ts`
+- `npm run check`

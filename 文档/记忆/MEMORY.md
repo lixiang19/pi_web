@@ -838,3 +838,20 @@
 - `SettingsTabContent.test.ts`
 - `ErrorBoundary.test.ts`
 - `npm run typecheck`
+
+## 2026-05-16 任务 52 Android 闪念捕捉
+
+### 收口结论
+
+- Android 捕捉页真源在 `packages/mobile/src/features/capture/CapturePage.vue`，支持文字、录音、拍照、相册图片、附件删除和组合保存。
+- 移动端草稿队列保存文字、附件 URI、文件名、MIME、大小和 base64 内容；上传失败保留 `failed` 草稿，可按同一提交器重试，成功后删除本地草稿。
+- 录音状态机收口为 `idle -> recording -> preview -> uploading -> done/failed`，删除预览录音回到 `idle`。
+- 服务端新增 `POST /api/mobile/captures`，位于普通 API auth 前，但必须通过 Android `deviceId + token`；非 Android 或 token 错误返回 401。
+- 移动捕捉仍写现有 `fleeting_notes` 和 `fleeting_attachments`，附件落在 `.ridge/fleeting-attachments/{noteId}/`，并触发现有 fleeting analysis；不引入移动端独立闪念模型。
+- 附件写入和移动捕捉接口均做失败清理，避免半条闪念、孤儿附件记录或已落盘但无 DB 记录的临时文件。
+
+### 验收证据
+
+- `task52-mobile-capture.test.ts` 覆盖 Android token 成功创建闪念和附件、错误 token 不写入、非法附件不产生半条闪念。
+- `media-draft-storage.test.ts`、`capture-attachment.test.ts`、`recording-state.test.ts`、`mobile-capture-submitter.test.ts`、`CapturePage.test.ts` 覆盖移动端草稿、附件转换、录音状态、失败保留和捕捉页提交。
+- `npm run check` 通过。

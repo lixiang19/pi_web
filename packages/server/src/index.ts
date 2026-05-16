@@ -80,6 +80,7 @@ import {
 import { createNotificationsRouter } from "./routes/notifications.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
+import { createMobileCapturesRouter } from "./routes/mobile-captures.js";
 import {
 	createBackgroundJobQueue,
 } from "./background-jobs.js";
@@ -756,6 +757,11 @@ app.post("/api/auth/logout", authRuntime.logout);
 app.use(createRuntimeBundleRouter({ defaultWorkspaceDir, getRidgeDb }));
 app.use(createWorkspaceMcpRouter({ defaultWorkspaceDir, getRidgeDb }));
 app.use("/api/devices", createPublicAndroidDeviceRouter());
+app.use("/api/mobile/captures", createMobileCapturesRouter({
+	db: await initializeRidgeDb(defaultWorkspaceDir),
+	workspaceDir: defaultWorkspaceDir,
+	getAnalysisRunner: () => fleetingRunnerRef.value,
+}));
 app.use(authRuntime.requireApiAuth);
 app.use(createDeviceRegistrationRouter({ defaultWorkspaceDir, getRidgeDb }));
 
