@@ -91,12 +91,7 @@ function mountHomePage(overrides: Record<string, unknown> = {}) {
 		global: {
 			stubs: {
 				ScrollArea: { template: "<div><slot /></div>" },
-				Card: { template: "<div><slot /></div>" },
-				CardHeader: { template: "<div><slot /></div>" },
-				CardTitle: { template: "<div><slot /></div>" },
-				CardContent: { template: "<div><slot /></div>" },
 				Badge: { template: "<span><slot /></span>" },
-				Separator: { template: "<hr />" },
 				Textarea: {
 					template:
 						'<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" @focus="$emit(\'focus\')" @blur="$emit(\'blur\')" />',
@@ -123,24 +118,40 @@ function mountHomePage(overrides: Record<string, unknown> = {}) {
 	});
 }
 
-describe("HomePage - AI 启动台", () => {
-	it("初始展示 AI 启动台和下方三块区域", () => {
+describe("HomePage - 扁平命令行启动台", () => {
+	it("初始展示 ridge 标识、工作空间路径和输入区域", () => {
 		const wrapper = mountHomePage();
 		const text = wrapper.text();
-		expect(text).toContain("开始对话");
-		expect(text).toContain("最近事情");
-		expect(text).toContain("最近文件");
-		expect(text).toContain("AI 建议");
+		expect(text).toContain("ridge");
+		expect(text).toContain("/ws");
+		expect(text).toContain("工作台动态");
+		// 验证 Textarea placeholder 存在（placeholder 在 stub 中渲染为属性而非文本）
+		const textarea = wrapper.find("textarea");
+		expect(textarea.attributes("placeholder")).toBe("问我任何事…");
 	});
 
-	it("输入框位于独立居中区域，信息区在其下方", () => {
+	it("输入框位于命令行区域，有底线边框样式", () => {
 		const wrapper = mountHomePage();
 		const hero = wrapper.find('[data-testid="home-ai-hero"]');
 		const infoGrid = wrapper.find('[data-testid="home-info-grid"]');
+		const commandCenter = wrapper.find('[data-testid="home-command-center"]');
 
 		expect(hero.exists()).toBe(true);
 		expect(infoGrid.exists()).toBe(true);
-		expect(hero.classes()).toEqual(expect.arrayContaining(["min-h-[42vh]", "justify-center"]));
+		expect(commandCenter.exists()).toBe(true);
+		expect(hero.classes()).toContain("min-h-[280px]");
+	});
+
+	it("显示工作空间路径和类型标签", () => {
+		const wrapper = mountHomePage();
+		const text = wrapper.text();
+
+		expect(text).toContain("/ws");
+		// 动态列表中应包含各类型标签
+		expect(text).toContain("文件");
+		expect(text).toContain("待办");
+		expect(text).toContain("闪念");
+		expect(text).toContain("会话");
 	});
 
 	it("默认展示模型、Agent、思考级别选择器", () => {
@@ -149,14 +160,13 @@ describe("HomePage - AI 启动台", () => {
 		expect(selects).toHaveLength(3);
 	});
 
-	it("下拉内容使用受控高度，模型菜单有足够宽度", async () => {
+	it("下拉内容使用受控高度", async () => {
 		const wrapper = mountHomePage();
 		const contents = wrapper.findAll('[data-testid="select-content"]');
 		expect(contents).toHaveLength(3);
 		for (const content of contents) {
 			expect(content.classes()).toContain("max-h-72");
 		}
-		expect(contents[0]!.classes()).toContain("min-w-[280px]");
 	});
 
 	it("聚焦后继续保留完整真实控件（模型/Agent/思考级别选择器）", async () => {
@@ -207,7 +217,7 @@ describe("HomePage - AI 启动台", () => {
 		expect(wrapper.emitted("submit")).toBeFalsy();
 	});
 
-	it("最近事情条目可点击，触发 open-file", async () => {
+	it("最近动态中文件条目可点击，触发 open-file", async () => {
 		const wrapper = mountHomePage();
 		const buttons = wrapper.findAll("button");
 
@@ -242,12 +252,6 @@ describe("HomePage - AI 启动台", () => {
 		expect(wrapper.emitted("open-tasks")).toBeTruthy();
 	});
 
-	it("AI 建议为占位卡片，不触发 AI 请求", () => {
-		const wrapper = mountHomePage();
-		expect(wrapper.text()).toContain("AI 建议");
-		expect(wrapper.text()).toContain("即将推出");
-	});
-
 	it("加载中状态显示", () => {
 		const wrapper = mountHomePage({ isRecentLoading: true });
 		expect(wrapper.text()).toContain("加载中");
@@ -258,21 +262,7 @@ describe("HomePage - AI 启动台", () => {
 			recentActivity: [],
 			recentFiles: [],
 		});
-		expect(wrapper.text()).toContain("暂无最近活动");
-		expect(wrapper.text()).toContain("暂无文件");
-	});
-});
-
-describe("HomePage - 快捷动作", () => {
-	it("点击快捷动作只填入输入框，不直接发送", async () => {
-		const wrapper = mountHomePage();
-		const quickBtns = wrapper.findAll('[data-testid="home-quick-action"]');
-		expect(quickBtns.length).toBe(3);
-
-		await quickBtns[0]!.trigger("click");
-		expect(wrapper.emitted("submit")).toBeFalsy();
-		const textarea = wrapper.find("textarea");
-		expect((textarea.element as HTMLTextAreaElement).value).toBe("帮我处理最新的闪念");
+		expect(wrapper.text()).toContain("暂无动态");
 	});
 });
 

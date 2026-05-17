@@ -469,10 +469,10 @@ const mountTaskView = () =>
 
 	it("list view and milestone view can open detail", async () => {
 		const wrapper = mountTaskView();
-		// list view: click on task row
-		const listRows = wrapper.findAll("button.flex");
-		if (listRows.length > 0) {
-			await listRows[0]!.trigger("click");
+		// kanban view (default): click on task card
+		const kanbanCards = wrapper.findAll("button[draggable='true']");
+		if (kanbanCards.length > 0) {
+			await kanbanCards[0]!.trigger("click");
 			const vm = wrapper.vm as unknown as Record<string, unknown>;
 			expect(vm["selectedTask"]).toBeTruthy();
 		}

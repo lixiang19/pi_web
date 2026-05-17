@@ -7,6 +7,9 @@ coverage
 .env.*.local
 *.log
 *.tsbuildinfo
+__pycache__
+*.pyc
+.venv
 .pi-lens
 test-results
 packages/web/test-results

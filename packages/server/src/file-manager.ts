@@ -338,14 +338,22 @@ export const createFileManager = (options: FileManagerOptions) => {
           try {
             await ensureResolvedPathWithinRoot(entryPath, rootPath);
             await assertNotRidgeSystemPathReal(entryPath, rootPath);
+            const stats = await fs.stat(entryPath);
+            return serializeEntry(rootPath, entryPath, stats);
           } catch (error) {
             if ((error as HttpError).statusCode === 400) {
               return null;
             }
+            if (
+              error &&
+              typeof error === "object" &&
+              "code" in error &&
+              ["ENOENT", "EACCES", "EPERM"].includes(String((error as { code?: unknown }).code))
+            ) {
+              return null;
+            }
             throw error;
           }
-          const stats = await fs.stat(entryPath);
-          return serializeEntry(rootPath, entryPath, stats);
         }),
     )).filter((e): e is FileTreeEntry => e !== null);
 

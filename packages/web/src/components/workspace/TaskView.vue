@@ -612,6 +612,7 @@ onBeforeUnmount(() => {
             </p>
           </div>
           <div class="flex items-center gap-2">
+            <span class="text-caption text-muted-foreground">项目筛选</span>
             <Select :model-value="projectFilter === undefined ? '__all__' : projectFilter === null ? '__none__' : projectFilter" @update:model-value="handleProjectFilterChange">
               <SelectTrigger size="sm" class="w-32 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -621,7 +622,7 @@ onBeforeUnmount(() => {
             <Button variant="outline" size="sm" class="gap-1 text-caption" :disabled="isReviewingTasks" @click="handleRunTaskReview">
               <LoaderCircle v-if="isReviewingTasks" class="size-3 animate-spin" />
               <RefreshCcw v-else class="size-3" />
-              回顾
+              任务回顾
             </Button>
           </div>
         </div>
@@ -639,7 +640,7 @@ onBeforeUnmount(() => {
             </SelectContent>
           </Select>
           <Button size="sm" class="gap-1 text-caption" :disabled="!newTaskTitle.trim() || !newTaskAcceptanceCriteria.trim()" @click="handleAddTask">
-            <Plus class="size-3.5" />新建
+            <Plus class="size-3.5" />新建任务
           </Button>
         </div>
       </div>
@@ -918,7 +919,7 @@ onBeforeUnmount(() => {
             <div class="space-y-3">
               <div>
                 <label class="mb-1 block text-micro font-medium text-muted-foreground">标题</label>
-                <Input v-model="editTaskTitle" size="sm" class="text-body-sm" placeholder="标题" />
+                <Input v-model="editTaskTitle" class="h-8 text-body-sm" placeholder="标题" />
               </div>
               <div>
                 <label class="mb-1 block text-micro font-medium text-muted-foreground">完成标准</label>
@@ -969,11 +970,11 @@ onBeforeUnmount(() => {
               <div class="grid grid-cols-2 gap-3">
                 <div>
                   <label class="mb-1 block text-micro font-medium text-muted-foreground">截止日期</label>
-                  <Input v-model="editTaskDueDate" type="date" size="sm" class="text-body-sm" />
+                  <Input v-model="editTaskDueDate" type="date" class="text-body-sm" />
                 </div>
                 <div v-if="editTaskBlockedReason.trim() || selectedTask.status === 'blocked'">
                   <label class="mb-1 block text-micro font-medium text-muted-foreground">阻塞原因</label>
-                  <Input v-model="editTaskBlockedReason" size="sm" class="text-body-sm" placeholder="阻塞原因" />
+                  <Input v-model="editTaskBlockedReason" class="text-body-sm" placeholder="阻塞原因" />
                 </div>
               </div>
             </div>
@@ -1045,7 +1046,7 @@ onBeforeUnmount(() => {
             <div class="space-y-3">
               <div>
                 <label class="mb-1 block text-micro font-medium text-muted-foreground">标题</label>
-                <Input v-model="editMilestoneTitle" size="sm" class="text-body-sm" placeholder="标题" :disabled="selectedMilestone.isSystem" />
+                <Input v-model="editMilestoneTitle" class="text-body-sm" placeholder="标题" :disabled="selectedMilestone.isSystem" />
               </div>
               <div>
                 <label class="mb-1 block text-micro font-medium text-muted-foreground">目标</label>
@@ -1067,7 +1068,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div>
                   <label class="mb-1 block text-micro font-medium text-muted-foreground">截止日期</label>
-                  <Input v-model="editMilestoneDueDate" type="date" size="sm" class="text-body-sm" />
+                  <Input v-model="editMilestoneDueDate" type="date" class="text-body-sm" />
                 </div>
               </div>
               <div>

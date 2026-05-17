@@ -1,9 +1,9 @@
 import { ref } from "vue";
 
 import {
-  addProject as createProject,
   deleteProject as destroyProject,
   getProjects,
+  registerExternalProject,
 } from "@/lib/api";
 import type { ProjectItem } from "@/lib/types";
 
@@ -50,7 +50,7 @@ const add = async (path: string) => {
   error.value = "";
 
   try {
-    const project = await createProject(path);
+    const project = await registerExternalProject(path);
     const nextProjects = projects.value.filter((item) => item.id !== project.id);
     projects.value = sortProjects([project, ...nextProjects]);
     return project;

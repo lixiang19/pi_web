@@ -8,23 +8,21 @@ import {
 	SendHorizontal,
 	Sparkles,
 	Calendar,
-	Zap,
-	ListChecks,
-	FolderOpen,
 	Paperclip,
 	X,
+	ArrowUpRight,
+	Bot,
+	LoaderCircle,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { Card } from "@/components/ui/card";
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
-	SelectValue,
 } from "@/components/ui/select";
 import { fileIconByExtension } from "@/composables/useFileIcons";
 import type { RecentActivityItem } from "@/composables/useRecentActivity";
@@ -60,12 +58,10 @@ const emit = defineEmits<{
 	(e: "open-tasks"): void;
 }>();
 
-// ===== AI 输入框状态 =====
 const draftText = ref("");
 const isFocused = ref(false);
 const isSending = computed(() => props.isSending ?? false);
 
-// ===== 选择器状态 =====
 const selectedModel = ref(props.defaultModel);
 const selectedAgent = ref(props.defaultAgent || NO_AGENT_VALUE);
 const selectedThinkingLevel = ref<ThinkingLevel>(props.defaultThinkingLevel);
@@ -93,7 +89,6 @@ function handleSubmit() {
 		thinkingLevel: selectedThinkingLevel.value,
 		attachments: pendingAttachments.value.length > 0 ? [...pendingAttachments.value] : undefined,
 	});
-	// 不在 submit 时清空 draft：成功时标签会被替换，失败时保留输入
 }
 
 function handleFocus() {
@@ -104,18 +99,6 @@ function handleBlur() {
 	if (!draftText.value.trim()) {
 		isFocused.value = false;
 	}
-}
-
-// ===== 快捷动作 =====
-const quickActions = [
-	{ label: "处理闪念", icon: Zap, draft: "帮我处理最新的闪念" },
-	{ label: "规划任务", icon: ListChecks, draft: "帮我规划今天的任务" },
-	{ label: "总结最近文件", icon: FolderOpen, draft: "总结我最近的工作文件" },
-];
-
-function handleQuickAction(draft: string) {
-	draftText.value = draft;
-	isFocused.value = true;
 }
 
 // ===== 附件上传 =====
@@ -140,7 +123,7 @@ function removeAttachment(index: number) {
 	pendingAttachments.value.splice(index, 1);
 }
 
-// ===== 最近事情图标映射 =====
+// ===== 图标映射 =====
 const kindIconMap: Record<string, typeof FileText> = {
 	file: FileText,
 	task: CheckSquare,
@@ -178,7 +161,14 @@ const formatDate = (timestamp: number) =>
 		minute: "2-digit",
 	}).format(timestamp);
 
-// 构建带 "无 Agent" 选项的 agent 列表
+const greeting = computed(() => {
+	const hour = new Date().getHours();
+	if (hour < 6) return "夜深了";
+	if (hour < 12) return "上午好";
+	if (hour < 18) return "下午好";
+	return "晚上好";
+});
+
 const agentOptions = computed(() => {
 	const list: Array<{ name: string; label: string }> = [
 		{ name: NO_AGENT_VALUE, label: "无 Agent（直接对话）" },
@@ -193,223 +183,208 @@ const agentOptions = computed(() => {
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-background">
     <ScrollArea class="flex-1">
-      <div class="mx-auto flex w-full max-w-5xl flex-col px-6 pb-8">
+      <div class="mx-auto w-full max-w-3xl px-6 py-10 lg:px-12 lg:py-14">
 
-        <!-- AI 启动输入框 -->
-        <div data-testid="home-ai-hero" class="flex min-h-[42vh] w-full flex-col justify-center pt-8">
-          <p class="sr-only">开始对话</p>
-          <form class="mx-auto w-full max-w-2xl" @submit.prevent="handleSubmit">
-            <div
-              class="rounded-2xl border border-default bg-card p-2.5 shadow-sm ring-1 ring-border/20 transition-all duration-200 focus-within:border-primary/30 focus-within:ring-primary/20"
-            >
-              <!-- 快捷动作 -->
-              <div class="mb-2 flex flex-wrap gap-2 px-2 pt-1">
-                <button
-                  v-for="action in quickActions"
-                  :key="action.label"
-                  type="button"
-                  data-testid="home-quick-action"
-                  class="inline-flex items-center gap-1.5 rounded-md border border-subtle bg-subtle px-2.5 py-1 text-body-sm text-muted-foreground transition-colors hover:bg-soft hover:text-foreground"
-                  @click="handleQuickAction(action.draft)"
-                >
-                  <component :is="action.icon" class="size-3.5" />
-                  {{ action.label }}
-                </button>
-              </div>
+        <!-- ===== AI Hero 区域：问候语 + 输入框 ===== -->
+        <section data-testid="home-ai-hero" class="flex min-h-[280px] w-full flex-col items-center justify-center gap-6 pt-10 pb-4">
+          <!-- 问候语 -->
+          <div class="flex flex-col items-center gap-1.5 text-center">
+            <h1 class="text-2xl font-semibold tracking-tight text-foreground">{{ greeting }}</h1>
+            <p class="text-sm text-muted-foreground/70">今天想做什么？</p>
+          </div>
 
-              <!-- 输入区 -->
-              <div class="flex items-end gap-3 px-2 pt-2">
-                <Textarea
-                  v-model="draftText"
-                  placeholder="问我任何事…"
-                  class="min-h-[84px] max-h-[180px] min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-hero leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/50 focus-visible:ring-0"
-                  :rows="isExpanded ? 4 : 3"
-                  @focus="handleFocus"
-                  @blur="handleBlur"
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  class="size-8 shrink-0 rounded-full"
-                  :disabled="!draftText.trim() || isSending"
-                  data-testid="home-send-btn"
-                >
-                  <SendHorizontal class="size-4" />
-                </Button>
-              </div>
+          <!-- AI 输入区域：固定宽度 -->
+          <div data-testid="home-command-center" class="w-full">
+            <form @submit.prevent="handleSubmit">
+              <!-- 输入卡片主体 -->
+              <div class="relative rounded-xl bg-card shadow-[0_1px_4px_rgba(61,50,41,0.06),0_0_0_1px_rgba(45,52,54,0.05)] transition-shadow duration-200 hover:shadow-[0_2px_8px_rgba(61,50,41,0.08),0_0_0_1px_rgba(45,52,54,0.06)]">
+                <div class="relative overflow-hidden rounded-xl">
+                  <!-- 附件 chips -->
+                  <div v-if="pendingAttachments.length > 0" class="flex flex-wrap gap-1.5 px-4 pt-3">
+                    <span
+                      v-for="(file, index) in pendingAttachments"
+                      :key="`${file.name}-${index}`"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-subtle bg-subtle px-2 py-1 text-caption text-muted-foreground"
+                      data-testid="home-pending-attachment"
+                    >
+                      <Paperclip class="size-3 shrink-0" />
+                      <span class="max-w-[180px] truncate">{{ file.name }}</span>
+                      <button
+                        type="button"
+                        class="inline-flex size-4 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:text-foreground"
+                        @click="removeAttachment(index)"
+                      >
+                        <X class="size-2.5" />
+                      </button>
+                    </span>
+                  </div>
 
-              <!-- 待附加文件列表 -->
-              <div v-if="pendingAttachments.length > 0" class="mt-2 space-y-1 px-2">
-                <div
-                  v-for="(file, index) in pendingAttachments"
-                  :key="`${file.name}-${index}`"
-                  class="flex items-center gap-2 rounded-md bg-soft px-2 py-1 text-body-sm text-muted-foreground"
-                  data-testid="home-pending-attachment"
-                >
-                  <Paperclip class="size-3" />
-                  <span class="min-w-0 flex-1 truncate">{{ file.name }}</span>
-                  <button
-                    type="button"
-                    class="shrink-0 rounded p-0.5 hover:bg-hover"
-                    @click="removeAttachment(index)"
-                  >
-                    <X class="size-3" />
-                  </button>
+                  <!-- 输入框 -->
+                  <Textarea
+                    v-model="draftText"
+                    placeholder="问我任何事…"
+                    class="min-h-[96px] resize-none border-0 bg-transparent px-4 py-3 pr-14 text-sm leading-6 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    :rows="isExpanded ? 5 : 3"
+                    @focus="handleFocus"
+                    @blur="handleBlur"
+                  />
+
+                  <!-- 发送按钮（右下角） -->
+                  <div class="absolute bottom-3 right-3">
+                    <Button
+                      type="submit"
+                      size="icon"
+                      class="size-9 rounded-lg"
+                      :disabled="!draftText.trim() || isSending"
+                      data-testid="home-send-btn"
+                    >
+                      <LoaderCircle v-if="isSending" class="size-4 animate-spin" />
+                      <SendHorizontal v-else class="size-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <!-- 分隔线 -->
+                <div class="mx-4 h-px bg-border/60" />
+
+                <!-- 底部工具栏 -->
+                <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-2.5">
+                  <div class="flex flex-wrap items-center gap-1">
+                    <!-- 附件 -->
+                    <button
+                      type="button"
+                      data-testid="home-attachment-btn"
+                      class="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground"
+                      @click="handleAttachmentClick"
+                    >
+                      <Paperclip class="size-3.5" />
+                      <span class="font-medium">附件</span>
+                    </button>
+
+                    <!-- Model -->
+                    <Select v-model="selectedModel" data-testid="select">
+                      <SelectTrigger size="sm" class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground">
+                        <Sparkles class="size-3.5 shrink-0" />
+                        <span class="font-medium">{{ models.find(m => m.value === selectedModel)?.label || selectedModel }}</span>
+                      </SelectTrigger>
+                      <SelectContent data-testid="select-content" class="max-h-72 min-w-[200px]">
+                        <SelectItem v-for="model in models" :key="model.value" :value="model.value" class="text-xs">
+                          {{ model.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <!-- Agent -->
+                    <Select v-model="selectedAgent" data-testid="select">
+                      <SelectTrigger size="sm" class="h-8 max-w-[140px] gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground">
+                        <Bot class="size-3.5 shrink-0" />
+                        <span class="truncate font-medium">{{ agentOptions.find(a => a.name === selectedAgent)?.label || selectedAgent }}</span>
+                      </SelectTrigger>
+                      <SelectContent data-testid="select-content" class="max-h-72">
+                        <SelectItem v-for="agent in agentOptions" :key="agent.name" :value="agent.name" class="text-xs">
+                          {{ agent.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <!-- Thinking -->
+                    <Select v-model="selectedThinkingLevel" data-testid="select">
+                      <SelectTrigger size="sm" class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground">
+                        <Lightbulb class="size-3.5 shrink-0" />
+                        <span class="font-medium">{{ thinkingOptions.find(t => t.value === selectedThinkingLevel)?.label || selectedThinkingLevel }}</span>
+                      </SelectTrigger>
+                      <SelectContent data-testid="select-content" class="max-h-72">
+                        <SelectItem v-for="opt in thinkingOptions" :key="opt.value" :value="opt.value" class="text-xs">
+                          {{ opt.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
-              <!-- 底栏控件：附件 + 选择器 -->
-              <div class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-subtle px-1 pt-2">
-                <button
-                  type="button"
-                  data-testid="home-attachment-btn"
-                  class="inline-flex h-7 items-center gap-1 rounded-md border border-subtle bg-soft px-2 text-body-sm text-muted-foreground shadow-none hover:bg-hover"
-                  @click="handleAttachmentClick"
-                >
-                  <Paperclip class="size-3.5" />
-                  附件
-                </button>
-                <input
-                  ref="fileInputRef"
-                  type="file"
-                  multiple
-                  class="hidden"
-                  @change="handleFileChange"
-                />
+              <input
+                ref="fileInputRef"
+                type="file"
+                multiple
+                class="hidden"
+                @change="handleFileChange"
+              />
+            </form>
+          </div>
+        </section>
 
-                <Select v-model="selectedModel">
-                  <SelectTrigger class="h-7 w-auto min-w-[180px] max-w-[260px] gap-1.5 rounded-md border-subtle bg-soft px-2.5 text-body shadow-none ring-0 hover:bg-hover focus:ring-0">
-                    <Sparkles class="size-3.5 text-primary/70" />
-                    <SelectValue placeholder="模型" />
-                  </SelectTrigger>
-                  <SelectContent class="max-h-72 min-w-[280px]">
-                    <SelectItem
-                      v-for="model in models"
-                      :key="model.value"
-                      :value="model.value"
-                      class="text-xs"
-                    >
-                      {{ model.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select v-model="selectedAgent">
-                  <SelectTrigger class="h-7 w-auto min-w-[160px] max-w-[240px] gap-1.5 rounded-md border-subtle bg-soft px-2.5 text-body shadow-none ring-0 hover:bg-hover focus:ring-0">
-                    <MessageSquare class="size-3.5 text-foreground/50" />
-                    <SelectValue placeholder="Agent" />
-                  </SelectTrigger>
-                  <SelectContent class="max-h-72">
-                    <SelectItem
-                      v-for="agent in agentOptions"
-                      :key="agent.name"
-                      :value="agent.name"
-                      class="text-xs"
-                    >
-                      {{ agent.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select v-model="selectedThinkingLevel">
-                  <SelectTrigger class="h-7 w-auto min-w-[120px] max-w-[160px] gap-1.5 rounded-md border-subtle bg-soft px-2.5 text-body shadow-none ring-0 hover:bg-hover focus:ring-0">
-                    <Lightbulb class="size-3.5 text-foreground/50" />
-                    <SelectValue placeholder="思考" />
-                  </SelectTrigger>
-                  <SelectContent class="max-h-72">
-                    <SelectItem
-                      v-for="opt in thinkingOptions"
-                      :key="opt.value"
-                      :value="opt.value"
-                      class="text-xs"
-                    >
-                      {{ opt.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+        <!-- ===== 工作台动态 ===== -->
+        <section data-testid="home-info-grid" class="mt-10">
+          <div class="mb-4 flex items-center gap-3">
+            <div class="flex size-7 items-center justify-center rounded-lg bg-primary/10">
+              <Calendar class="size-3.5 text-primary" />
             </div>
-          </form>
-        </div>
+            <span class="text-sm font-semibold text-foreground">工作台动态</span>
+            <span class="h-px flex-1 bg-subtle"></span>
+          </div>
 
-        <!-- 下方信息区：左时间线 + 右侧卡片 -->
-        <div data-testid="home-info-grid" class="grid w-full grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_280px]">
+          <!-- 加载状态 -->
+          <div v-if="isRecentLoading" class="flex items-center gap-2 py-8 text-caption text-muted-foreground">
+            <LoaderCircle class="size-4 animate-spin" />
+            加载中…
+          </div>
 
-          <!-- 左侧：最近事情混合时间线 -->
-          <Card class="border border-default bg-card shadow-sm">
-            <CardHeader class="px-4 pt-4 pb-2">
-              <CardTitle class="text-sm font-semibold text-foreground">最近事情</CardTitle>
-            </CardHeader>
-            <CardContent class="px-4 pb-4 pt-0">
-              <div v-if="isRecentLoading" class="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-                加载中…
-              </div>
-              <div v-else-if="visibleActivity.length === 0" class="py-4 text-xs text-muted-foreground">
-                暂无最近活动
-              </div>
-              <div v-else class="space-y-1">
-                <button
-                  v-for="item in visibleActivity"
-                  :key="item.id"
-                  type="button"
-                  class="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-soft"
-                  @click="handleActivityClick(item)"
-                >
-                  <component :is="kindIconMap[item.kind]" class="size-3.5 shrink-0 text-muted-foreground" />
-                  <span class="min-w-0 flex-1 truncate text-body text-foreground">{{ item.title }}</span>
-                  <Badge variant="outline" class="h-4 shrink-0 px-1 text-micro font-normal text-muted-foreground">
-                    {{ kindLabelMap[item.kind] }}
-                  </Badge>
-                  <span class="shrink-0 text-caption tabular-nums text-muted-foreground">
-                    {{ formatDate(item.timestamp) }}
-                  </span>
-                </button>
-              </div>
-            </CardContent>
-          </Card>
+          <!-- 空状态 -->
+          <div v-else-if="visibleActivity.length === 0 && visibleRecentFiles.length === 0" class="flex flex-col items-center justify-center py-16">
+            <div class="mb-4 flex size-14 items-center justify-center rounded-2xl bg-soft">
+              <Calendar class="size-7 text-muted-foreground/30" />
+            </div>
+            <p class="text-sm font-medium text-foreground">暂无动态</p>
+            <p class="mt-1 text-caption text-muted-foreground">开始工作，你的动态将出现在这里</p>
+          </div>
 
-          <!-- 右侧：最近文件 + AI 建议占位 -->
-          <div class="flex flex-col gap-4">
-            <!-- 最近文件 -->
-            <Card class="border border-default bg-card shadow-sm">
-              <CardHeader class="px-4 pt-4 pb-2">
-                <CardTitle class="text-sm font-semibold text-foreground">最近文件</CardTitle>
-              </CardHeader>
-              <CardContent class="px-4 pb-4 pt-0">
-                <div v-if="visibleRecentFiles.length === 0" class="py-2 text-xs text-muted-foreground">
-                  暂无文件
+          <!-- 动态卡片网格 -->
+          <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <!-- 活动项卡片 -->
+            <Card
+              v-for="item in visibleActivity"
+              :key="item.id"
+              class="group cursor-pointer border-default bg-card transition-all hover:border-strong hover:bg-soft hover:shadow-sm"
+              @click="handleActivityClick(item)"
+            >
+              <div class="flex items-start gap-3 p-4">
+                <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-soft group-hover:bg-primary/10">
+                  <component :is="kindIconMap[item.kind]" class="size-4 text-muted-foreground/60 group-hover:text-primary" />
                 </div>
-                <div v-else class="space-y-1">
-                  <button
-                    v-for="file in visibleRecentFiles"
-                    :key="file.path"
-                    type="button"
-                    class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-soft"
-                    @click="emit('open-file', file.path)"
-                  >
-                    <component :is="fileIconByExtension(file.extension)" class="size-3.5 shrink-0 text-muted-foreground" />
-                    <span class="min-w-0 flex-1 truncate text-body text-foreground">{{ file.name }}</span>
-                  </button>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-body-sm font-medium text-foreground">{{ item.title }}</p>
+                  <div class="mt-1 flex items-center gap-2 text-caption text-muted-foreground/70">
+                    <span>{{ kindLabelMap[item.kind] }}</span>
+                    <span class="text-muted-foreground/30">·</span>
+                    <span class="tabular-nums">{{ formatDate(item.timestamp) }}</span>
+                  </div>
                 </div>
-              </CardContent>
+              </div>
             </Card>
 
-            <!-- AI 建议占位 -->
-            <Card class="border border-subtle bg-subtle shadow-none">
-              <CardHeader class="px-4 pt-4 pb-2">
-                <div class="flex items-center gap-1.5">
-                  <Sparkles class="size-3.5 text-primary/60" />
-                  <CardTitle class="text-sm font-semibold text-foreground/70">AI 建议</CardTitle>
+            <!-- 文件项卡片 -->
+            <Card
+              v-for="file in visibleRecentFiles"
+              :key="file.path"
+              class="group cursor-pointer border-default bg-card transition-all hover:border-strong hover:bg-soft hover:shadow-sm"
+              @click="emit('open-file', file.path)"
+            >
+              <div class="flex items-start gap-3 p-4">
+                <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-soft group-hover:bg-primary/10">
+                  <component :is="fileIconByExtension(file.extension)" class="size-4 text-muted-foreground/60 group-hover:text-primary" />
                 </div>
-              </CardHeader>
-              <CardContent class="px-4 pb-4 pt-0">
-                <p class="text-xs text-muted-foreground/60">
-                  AI 建议功能即将推出，届时会根据你的工作习惯给出智能推荐。
-                </p>
-              </CardContent>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-body-sm font-medium text-foreground">{{ file.name }}</p>
+                  <div class="mt-1 flex items-center gap-2 text-caption text-muted-foreground/70">
+                    <span>文件</span>
+                    <ArrowUpRight class="size-3 text-muted-foreground/40" />
+                  </div>
+                </div>
+              </div>
             </Card>
           </div>
-        </div>
+        </section>
       </div>
     </ScrollArea>
   </div>

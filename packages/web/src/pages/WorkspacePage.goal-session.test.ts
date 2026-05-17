@@ -126,6 +126,7 @@ const mountWorkspace = () =>
 			plugins: [createPinia()],
 			stubs: {
 				FileTreePanel: true,
+				ProjectSelectorDialog: true,
 				WorkspaceContentArea: true,
 				HomePage: HomePageStub,
 				TaskView: true,

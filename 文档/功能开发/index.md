@@ -54,6 +54,8 @@
 | 52 Android 闪念捕捉 | N/A | ✅ | ✅ | ✅ | ✅ | ⏳ 真机验收归任务 55 | ✅ |
 | 53 Android 轻对话 | N/A | ✅ | ✅ | ✅ | ✅ | ⏳ 真机验收归任务 55 | ✅ |
 | 54 Android 任务查看与轻操作 | N/A | ✅ | ✅ | ✅ | ✅ | ⏳ 真机验收归任务 55 | ✅ |
+| 57 独立 Python 转化后端 | N/A | ✅ | N/A | N/A | ✅ | N/A | ✅ |
+| 58 工作空间主页重新设计 | ✅ | N/A | N/A | ✅ | ✅ | N/A | ✅ |
 
 ### 真实实现口径（2026-05-12）
 
@@ -77,6 +79,7 @@
 - **47 V2 阶段 5 知识系统可诊断化**：`GET /api/workspace/knowledge/diagnostics` 聚合 RAG 队列/失败目标、记忆与 Wiki 注入状态、图谱 schema/database、workspace MCP 只读工具边界、后台任务状态和未处理通知；搜索页无查询时不再展示诊断控制台，只把失败目标折叠成“内容暂时搜不到”的用户语言提示，并可直接重新整理失败目标。服务端集成测试和搜索页组件测试已覆盖。
 - **48 多用户专属 VPS 控制面与运行时隔离**：当前为设计计划。商业化形态采用“中心控制面 + 每用户专属 VPS runtime”，中心只管理账号、VPS、路由、升级、备份和计费；用户数据面继续留在各自 VPS 的 `~/.pi/ridge.db`、`~/ridge-workspace` 和 Pi session 文件中。第一版不做共享数据库多租户、不做一个 runtime 多用户、不让中心后端读取 workspace 文件或会话正文。
 - **17 文件页与正式附件目录**：左侧导航“文件”入口存在，`WorkspacePage.vue` 中已接入 `FilesView.vue` 真实文件页。V2 阶段 2 已补齐文件页上传、新建文件夹、重命名、移动、删除、状态展示、失败重试、重新转换入口；`useWorkspaceFiles` 统一消费文件 API，操作后刷新当前目录。
+- **04 左侧导航固定入口与会话列表**：主左栏只承载固定功能、项目/项目会话、工作空间会话和归档；文件树与文件新建动作不在主左栏渲染。项目区提供添加项目入口，设备入口打开设置页设备状态。
 - **18 文件处理状态与临时文件边界**：`PATCH /status`、`POST /retry` API 完整实现，含状态流转校验、原子通知、错误可见。上传自动注册 pending、删除同步清理、.ridge 严格隔离均已实现且有测试覆盖。
 - **21 空间 HTML 作品私有预览**：左侧「空间」入口已接入真实 `SpaceView`，服务端提供 `GET /api/workspace/space` 与 `GET /api/workspace/space/:id/preview-html`；只读取 `空间/<作品名>/index.html`，路径有 `.ridge`、词法和 realpath 越界防护，缺失 `index.html` 返回 404。预览使用 `srcdoc` + `sandbox="allow-scripts"`，无 `allow-same-origin`，并确保 CSP 早于用户 HTML active content，禁止 ridge API/外联请求。V2 阶段 2 已补齐 `index.html` 文本编辑保存、RAG immediate pending 和隐藏版本点。
 - **44 V2 阶段 2 文件、附件、空间与隐藏版本**：已归档。文件页操作、Markdown 保存 deferred RAG、空间 HTML 保存 immediate RAG、隐藏版本点、内置 Git 删除提交和 `.ridge` 排除已完成，并通过相关组件测试、服务端集成测试与 `npm run check`。

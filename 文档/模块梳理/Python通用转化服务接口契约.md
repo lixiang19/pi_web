@@ -7,7 +7,7 @@
 
 ## 1. 服务定位
 
-- **独立服务**：Python 通用转化服务（以下简称 **Converter**）是独立进程/容器，不属于 ridge 仓库的一部分；
+- **独立服务**：Python 通用转化服务（以下简称 **Converter**）源码位于 ridge monorepo 的 `services/converter/`，运行时仍是独立进程/容器；
 - **多租户**：通过 API Key 支持多 client / 多 project 调用，ridge 只是其中一个 client；
 - **只做转换**：Converter 只负责把输入文件转换为结构化产物（Markdown、JSON、文本等），不处理 workspace 权限、状态机、目录结构、RAG 索引；
 - **无状态**：内部不持久化业务数据；产物临时存储，按保留期清理。
@@ -31,6 +31,22 @@
 | RAG 索引触发 | ❌ | `converted` 后 enqueue RAG job | ❌ |
 
 > **核心原则**：前端浏览器**不直接调用** Converter；所有交互通过 ridge Node 后端代理。
+
+### 1.1 monorepo 内置实现（2026-05-17）
+
+当前 ridge 仓库内已提供 `services/converter/` Python 后端实现：
+
+- `FastAPI` 暴露 `/v1/health`、`/v1/capabilities`、`/v1/conversions`、查询、取消、产物列表和产物下载；
+- API Key 使用 `Authorization: Bearer <key>`，默认从 `RIDGE_CONVERTER_API_KEYS` 读取；
+- 支持 multipart 文件上传、HTTPS URL、base64 Data URI，拒绝本地路径、非 HTTPS URL、localhost/private network URL；
+- `document.markdown`：默认走 MarkItDown，覆盖文本、Markdown、HTML、PDF、DOCX、PPTX、XLSX、CSV、JSON 等 MarkItDown 支持的输入；
+- `document.ocr_markdown`：默认走 MarkItDown；图片输入也交给 MarkItDown 图片转换；
+- `image.ocr`：默认走 MarkItDown 图片转换（EXIF + 可选 LLM caption），`options.engine="tesseract"` 时才走本地 pytesseract fallback；
+- `image.description`：默认走 MarkItDown 图片转换；配置 `OPENAI_API_KEY` 后向 MarkItDown 注入 OpenAI client/model；
+- `audio.transcription`：默认走 MarkItDown audio converter（`markitdown[all]` 的 audio-transcription 依赖），`options.engine="faster-whisper"` 时才走 faster-whisper fallback；
+- 产物仍按契约返回 `<name>.md`、`<name>.metadata.json`、可选 blocks/segments/assets，由 ridge Node 下载并落盘。
+
+本实现不改变职责矩阵：Converter 不读取 workspace 本地路径、不写 `.originals/`、不更新 `file_processing_status`、不触发 RAG。
 
 ---
 

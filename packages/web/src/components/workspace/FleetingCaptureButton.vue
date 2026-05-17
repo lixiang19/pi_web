@@ -312,6 +312,7 @@ onUnmounted(() => {
 							variant="ghost"
 							size="icon"
 							class="size-8"
+							aria-label="文字采集"
 							:class="mode === 'text' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
 							@click="setMode('text')"
 						>
@@ -321,6 +322,7 @@ onUnmounted(() => {
 							variant="ghost"
 							size="icon"
 							class="size-8"
+							aria-label="文件采集"
 							:class="mode === 'file' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
 							@click="setMode('file')"
 						>
@@ -330,6 +332,7 @@ onUnmounted(() => {
 							variant="ghost"
 							size="icon"
 							class="size-8"
+							aria-label="录音采集"
 							:class="mode === 'audio' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
 							@click="setMode('audio')"
 						>

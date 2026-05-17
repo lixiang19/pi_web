@@ -1,23 +1,16 @@
 <script setup lang="ts">
 import {
 	BookOpen,
-	Database,
-	FilePlus2,
-	FolderPlus,
-	LayoutGrid,
 	Plus,
 	ChevronDown,
 	ChevronRight,
 	Archive,
+	Monitor,
 } from "lucide-vue-next";
-import FileTreePanel from "@/components/common/FileTreePanel.vue";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { FileTreeEntry } from "@/lib/types";
 import type { SessionProjectView } from "@/lib/session-sidebar";
-import type { RecentFileItem } from "@/lib/api";
-import type { VisibleTreeNode } from "@/composables/useFileTreeData";
 
 export type FixedEntry = {
 	id: string;
@@ -41,34 +34,18 @@ const props = defineProps<{
 	notificationCount: number;
 	expandedProjectIds: Set<string>;
 	showAllProjectSessionIds: Set<string>;
-	visibleNodes: VisibleTreeNode[];
-	rootPath: string;
-	fileTreeError: string;
-	isDirectoryExpanded: (path: string) => boolean;
-	isDirectoryLoading: (path: string) => boolean;
-	recentFiles: RecentFileItem[];
-	isRecentLoading: boolean;
 }>();
 
 const emit = defineEmits<{
 	(e: "fixed-entry-click", entry: FixedEntry): void;
+	(e: "open-project-registration"): void;
+	(e: "open-device-settings"): void;
 	(e: "toggle-project-expand", projectId: string): void;
 	(e: "open-project-home", project: SessionProjectView): void;
 	(e: "open-project-session", sessionId: string): void;
 	(e: "toggle-show-all-sessions", projectId: string): void;
 	(e: "open-session", sessionId: string): void;
-	(e: "create-note"): void;
-	(e: "create-folder"): void;
-	(e: "create-canvas"): void;
-	(e: "create-base"): void;
 	(e: "open-archived"): void;
-	(e: "select-file", entry: FileTreeEntry): void;
-	(e: "toggle-expand", entry: FileTreeEntry): void;
-	(e: "toggle-favorite", path: string): void;
-	(e: "refresh-tree"): void;
-	(e: "rename", payload: { oldPath: string; newName: string }): void;
-	(e: "delete", entry: FileTreeEntry): void;
-	(e: "create-folder-in-tree", payload: { parentPath: string; name: string }): void;
 }>();
 
 function isProjectOffline(project: SessionProjectView): boolean {
@@ -112,9 +89,61 @@ function getRecentProjectSessions(project: SessionProjectView, limit: number) {
 
 		<Separator class="mx-3" />
 
+		<!-- 工作空间会话 -->
+		<div class="max-h-[34vh] shrink-0 overflow-y-auto px-2 py-2">
+			<div class="px-2.5 pb-1 text-caption font-medium text-muted-foreground">工作空间会话</div>
+			<div v-if="sortedWorkspaceSessions.length === 0" class="px-2.5 py-3 text-body-sm text-muted-foreground">
+				暂无会话
+			</div>
+			<button
+				v-for="session in sortedWorkspaceSessions"
+				:key="session.id"
+				type="button"
+				class="flex w-full min-w-0 items-center rounded-md px-2.5 py-1.5 text-left text-body-sm text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+				@click="emit('open-session', session.id)"
+			>
+				<span class="truncate">{{ session.title || '未命名会话' }}</span>
+			</button>
+		</div>
+
+		<Separator class="mx-3" />
+
 		<!-- 项目列表 -->
-		<div v-if="sidebarProjects.length" class="shrink-0 px-2 py-2">
-			<div class="px-2.5 pb-1 text-caption font-medium text-muted-foreground">项目</div>
+		<div class="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+			<div class="flex items-center justify-between px-2.5 pb-1">
+				<div class="text-caption font-medium text-muted-foreground">项目</div>
+				<div class="flex items-center gap-1">
+					<Tooltip>
+						<TooltipTrigger as-child>
+							<button
+								type="button"
+								data-test="sidebar-add-project"
+								class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+								@click="emit('open-project-registration')"
+							>
+								<Plus class="size-3.5" />
+							</button>
+						</TooltipTrigger>
+						<TooltipContent side="right">添加项目</TooltipContent>
+					</Tooltip>
+					<Tooltip>
+						<TooltipTrigger as-child>
+							<button
+								type="button"
+								data-test="sidebar-open-devices"
+								class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+								@click="emit('open-device-settings')"
+							>
+								<Monitor class="size-3.5" />
+							</button>
+						</TooltipTrigger>
+						<TooltipContent side="right">设备</TooltipContent>
+					</Tooltip>
+				</div>
+			</div>
+			<div v-if="sidebarProjects.length === 0" class="px-2.5 py-3 text-body-sm text-muted-foreground">
+				暂无项目
+			</div>
 			<div
 				v-for="project in sidebarProjects"
 				:key="project.id"
@@ -215,105 +244,7 @@ function getRecentProjectSessions(project: SessionProjectView, limit: number) {
 			</div>
 		</div>
 
-		<Separator v-if="sidebarProjects.length" class="mx-3" />
-
-		<!-- 工作空间会话 -->
-		<div v-if="sortedWorkspaceSessions.length" class="shrink-0 px-2 py-2">
-			<div class="px-2.5 pb-1 text-caption font-medium text-muted-foreground">工作空间会话</div>
-			<button
-				v-for="session in sortedWorkspaceSessions"
-				:key="session.id"
-				type="button"
-				class="flex w-full min-w-0 items-center rounded-md px-2.5 py-1.5 text-left text-body-sm text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-				@click="emit('open-session', session.id)"
-			>
-				<span class="truncate">{{ session.title || '未命名会话' }}</span>
-			</button>
-		</div>
-
-		<Separator v-if="sortedWorkspaceSessions.length" class="mx-3" />
-
-		<!-- 新建按钮行 -->
-		<div class="shrink-0 px-3 py-2">
-			<div class="flex items-center justify-between gap-2">
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<button
-							type="button"
-							class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-							@click="emit('create-note')"
-						>
-							<FilePlus2 class="size-3.5" />
-							新建
-						</button>
-					</TooltipTrigger>
-					<TooltipContent side="top">新建笔记</TooltipContent>
-				</Tooltip>
-
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<button
-							type="button"
-							class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-							@click="emit('create-folder')"
-						>
-							<FolderPlus class="size-3.5" />
-							文件夹
-						</button>
-					</TooltipTrigger>
-					<TooltipContent side="top">新建文件夹</TooltipContent>
-				</Tooltip>
-
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<button
-							type="button"
-							class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-							@click="emit('create-canvas')"
-						>
-							<LayoutGrid class="size-3.5" />
-							Canvas
-						</button>
-					</TooltipTrigger>
-					<TooltipContent side="top">新建 Canvas</TooltipContent>
-				</Tooltip>
-
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<button
-							type="button"
-							class="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-							@click="emit('create-base')"
-						>
-							<Database class="size-3.5" />
-							Base
-						</button>
-					</TooltipTrigger>
-					<TooltipContent side="top">新建数据库</TooltipContent>
-				</Tooltip>
-			</div>
-		</div>
-
-		<!-- 文件树 -->
-		<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-			<FileTreePanel
-				:nodes="visibleNodes"
-				:is-root-loading="isDirectoryLoading(rootPath)"
-				:error="fileTreeError"
-				:is-expanded="isDirectoryExpanded"
-				:is-loading="isDirectoryLoading"
-				:recent-files="recentFiles"
-				:is-recent-loading="isRecentLoading"
-				:root-path="rootPath"
-				@select="emit('select-file', $event)"
-				@toggle-expand="emit('toggle-expand', $event)"
-				@toggle-favorite="emit('toggle-favorite', $event)"
-				@refresh="emit('refresh-tree')"
-				@rename="emit('rename', $event)"
-				@delete="emit('delete', $event)"
-				@create-folder="emit('create-folder-in-tree', $event)"
-			/>
-		</div>
+		<Separator class="mx-3" />
 
 		<!-- 归档入口 -->
 		<div class="shrink-0 px-2 py-2">

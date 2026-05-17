@@ -365,7 +365,7 @@ const formatFileSize = (bytes: number) => {
 									<!-- 工具操作 -->
 									<Tooltip>
 										<TooltipTrigger as-child>
-											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" @click="openJournalDialog(note)">
+											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" aria-label="转为日记" @click="openJournalDialog(note)">
 												<BookOpen class="size-3.5" />
 											</Button>
 										</TooltipTrigger>
@@ -373,7 +373,7 @@ const formatFileSize = (bytes: number) => {
 									</Tooltip>
 									<Tooltip>
 										<TooltipTrigger as-child>
-											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" @click="openTaskDialog(note)">
+											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" aria-label="转为任务" @click="openTaskDialog(note)">
 												<CheckSquare class="size-3.5" />
 											</Button>
 										</TooltipTrigger>
@@ -381,7 +381,7 @@ const formatFileSize = (bytes: number) => {
 									</Tooltip>
 									<Tooltip>
 										<TooltipTrigger as-child>
-											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" @click="openMilestoneDialog(note)">
+											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" aria-label="转为里程碑" @click="openMilestoneDialog(note)">
 												<Flag class="size-3.5" />
 											</Button>
 										</TooltipTrigger>
@@ -389,7 +389,7 @@ const formatFileSize = (bytes: number) => {
 									</Tooltip>
 									<Tooltip>
 										<TooltipTrigger as-child>
-											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" @click="openClipDialog(note)">
+											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" aria-label="保存剪藏" @click="openClipDialog(note)">
 												<Bookmark class="size-3.5" />
 											</Button>
 										</TooltipTrigger>
@@ -397,7 +397,7 @@ const formatFileSize = (bytes: number) => {
 									</Tooltip>
 									<Tooltip v-if="getNoteAttachments(note.id).length > 0">
 										<TooltipTrigger as-child>
-											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" @click="handleAttachment(note)">
+											<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" aria-label="查看附件" @click="handleAttachment(note)">
 												<Archive class="size-3.5" />
 											</Button>
 										</TooltipTrigger>
@@ -408,7 +408,7 @@ const formatFileSize = (bytes: number) => {
 
 									<Tooltip>
 										<TooltipTrigger as-child>
-											<Button variant="ghost" size="icon" class="size-7 text-destructive/70 hover:text-destructive" @click="deleteItem(note.id)">
+											<Button variant="ghost" size="icon" class="size-7 text-destructive/70 hover:text-destructive" aria-label="删除" @click="deleteItem(note.id)">
 												<Trash2 class="size-3.5" />
 											</Button>
 										</TooltipTrigger>

@@ -44,6 +44,7 @@ const {
 	mockAllPaneGroups,
 	mockSessions,
 	mockProjects,
+	mockAddProject,
 	mockRefreshSessions,
 	mockRefreshSessionContexts,
 	mockUploadSessionAttachments,
@@ -90,6 +91,7 @@ const {
 	},
 	mockSessions: { value: [] as Array<{ id: string; title: string; updatedAt?: number; archived?: boolean; projectId?: string; contextId?: string }> },
 	mockProjects: { value: [] as Array<{ id: string; name: string; path: string; isOnline: boolean; archivedAt?: number; externalOrigin?: 'github' | 'folder' | null; projectType?: 'internal' | 'external' | 'workspace'; isGit?: boolean; deviceName?: string }> },
+	mockAddProject: vi.fn(),
 	mockRefreshSessions: vi.fn(),
 	mockRefreshSessionContexts: vi.fn(),
 	mockUploadSessionAttachments: vi.fn(),
@@ -253,6 +255,7 @@ vi.mock("@/composables/usePiChatCore", () => ({
 vi.mock("@/composables/useProjects", () => ({
 	useProjects: () => ({
 		projects: mockProjects,
+		add: mockAddProject,
 		load: vi.fn(),
 		isLoading: { value: false },
 		error: { value: "" },
@@ -312,6 +315,12 @@ function mountWorkspace(stubs: Record<string, unknown> = {}) {
 		global: {
 			stubs: {
 				FileTreePanel: true,
+				ProjectSelectorDialog: {
+					name: "ProjectSelectorDialog",
+					props: ["open", "pending", "error"],
+					emits: ["update:open", "confirm"],
+					template: `<div v-if="open" data-test="project-selector-dialog" />`,
+				},
 				SplitGrid: true,
 				Tooltip: { template: "<slot />" },
 				TooltipTrigger: { template: "<slot />" },
@@ -621,6 +630,97 @@ describe("WorkspacePage - 会话列表", () => {
 		const text = wrapper.text();
 		expect(text).toContain("工作空间会话");
 		expect(text).not.toContain("项目会话");
+	});
+});
+
+describe("WorkspacePage - 左侧导航结构", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockGetRecentFiles.mockResolvedValue({ files: [] });
+		mockAllPaneGroups.value = [
+			{
+				id: "pane-1",
+				tabs: [{ id: "home-1", kind: "home", title: "主页", sessionId: undefined }],
+				activeTabId: "home-1",
+			},
+		];
+		mockSessions.value = [];
+		mockProjects.value = [];
+		mockFindTabAcrossPanes.mockReturnValue(null);
+	});
+
+	it("主左栏不承载文件树和文件新建动作", () => {
+		const wrapper = mountWorkspace({
+			FileTreePanel: { template: `<div data-test="left-file-tree">文件树</div>` },
+		});
+
+		expect(wrapper.find('[data-test="left-file-tree"]').exists()).toBe(false);
+		expect(wrapper.text()).not.toContain("Canvas");
+		expect(wrapper.text()).not.toContain("Base");
+		expect(wrapper.text()).not.toContain("新建");
+		expect(wrapper.text()).not.toContain("文件夹");
+	});
+
+	it("工作空间会话区位于项目区上方", () => {
+		mockSessions.value = [
+			{ id: "s-ws", title: "工作空间会话", updatedAt: 3000, archived: false, projectId: "" },
+		];
+		mockProjects.value = [
+			{
+				id: "proj-1",
+				name: "项目 A",
+				path: "/projects/a",
+				isOnline: true,
+				projectType: "external",
+				externalOrigin: "folder",
+				isGit: false,
+			},
+		];
+
+		const wrapper = mountWorkspace();
+		const text = wrapper.text();
+
+		expect(text.indexOf("工作空间会话")).toBeLessThan(text.indexOf("项目"));
+	});
+
+	it("项目区提供添加项目入口并注册选择的目录", async () => {
+		mockAddProject.mockResolvedValue({
+			id: "proj-new",
+			name: "new-project",
+			path: "/projects/new-project",
+			isOnline: true,
+			projectType: "external",
+			externalOrigin: "folder",
+			isGit: false,
+			addedAt: 1,
+			updatedAt: 1,
+		});
+
+		const wrapper = mountWorkspace();
+		await wrapper.find('[data-test="sidebar-add-project"]').trigger("click");
+
+		const dialog = wrapper.findComponent({ name: "ProjectSelectorDialog" });
+		expect(wrapper.find('[data-test="project-selector-dialog"]').exists()).toBe(true);
+		await dialog.vm.$emit("confirm", "/projects/new-project");
+
+		expect(mockAddProject).toHaveBeenCalledWith("/projects/new-project");
+	});
+
+	it("设备入口打开设置标签", async () => {
+		const wrapper = mountWorkspace();
+
+		const devicesButton = wrapper.find('[data-test="sidebar-open-devices"]');
+		expect(devicesButton.exists()).toBe(true);
+		await devicesButton.trigger("click");
+
+		expect(mockOpenTab).toHaveBeenCalledWith(
+			"pane-1",
+			expect.objectContaining({
+				id: "feature:settings",
+				kind: "singleton_feature",
+				featureId: "settings",
+			}),
+		);
 	});
 });
 

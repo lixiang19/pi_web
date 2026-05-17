@@ -138,7 +138,7 @@ describe("WorkspaceSearchView", () => {
 		await flushAsync();
 
 		expect(getWorkspaceKnowledgeDiagnostics).toHaveBeenCalled();
-		expect(wrapper.text()).toContain("输入关键词查找内容");
+		expect(wrapper.text()).toContain("搜索工作空间");
 		expect(wrapper.text()).toContain("1 个内容暂时搜不到");
 		expect(wrapper.text()).not.toContain("知识诊断");
 		expect(wrapper.text()).not.toContain("RAG");
@@ -155,7 +155,7 @@ describe("WorkspaceSearchView", () => {
 		});
 
 		await flushAsync();
-		await wrapper.findAll("button").find((button) => button.text().includes("重新整理"))!.trigger("click");
+		await wrapper.findAll("button").find((button) => button.text().includes("整理"))!.trigger("click");
 		await flushAsync();
 
 		expect(refreshWorkspaceRag).toHaveBeenCalledWith("笔记/broken.md");

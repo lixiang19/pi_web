@@ -18,7 +18,7 @@
 - [chat 初始化契约] `<workspace>/chat` 只允许是目录；已存在但不是目录时必须直接失败，不能吞掉错误继续复制
 - [单用户认证] VPS 个人部署采用固定密码登录，登录成功后使用服务端内存 Session 和 `ridge_session` HttpOnly Cookie；除 `/api/auth/session|login|logout` 外，其余 `/api/*` 和终端 WebSocket 都必须鉴权。当前固定密码写在服务端，仓库或镜像泄露即视为密码泄露。
 - [云化架构] 多用户商业化采用“中心控制面 + 每用户专属 VPS runtime”，不是共享数据库多租户；中心只管账号、VPS、路由、升级、备份和计费，用户 workspace、Pi 会话正文、RAG、图谱和 `~/.pi/ridge.db` 留在用户 VPS。
-- [重型转换服务边界] 文档/PDF/Word/音频/图片等重型解析与转换长期由独立 Python 通用转化服务承载（基于 MarkItDown/Whisper/OCR 等），ridge Node 后端只做 workspace 安全校验、`file_processing_status` 状态机、`background_jobs` 队列调度、产物落盘（`.md/.assets/.metadata.json/.originals`）；Node 不自研 PDF/Word 解析栈、不内嵌模型推理。Python 服务按 `文档/功能开发/40-Python通用转化服务API契约.md` 接口独立开发，多 client/多 project 可用，不属于 ridge 专属。
+- [重型转换服务边界] 文档/PDF/Word/音频/图片等重型解析与转换长期由独立 Python 通用转化服务承载，默认主引擎统一走 MarkItDown；Tesseract 与 faster-whisper 只作为显式 fallback。ridge Node 后端只做 workspace 安全校验、`file_processing_status` 状态机、`background_jobs` 队列调度、产物落盘（`.md/.assets/.metadata.json/.originals`）；Node 不自研 PDF/Word/图片/音频解析栈、不内嵌模型推理。Python 服务源码已内置到 `services/converter/`，但运行时仍是独立进程/容器，按 `文档/功能开发/40-Python通用转化服务API契约.md` 对外提供 `/v1` API。
 
 ## 规范与教训
 
@@ -905,3 +905,76 @@
 - `WorkspaceSearchView.vue` 已移除筛选控件、类型分组、索引状态面板和普通结果刷新按钮。
 - `WorkspaceSearchView.test.ts` 覆盖极简空态不暴露内部知识分类、异常重新整理、搜索只传 `q + limit`、普通结果不显示类型标签或手动刷新。
 - `cd packages/web && pnpm exec vitest run src/components/workspace/__tests__/WorkspaceSearchView.test.ts` 通过。
+
+## 2026-05-17 左侧导航项目会话化
+
+### 产品结论
+
+- 工作台主左栏是导航与会话列表，不是文件管理面板。
+- 主左栏只承载固定功能入口、工作空间会话、项目/项目会话和归档，且工作空间会话在项目区上方。
+- 文件树、文件上传、新建文件夹、移动、删除和转换只属于右侧"文件"标签页。
+- 项目区可以放添加项目入口；设备入口按第一版设计打开设置页设备状态，不新增独立设备页。
+
+### 验收证据
+
+- `WorkspaceSidebar.vue` 已移除 `FileTreePanel` 和笔记/文件夹/Canvas/Base 新建按钮。
+- `WorkspacePage.vue` 通过 `ProjectSelectorDialog` 注册外部项目，设备入口打开 `feature:settings`。
+- `file-manager.ts` 的目录枚举会跳过失效 symlink、无权限条目和越界 symlink，避免项目选择器被 Home 目录里的坏链接阻塞。
+- `cd packages/web && pnpm exec vitest run src/pages/__tests__/WorkspacePage.test.ts src/pages/WorkspacePage.note-reliability.test.ts src/lib/__tests__/session-sidebar.test.ts` 通过。
+- `pnpm --filter @pi/server test -- src/__tests__/file-manager.test.ts` 通过。
+
+## 2026-05-17 主页工作台启动区
+
+### 产品结论
+
+- 主页是 ridge 工作台启动区，不是固定会话页；打开主页仍不创建 Pi 会话。
+- 主页首屏需要同时表达工作空间身份、当前路径、状态摘要和完整 AI composer。
+- 模型、Agent、思考强度、附件和快捷动作都留在主页 composer；快捷动作继续只写入草稿。
+- 最近事情、最近文件和 AI 建议保留为下方扫描区，服务于创建下一条会话前的上下文感知。
+
+### 验收证据
+
+- `HomePage.vue` 已改为工作台启动区布局，包含 `home-command-center` 和 `home-context-rail`。
+- `HomePage.test.ts` 覆盖新布局、路径/状态摘要、完整 selector、附件、快捷动作、发送状态和失败保留。
+
+## 2026-05-17 全站样式重构 - 设计令牌系统
+
+### 产品结论
+
+- 全站 40+ 组件完成魔法数字替换，引入语义化设计令牌（design tokens），统一字号、边框、背景三层语义。
+- 字体从 Manrope 切换到 Inter Variable（`@fontsource-variable/inter`），更现代专业。
+- 页面级重设计完成：HomePage（扁平命令行风格）、InboxView（全宽处理工作台）、TaskView（看板/列表/日历/里程碑统一）、WorkspaceSearchView（类型图标 + 筛选芯片）、NotificationCenterView（彩色图标 + 状态点）。
+- 网页端采集从 9 种模式精简为 3 种（文字/文件/录音），去掉不可用的截图/选区/剪贴板/网址采集。
+
+### 设计令牌规范
+
+| 层级 | Token | 值 | 使用场景 |
+|------|-------|-----|---------|
+| **字号** | `text-micro` | 10px | 计数、时间戳、标签 |
+| | `text-caption` | 11px | 次要说明、空状态提示 |
+| | `text-body-sm` | 12px | 列表项正文、表单标签 |
+| | `text-body` | 13px | 默认正文、按钮文字 |
+| | `text-body-lg` | 15px | 输入框、稍大正文 |
+| | `text-hero` | 16px | 标题、首屏大字 |
+| **边框** | `border-subtle` | 30% 透明度 | 分隔线、卡片边框 |
+| | `border-default` | 50% 透明度 | 输入框边框、列表分隔 |
+| | `border-strong` | 80% 透明度 | 激活态、重要分隔 |
+| **背景** | `bg-subtle` | 20% 透明度 | 悬浮背景、表头 |
+| | `bg-soft` | 40% 透明度 | 行悬停、芯片背景 |
+| | `bg-hover` | 60% 透明度 | 按钮悬停、下拉项选中 |
+
+### 迁移规则
+
+- **字号**：所有 `text-[Npx]` 魔法数字 → 对应 Token；`text-xs` 保留为 12px 基线。
+- **边框**：`border-border` / `border-border/XX` → `border-default`；`border-muted` → `border-subtle`。
+- **背景**：`bg-muted/XX` → `bg-subtle`（20%）或 `bg-soft`（40%）或 `bg-hover`（60%）。
+- **Input/Button/SelectTrigger**：使用 CVA `size="sm"`（32px），禁止手动覆盖 `h-7`/`h-8`。
+- **全局基础**：`style.css` import Inter + `design-tokens.css`；滚动条统一冷灰蓝；`::selection` 用 `color-mix`。
+
+### 验收证据
+
+- `design-tokens.css` 定义 6 字号 + 3 边框 + 3 背景 `@utility`。
+- `npm run check`（vue-tsc）通过，0 新增类型错误。
+- `cd packages/web && pnpm exec vitest run` 312/312 通过。
+- 7 个主题文件审查确认兼容新 Token。
+- `cd packages/web && pnpm test src/components/workspace/__tests__/HomePage.test.ts` 通过。

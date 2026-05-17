@@ -14,6 +14,8 @@ export default [
 			"**/dist-ssr/**",
 			"**/coverage/**",
 			"**/node_modules/**",
+			"**/.venv/**",
+			"**/__pycache__/**",
 			"**/.pi-web/**",
 			"**/.pi/**",
 			"**/.agents/**",

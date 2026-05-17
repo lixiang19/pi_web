@@ -87,6 +87,17 @@ describe("file-manager", () => {
 		await expect(fs.stat(path.join(root, "a.txt"))).rejects.toThrow(/ENOENT/);
 	});
 
+	it("listDirectoryEntries skips broken symlinks instead of failing the directory", async () => {
+		const { manager, root, cleanup: c } = await createTempFileManager();
+		cleanup = c;
+		await fs.mkdir(path.join(root, "project"), { recursive: true });
+		await fs.symlink(path.join(root, "missing-target"), path.join(root, "broken-link"));
+
+		const entries = await manager.listDirectoryEntries(root, root);
+
+		expect(entries.map((entry) => entry.name)).toEqual(["project"]);
+	});
+
 	it("trashEntry validates root boundary before trashing", async () => {
 		const { manager, root, cleanup: c } = await createTempFileManager();
 		cleanup = c;

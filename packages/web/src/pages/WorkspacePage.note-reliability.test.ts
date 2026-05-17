@@ -82,17 +82,12 @@ vi.mock("@/composables/useTerminalContextOptions", () => ({
 	useTerminalContextOptions: () => ({ load: vi.fn(), createDefaultPayload: vi.fn().mockReturnValue({}) }),
 }));
 
-const FileTreePanelStub = defineComponent({
-	emits: ["select"],
-	template: `<div data-test="file-tree" />`,
-});
-
 const mountWorkspace = () =>
 	mount(WorkspacePage, {
 		global: {
 			plugins: [createPinia()],
 			stubs: {
-				FileTreePanel: FileTreePanelStub,
+				ProjectSelectorDialog: true,
 				WorkspaceContentArea: defineComponent({
 					name: "WorkspaceContentArea",
 					props: ["tab", "rootDir"],
@@ -124,7 +119,9 @@ describe("WorkspacePage note close protection", () => {
 
 	it("blocks closing a file tab while save status is risky", async () => {
 		const wrapper = mountWorkspace();
-		await wrapper.getComponent(FileTreePanelStub).vm.$emit("select", {
+		await (wrapper.vm as unknown as {
+			handleSelectFile: (entry: { kind: "file"; path: string; name: string }) => Promise<void>;
+		}).handleSelectFile({
 			kind: "file",
 			path: "/workspace/笔记/test.md",
 			name: "test.md",

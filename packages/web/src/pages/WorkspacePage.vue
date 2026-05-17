@@ -28,9 +28,8 @@ import SpaceView from "@/components/workspace/SpaceView.vue";
 import WorkspaceSearchView from "@/components/workspace/WorkspaceSearchView.vue";
 import NotificationCenterView from "@/components/workspace/NotificationCenterView.vue";
 import WorkspaceFeaturePlaceholder from "@/components/workspace/WorkspaceFeaturePlaceholder.vue";
+import ProjectSelectorDialog from "@/components/chat/ProjectSelectorDialog.vue";
 import SplitGrid from "@/components/workspace/split/SplitGrid.vue";
-import { useFileTreeData } from "@/composables/useFileTreeData";
-import { useFileTreeActions } from "@/composables/useFileTreeActions";
 import { useWorkspaceFilePreview } from "@/composables/useWorkspaceFilePreview";
 import {
 	useSplitPanes,
@@ -52,7 +51,6 @@ import { useTerminalPool } from "@/composables/useTerminalPool";
 import { useDashboard } from "@/composables/useDashboard";
 import { useRecentActivity } from "@/composables/useRecentActivity";
 import { useNotifications } from "@/composables/useNotifications";
-import { useFavoritesStore } from "@/stores/favorites";
 import { useSettingsStore } from "@/stores/settings";
 import { useProjects } from "@/composables/useProjects";
 import {
@@ -61,7 +59,7 @@ import {
 	isProjectArchived,
 } from "@/lib/session-sidebar";
 import type { SessionProjectView } from "@/lib/session-sidebar";
-import { createFile, createBase, createFileEntry, getRecentFiles, type RecentFileItem, uploadSessionAttachments, deleteSession, endSession } from "@/lib/api";
+import { getRecentFiles, type RecentFileItem, uploadSessionAttachments, deleteSession, endSession } from "@/lib/api";
 import { createSession as createSessionApi } from "@/lib/api";
 import type { FileTreeEntry, ThinkingLevel } from "@/lib/types";
 import { toast } from "vue-sonner";
@@ -87,7 +85,6 @@ function createFileTreeEntryFromPath(filePath: string): FileTreeEntry {
 
 const core = usePiChatCore();
 const settingsStore = useSettingsStore();
-const favoritesStore = useFavoritesStore();
 const terminalPool = useTerminalPool();
 const terminalContextOptions = useTerminalContextOptions();
 
@@ -99,24 +96,11 @@ const tasksStore = provideWorkspaceTasks(() => workspaceDir.value);
 // 共享收件箱 store
 const inboxStore = provideWorkspaceInbox(() => workspaceDir.value);
 
-// 文件树
-const {
-	rootPath,
-	visibleNodes,
-	fileTreeError,
-	isDirectoryExpanded,
-	isDirectoryLoading,
-	toggleDirectory,
-	refreshTree,
-} = useFileTreeData(() => workspaceDir.value);
-
-const { handleDelete, handleRename, handleCreateFolderInTree } = useFileTreeActions(workspaceDir, refreshTree);
-
 // 工作空间文件页
 const workspaceFiles = useWorkspaceFiles();
 
 // 文件预览
-const previewRootDir = computed(() => workspaceDir.value || workspaceFiles.workspaceRoot.value || rootPath.value);
+const previewRootDir = computed(() => workspaceDir.value || workspaceFiles.workspaceRoot.value);
 const preview = useWorkspaceFilePreview(previewRootDir);
 
 // 空间 HTML 作品
@@ -191,7 +175,7 @@ const recentFiles = ref<RecentFileItem[]>([]);
 const isRecentLoading = ref(false);
 
 // 当前选中的目录路径（用于新建操作定位）
-const selectedDirPath = ref<string>('');
+const isProjectDialogOpen = ref(false);
 
 const loadRecentFiles = async () => {
 	if (!workspaceDir.value) return;
@@ -332,6 +316,19 @@ function handleOpenProjectFromSearch(projectId: string) {
 	handleOpenProjectHome(project);
 }
 
+function handleOpenProjectRegistration() {
+	isProjectDialogOpen.value = true;
+}
+
+async function handleConfirmProjectRegistration(projectPath: string) {
+	const project = await projectsStore.add(projectPath);
+	if (!project) return;
+	isProjectDialogOpen.value = false;
+	toast.success("项目已添加", {
+		description: project.name,
+	});
+}
+
 /** 归档入口 */
 function handleOpenArchived() {
 	splitPanes.openTab(
@@ -400,6 +397,10 @@ async function handleOpenFiles() {
 	handleOpenSingletonFeature("files");
 }
 
+async function refreshWorkspaceFiles() {
+	await workspaceFiles.load(workspaceDir.value);
+}
+
 function handleOpenSpace() {
 	handleOpenSingletonFeature("space");
 	void workspaceSpace.load();
@@ -441,13 +442,7 @@ async function handleOpenSpacePreviewById(workId: string) {
 
 /** 打开文件标签页到当前活跃面板 */
 async function handleSelectFile(entry: FileTreeEntry) {
-	if (entry.kind === "directory") {
-		selectedDirPath.value = entry.path;
-		toggleDirectory(entry);
-		return;
-	}
-	// 选中文件时，将父目录设为新建操作的默认位置
-	selectedDirPath.value = entry.path.substring(0, entry.path.lastIndexOf('/'));
+	if (entry.kind === "directory") return;
 
 	// 先加载文件预览
 	await preview.openFile(entry.path);
@@ -463,38 +458,6 @@ async function handleSelectFile(entry: FileTreeEntry) {
 			status: fileTab.isLoading ? "loading" : (editorStatus ?? "idle") as SplitTabItem["status"],
 		};
 		splitPanes.openTab(splitPanes.activePaneGroupId.value, tab);
-	}
-}
-
-// 获取递增名称（避免重名）
-function getNextName(existingNames: string[], baseName: string, ext?: string): string {
-	const fullName = ext ? `${baseName}${ext}` : baseName;
-	if (!existingNames.includes(fullName)) return fullName;
-	let num = 1;
-	while (existingNames.includes(ext ? `${baseName}${num}${ext}` : `${baseName}${num}`)) {
-		num++;
-	}
-	return ext ? `${baseName}${num}${ext}` : `${baseName}${num}`;
-}
-
-function handleToggleExpand(entry: FileTreeEntry) {
-	toggleDirectory(entry);
-}
-
-async function handleToggleFavorite(path: string) {
-	const isCurrentlyFavorited = favoritesStore.itemsByType
-		.get("file")
-		?.some((f) => f.data?.["path"] === path);
-
-	if (isCurrentlyFavorited) {
-		await favoritesStore.remove(path);
-	} else {
-		await favoritesStore.add({
-			id: path,
-			type: "file",
-			name: path.split("/").filter(Boolean).at(-1) || path,
-			data: { path },
-		});
 	}
 }
 
@@ -573,103 +536,6 @@ function handleDropTab(payload: { fromPaneId: string; tabId: string; toPaneId: s
 function handleOpenWithDefaultApp(path: string) {
 	preview.openWithDefaultApp(path);
 }
-
-// 新建笔记（在当前选中目录下创建 md 文件）
-async function handleCreateNote() {
-	try {
-		const dir = workspaceDir.value;
-		if (!dir) return;
-		const parentDir = selectedDirPath.value || dir;
-		const existingNames = visibleNodes.value
-			.filter(n => {
-				const parent = n.entry.path.substring(0, n.entry.path.lastIndexOf('/'));
-				return parent === parentDir;
-			})
-			.map(n => n.entry.name);
-		const name = getNextName(existingNames, '未命名', '.md');
-		await createFileEntry({
-			root: dir,
-			directory: parentDir,
-			name,
-			kind: 'file',
-		});
-		refreshTree();
-	} catch (err) {
-		console.error("Failed to create note", err);
-	}
-};
-
-// 新建文件夹（递增名称）
-async function handleCreateFolder() {
-	try {
-		const dir = workspaceDir.value;
-		if (!dir) return;
-		const parentDir = selectedDirPath.value || dir;
-		const existingNames = visibleNodes.value
-			.filter(n => {
-				const parent = n.entry.path.substring(0, n.entry.path.lastIndexOf('/'));
-				return parent === parentDir;
-			})
-			.map(n => n.entry.name);
-		const name = getNextName(existingNames, '未命名文件夹');
-		const result = await createFileEntry({
-			root: dir,
-			directory: parentDir,
-			name,
-			kind: 'directory',
-		});
-		selectedDirPath.value = result.entry.path;
-		await toggleDirectory(result.entry);
-		refreshTree();
-	} catch (err) {
-		console.error("Failed to create folder", err);
-	}
-};
-
-// 新建 Canvas（递增名称）
-async function handleCreateCanvas() {
-	try {
-		const dir = workspaceDir.value;
-		if (!dir) return;
-		const parentDir = selectedDirPath.value || dir;
-		const existingNames = visibleNodes.value
-			.filter(n => {
-				const parent = n.entry.path.substring(0, n.entry.path.lastIndexOf('/'));
-				return parent === parentDir;
-			})
-			.map(n => n.entry.name);
-		const name = getNextName(existingNames, '未命名', '.canvas');
-		const parentRelDir = parentDir.replace(dir, '').replace(/^\//, '');
-		const response = await createFile(`${parentRelDir ? parentRelDir + '/' : ''}${name}`, '{}');
-		refreshTree();
-		handleSelectFile(createFileTreeEntryFromPath(response.path));
-	} catch (err) {
-		console.error("Failed to create canvas", err);
-	}
-};
-
-// 新建 Base（递增名称）
-async function handleCreateBase() {
-	try {
-		const dir = workspaceDir.value;
-		if (!dir) return;
-		const parentDir = selectedDirPath.value || dir;
-		const existingNames = visibleNodes.value
-			.filter(n => {
-				const parent = n.entry.path.substring(0, n.entry.path.lastIndexOf('/'));
-				return parent === parentDir;
-			})
-			.map(n => n.entry.name);
-		const name = getNextName(existingNames, '新数据库', '.base');
-		const parentRelDir = parentDir.replace(dir, '').replace(/^\//, '');
-		const result = await createBase(name.replace(/\.base$/, ''), parentRelDir || undefined);
-		refreshTree();
-		const fullPath = `${workspaceDir.value}/${result.path}`;
-		handleSelectFile(createFileTreeEntryFromPath(fullPath));
-	} catch (err) {
-		console.error("Failed to create base", err);
-	}
-};
 
 // ===== 首页 → 会话转换 =====
 
@@ -811,31 +677,21 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
       :notification-count="notificationCount"
       :expanded-project-ids="expandedProjectIds"
       :show-all-project-session-ids="showAllProjectSessionIds"
-      :visible-nodes="visibleNodes"
-      :root-path="rootPath"
-      :file-tree-error="fileTreeError"
-      :is-directory-expanded="isDirectoryExpanded"
-      :is-directory-loading="isDirectoryLoading"
-      :recent-files="recentFiles"
-      :is-recent-loading="isRecentLoading"
       @fixed-entry-click="handleFixedEntry($event)"
+      @open-project-registration="handleOpenProjectRegistration"
+      @open-device-settings="handleOpenSingletonFeature('settings')"
       @toggle-project-expand="toggleProjectExpand($event)"
       @open-project-home="handleOpenProjectHome($event)"
       @open-project-session="handleOpenProjectSession($event)"
       @toggle-show-all-sessions="toggleShowAllSessions($event)"
       @open-session="handleOpenSession($event)"
-      @create-note="handleCreateNote()"
-      @create-folder="handleCreateFolder()"
-      @create-canvas="handleCreateCanvas()"
-      @create-base="handleCreateBase()"
       @open-archived="handleOpenArchived()"
-      @select-file="handleSelectFile($event)"
-      @toggle-expand="handleToggleExpand($event)"
-      @toggle-favorite="handleToggleFavorite($event)"
-      @refresh-tree="refreshTree()"
-      @rename="handleRename($event)"
-      @delete="handleDelete($event)"
-      @create-folder-in-tree="handleCreateFolderInTree($event)"
+    />
+    <ProjectSelectorDialog
+      v-model:open="isProjectDialogOpen"
+      :pending="projectsStore.isLoading.value"
+      :error="projectsStore.error.value"
+      @confirm="handleConfirmProjectRegistration"
     />
 
     <!-- 中间分屏区域 -->
@@ -872,7 +728,7 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
 			  v-else-if="tab.featureId === 'moments'"
 			  :workspace-dir="workspaceDir"
 			  @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
-			  @refresh-tree="refreshTree"
+			  @refresh-tree="refreshWorkspaceFiles"
 			/>
 			<FilesView
 			  v-else-if="tab.featureId === 'files'"

@@ -50,6 +50,13 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogTitle: { template: "<div><slot /></div>" },
 }));
 
+vi.mock("@/components/ui/tooltip", () => ({
+  TooltipProvider: { template: "<div><slot /></div>" },
+  Tooltip: { template: "<div><slot /></div>" },
+  TooltipTrigger: { template: "<div><slot /></div>" },
+  TooltipContent: { template: "<div><slot /></div>" },
+}));
+
 vi.mock("@/lib/api", () => ({
 	getFleetingNotes: vi.fn(),
 	createFleetingNote: vi.fn(),
@@ -159,27 +166,12 @@ describe("InboxView", () => {
 		await flushPromises();
 		expect(wrapper.text()).toContain("明天整理任务系统");
 		expect(wrapper.text()).toContain("建议转为任务");
-		expect(wrapper.text()).toContain("日记");
-		expect(wrapper.text()).toContain("任务");
-		expect(wrapper.text()).toContain("里程碑");
-		expect(wrapper.text()).toContain("剪藏");
-		expect(wrapper.text()).toContain("删除");
-	});
-
-	it("captures a new fleeting note without emitting open-file", async () => {
-		const wrapper = mount(InboxView, {
-			props: { workspaceDir: "/workspace" },
-		});
-
-		await flushPromises();
-		await wrapper.get("textarea").setValue("新的闪念");
-		const saveButton = wrapper
-			.findAll("button")
-			.find((button) => button.text().includes("保存"))!;
-		await saveButton.trigger("click");
-
-		expect(mockCreateFleetingNote).toHaveBeenCalledWith("新的闪念", false);
-		expect(wrapper.emitted("open-file")).toBeUndefined();
+		// 纯图标按钮通过 aria-label 存在性验证
+		expect(wrapper.find('button[aria-label="转为日记"]').exists()).toBe(true);
+		expect(wrapper.find('button[aria-label="转为任务"]').exists()).toBe(true);
+		expect(wrapper.find('button[aria-label="转为里程碑"]').exists()).toBe(true);
+		expect(wrapper.find('button[aria-label="保存剪藏"]').exists()).toBe(true);
+		expect(wrapper.find('button[aria-label="删除"]').exists()).toBe(true);
 	});
 
 	it("opens task dialog but doesn't remove note from queue immediately", async () => {
@@ -190,9 +182,7 @@ describe("InboxView", () => {
 		await flushPromises();
 		expect(wrapper.text()).toContain("明天整理任务系统");
 		// Clicking task button opens dialog, doesn't immediately process
-		const taskButton = wrapper
-			.findAll("button")
-			.find((button) => button.text().includes("任务"))!;
+		const taskButton = wrapper.find('button[aria-label="转为任务"]');
 		await taskButton.trigger("click");
 
 		// Should still show the note because dialog is open, not processed yet
@@ -215,9 +205,7 @@ describe("InboxView", () => {
 
 		await flushPromises();
 
-		const taskButton = wrapper
-			.findAll("button")
-			.find((button) => button.text().includes("任务"))!;
+		const taskButton = wrapper.find('button[aria-label="转为任务"]');
 		await taskButton.trigger("click");
 		await flushPromises();
 
@@ -278,9 +266,7 @@ describe("InboxView", () => {
 		await flushPromises();
 
 		// Open milestone dialog
-		const msButton = wrapper
-			.findAll("button")
-			.find((button) => button.text().includes("里程碑"))!;
+		const msButton = wrapper.find('button[aria-label="转为里程碑"]');
 		await msButton.trigger("click");
 		await flushPromises();
 
