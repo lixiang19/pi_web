@@ -210,7 +210,7 @@ type SingletonFeatureId = (typeof singletonFeatureEntries)[number]["id"];
 
 const fixedEntries = [
 	...singletonFeatureEntries
-		.filter((e) => ["moments", "search", "notifications", "tasks", "files", "space"].includes(e.id))
+		.filter((e) => ["moments", "notifications", "tasks", "space"].includes(e.id))
 		.map((entry) => ({ ...entry, type: "singleton" as const })),
 	{ id: "terminal", label: "终端", icon: TerminalSquare, type: "terminal" as const },
 	...singletonFeatureEntries

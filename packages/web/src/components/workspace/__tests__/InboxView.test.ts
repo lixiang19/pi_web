@@ -227,8 +227,8 @@ describe("InboxView", () => {
 
 		// Select project via native select
 		const selects = wrapper.findAll("[data-testid='native-select']");
-		expect(selects.length).toBeGreaterThanOrEqual(3);
-		const projectSelect = selects[2];
+		expect(selects.length).toBeGreaterThanOrEqual(2);
+		const projectSelect = selects[1];
 		expect(projectSelect).toBeTruthy();
 		const selEl = projectSelect!.element as HTMLSelectElement;
 		selEl.value = "proj-1";
@@ -292,8 +292,8 @@ describe("InboxView", () => {
 
 		// Interact with project select via DOM
 		const selects = wrapper.findAll("select");
-		expect(selects.length).toBeGreaterThanOrEqual(2);
-		const projectSelect = selects[1];
+		expect(selects.length).toBeGreaterThanOrEqual(1);
+		const projectSelect = selects[0];
 		expect(projectSelect).toBeTruthy();
 		await projectSelect!.setValue("proj-2");
 		await flushPromises();

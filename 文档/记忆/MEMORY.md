@@ -159,6 +159,7 @@
 - [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
 - [首页选择器异步默认值] 首页这类长驻标签页不要只在 setup 时拷贝异步 props；模型/Agent/thinking 默认值从 core/settings 异步到达后，需要在“不覆盖用户有效选择”的前提下同步本地选择状态
 - [首页模型/Agent下拉链路] 主页下拉数据来自 `usePiChatCore` boot 的 `/api/providers`、`/api/agents`、`/api/session-contexts`；`usePiChatCore` 禁止模块 import 时自动 boot，且 `/api/session-contexts` 缺失会让整个 boot 失败，表现为模型/Agent 下拉为空。
+- [主左栏入口瘦身] 工作台主左侧固定入口不再展示「搜索」和「文件」；保留 `WorkspaceSearchView`、`FilesView` 与 API 能力，但不能从旧文档推断它们仍是主左栏入口。
 - [反思先行] 每个里程碑完成后必须做功能反思，确认每个子功能真的可端到端跑通，而非"调 API 了就当完成"。见 `文档/功能开发/2026-04-28_工作空间功能反思.md`
 
 ## 2026-05-13 任务 39 内部项目/外部仓库语义改造
