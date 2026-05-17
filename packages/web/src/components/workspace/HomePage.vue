@@ -28,7 +28,7 @@ import { fileIconByExtension } from "@/composables/useFileIcons";
 import type { RecentActivityItem } from "@/composables/useRecentActivity";
 import type { RecentFileItem } from "@/lib/api";
 import type { AgentSummary, ThinkingLevel } from "@/lib/types";
-import { NO_AGENT_VALUE, thinkingOptions } from "@/composables/useWorkbenchSessionState";
+import { thinkingOptions } from "@/composables/useWorkbenchSessionState";
 
 export type HomeSubmitPayload = {
 	text: string;
@@ -62,8 +62,16 @@ const draftText = ref("");
 const isFocused = ref(false);
 const isSending = computed(() => props.isSending ?? false);
 
+const resolveAgentSelection = (candidate: string, agents: AgentSummary[]) => {
+	const agentNames = new Set(agents.map((agent) => agent.name));
+	if (candidate && agentNames.has(candidate)) {
+		return candidate;
+	}
+	return agents[0]?.name ?? "";
+};
+
 const selectedModel = ref(props.defaultModel);
-const selectedAgent = ref(props.defaultAgent || NO_AGENT_VALUE);
+const selectedAgent = ref(resolveAgentSelection(props.defaultAgent, props.agents));
 const selectedThinkingLevel = ref<ThinkingLevel>(props.defaultThinkingLevel);
 
 watch(
@@ -73,6 +81,16 @@ watch(
 		const modelValues = new Set(models.map((model) => model.value));
 		if (!selectedModel.value || !modelValues.has(selectedModel.value)) {
 			selectedModel.value = defaultModel;
+		}
+	},
+);
+
+watch(
+	() => [props.defaultAgent, props.agents] as const,
+	([defaultAgent, agents]) => {
+		const agentNames = new Set(agents.map((agent) => agent.name));
+		if (!selectedAgent.value || !agentNames.has(selectedAgent.value)) {
+			selectedAgent.value = resolveAgentSelection(defaultAgent, agents);
 		}
 	},
 );
@@ -170,13 +188,10 @@ const greeting = computed(() => {
 });
 
 const agentOptions = computed(() => {
-	const list: Array<{ name: string; label: string }> = [
-		{ name: NO_AGENT_VALUE, label: "无 Agent（直接对话）" },
-	];
-	for (const agent of props.agents) {
-		list.push({ name: agent.name, label: agent.name });
-	}
-	return list;
+	return props.agents.map((agent) => ({
+		name: agent.name,
+		label: agent.displayName || agent.name,
+	}));
 });
 </script>
 
@@ -278,7 +293,7 @@ const agentOptions = computed(() => {
                     <Select v-model="selectedAgent" data-testid="select">
                       <SelectTrigger size="sm" class="h-8 max-w-[140px] gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground">
                         <Bot class="size-3.5 shrink-0" />
-                        <span class="truncate font-medium">{{ agentOptions.find(a => a.name === selectedAgent)?.label || selectedAgent }}</span>
+                        <span class="truncate font-medium">{{ agentOptions.find(a => a.name === selectedAgent)?.label || agentOptions[0]?.label || '默认' }}</span>
                       </SelectTrigger>
                       <SelectContent data-testid="select-content" class="max-h-72">
                         <SelectItem v-for="agent in agentOptions" :key="agent.name" :value="agent.name" class="text-xs">

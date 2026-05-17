@@ -1,7 +1,7 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import WorkbenchComposer from "@/components/workbench/chat/WorkbenchComposer.vue";
-import type { ChatComposerState } from "@/lib/types";
+import type { AgentSummary, ChatComposerState } from "@/lib/types";
 
 vi.mock("@/composables/useProjects", () => ({
   useProjects: () => ({
@@ -28,10 +28,14 @@ const makeComposer = (overrides: Partial<ChatComposerState> = {}): ChatComposerS
   ...overrides,
 });
 
-function mountComposer(overrides: Partial<ChatComposerState> = {}, error = "") {
+function mountComposer(
+  overrides: Partial<ChatComposerState> = {},
+  error = "",
+  propOverrides: { agents?: AgentSummary[] } = {},
+) {
   return mount(WorkbenchComposer, {
     props: {
-      agents: [],
+      agents: propOverrides.agents ?? [],
       commands: [],
       composer: makeComposer(overrides),
       currentProjectPath: "/workspace",
@@ -90,5 +94,25 @@ describe("WorkbenchComposer", () => {
 
     expect(wrapper.text()).toContain("当前没有可用模型，无法发送");
     expect((wrapper.find("textarea").element as HTMLTextAreaElement).value).toBe("kept draft");
+  });
+
+  it("shows the first real agent instead of a direct/no-agent option", () => {
+    const wrapper = mountComposer({}, "", {
+      agents: [
+        {
+          name: "assistant",
+          displayName: "Assistant",
+          description: "通用助手 agent",
+          mode: "all",
+          enabled: true,
+          source: "builtin:assistant",
+          sourceScope: "default",
+        },
+      ],
+    });
+
+    expect(wrapper.text()).toContain("Assistant");
+    expect(wrapper.text()).not.toContain("Direct");
+    expect(wrapper.text()).not.toContain("直接模式");
   });
 });

@@ -30,8 +30,8 @@ interface BundleManifest {
 
 ## Bundle 内容来源
 
-0. **ridge 内置 Pi 配置**：`packages/server/pi-default-config/`，服务启动时覆盖写入到 `~/.pi/agent`，但不删除目标侧已有 sessions、用户 skills、用户 prompts 等资源
-1. **服务器整体 Agents**：`~/.pi/agent/agents/*`
+0. **ridge 内置 Pi 配置**：`packages/server/pi-default-config/`，服务启动时覆盖写入到 `~/.pi/agent`，但不删除目标侧已有 sessions、用户 skills、用户 prompts 等资源；`agents/` 目录只作为用户自定义 Agent 目录占位，不写入 ridge 内置 Agent 文件
+1. **服务器整体 Agents**：`~/.pi/agent/agents/*`，只保存用户自定义 Agent；ridge 默认基础 Agent 由 server 代码内置，不通过该目录下发
 2. **服务器整体 Skills**：`~/.pi/agent/skills/*`
 3. **项目级覆盖**：`{projectPath}/.pi/agents/*`、`{projectPath}/.pi/skills/*`
 4. **启动上下文**：`~/ridge-workspace/记忆/MEMORY.md`、`~/ridge-workspace/Wiki/index.md`
@@ -89,6 +89,7 @@ Android 设备的 capability 固定收口到 `mobile_capture`、`camera`、`micr
 - 通用 Skill 所有设备都接收
 - 项目目录 `.pi/skills` 按 Pi 原机制读取，覆盖 bundle 中的服务器整体 Skill
 - 使用 Pi 默认 `~/.pi/agent`，ridge 从 `packages/server/pi-default-config/` 覆盖式写入配置
+- ridge 默认基础 Agent 是 server 内置的 `builtin:assistant`；`packages/server/pi-default-config/agents/` 不下发内置 Agent 文件，后续留给用户自定义
 - 物化时旧文件被清理、权限恢复、符号链接重建
 - Bundle ack 严格比对 served 记录，错误 hash/version 拒绝并结构化记录
 - Android 设备注册后不返回 runtime bundle，主动请求 bundle 返回 403。

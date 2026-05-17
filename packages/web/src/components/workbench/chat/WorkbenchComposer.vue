@@ -231,12 +231,15 @@ const currentThinkingLabel = computed(() => {
   return option?.label || val;
 });
 
+const currentAgentValue = computed(() =>
+  props.composer.selectedAgent || props.agents[0]?.name || "",
+);
+
 // 获取当前Agent显示值
 const currentAgentLabel = computed(() => {
-  const val = props.composer.selectedAgent || props.noAgentValue;
-  if (val === props.noAgentValue) return "Direct";
+  const val = currentAgentValue.value;
   const agent = props.agents.find((a) => a.name === val);
-  return agent?.displayName || agent?.name || val;
+  return agent?.displayName || agent?.name || val || "默认";
 });
 </script>
 
@@ -380,7 +383,7 @@ const currentAgentLabel = computed(() => {
             </Select>
 
             <Select
-              :model-value="composer.selectedAgent || noAgentValue"
+              :model-value="currentAgentValue"
               @update:model-value="handleAgentChange"
             >
               <SelectTrigger
@@ -391,7 +394,6 @@ const currentAgentLabel = computed(() => {
                 <span class="truncate font-medium">{{ currentAgentLabel }}</span>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem :value="noAgentValue">直接模式</SelectItem>
                 <SelectItem
                   v-for="agent in agents"
                   :key="agent.name"

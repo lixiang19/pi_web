@@ -45,6 +45,7 @@ describe("createCoreRouter automation routes with mock store", () => {
 		defaultWorkspaceDir: "/tmp/workspace",
 		resolveDiscoveryCwd: (value: unknown) => String(value ?? "/tmp/workspace"),
 		listProviders: () => [],
+		listSessionContexts: async () => ({ ctx: { contextId: "ctx", cwd: "/tmp/workspace" } }),
 		discoverAgents: async () => [],
 		createAgentSummary: (agent) => agent as unknown as AgentSummary,
 		createAgentConfigResponse: (agent) => agent as unknown as Record<string, unknown>,
@@ -90,6 +91,16 @@ describe("createCoreRouter automation routes with mock store", () => {
 		expect(res.body.runs).toEqual([{ id: "run-1", automationId: "rule-1", status: "success" }]);
 		expect(mockStore.listRules).toHaveBeenCalledTimes(1);
 		expect(mockStore.listRuns).toHaveBeenCalledTimes(1);
+	});
+
+	it("GET /api/session-contexts returns indexed context map", async () => {
+		const app = createApp(baseDeps);
+		const res = await request(app).get("/api/session-contexts");
+
+		expect(res.status).toBe(200);
+		expect(res.body).toEqual({
+			ctx: { contextId: "ctx", cwd: "/tmp/workspace" },
+		});
 	});
 
 	it("POST /api/automations creates rule and calls reschedule", async () => {

@@ -2,7 +2,7 @@
 
 ## 职责
 
-提供任务处理入口，保证一个任务最多一个处理会话，并强制使用 mode=task 的任务 Agent；同时承接 task review agent 对任务与里程碑的回顾建议入口。
+提供任务处理入口，保证一个任务最多一个处理会话，并承接 task review agent 对任务与里程碑的回顾建议入口。当前不再提供内置 `task-agent` 配置，此文档记录的是历史任务处理会话边界，后续需要按新的默认 Agent 模型重做。
 
 ## 入口
 
@@ -12,7 +12,6 @@
 - `packages/server/src/task-system.ts` — `setTaskProcessingSessionId` 内部函数
 - `packages/server/src/session-indexer.ts` — `upsertTaskSessionIndexRecord` 写入任务处理会话索引
 - `packages/server/src/task-session-boundary.ts` — task processing session 的 Agent 选择边界
-- `packages/server/src/default-agents.ts` — 内置 `task-agent`（mode: task, enabled: true）
 - `packages/server/src/index.ts` — 分叉守卫（`POST /api/sessions`）与 PATCH/messages 的 task-agent 边界
 - `packages/web/src/composables/useWorkspaceTasks.ts` — `openProcessingSession` 方法
 - `packages/web/src/components/workspace/TaskView.vue` — 任务详情处理会话按钮
@@ -36,7 +35,7 @@
 
 ### `agents`
 
-- 内置 `task-agent`（mode: 'task', enabled: true）
+- 当前无内置 `task-agent` 配置；历史 task-agent 边界代码仍存在，后续需要按新的默认 Agent 模型重做
 - `POST /api/agents` 已过滤 mode !== 'task'，task-only agent 不暴露给普通会话选择
 
 ## API 变更

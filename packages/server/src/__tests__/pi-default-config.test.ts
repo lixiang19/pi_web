@@ -90,12 +90,53 @@ describe("Pi default config", () => {
 
 		expect(settings.defaultProvider).toBeTruthy();
 		expect(settings.defaultModel).toBeTruthy();
-		for (const filename of ["auth.json", "models.json", "mcp.json", "tools.json", "permissions.json"]) {
+		expect(settings.instructions).toBeUndefined();
+		for (const filename of ["settings.json", "models.json", "mcp.json"]) {
 			const content = await fs.readFile(path.join(configDir, filename), "utf-8");
 			expect(JSON.parse(content)).toBeTruthy();
 		}
 		await expect(fs.access(path.join(configDir, "agents", ".keep"))).resolves.toBeUndefined();
+		await expect(fs.access(path.join(configDir, "agents", "assistant.md"))).rejects.toThrow();
+		await expect(fs.access(path.join(configDir, "agents", "task-agent.md"))).rejects.toThrow();
 		await expect(fs.access(path.join(configDir, "skills", ".keep"))).resolves.toBeUndefined();
 		await expect(fs.access(path.join(configDir, "extensions", ".keep"))).resolves.toBeUndefined();
+	});
+
+	it("loads the built-in default agent without writing it into the Pi config agents directory", async () => {
+		const configDir = getBuiltInPiConfigDir();
+		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "ridge-pi-agent-"));
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+
+		try {
+			await syncBuiltInPiConfigToDefaultAgentDir({
+				sourceDir: configDir,
+				targetAgentDir: targetDir,
+			});
+			process.env.PI_CODING_AGENT_DIR = targetDir;
+
+			const { discoverAgents } = await import("../agents.js");
+			const agents = await discoverAgents(process.cwd());
+			const assistant = agents.find((agent) => agent.name === "assistant");
+			const taskAgent = agents.find((agent) => agent.name === "task-agent");
+
+			expect(assistant).toMatchObject({
+				name: "assistant",
+				displayName: "Assistant",
+				mode: "all",
+				sourceScope: "default",
+				systemPrompt: "",
+			});
+			expect(assistant?.source).toBe("builtin:assistant");
+			expect(taskAgent).toBeUndefined();
+			await expect(fs.access(path.join(targetDir, "agents", "assistant.md"))).rejects.toThrow();
+			await expect(fs.access(path.join(targetDir, "agents", "task-agent.md"))).rejects.toThrow();
+		} finally {
+			if (previousAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			}
+			await fs.rm(targetDir, { recursive: true, force: true });
+		}
 	});
 });

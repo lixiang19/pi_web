@@ -7,7 +7,7 @@
 - [Pi SDK] 只能用 SDK 模式，禁止 RPC（官方限制，无替代方案）
 - [数据存储] 统一用服务端 JSON 文件存储（~/.ridge/），不混用 localStorage（架构简单统一）
 - [前后端分离] server 负责 runtime + 权限 + 持久化，web 只做投影消费，禁止在 Web 层伪造会话语义
-- [Agent注册表] agent 系统不能只依赖磁盘发现，必须先有内置默认 agent，再让 project/user 配置覆盖；否则 schema 一收紧，功能会出现“系统支持但列表为空”的假故障
+- [Agent注册表] `packages/server/pi-default-config/agents/` 只给用户自定义 Agent 占位；ridge 只在 server 代码里内置一个基础默认 Agent `builtin:assistant`，不覆盖写入内置 Agent 文件。
 - [输入安全] 所有服务端写入必须白名单校验，防止原型污染（**proto** 注入）
 - [目录边界] 工作区文件树与 Home 目录项目选择必须拆成两个接口，不能共用一套 root 校验（安全语义不同）
 - [Pi默认配置覆盖] ridge 只使用 Pi 默认配置根 `~/.pi/agent`，不另造配置根；仓库内置配置在 `packages/server/pi-default-config/`，server 启动时非破坏性覆盖写入，保留 Pi sessions 和用户自定义 skills/prompts 等目标侧资源。
@@ -155,6 +155,7 @@
 - [闪念刷新链路] 全局闪念入口保存后必须广播前端事件或走实时通道通知收件箱 store；否则 DB 已写入但当前页面 badge/list 不会更新。后台分析建议完成前 store 需要轮询或 SSE 刷新。
 - [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
 - [首页选择器异步默认值] 首页这类长驻标签页不要只在 setup 时拷贝异步 props；模型/Agent/thinking 默认值从 core/settings 异步到达后，需要在“不覆盖用户有效选择”的前提下同步本地选择状态
+- [首页模型/Agent下拉链路] 主页下拉数据来自 `usePiChatCore` boot 的 `/api/providers`、`/api/agents`、`/api/session-contexts`；`usePiChatCore` 禁止模块 import 时自动 boot，且 `/api/session-contexts` 缺失会让整个 boot 失败，表现为模型/Agent 下拉为空。
 - [反思先行] 每个里程碑完成后必须做功能反思，确认每个子功能真的可端到端跑通，而非"调 API 了就当完成"。见 `文档/功能开发/2026-04-28_工作空间功能反思.md`
 
 ## 2026-05-13 任务 39 内部项目/外部仓库语义改造
@@ -221,7 +222,7 @@
 
 ### 实现要点
 
-- **内置任务 Agent**：`default-agents.ts` 新增 `task-agent`（mode: 'task', enabled: true），供任务处理会话强制选择。
+- **任务 Agent 状态**：当前不再提供内置 `task-agent` 配置；任务处理会话链路保留历史边界，后续需要按新的默认 Agent 模型重做。
 - **任务处理会话 API**：`POST /api/workspace/tasks/:taskId/processing-session` 创建/返回已有会话；`GET` 查询。
 - **一任务一会话**：`workspace_tasks.processing_session_id` 通过 `setTaskProcessingSessionId` 内部写入；普通 PATCH 已移除该字段，禁止直接修改。
 - **项目绑定逻辑**：有 projectId 时查找项目 → 找不到 404；有 deviceId 且 isOnline=false → 409；无 deviceId 的本地项目允许运行（isOnline 不阻断）。

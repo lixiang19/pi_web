@@ -4,7 +4,6 @@ import HomePage from "@/components/workspace/HomePage.vue";
 import type { RecentActivityItem } from "@/composables/useRecentActivity";
 import type { RecentFileItem } from "@/lib/api";
 import type { AgentSummary, ThinkingLevel } from "@/lib/types";
-import { NO_AGENT_VALUE } from "@/composables/useWorkbenchSessionState";
 
 type HomeSubmitPayload = {
 	text: string;
@@ -160,6 +159,19 @@ describe("HomePage - 扁平命令行启动台", () => {
 		expect(selects).toHaveLength(3);
 	});
 
+	it("Agent 选择器只显示真实 Agent，默认选择第一个 Agent", async () => {
+		const wrapper = mountHomePage();
+		expect(wrapper.text()).not.toContain("无 Agent");
+		expect(wrapper.text()).not.toContain("直接对话");
+
+		const textarea = wrapper.find("textarea");
+		await textarea.setValue("使用默认 agent");
+		await wrapper.find("form").trigger("submit.prevent");
+
+		const payload = wrapper.emitted("submit")![0]![0] as HomeSubmitPayload;
+		expect(payload.agent).toBe("coding-agent");
+	});
+
 	it("下拉内容使用受控高度", async () => {
 		const wrapper = mountHomePage();
 		const contents = wrapper.findAll('[data-testid="select-content"]');
@@ -188,7 +200,7 @@ describe("HomePage - 扁平命令行启动台", () => {
 		const payload = wrapper.emitted("submit")![0]![0] as HomeSubmitPayload;
 		expect(payload.text).toBe("帮我写个函数");
 		expect(payload.model).toBe("gpt-4");
-		expect(payload.agent).toBe(NO_AGENT_VALUE);
+		expect(payload.agent).toBe("coding-agent");
 		expect(payload.thinkingLevel).toBe("medium");
 	});
 

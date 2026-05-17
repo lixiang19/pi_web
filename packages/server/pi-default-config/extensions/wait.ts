@@ -42,7 +42,7 @@ export default function waitExtension(pi: ExtensionAPI) {
         description: "需要等待的秒数，可为小数，例如 0.5、2、10",
       }),
     }),
-    async execute(_toolCallId, params, signal, onUpdate) {
+    async execute(_toolCallId, params, signal, _onUpdate) {
       const startedAt = Date.now();
 
 

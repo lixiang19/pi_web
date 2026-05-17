@@ -3,7 +3,7 @@ import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { parseFrontmatter } from '@mariozechner/pi-coding-agent';
 import { normalizeAgentPermission } from './agent-permissions.js';
-import { DEFAULT_AGENTS } from './default-agents.js';
+import { BUILT_IN_AGENTS } from './built-in-agents.js';
 import { getPiDefaultAgentDir } from './pi-default-config.js';
 import type {
   AgentMode,
@@ -384,12 +384,12 @@ const loadAgentsFromDir = async (dirPath: string, sourceScope: AgentScope): Prom
 };
 
 const mergeAgents = (
-  defaultAgents: ParsedAgent[],
+  builtInAgents: ParsedAgent[],
   userAgents: ParsedAgent[],
   projectAgents: ParsedAgent[],
 ): ParsedAgent[] => {
   const merged = new Map<string, ParsedAgent>();
-  for (const agent of defaultAgents) {
+  for (const agent of builtInAgents) {
     merged.set(agent.name, agent);
   }
 
@@ -443,7 +443,7 @@ export async function discoverAgents(cwd: string): Promise<ParsedAgent[]> {
       : Promise.resolve([]),
   ]);
 
-  return mergeAgents(DEFAULT_AGENTS as ParsedAgent[], userAgents, projectAgents);
+  return mergeAgents(BUILT_IN_AGENTS as ParsedAgent[], userAgents, projectAgents);
 }
 
 export async function getAgentByName(

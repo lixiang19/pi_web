@@ -34,6 +34,7 @@ export interface CoreDeps {
 	defaultWorkspaceDir: string;
 	resolveDiscoveryCwd: (value: unknown) => string;
 	listProviders: () => unknown;
+	listSessionContexts: () => Promise<Record<string, unknown>>;
 	discoverAgents: (cwd: string) => Promise<AgentConfigInternal[]>;
 	createAgentSummary: (agent: AgentConfigInternal) => AgentSummary;
 	createAgentConfigResponse: (
@@ -97,6 +98,7 @@ export function createCoreRouter(deps: CoreDeps) {
 		defaultWorkspaceDir,
 		resolveDiscoveryCwd,
 		listProviders,
+		listSessionContexts,
 		discoverAgents,
 		createAgentSummary,
 		createAgentConfigResponse,
@@ -139,6 +141,17 @@ export function createCoreRouter(deps: CoreDeps) {
 	router.get("/api/providers", (_req: Request, res: Response) => {
 		res.json(listProviders());
 	});
+
+	router.get(
+		"/api/session-contexts",
+		async (_req: Request, res: Response, next: NextFunction) => {
+			try {
+				res.json(await listSessionContexts());
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
 
 	router.get(
 		"/api/agents",

@@ -196,6 +196,7 @@ const resolveComposerDefaults = (
   const persistedModel = settingsStore.defaultModel;
   const persistedAgent = settingsStore.defaultAgent;
   const persistedThinking = settingsStore.defaultThinkingLevel;
+  const fallbackAgent = agents.value[0]?.name ?? "";
 
   // Model: prefer persisted, validate against available models, fallback to system default
   if (persistedModel && models.value.some((m) => m.value === persistedModel)) {
@@ -204,11 +205,11 @@ const resolveComposerDefaults = (
     composer.selectedModel = defaultModel.value;
   }
 
-  // Agent: prefer persisted, validate against available agents, fallback to direct mode
+  // Agent: prefer persisted, validate against available agents, fallback to built-in default
   if (persistedAgent && agents.value.some((a) => a.name === persistedAgent)) {
     composer.selectedAgent = persistedAgent;
   } else {
-    composer.selectedAgent = persistedAgent || "";
+    composer.selectedAgent = fallbackAgent;
   }
 
   // Thinking level: always use persisted or medium
@@ -224,9 +225,15 @@ const syncComposerSelection = (
   }
 
   const settingsStore = useSettingsStore();
+  const fallbackAgent = agents.value[0]?.name ?? "";
 
-  // Agent: use snapshot value, fallback to persisted preference or direct mode
-  composer.selectedAgent = snapshot.agent || settingsStore.defaultAgent || "";
+  // Agent: use snapshot value, fallback to persisted preference or built-in default
+  composer.selectedAgent =
+    snapshot.agent ||
+    (settingsStore.defaultAgent &&
+    agents.value.some((agent) => agent.name === settingsStore.defaultAgent)
+      ? settingsStore.defaultAgent
+      : fallbackAgent);
 
   // Model: use snapshot value, fallback to persisted preference or system default
   composer.selectedModel =
@@ -555,20 +562,36 @@ const createDefaultComposer = (): ChatComposerState =>
 const bootPromise = ref<Promise<void> | null>(null);
 const bootError = ref("");
 
-if (!booted && typeof window !== "undefined") {
+const startBoot = (): Promise<void> => {
+  if (booted) {
+    bootPromise.value ??= Promise.resolve();
+    return bootPromise.value;
+  }
+
+  if (bootPromise.value) {
+    return bootPromise.value;
+  }
+
+  bootError.value = "";
   bootPromise.value = boot().catch((caughtError) => {
     bootError.value =
       caughtError instanceof Error
         ? caughtError.message
         : String(caughtError);
+    bootPromise.value = null;
   });
-}
+  return bootPromise.value;
+};
 
 // ============================================================================
 // Export
 // ============================================================================
 
 export function usePiChatCore() {
+  if (!booted && typeof window !== "undefined") {
+    void startBoot();
+  }
+
   return {
     // Global state
     info,

@@ -136,7 +136,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
   );
 
   const effectiveAgent = computed(
-    () => mentionedAgent.value || composer.selectedAgent || "",
+    () => mentionedAgent.value || composer.selectedAgent || core.agents.value[0]?.name || "",
   );
 
   const activeHistoryMeta = computed(() => {
@@ -469,7 +469,7 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
         thinkingLevel:
           options?.thinkingLevel ?? (composer.selectedThinkingLevel || null),
         parentSessionId: options?.parentSessionId,
-        agent: options?.agent ?? (composer.selectedAgent || null),
+        agent: options?.agent ?? (effectiveAgent.value || null),
       }),
     ));
 
@@ -917,6 +917,13 @@ export function usePerSessionChat(sessionIdRef: Ref<string>) {
       core.refreshAgents(nextCwd || undefined),
       core.refreshResources(nextCwd ? { cwd: nextCwd } : undefined),
     ]);
+
+    if (!isTaskSession.value) {
+      const agentNames = new Set(core.agents.value.map((agent) => agent.name));
+      if (!composer.selectedAgent || !agentNames.has(composer.selectedAgent)) {
+        composer.selectedAgent = core.agents.value[0]?.name || "";
+      }
+    }
   };
 
   const setDraftProjectPath = async (cwd: string) => {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { CornerUpLeft } from "lucide-vue-next";
+import { computed } from "vue";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import type { AgentSummary, ChatComposerState, ThinkingLevel } from "@/lib/types";
 
-defineProps<{
+const props = defineProps<{
   agents: AgentSummary[];
   composer: ChatComposerState;
   currentSessionTitle: string;
@@ -30,6 +31,10 @@ const emit = defineEmits<{
   selectModel: [value: unknown];
   selectThinking: [value: unknown];
 }>();
+
+const currentAgentValue = computed(() =>
+  props.composer.selectedAgent || props.agents[0]?.name || "",
+);
 </script>
 
 <template>
@@ -92,14 +97,13 @@ const emit = defineEmits<{
         </SelectContent>
       </Select>
       <Select
-        :model-value="composer.selectedAgent || noAgentValue"
+        :model-value="currentAgentValue"
         @update:model-value="emit('selectAgent', $event)"
       >
         <SelectTrigger class="h-7 w-[110px] text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem :value="noAgentValue">Direct</SelectItem>
           <SelectItem
             v-for="agent in agents"
             :key="agent.name"
