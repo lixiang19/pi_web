@@ -16,7 +16,7 @@ export interface RuntimeBundleDeps {
 const deviceRegistrationSchema = z.object({
 	deviceId: z.string().trim().min(1).max(120).optional(),
 	name: z.string().trim().min(1).max(120),
-	deviceType: z.enum(["server", "desktop", "android"]).default("desktop"),
+	deviceType: z.enum(["server", "desktop", "android", "browser"]).default("desktop"),
 	capabilities: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -139,8 +139,8 @@ export function createRuntimeBundleRouter(deps: RuntimeBundleDeps) {
 				res.status(401).json({ error: "Unauthorized device" });
 				return;
 			}
-			if (device.deviceType === "android") {
-				res.status(403).json({ error: "Android devices do not receive runtime bundles" });
+			if (device.deviceType === "android" || device.deviceType === "browser") {
+				res.status(403).json({ error: "Capture-only devices do not receive runtime bundles" });
 				return;
 			}
 			res.json(buildRuntimeBundle({
@@ -188,7 +188,7 @@ export function createDeviceRegistrationRouter(deps: RuntimeBundleDeps) {
 					updatedAt: device.updatedAt,
 				},
 				token: device.token,
-				...(device.deviceType === "android"
+				...(device.deviceType === "android" || device.deviceType === "browser"
 					? {}
 					: {
 							runtimeBundle: buildRuntimeBundle({

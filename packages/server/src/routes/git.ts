@@ -7,9 +7,7 @@ import express, {
 import { z } from "zod";
 
 import { resolveGitContext } from "../git-resolver.js";
-import type { GitStatusResult } from "../git-service.js";
-import type { IsoGitContext } from "../iso-git-service.js";
-import type { GitBranchesApiResponse, HttpError } from "../types/index.js";
+import type { HttpError } from "../types/index.js";
 
 type GitService = {
 	isGitRepository: (cwd: string) => Promise<boolean>;
@@ -30,6 +28,7 @@ type GitService = {
 		message: string,
 		files: string[],
 	) => Promise<{ hash: string }>;
+	getFileDiff: (cwd: string, filePath: string, staged?: boolean) => Promise<string>;
 	createBranch: (
 		cwd: string,
 		branchName: string,
@@ -45,20 +44,9 @@ type GitService = {
 	rebase: (cwd: string, branchName: string) => Promise<void>;
 };
 
-type IsoGitService = {
-	getStatus: (ctx: IsoGitContext) => Promise<GitStatusResult>;
-	getBranches: (ctx: IsoGitContext) => Promise<GitBranchesApiResponse>;
-	commit: (
-		ctx: IsoGitContext,
-		message: string,
-		files: string[],
-	) => Promise<{ hash: string }>;
-};
-
 export interface GitDeps {
 	defaultWorkspaceDir: string;
 	gitService: GitService;
-	isoGitService: IsoGitService;
 }
 
 const gitCwdQuerySchema = z.object({ cwd: z.string().optional() });
@@ -75,14 +63,14 @@ const requireCliEngine = (
 	capability: string,
 ) => {
 	if (ctx.engine !== "cli") {
-		const error = new Error(`内置 Git 不支持${capability}`) as HttpError;
+		const error = new Error(`非真实 Git 仓库不支持${capability}`) as HttpError;
 		error.statusCode = 400;
 		throw error;
 	}
 };
 
 export function createGitRouter(deps: GitDeps) {
-	const { defaultWorkspaceDir, gitService, isoGitService } = deps;
+	const { defaultWorkspaceDir, gitService } = deps;
 	const router = express.Router();
 
 	router.get(
@@ -93,6 +81,7 @@ export function createGitRouter(deps: GitDeps) {
 				const cwd = resolveGitCwd(query.cwd, defaultWorkspaceDir);
 				const ctx = await resolveGitContext(cwd);
 				res.json({
+					isRepository: ctx.isRepository,
 					engine: ctx.engine,
 					canCommit: ctx.canCommit,
 					canPushPull: ctx.canPushPull,
@@ -112,11 +101,8 @@ export function createGitRouter(deps: GitDeps) {
 				const query = gitCwdQuerySchema.parse(req.query ?? {});
 				const cwd = resolveGitCwd(query.cwd, defaultWorkspaceDir);
 				const ctx = await resolveGitContext(cwd);
-				if (ctx.engine === "cli") {
-					res.json(await gitService.getStatus(cwd));
-				} else {
-					res.json(await isoGitService.getStatus(ctx));
-				}
+				requireCliEngine(ctx, "状态查看");
+				res.json(await gitService.getStatus(cwd));
 			} catch (error) {
 				next(error);
 			}
@@ -130,11 +116,8 @@ export function createGitRouter(deps: GitDeps) {
 				const query = gitCwdQuerySchema.parse(req.query ?? {});
 				const cwd = resolveGitCwd(query.cwd, defaultWorkspaceDir);
 				const ctx = await resolveGitContext(cwd);
-				if (ctx.engine === "cli") {
-					res.json(await gitService.getBranches(cwd));
-				} else {
-					res.json(await isoGitService.getBranches(ctx));
-				}
+				requireCliEngine(ctx, "分支查看");
+				res.json(await gitService.getBranches(cwd));
 			} catch (error) {
 				next(error);
 			}
@@ -151,6 +134,37 @@ export function createGitRouter(deps: GitDeps) {
 				requireCliEngine(ctx, "远程操作");
 				const remotes = await gitService.getRemotes(cwd);
 				res.json(remotes);
+		} catch (error) {
+			next(error);
+		}
+	},
+);
+
+	router.get(
+		"/diff",
+		async (req: Request, res: Response, next: NextFunction) => {
+			try {
+				const query = z
+					.object({
+						cwd: z.string(),
+						filePath: z.string(),
+						staged: z.coerce.boolean().optional(),
+					})
+					.parse(req.query ?? {});
+				const ctx = await resolveGitContext(
+					resolveGitCwd(query.cwd, defaultWorkspaceDir),
+				);
+				requireCliEngine(ctx, "diff 查看");
+				const diff = await gitService.getFileDiff(
+					resolveGitCwd(query.cwd, defaultWorkspaceDir),
+					query.filePath,
+					query.staged,
+				);
+				res.json({
+					path: query.filePath,
+					diff,
+					staged: query.staged ?? false,
+				});
 			} catch (error) {
 				next(error);
 			}
@@ -249,17 +263,13 @@ export function createGitRouter(deps: GitDeps) {
 				const ctx = await resolveGitContext(
 					resolveGitCwd(cwd, defaultWorkspaceDir),
 				);
-				if (ctx.engine === "cli") {
-					const result = await gitService.commit(
-						resolveGitCwd(cwd, defaultWorkspaceDir),
-						message,
-						files,
-					);
-					res.json({ ok: true, hash: result.hash });
-				} else {
-					const result = await isoGitService.commit(ctx, message, files);
-					res.json({ ok: true, hash: result.hash });
-				}
+				requireCliEngine(ctx, "commit");
+				const result = await gitService.commit(
+					resolveGitCwd(cwd, defaultWorkspaceDir),
+					message,
+					files,
+				);
+				res.json({ ok: true, hash: result.hash });
 			} catch (error) {
 				next(error);
 			}

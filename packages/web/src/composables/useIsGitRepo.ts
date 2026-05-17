@@ -22,12 +22,12 @@ export function useIsGitRepo(cwd: Ref<string>) {
 			isChecking.value = true;
 
 			try {
-				await getGitRepositoryStatus(nextCwd);
+				const result = await getGitRepositoryStatus(nextCwd);
 				if (token !== requestToken) {
 					return;
 				}
 
-				isGitRepo.value = true;
+				isGitRepo.value = result.isRepository;
 			} catch {
 				if (token !== requestToken) {
 					return;

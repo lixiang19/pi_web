@@ -789,7 +789,8 @@ export interface GitRemoteInfo {
 }
 
 export interface GitRepositoryStatusResponse {
-	engine: "cli" | "iso";
+	isRepository: boolean;
+	engine: "cli" | "none";
 	canCommit: boolean;
 	canPushPull: boolean;
 	canWorktree: boolean;
@@ -841,4 +842,10 @@ export interface TerminalRestartRequest {
 export interface TerminalMutationResponse {
 	ok: true;
 	terminalId: string;
+}
+
+export interface GitDiffResponse {
+	path: string;
+	diff: string;
+	staged: boolean;
 }

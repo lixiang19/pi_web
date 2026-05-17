@@ -24,6 +24,16 @@ const EXCLUDE_PATTERNS = [
 	".DS_Store",
 ];
 
+const WORKSPACE_VERSION_IGNORED_SEGMENTS = new Set(EXCLUDE_PATTERNS);
+
+export function isWorkspaceVersionIgnoredPath(filepath: string): boolean {
+	const normalized = filepath.replace(/\\/g, "/");
+	return normalized
+		.split("/")
+		.filter(Boolean)
+		.some((segment) => WORKSPACE_VERSION_IGNORED_SEGMENTS.has(segment));
+}
+
 // ===== 类型 =====
 
 export interface IsoGitContext {
@@ -56,9 +66,7 @@ function convertStatusMatrix(
 		if (head === UNCHANGED && workdir === UNCHANGED && stage === UNCHANGED)
 			continue;
 
-		// 排除 .git 目录自身
-		if (filepath === ".git" || filepath.startsWith(".git/")) continue;
-		if (filepath === ".ridge" || filepath.startsWith(".ridge/")) continue;
+		if (isWorkspaceVersionIgnoredPath(filepath)) continue;
 
 		let index = " ";
 		let working_dir = " ";
@@ -75,14 +83,14 @@ function convertStatusMatrix(
 		}
 
 		// === working_dir 列（workdir vs staging） ===
-		if (workdir === MODIFIED) {
-			working_dir = "M";
-		} else if (workdir === ABSENT && head !== ABSENT) {
-			working_dir = "D";
-		} else if (head === ABSENT && workdir !== ABSENT && stage === ABSENT) {
+		if (head === ABSENT && workdir !== ABSENT && stage === ABSENT) {
 			// untracked
 			working_dir = "?";
 			index = "?";
+		} else if (workdir === MODIFIED) {
+			working_dir = "M";
+		} else if (workdir === ABSENT && head !== ABSENT) {
+			working_dir = "D";
 		}
 
 		files.push({ path: filepath, index, working_dir });
@@ -95,6 +103,41 @@ function convertStatusMatrix(
 		ahead: 0,
 		behind: 0,
 	};
+}
+
+function assertSafeRelativeFilePath(filepath: string): string {
+	const normalized = filepath.replace(/\\/g, "/");
+	if (
+		!normalized ||
+		path.isAbsolute(normalized) ||
+		normalized.split("/").includes("..") ||
+		normalized.split("/").includes(".ridge")
+	) {
+		throw new Error(`Invalid version file path: ${filepath}`);
+	}
+	return normalized;
+}
+
+function splitDiffLines(content: string | null): string[] {
+	if (content === null) return [];
+	const lines = content.split("\n");
+	if (lines.at(-1) === "") lines.pop();
+	return lines;
+}
+
+function createSimpleUnifiedDiff(filepath: string, oldContent: string | null, newContent: string | null): string {
+	if (oldContent === newContent) return "";
+	const oldLines = splitDiffLines(oldContent);
+	const newLines = splitDiffLines(newContent);
+	const oldLabel = oldContent === null ? "/dev/null" : `a/${filepath}`;
+	const newLabel = newContent === null ? "/dev/null" : `b/${filepath}`;
+	return [
+		`--- ${oldLabel}`,
+		`+++ ${newLabel}`,
+		`@@ -1,${oldLines.length} +1,${newLines.length} @@`,
+		...oldLines.map((line) => `-${line}`),
+		...newLines.map((line) => `+${line}`),
+	].join("\n");
 }
 
 // ===== IsoGitService =====
@@ -162,7 +205,14 @@ export function createIsoGitService() {
 	): Promise<{ hash: string }> => {
 		await ensureInit(ctx);
 
-		for (const f of files) {
+		const versionedFiles = files
+			.map((file) => assertSafeRelativeFilePath(file))
+			.filter((file) => !isWorkspaceVersionIgnoredPath(file));
+		if (versionedFiles.length === 0) {
+			throw new Error("No changes");
+		}
+
+		for (const f of versionedFiles) {
 			const targetPath = path.join(ctx.workTree, f);
 			try {
 				await fs.promises.access(targetPath);
@@ -214,12 +264,57 @@ export function createIsoGitService() {
 		};
 	};
 
+	const getFileDiff = async (
+		ctx: IsoGitContext,
+		filepath: string,
+	): Promise<string> => {
+		await ensureInit(ctx);
+		const safePath = assertSafeRelativeFilePath(filepath);
+		if (isWorkspaceVersionIgnoredPath(safePath)) return "";
+		let oldContent: string | null = null;
+		let newContent: string | null = null;
+
+		try {
+			const oid = await isoGit.resolveRef({
+				fs,
+				dir: ctx.workTree,
+				gitdir: ctx.gitdir,
+				ref: "HEAD",
+			});
+			const blob = await isoGit.readBlob({
+				fs,
+				dir: ctx.workTree,
+				gitdir: ctx.gitdir,
+				oid,
+				filepath: safePath,
+			});
+			oldContent = Buffer.from(blob.blob).toString("utf-8");
+		} catch {
+			oldContent = null;
+		}
+
+		try {
+			newContent = await fs.promises.readFile(
+				path.join(ctx.workTree, safePath),
+				"utf-8",
+			);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				throw error;
+			}
+			newContent = null;
+		}
+
+		return createSimpleUnifiedDiff(safePath, oldContent, newContent);
+	};
+
 	return {
 		ensureInit,
 		getCurrentBranch,
 		getStatus,
 		commit,
 		getBranches,
+		getFileDiff,
 	};
 }
 

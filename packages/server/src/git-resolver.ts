@@ -2,19 +2,18 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { getProjects } from "./storage/index.js";
-import { getDataDir } from "./utils/paths.js";
 
 const execFileAsync = promisify(execFile);
 
 // ===== 类型 =====
 
-export type EngineKind = "cli" | "iso";
+export type EngineKind = "cli" | "none";
 
 export interface GitContext {
 	engine: EngineKind;
 	workTree: string;
-	gitdir: string;
+	gitdir: string | null;
+	isRepository: boolean;
 	canCommit: boolean;
 	canPushPull: boolean;
 	canWorktree: boolean;
@@ -41,18 +40,6 @@ export async function hasSystemGit(): Promise<boolean> {
 	return systemGitAvailable;
 }
 
-// ===== 从 cwd 反查 projectId =====
-
-async function resolveProjectId(cwd: string): Promise<string> {
-	const state = await getProjects();
-	const normalized = path.resolve(cwd);
-	const project = state.projects.find(
-		(p) => path.resolve(p.path) === normalized,
-	);
-	// 找不到匹配项目时用路径 hash 作为 fallback
-	return project?.id || Buffer.from(normalized).toString("hex").slice(0, 16);
-}
-
 // ===== 解析仓库上下文 =====
 
 export async function resolveGitContext(cwd: string): Promise<GitContext> {
@@ -67,6 +54,7 @@ export async function resolveGitContext(cwd: string): Promise<GitContext> {
 				engine: "cli",
 				workTree: projectPath,
 				gitdir: dotGit,
+				isRepository: true,
 				canCommit: true,
 				canPushPull: true,
 				canWorktree: true,
@@ -77,17 +65,14 @@ export async function resolveGitContext(cwd: string): Promise<GitContext> {
 		}
 	}
 
-	// Iso 引擎
-	const projectId = await resolveProjectId(projectPath);
-	const isoGitdir = path.join(getDataDir(), "ridge-git", projectId);
-
 	return {
-		engine: "iso",
+		engine: "none",
 		workTree: projectPath,
-		gitdir: isoGitdir,
-		canCommit: true,
+		gitdir: null,
+		isRepository: false,
+		canCommit: false,
 		canPushPull: false,
 		canWorktree: false,
-		label: "ridge 内置",
+		label: "非 Git 仓库",
 	};
 }

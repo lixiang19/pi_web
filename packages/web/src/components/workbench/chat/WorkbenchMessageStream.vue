@@ -30,10 +30,6 @@ const props = defineProps<{
   isLoadingOlder: boolean;
   messages: UiConversationMessage[];
   status: SessionSummary["status"];
-  /** 是否禁用分叉操作 */
-  isForkDisabled?: boolean;
-  /** 禁用原因 */
-  forkDisabledReason?: string;
 }>();
 
 const emit = defineEmits<{
@@ -41,8 +37,6 @@ const emit = defineEmits<{
   loadEarlier: [];
   submitAsk: [askId: string, answers: AskQuestionAnswer[]];
   submitPermission: [requestId: string, action: "once" | "always" | "reject"];
-  editMessage: [message: UiConversationMessage];
-  retryMessage: [message: UiConversationMessage];
 }>();
 
 const messageScrollArea = ref<HTMLElement | { $el?: Element } | null>(null);
@@ -414,9 +408,6 @@ onBeforeUnmount(() => {
           <template v-for="round in conversationLayout.rounds" :key="round.key">
             <ChatMessageItem
               :message="round.userMessage"
-              :is-fork-disabled="isForkDisabled"
-              :fork-disabled-reason="forkDisabledReason"
-              @edit="emit('editMessage', $event)"
             />
 
             <ProcessMessagesFold
@@ -428,9 +419,6 @@ onBeforeUnmount(() => {
               v-if="round.finalMessage"
               :message="round.finalMessage"
               :is-final-assistant-message="true"
-              :is-fork-disabled="isForkDisabled"
-              :fork-disabled-reason="forkDisabledReason"
-              @retry="emit('retryMessage', $event)"
             />
           </template>
 

@@ -4,10 +4,19 @@ import Database from "better-sqlite3";
 import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+	ConversionJob,
+	CreateConversionRequest,
+	DownloadedArtifact,
+} from "../conversion-service-client.js";
+import type { RagIndexOptions } from "../rag-indexer.js";
 import { createFleetingRouter } from "../routes/fleeting.js";
 import { createTempDir } from "../test/helpers.js";
 
 type TestDatabase = ReturnType<typeof Database>;
+type CreateConversionFn = (request: CreateConversionRequest) => Promise<ConversionJob>;
+type DownloadArtifactsFn = (job: ConversionJob) => Promise<DownloadedArtifact[]>;
+type MarkRagTargetPendingFn = (targetPath: string, options?: RagIndexOptions) => Promise<void>;
 
 describe("fleeting API", () => {
 	let workspaceDir: string;
@@ -16,6 +25,9 @@ describe("fleeting API", () => {
 	let cleanup: () => Promise<void>;
 	let app: ReturnType<typeof express>;
 	let runAnalysis: (noteId: string) => Promise<void>;
+	let createConversion: ReturnType<typeof vi.fn<CreateConversionFn>>;
+	let downloadArtifacts: ReturnType<typeof vi.fn<DownloadArtifactsFn>>;
+	let markRagTargetPending: ReturnType<typeof vi.fn<MarkRagTargetPendingFn>>;
 
 	beforeEach(async () => {
 		workspaceDir = await createTempDir("ridge-fleeting-");
@@ -100,18 +112,50 @@ CREATE TABLE IF NOT EXISTS fleeting_attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
   ON fleeting_attachments(note_id, created_at DESC);
-		`);
-		runAnalysis = vi.fn(async () => undefined);
-		app = express();
-		app.use(express.json());
-		app.use(
+			`);
+			runAnalysis = vi.fn(async () => undefined);
+			createConversion = vi.fn<CreateConversionFn>(async () => ({
+				jobId: "conv-clip",
+				status: "succeeded",
+				task: "document.markdown",
+				createdAt: new Date().toISOString(),
+				artifacts: [
+					{
+						artifactId: "art-md",
+						name: "article.md",
+						mimeType: "text/markdown",
+						size: 26,
+						inline: true,
+						content: "# Converted\n\nfrom webpage",
+					},
+				],
+			}));
+			downloadArtifacts = vi.fn<DownloadArtifactsFn>(async () => [
+				{
+					artifact: {
+						artifactId: "art-md",
+						name: "article.md",
+						mimeType: "text/markdown",
+						size: 26,
+						inline: true,
+						content: "# Converted\n\nfrom webpage",
+					},
+					buffer: Buffer.from("# Converted\n\nfrom webpage", "utf-8"),
+				},
+			]);
+			markRagTargetPending = vi.fn<MarkRagTargetPendingFn>(async () => undefined);
+			app = express();
+			app.use(express.json());
+			app.use(
 			"/api/fleeting",
 			createFleetingRouter({
-				db,
-				workspaceDir,
-				getAnalysisRunner: () => ({ run: runAnalysis, resetJob: vi.fn() }),
-			}),
-		);
+					db,
+					workspaceDir,
+					getAnalysisRunner: () => ({ run: runAnalysis, resetJob: vi.fn() }),
+					getConversionClient: () => ({ createConversion, downloadArtifacts }),
+					markRagTargetPending,
+				}),
+			);
 		app.use((err: Error & { statusCode?: number }, _req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }, _next: unknown) => {
 			res.status(err.statusCode ?? 500).json({ error: err.message });
 		});
@@ -209,31 +253,71 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(content).toContain("第二条日记闪念");
 	});
 
-	it("creates a DB clip and deletes the original fleeting note", async () => {
+	it("converts URL fleeting notes through the Python converter, writes a Markdown clip file, and deletes the original fleeting note", async () => {
 		const created = await request(app)
 			.post("/api/fleeting")
-			.send({ content: "https://example.com 好文" });
+			.send({ content: "https://example.com/article" });
 
 		const res = await request(app)
 			.post(`/api/fleeting/${created.body.note.id}/process/clip`)
 			.send({
-				title: "好文",
-				url: "https://example.com",
-				content: "https://example.com 好文",
-				source: "闪念",
-			});
+					title: "好文",
+					url: "https://example.com/article",
+					content: "https://example.com/article",
+					source: "闪念",
+				});
 
 		expect(res.status).toBe(200);
 		expect(res.body.clip.title).toBe("好文");
+		expect(res.body.clip.markdownPath).toBe("剪藏/好文.md");
 		expect(res.body.deleted).toBe(true);
+		expect(createConversion).toHaveBeenCalledWith(expect.objectContaining({
+			task: "document.markdown",
+			input: { url: "https://example.com/article", mimeType: "text/html" },
+			options: { engine: "markitdown" },
+			waitMs: 30000,
+		}));
+		expect(markRagTargetPending).toHaveBeenCalledWith(
+			path.join(workspaceDir, "剪藏", "好文.md"),
+			expect.objectContaining({ workspaceDir, refreshPolicy: "immediate", event: "manual" }),
+		);
+		await expect(fs.readFile(path.join(workspaceDir, "剪藏", "好文.md"), "utf-8"))
+			.resolves.toContain("# Converted");
 		const row = db
 			.prepare("SELECT title, url, content FROM clips WHERE clip_id = ?")
 			.get(res.body.clip.id) as { title: string; url: string; content: string };
 		expect(row).toEqual({
 			title: "好文",
-			url: "https://example.com",
-			content: "https://example.com 好文",
+			url: "https://example.com/article",
+			content: "# Converted\n\nfrom webpage",
 		});
+	});
+
+	it("keeps the URL fleeting note when webpage markdown conversion fails", async () => {
+		createConversion.mockResolvedValueOnce({
+			jobId: "conv-failed",
+			status: "failed",
+			task: "document.markdown",
+			createdAt: new Date().toISOString(),
+			error: { code: "conversion_failed", message: "converter failed" },
+		});
+		const created = await request(app)
+			.post("/api/fleeting")
+			.send({ content: "https://example.com/fail" });
+
+		const res = await request(app)
+			.post(`/api/fleeting/${created.body.note.id}/process/clip`)
+			.send({
+				title: "失败网页",
+				url: "https://example.com/fail",
+				content: "https://example.com/fail",
+				source: "闪念",
+			});
+
+		expect(res.status).toBe(502);
+		const list = await request(app).get("/api/fleeting");
+		expect(list.body.notes).toHaveLength(1);
+		await expect(fs.readdir(path.join(workspaceDir, "剪藏"))).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
 	it("lists clips ordered by creation time", async () => {

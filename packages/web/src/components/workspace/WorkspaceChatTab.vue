@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef } from "vue";
+import { computed, onMounted, ref, toRef, watch } from "vue";
 import { usePerSessionChat } from "@/composables/usePerSessionChat";
 import WorkbenchChatPanel from "@/components/workbench/chat/WorkbenchChatPanel.vue";
 import { NO_AGENT_VALUE, thinkingOptions } from "@/composables/useWorkbenchSessionState";
@@ -9,8 +9,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import WorkspaceFileTree from "@/components/WorkspaceFileTree.vue";
 import WorkbenchGitPanel from "@/components/workbench/WorkbenchGitPanel.vue";
+import WorkbenchVersionPanel from "@/components/workbench/WorkbenchVersionPanel.vue";
 import { useGitRepositoryStatus } from "@/composables/useGitRepositoryStatus";
-import { FileText, FolderTree, GitBranch, FileDiff } from "lucide-vue-next";
+import { FileText, FolderTree, GitBranch, History } from "lucide-vue-next";
 import type { UiConversationMessage } from "@/lib/types";
 
 const props = defineProps<{
@@ -49,6 +50,13 @@ const isRightSidebarOpen = ref(true);
 const rightActiveTab = ref("summary");
 
 const { status: gitStatus } = useGitRepositoryStatus(toRef(() => chat.fileTreeRoot.value));
+const showGitTab = computed(() => gitStatus.value?.isRepository === true);
+
+watch(showGitTab, (visible) => {
+	if (!visible && rightActiveTab.value === "git") {
+		rightActiveTab.value = "version";
+	}
+});
 
 const userRoundCount = computed(() =>
 	chat.messages.value.filter((m) => m.message.role === "user").length,
@@ -123,11 +131,9 @@ const handleEditMessage = async (message: UiConversationMessage) => {
 
 const handleRetryMessage = async (_message: UiConversationMessage) => {
 	if (isForkDisabled.value) return;
-	// 重试时找到对应轮次的用户 prompt
 	const messages = chat.messages.value;
 	const msgIndex = messages.findIndex((m) => m.localId === _message.localId);
 	if (msgIndex < 0) return;
-	// 向前查找最近的 user message
 	let userText = "";
 	for (let i = msgIndex - 1; i >= 0; i--) {
 		const msg = messages[i];
@@ -209,29 +215,42 @@ const handleSelectFile = (_path: string) => {
       <!-- 右侧工作侧栏 -->
       <aside
         v-show="isRightSidebarOpen"
-        class="w-72 flex shrink-0 flex-col bg-secondary overflow-hidden"
+        class="w-[260px] flex shrink-0 flex-col bg-background overflow-hidden"
       >
         <Tabs v-model="rightActiveTab" class="flex h-full flex-col">
-          <TabsList class="mx-2 mt-2 h-8 w-auto grid grid-cols-4 border border-default bg-transparent p-0.5 shrink-0">
-            <TabsTrigger value="summary" class="text-caption font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
+          <TabsList class="mx-0 mt-0 h-8 w-full shrink-0 border-b border-border/20 bg-transparent p-0 rounded-none gap-0">
+            <TabsTrigger
+              value="summary"
+              class="flex-1 rounded-none border-b-2 border-transparent px-0 py-2 text-[11px] font-medium text-muted-foreground/60 hover:text-foreground transition-colors data-[state=active]:border-foreground/40 data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent"
+            >
               <FileText class="mr-1 size-3" />
               摘要
             </TabsTrigger>
-            <TabsTrigger value="files" class="text-caption font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <TabsTrigger
+              value="files"
+              class="flex-1 rounded-none border-b-2 border-transparent px-0 py-2 text-[11px] font-medium text-muted-foreground/60 hover:text-foreground transition-colors data-[state=active]:border-foreground/40 data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent"
+            >
               <FolderTree class="mr-1 size-3" />
               文件
             </TabsTrigger>
-            <TabsTrigger value="git" class="text-caption font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <TabsTrigger
+              v-if="showGitTab"
+              value="git"
+              class="flex-1 rounded-none border-b-2 border-transparent px-0 py-2 text-[11px] font-medium text-muted-foreground/60 hover:text-foreground transition-colors data-[state=active]:border-foreground/40 data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent"
+            >
               <GitBranch class="mr-1 size-3" />
               Git
             </TabsTrigger>
-            <TabsTrigger value="diff" class="text-caption font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <FileDiff class="mr-1 size-3" />
-              Diff
+            <TabsTrigger
+              value="version"
+              class="flex-1 rounded-none border-b-2 border-transparent px-0 py-2 text-[11px] font-medium text-muted-foreground/60 hover:text-foreground transition-colors data-[state=active]:border-foreground/40 data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:bg-transparent"
+            >
+              <History class="mr-1 size-3" />
+              版本
             </TabsTrigger>
           </TabsList>
 
-          <div class="mt-2 flex-1 overflow-hidden min-h-0">
+          <div class="flex-1 overflow-hidden min-h-0">
             <TabsContent value="summary" class="h-full">
               <ScrollArea class="h-full px-3 py-2">
                 <div class="space-y-3">
@@ -282,14 +301,8 @@ const handleSelectFile = (_path: string) => {
               <WorkbenchGitPanel :cwd="chat.fileTreeRoot.value || workspaceDir" :git-status="gitStatus" />
             </TabsContent>
 
-            <TabsContent value="diff" class="h-full">
-              <div class="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
-                <FileDiff class="size-10 text-muted-foreground/30" />
-                <div class="space-y-1">
-                  <p class="text-sm font-medium text-foreground/80">Diff 暂不可用</p>
-                  <p class="text-xs text-muted-foreground">等待隐藏版本管理实现后启用</p>
-                </div>
-              </div>
+            <TabsContent value="version" class="h-full">
+              <WorkbenchVersionPanel :root="workspaceDir" />
             </TabsContent>
           </div>
         </Tabs>

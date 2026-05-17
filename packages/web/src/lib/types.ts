@@ -32,6 +32,7 @@ export type {
 	FileTreeResponse,
 	FileUploadResponse,
 	GitBranchesResponse,
+	GitDiffResponse,
 	GitFileStatusItem,
 	GitRemoteInfo,
 	GitRepositoryStatusResponse,

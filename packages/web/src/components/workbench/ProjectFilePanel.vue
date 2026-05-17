@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, toRef } from "vue";
+import { computed, ref, toRef, watch } from "vue";
 import { FolderKanban, GitBranch } from "lucide-vue-next";
 
 import WorkspaceFileTree from "@/components/WorkspaceFileTree.vue";
@@ -18,6 +18,13 @@ const emit = defineEmits<{
 
 const activeTab = ref<"git" | "files">("files");
 const { status: gitStatus } = useGitRepositoryStatus(toRef(() => props.rootDir));
+const showGitTab = computed(() => gitStatus.value?.isRepository === true);
+
+watch(showGitTab, (visible) => {
+	if (!visible && activeTab.value === "git") {
+		activeTab.value = "files";
+	}
+});
 </script>
 
 <template>
@@ -41,9 +48,11 @@ const { status: gitStatus } = useGitRepositoryStatus(toRef(() => props.rootDir))
     <!-- Tab 导航 -->
     <Tabs v-model="activeTab" class="flex flex-1 flex-col overflow-hidden">
       <TabsList
-        class="mx-3 h-8 w-auto grid grid-cols-2 border border-default bg-transparent p-0.5"
+        class="mx-3 h-8 w-auto grid border border-default bg-transparent p-0.5"
+        :class="showGitTab ? 'grid-cols-2' : 'grid-cols-1'"
       >
         <TabsTrigger
+          v-if="showGitTab"
           value="git"
           class="text-xs font-medium rounded data-[state=active]:bg-background data-[state=active]:shadow-sm"
         >
@@ -60,7 +69,7 @@ const { status: gitStatus } = useGitRepositoryStatus(toRef(() => props.rootDir))
       </TabsList>
 
       <div class="mt-2 flex-1 overflow-hidden">
-        <div v-show="activeTab === 'git'" class="h-full overflow-hidden">
+        <div v-if="showGitTab" v-show="activeTab === 'git'" class="h-full overflow-hidden">
           <WorkbenchGitPanel :cwd="rootDir" :git-status="gitStatus" />
         </div>
 

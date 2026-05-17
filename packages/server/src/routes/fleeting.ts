@@ -18,6 +18,16 @@ import {
 	deleteFleetingTempFiles,
 } from "../fleeting-attachments.js";
 import type { RidgeDatabase } from "../db/index.js";
+import type {
+	ConversionJob,
+	ConversionServiceClient,
+	DownloadedArtifact,
+} from "../conversion-service-client.js";
+import {
+	markRagTargetPending as defaultMarkRagTargetPending,
+	removeRagTarget as defaultRemoveRagTarget,
+	type RagIndexOptions,
+} from "../rag-indexer.js";
 
 // --- Task system helpers (direct DB access to avoid circular deps / async global DB) ---
 // These mirror task-system.ts logic but work with the injected db and workspaceDir.
@@ -83,7 +93,15 @@ interface FleetingRouterDeps {
 	db: RidgeDatabase;
 	workspaceDir: string;
 	getAnalysisRunner?: () => FleetingAnalysisRunner | undefined;
+	getConversionClient?: () => FleetingClipConversionClient | undefined;
+	markRagTargetPending?: (targetPath: string, options?: RagIndexOptions) => Promise<void>;
+	removeRagTarget?: (targetPath: string) => Promise<void>;
 }
+
+type FleetingClipConversionClient = Pick<
+	ConversionServiceClient,
+	"createConversion" | "downloadArtifacts"
+>;
 
 const captureSchema = z.object({
 	content: z.string().optional().default(""),
@@ -207,6 +225,109 @@ const getNoteOrThrow = (db: RidgeDatabase, noteId: string) => {
 	return note;
 };
 
+const firstUrlPattern = /https?:\/\/[^\s<>"')]+/i;
+
+const extractUrl = (value: string): string => {
+	const trimmed = value.trim();
+	if (!trimmed) return "";
+	const exact = z.string().url().safeParse(trimmed);
+	if (exact.success) return trimmed;
+	return firstUrlPattern.exec(trimmed)?.[0] ?? "";
+};
+
+const makeHttpError = (message: string, statusCode: number): HttpError => {
+	const error = new Error(message) as HttpError;
+	error.statusCode = statusCode;
+	return error;
+};
+
+const sanitizeMarkdownFileName = (title: string): string => {
+	const cleaned = title
+		.normalize("NFC")
+		.replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+		.replace(/^\.+$/, "");
+	return cleaned || "clip";
+};
+
+const resolveUniqueMarkdownPath = async (
+	workspaceDir: string,
+	title: string,
+): Promise<{ absolutePath: string; relativePath: string }> => {
+	const clipDir = path.join(workspaceDir, "剪藏");
+	await fs.mkdir(clipDir, { recursive: true });
+	const base = sanitizeMarkdownFileName(title);
+	for (let index = 0; index < 1000; index += 1) {
+		const fileName = index === 0 ? `${base}.md` : `${base}-${index + 1}.md`;
+		const absolutePath = path.join(clipDir, fileName);
+		try {
+			await fs.access(absolutePath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+				return {
+					absolutePath,
+					relativePath: path.relative(workspaceDir, absolutePath).split(path.sep).join("/"),
+				};
+			}
+			throw error;
+		}
+	}
+	throw makeHttpError("剪藏文件名冲突过多，请更换标题后重试", 409);
+};
+
+const isMarkdownArtifact = (artifact: DownloadedArtifact): boolean => {
+	const mimeType = artifact.artifact.mimeType.toLowerCase();
+	const name = artifact.artifact.name.toLowerCase();
+	return mimeType === "text/markdown" || name.endsWith(".md") || name.endsWith(".markdown");
+};
+
+const getMarkdownFromConversionJob = async (
+	conversionClient: FleetingClipConversionClient,
+	job: ConversionJob,
+): Promise<string> => {
+	if (job.status !== "succeeded") {
+		const message = job.error?.message || "网页转 Markdown 失败";
+		throw makeHttpError(message, 502);
+	}
+	const artifacts = await conversionClient.downloadArtifacts(job, {
+		timeoutMs: 60_000,
+		maxSizeBytes: 20 * 1024 * 1024,
+	});
+	const markdownArtifact = artifacts.find(isMarkdownArtifact);
+	if (!markdownArtifact) {
+		throw makeHttpError("网页转化结果缺少 Markdown artifact", 502);
+	}
+	const markdown = markdownArtifact.buffer.toString("utf-8").trim();
+	if (!markdown) {
+		throw makeHttpError("网页转化结果为空", 502);
+	}
+	return markdown;
+};
+
+const convertUrlToMarkdown = async (
+	conversionClient: FleetingClipConversionClient,
+	noteId: string,
+	title: string,
+	url: string,
+): Promise<string> => {
+	const job = await conversionClient.createConversion({
+		task: "document.markdown",
+		input: { url, mimeType: "text/html" },
+		options: { engine: "markitdown" },
+		clientJobId: `fleeting-clip-${noteId}`,
+		metadata: {
+			source: "fleeting.clip",
+			noteId,
+			title,
+			url,
+		},
+		preferredFormat: "markdown",
+		waitMs: 30_000,
+	});
+	return getMarkdownFromConversionJob(conversionClient, job);
+};
+
 const getTodayJournalPath = (workspaceDir: string) => {
 	const today = new Date();
 	const year = String(today.getFullYear());
@@ -258,7 +379,14 @@ const upload = multer({
 
 export function createFleetingRouter(deps: FleetingRouterDeps) {
 	const router = express.Router();
-	const { db, workspaceDir, getAnalysisRunner } = deps;
+	const {
+		db,
+		workspaceDir,
+		getAnalysisRunner,
+		getConversionClient,
+		markRagTargetPending = defaultMarkRagTargetPending,
+		removeRagTarget = defaultRemoveRagTarget,
+	} = deps;
 	const workspacePath = normalizeWorkspacePath(workspaceDir);
 
 	router.get("/", (_req: Request, res: Response, next: NextFunction) => {
@@ -512,14 +640,42 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 	router.post(
 		"/:noteId/process/clip",
 		async (req: Request, res: Response, next: NextFunction) => {
+			let markdownPath: string | null = null;
+			let ragMarked = false;
+			let migratedPaths: string[] = [];
 			try {
-				getNoteOrThrow(db, req.params.noteId);
+				const note = getNoteOrThrow(db, req.params.noteId);
 				const payload = clipSchema.parse(req.body ?? {});
-				const { migratedPaths } = await copyFleetingAttachmentsToFormal(
+				const url = extractUrl(payload.url) || extractUrl(String(note.content));
+				const content = url
+					? await (async () => {
+						const conversionClient = getConversionClient?.();
+						if (!conversionClient) {
+							throw makeHttpError("Python 转化服务尚未配置，无法将网页保存为剪藏", 503);
+						}
+						return convertUrlToMarkdown(
+							conversionClient,
+							req.params.noteId,
+							payload.title,
+							url,
+						);
+					})()
+					: payload.content;
+				const resolvedMarkdownPath = await resolveUniqueMarkdownPath(workspaceDir, payload.title);
+				await atomicWriteFile(resolvedMarkdownPath.absolutePath, `${content.trimEnd()}\n`);
+				markdownPath = resolvedMarkdownPath.absolutePath;
+				await markRagTargetPending(markdownPath, {
+					workspaceDir,
+					refreshPolicy: "immediate",
+					event: "manual",
+				});
+				ragMarked = true;
+				const copied = await copyFleetingAttachmentsToFormal(
 					db,
 					workspaceDir,
 					req.params.noteId,
 				);
+				migratedPaths = copied.migratedPaths;
 				const now = Date.now();
 				const clipId = makeId("clip");
 				const createAndDelete = db.transaction(() => {
@@ -531,8 +687,8 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					).run(
 						clipId,
 						payload.title,
-						payload.url || null,
-						payload.content,
+						url || null,
+						content,
 						payload.source || null,
 						now,
 						now,
@@ -548,15 +704,25 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					clip: {
 						id: clipId,
 						title: payload.title,
-						url: payload.url || null,
-						content: payload.content,
+						url: url || null,
+						content,
 						source: payload.source || null,
+						markdownPath: resolvedMarkdownPath.relativePath,
 						createdAt: now,
 						updatedAt: now,
 					},
 					migratedAttachments: migratedPaths,
 				});
 			} catch (error) {
+				if (markdownPath) {
+					await fs.rm(markdownPath, { force: true }).catch(() => undefined);
+					if (ragMarked) {
+						await removeRagTarget(markdownPath).catch(() => undefined);
+					}
+				}
+				for (const migratedPath of migratedPaths) {
+					await fs.rm(migratedPath, { force: true }).catch(() => undefined);
+				}
 				forwardError(error, next);
 			}
 		},

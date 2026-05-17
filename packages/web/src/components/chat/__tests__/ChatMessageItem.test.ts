@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ChatMessageItem from "@/components/chat/ChatMessageItem.vue";
 import type { UiConversationMessage } from "@/lib/types";
 
@@ -28,56 +28,26 @@ function mountWithTooltip(props: Record<string, unknown>) {
   });
 }
 
-describe("ChatMessageItem - 编辑与重试入口", () => {
-  it("user message 显示编辑按钮", () => {
+describe("ChatMessageItem", () => {
+  it("renders user message without edit button", () => {
     const wrapper = mountWithTooltip({ message: makeUserMessage("hello") });
-    expect(wrapper.text()).toContain("编辑");
-    expect(wrapper.find("button").exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("编辑");
   });
 
-  it("assistant 最终消息显示复制和重试按钮", () => {
+  it("assistant 最终消息只显示复制按钮", () => {
     const wrapper = mountWithTooltip({ message: makeAssistantMessage("hi"), isFinalAssistantMessage: true });
     expect(wrapper.text()).toContain("复制");
-    expect(wrapper.text()).toContain("重试");
+    expect(wrapper.text()).not.toContain("重试");
   });
 
-  it("编辑点击触发 edit 事件", async () => {
-    const message = makeUserMessage("edit me");
-    const wrapper = mountWithTooltip({ message });
-    const buttons = wrapper.findAll("button");
-    const editBtn = buttons.find((b) => b.text().includes("编辑"));
-    expect(editBtn).toBeDefined();
-    await editBtn!.trigger("click");
-    expect(wrapper.emitted("edit")?.[0]).toEqual([message]);
-  });
-
-  it("重试点击触发 retry 事件", async () => {
-    const message = makeAssistantMessage("retry me");
-    const wrapper = mountWithTooltip({ message, isFinalAssistantMessage: true });
-    const buttons = wrapper.findAll("button");
-    const retryBtn = buttons.find((b) => b.text().includes("重试"));
-    expect(retryBtn).toBeDefined();
-    await retryBtn!.trigger("click");
-    expect(wrapper.emitted("retry")?.[0]).toEqual([message]);
-  });
-
-  it("任务会话禁用编辑/重试并显示 tooltip", () => {
-    const wrapper = mount(ChatMessageItem, {
-      props: {
-        message: makeUserMessage("task msg"),
-        isForkDisabled: true,
-        forkDisabledReason: "任务处理会话不支持编辑/重试",
-      },
-      global: {
-        stubs: {
-          Tooltip: { template: '<div><slot name="trigger" /><slot /></div>' },
-          TooltipTrigger: { template: '<span><slot /></span>' },
-          TooltipContent: { template: '<div><slot /></div>' },
-        },
-      },
-    });
-    const disabledBtn = wrapper.find("button[disabled]");
-    expect(disabledBtn.exists()).toBe(true);
-    expect(disabledBtn.text()).toContain("编辑");
+  it("复制点击后变为已复制", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, writable: true, configurable: true });
+    const wrapper = mountWithTooltip({ message: makeAssistantMessage("copy me"), isFinalAssistantMessage: true });
+    const btn = wrapper.findAll("button").find((b) => b.text().includes("复制"));
+    expect(btn).toBeDefined();
+    await btn!.trigger("click");
+    expect(writeText).toHaveBeenCalledWith("copy me");
+    expect(wrapper.text()).toContain("已复制");
   });
 });

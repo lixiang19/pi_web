@@ -382,11 +382,13 @@ export function createWorkspaceDataRouter(deps: WorkspaceDataDeps) {
 				// Try to infer: if the path had an extension and no trailing slash, likely a file
 				// But to be safe, delete exact match AND prefix match (directory case)
 				db.prepare("DELETE FROM file_processing_status WHERE file_path = ?").run(trashedPath);
+				db.prepare("DELETE FROM notification_events WHERE related_type = 'file' AND related_id = ?").run(trashedPath);
 				// Also delete any records for files inside this directory (directory deletion case)
 				// Escape LIKE special characters to prevent wildcard mis-match
 				const dirPrefix = trashedPath.replace(/\/$/, "") + "/";
 				const escapedPrefix = dirPrefix.replace(/[%_\\]/g, (c) => `\\${c}`);
 				db.prepare("DELETE FROM file_processing_status WHERE file_path LIKE ? ESCAPE '\\'").run(`${escapedPrefix}%`);
+				db.prepare("DELETE FROM notification_events WHERE related_type = 'file' AND related_id LIKE ? ESCAPE '\\'").run(`${escapedPrefix}%`);
 				await removeRagTarget(trashedPath);
 				await commitWorkspaceFilesVersionPoint(
 					[trashedPath],

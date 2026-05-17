@@ -339,6 +339,30 @@ describe("File Processing Status Lifecycle", () => {
 		const filePath = path.join(TEST_ROOT, "笔记", fileName);
 		await fs.writeFile(filePath, "# Temp");
 		await seedStatus(filePath, "pending");
+		const db = await getRidgeDb();
+		db.prepare(
+			`INSERT INTO notification_events(
+				event_id, event_type, source, severity, title, body,
+				related_type, related_id, actions_json, payload_json,
+				status, created_at, updated_at, read_at, handled_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			`notification-delete-sync-${Date.now()}`,
+			"file_processing.convert_failed",
+			"file_processing",
+			"error",
+			`文件转换失败: ${fileName}`,
+			"Parser error",
+			"file",
+			filePath,
+			JSON.stringify([{ id: "retry", label: "重试" }]),
+			JSON.stringify({ filePath, error: "Parser error" }),
+			"unread",
+			Date.now(),
+			Date.now(),
+			null,
+			null,
+		);
 
 		const res = await api.delete("/api/files/entries").query({
 			root: TEST_ROOT,
@@ -346,11 +370,14 @@ describe("File Processing Status Lifecycle", () => {
 		});
 		expect(res.status).toBe(200);
 
-		const db = await getRidgeDb();
 		const row = db
 			.prepare("SELECT * FROM file_processing_status WHERE file_path = ?")
 			.get(filePath) as unknown;
 		expect(row).toBeUndefined();
+		const notification = db
+			.prepare("SELECT * FROM notification_events WHERE related_id = ?")
+			.get(filePath) as unknown;
+		expect(notification).toBeUndefined();
 	});
 
 	it("deletes processing status records for directory and nested files", async () => {

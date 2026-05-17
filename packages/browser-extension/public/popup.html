@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="./popup.css" />
+    <title>ridge Reader</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <strong>ridge Reader</strong>
+        <span id="status">加载中...</span>
+      </header>
+      <form id="settings-form">
+        <label>
+          Server
+          <input id="base-url" name="baseUrl" type="url" placeholder="http://127.0.0.1:3000" />
+        </label>
+        <label>
+          Device
+          <input id="device-name" name="deviceName" type="text" placeholder="Chrome" />
+        </label>
+        <label class="row">
+          <input id="auto-capture" name="autoCapture" type="checkbox" />
+          <span>自动保存认真读过的页面</span>
+        </label>
+        <label>
+          排除域名
+          <textarea id="blocked-domains" rows="4" placeholder="mail.example.com"></textarea>
+        </label>
+        <button type="submit">连接 ridge</button>
+      </form>
+      <section>
+        <button id="capture" type="button">保存当前页</button>
+        <button id="retry" type="button">重试队列</button>
+        <span>待上传 <b id="queue">0</b></span>
+      </section>
+    </main>
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>

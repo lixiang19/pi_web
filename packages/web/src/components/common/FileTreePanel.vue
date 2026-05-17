@@ -6,8 +6,8 @@ import {
 	Clock,
 	Edit3,
 	Folder,
-	FolderTree,
 	LoaderCircle,
+	MoreVertical,
 	Plus,
 	RefreshCw,
 	Search,
@@ -22,15 +22,14 @@ import { useFavoritesStore } from "@/stores/favorites";
 import { searchFiles, type RecentFileItem } from "@/lib/api";
 import type { FileTreeEntry } from "@/lib/types";
 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-	ContextMenu,
-	ContextMenuContent,
-	ContextMenuItem,
-	ContextMenuSeparator,
-	ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -67,8 +66,8 @@ const emit = defineEmits<{
 // --- stores ---
 const favoritesStore = useFavoritesStore();
 
-// --- tab state ---
-const activeTab = ref("files");
+// --- view state ---
+const viewMode = ref<"tree" | "favorites" | "search" | "recent">("tree");
 const searchQuery = ref("");
 const searchResults = ref<VisibleTreeNode[]>([]);
 const searchLoading = ref(false);
@@ -281,303 +280,293 @@ defineExpose({ startRename, startCreateFolder, handleDelete });
 </script>
 
 <template>
-  <div class="flex flex-1 min-h-0 flex-col overflow-hidden bg-background">
-    <Tabs v-model="activeTab" class="flex-1 flex flex-col min-h-0">
-      <TabsList class="mx-3 mt-2 h-8 w-auto grid grid-cols-4 border border-default bg-transparent p-0.5">
-        <TabsTrigger value="files" class="rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
-          <FolderTree class="size-3.5" />
-        </TabsTrigger>
-        <TabsTrigger value="favorites" class="rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
-          <Star class="size-3.5" />
-        </TabsTrigger>
-        <TabsTrigger value="search" class="rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
-          <Search class="size-3.5" />
-        </TabsTrigger>
-        <TabsTrigger value="recent" class="rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
-          <Clock class="size-3.5" />
-        </TabsTrigger>
-      </TabsList>
+  <div class="flex flex-1 min-h-0 flex-col overflow-hidden bg-transparent">
+    <!-- ===== Toolbar ===== -->
+    <div class="shrink-0 flex items-center justify-end px-2 py-1.5 gap-1">
+      <div class="flex items-center gap-0.5 shrink-0">
+        <button
+          class="flex items-center justify-center size-6 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-accent/50 transition-all"
+          :class="viewMode === 'tree' ? 'text-foreground/60 bg-accent/40' : ''"
+          @click="viewMode = 'tree'"
+        >
+          <Folder class="size-3" />
+        </button>
+        <button
+          class="flex items-center justify-center size-6 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-accent/50 transition-all"
+          :class="viewMode === 'favorites' ? 'text-amber-500/70 bg-amber-500/10' : ''"
+          @click="viewMode = 'favorites'"
+        >
+          <Star class="size-3" />
+        </button>
+        <button
+          class="flex items-center justify-center size-6 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-accent/50 transition-all"
+          :class="viewMode === 'search' ? 'text-foreground/60 bg-accent/40' : ''"
+          @click="viewMode = 'search'"
+        >
+          <Search class="size-3" />
+        </button>
+        <button
+          class="flex items-center justify-center size-6 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-accent/50 transition-all"
+          :class="viewMode === 'recent' ? 'text-foreground/60 bg-accent/40' : ''"
+          @click="viewMode = 'recent'"
+        >
+          <Clock class="size-3" />
+        </button>
+        <div class="w-px h-3.5 bg-border/40 mx-0.5" />
+        <button
+          class="flex items-center justify-center size-6 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-accent/50 transition-all"
+          @click="emit('refresh')"
+        >
+          <RefreshCw class="size-3" :class="isRootLoading ? 'animate-spin' : ''" />
+        </button>
+      </div>
+    </div>
 
-      <!-- ===== Files Tab ===== -->
-      <TabsContent value="files" class="flex-1 overflow-hidden m-0 mt-0">
-        <div class="flex items-center justify-end px-3 pt-2">
-          <button
-            class="flex items-center justify-center size-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-all duration-200"
-            @click="emit('refresh')"
-          >
-            <RefreshCw class="size-3.5" :class="isRootLoading ? 'animate-spin' : ''" />
-          </button>
-        </div>
-        <ScrollArea class="h-full">
-          <!-- Loading -->
-          <div v-if="nodes.length === 0 && isRootLoading" class="flex flex-col items-center gap-3 px-4 py-12">
-            <LoaderCircle class="size-6 animate-spin text-primary" />
-            <p class="text-xs text-muted-foreground">加载中...</p>
-          </div>
-          <!-- Error -->
-          <div v-else-if="error" class="mx-3 mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-3">
-            <p class="text-xs text-destructive font-medium">{{ error }}</p>
-          </div>
-          <!-- Tree -->
-          <div v-else class="py-2">
-            <div v-for="node in displayNodes" :key="node.isNewFolderPlaceholder ? 'new-folder-' + node.entry.path : node.entry.path">
-              <!-- 👇 New folder inline input -->
-              <template v-if="node.isNewFolderPlaceholder">
-                <div
-                  class="flex items-center gap-2 px-3 py-1.5"
-                  :style="{ paddingLeft: `${node.depth * 14 + 12}px` }"
-                >
-                  <Folder class="size-4 shrink-0 text-muted-foreground" />
-                  <input
-                    :ref="setCreatingFolderInputRef"
-                    v-model="creatingFolderName"
-                    placeholder="文件夹名称"
-                    class="min-w-0 flex-1 h-6 rounded border border-primary/50 bg-background px-1.5 text-xs outline-none"
-                    @keydown="onCreateFolderKeydown"
-                    @blur="confirmCreateFolder"
-                  />
-                </div>
-              </template>
-
-              <!-- 👇 Normal node -->
-              <ContextMenu v-else>
-                <ContextMenuTrigger as-child>
-                  <div
-                    class="group relative transition-all duration-200 ease-out hover:bg-soft"
-                    :class="[
-                      node.entry.kind === 'file' ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
-                      isExpanded(node.entry.path) && node.entry.kind === 'directory' ? 'bg-accent/30' : '',
-                      isFavorited(node.entry.path) ? 'bg-amber-500/5 dark:bg-amber-500/10' : '',
-                    ]"
-                  >
-                    <!-- Selection indicator -->
-                    <div
-                      v-if="isExpanded(node.entry.path) && node.entry.kind === 'directory'"
-                      class="absolute left-0 top-0 bottom-0 w-0.5 bg-primary/60"
-                    />
-
-                    <button
-                      type="button"
-                      class="flex w-full items-center gap-2 px-3 py-1.5 pr-24 text-left"
-                      :style="{ paddingLeft: `${node.depth * 14 + 12}px` }"
-                      @click="
-                        node.entry.kind === 'directory'
-                          ? emit('toggle-expand', node.entry)
-                          : emit('select', node.entry)
-                      "
-                    >
-                      <!-- Expand icon -->
-                      <component
-                        :is="node.entry.kind === 'directory'
-                          ? isExpanded(node.entry.path) ? ChevronDown : ChevronRight
-                          : ChevronRight"
-                        class="size-4 shrink-0 transition-transform duration-200"
-                        :class="node.entry.kind === 'directory' ? 'text-muted-foreground' : 'text-transparent'"
-                      />
-
-                      <!-- File/Folder icon -->
-                      <component
-                        :is="getEntryIcon(node.entry)"
-                        class="size-4 shrink-0 transition-colors duration-200"
-                        :class="node.entry.kind === 'directory'
-                          ? 'text-muted-foreground group-hover:text-foreground'
-                          : 'text-foreground/70 group-hover:text-foreground'"
-                      />
-
-                      <!-- Name or rename input -->
-                      <template v-if="editingPath === node.entry.path">
-                        <input
-                          :ref="setEditingInputRef"
-                          v-model="editingName"
-                          class="min-w-0 flex-1 h-6 rounded border border-primary/50 bg-background px-1.5 text-xs outline-none"
-                          @keydown="onRenameKeydown"
-                          @blur="confirmRename"
-                          @click.stop
-                        />
-                      </template>
-                      <template v-else>
-                        <span
-                          class="min-w-0 flex-1 truncate text-sm transition-colors duration-200"
-                          :class="node.entry.kind === 'directory'
-                            ? 'text-foreground/80 font-medium uppercase text-xs tracking-wide group-hover:text-foreground'
-                            : 'text-foreground group-hover:text-foreground'"
-                        >
-                          {{ node.entry.name }}
-                        </span>
-                      </template>
-                    </button>
-
-                    <!-- Loading indicator (expanding directory) -->
-                    <div
-                      v-if="node.entry.kind === 'directory' && isExpanded(node.entry.path) && isLoading(node.entry.path)"
-                      class="absolute right-12 top-1/2 -translate-y-1/2"
-                    >
-                      <LoaderCircle class="size-3.5 animate-spin text-muted-foreground" />
-                    </div>
-
-                    <!-- Favorite button -->
-                    <button
-                      type="button"
-                      class="absolute right-3 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md opacity-0 transition-all duration-200 hover:bg-accent group-hover:opacity-100"
-                      :class="isFavorited(node.entry.path)
-                        ? 'opacity-100 text-amber-500'
-                        : 'text-muted-foreground hover:text-amber-500'"
-                      @click.stop="emit('toggle-favorite', node.entry.path)"
-                    >
-                      <component :is="isFavorited(node.entry.path) ? Star : StarOff" class="size-4" />
-                    </button>
-
-                    <!-- Empty directory hint (rendered below the button) -->
-                    <div
-                      v-if="
-                        node.entry.kind === 'directory' &&
-                        isExpanded(node.entry.path) &&
-                        !isLoading(node.entry.path) &&
-                        !props.nodes.some(
-                          (n) =>
-                            n.entry.path !== node.entry.path &&
-                            n.entry.path.startsWith(node.entry.path + '/') &&
-                            n.depth > node.depth,
-                        )
-                      "
-                      class="pb-1 pl-10 text-micro text-muted-foreground/50 italic"
-                      :style="{ paddingLeft: `${(node.depth + 1) * 14 + 12}px` }"
-                    >
-                      空文件夹
-                    </div>
-                  </div>
-                </ContextMenuTrigger>
-
-                <!-- Context menu content -->
-                <ContextMenuContent>
-                  <ContextMenuItem v-if="node.entry.kind === 'directory'" @click="handleCreateFolder(node.entry)">
-                    <Plus class="size-4" />
-                    新建文件夹
-                  </ContextMenuItem>
-                  <ContextMenuItem @click="handleRename(node.entry)">
-                    <Edit3 class="size-4" />
-                    重命名
-                  </ContextMenuItem>
-                  <ContextMenuItem variant="destructive" @click="handleDelete(node.entry)">
-                    <Trash2 class="size-4" />
-                    删除
-                  </ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem v-if="node.entry.kind === 'file'" @click="handleToggleFavorite(node.entry)">
-                    <component :is="isFavorited(node.entry.path) ? Star : StarOff" class="size-4" />
-                    {{ isFavorited(node.entry.path) ? "取消收藏" : "收藏" }}
-                  </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
-            </div>
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <!-- ===== Favorites Tab ===== -->
-      <TabsContent value="favorites" class="flex-1 overflow-hidden m-0 mt-0">
-        <ScrollArea class="h-full px-3 py-3">
-          <div v-if="fileFavorites.length === 0" class="flex flex-col items-center py-12">
-            <div class="flex items-center justify-center size-12 rounded-full bg-muted mb-4">
-              <Star class="size-6 text-muted-foreground/50" />
-            </div>
-            <p class="text-sm font-medium text-foreground">暂无收藏</p>
-            <p class="text-xs text-muted-foreground mt-1">在文件树中点击星标添加</p>
-          </div>
-          <div v-else class="space-y-1.5">
+    <!-- ===== Tree View ===== -->
+    <ScrollArea v-if="viewMode === 'tree'" class="flex-1">
+      <!-- Loading -->
+      <div v-if="nodes.length === 0 && isRootLoading" class="flex flex-col items-center gap-2 px-4 py-10">
+        <LoaderCircle class="size-5 animate-spin text-muted-foreground/30" />
+        <p class="text-[11px] text-muted-foreground/50">加载中...</p>
+      </div>
+      <!-- Error -->
+      <div v-else-if="error" class="mx-3 mt-1 rounded-md border border-destructive/10 bg-destructive/5 px-2.5 py-2">
+        <p class="text-[11px] text-destructive/80">{{ error }}</p>
+      </div>
+      <!-- Tree -->
+      <div v-else class="py-0.5">
+        <div v-for="node in displayNodes" :key="node.isNewFolderPlaceholder ? 'new-folder-' + node.entry.path : node.entry.path">
+          <!-- New folder inline input -->
+          <template v-if="node.isNewFolderPlaceholder">
             <div
-              v-for="favorite in fileFavorites"
-              :key="favorite.id"
-              class="group relative w-full rounded-lg border border-transparent transition-all duration-200 ease-out hover:border-accent hover:bg-soft"
+              class="flex items-center gap-2 px-3 py-1"
+              :style="{ paddingLeft: `${node.depth * 14 + 12}px` }"
             >
-              <button
-	                type="button"
-	                class="flex w-full items-center gap-3 px-3 py-2.5 pr-12 text-left"
-	                @click="emit('select', createFileEntryFromPath(getFavoritePath(favorite), favorite.name))"
-	              >
-                <div
-                  class="flex items-center justify-center size-9 rounded-lg bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 shrink-0 transition-transform duration-200 group-hover:scale-105"
-                >
-                  <Star class="size-4.5" />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-medium text-foreground truncate">{{ favorite.name }}</p>
-                  <p class="text-xs text-muted-foreground font-mono truncate">{{ getFavoritePath(favorite) }}</p>
-                </div>
-              </button>
-            </div>
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <!-- ===== Search Tab ===== -->
-      <TabsContent value="search" class="flex-1 overflow-hidden m-0 mt-0">
-        <div class="flex h-full flex-col">
-          <div class="shrink-0 px-3 pt-3 pb-2">
-            <div class="flex h-8 items-center gap-2 rounded-md border border-default bg-soft px-3 text-muted-foreground">
-              <Search class="size-3.5" />
+              <Folder class="size-3.5 shrink-0 text-muted-foreground/40" />
               <input
-                v-model="searchQuery"
-                type="text"
-                placeholder="搜索文件..."
-                class="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50"
+                :ref="setCreatingFolderInputRef"
+                v-model="creatingFolderName"
+                placeholder="文件夹名称"
+                class="min-w-0 flex-1 h-6 bg-transparent px-1 text-[12px] outline-none border-b border-primary/30 focus:border-primary/60 placeholder:text-muted-foreground/30"
+                @keydown="onCreateFolderKeydown"
+                @blur="confirmCreateFolder"
               />
             </div>
-          </div>
-          <ScrollArea class="flex-1">
-            <div v-if="!searchQuery.trim()" class="px-4 py-8 text-center">
-              <p class="text-xs text-muted-foreground/50">输入关键词搜索文件</p>
-            </div>
-            <div v-else-if="searchResults.length === 0" class="px-4 py-8 text-center">
-              <p class="text-xs text-muted-foreground/50">未找到匹配文件</p>
-            </div>
-            <div v-else-if="searchLoading" class="flex items-center justify-center py-8">
-              <LoaderCircle class="size-4 animate-spin text-muted-foreground" />
-            </div>
-            <div v-else class="py-2">
-              <div
-                v-for="node in searchResults"
-                :key="node.entry.path"
-                class="group flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-soft transition-colors"
-                @click="emit('select', node.entry)"
+          </template>
+
+          <!-- Normal node -->
+          <DropdownMenu v-else>
+            <div
+              class="group relative transition-colors duration-150 hover:bg-accent/30"
+              :class="[
+                node.entry.kind === 'file' ? 'cursor-pointer' : 'cursor-default',
+                isFavorited(node.entry.path) ? 'bg-amber-500/[0.04]' : '',
+              ]"
+            >
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 px-3 py-[5px] pr-7 text-left"
+                :style="{ paddingLeft: `${node.depth * 14 + 12}px` }"
+                @click="
+                  node.entry.kind === 'directory'
+                    ? emit('toggle-expand', node.entry)
+                    : emit('select', node.entry)
+                "
               >
+                <!-- Expand chevron -->
+                <component
+                  :is="node.entry.kind === 'directory'
+                    ? isExpanded(node.entry.path) ? ChevronDown : ChevronRight
+                    : ChevronRight"
+                  class="size-3 shrink-0"
+                  :class="node.entry.kind === 'directory' ? 'text-muted-foreground/50' : 'text-transparent'"
+                />
+
+                <!-- File/Folder icon -->
                 <component
                   :is="getEntryIcon(node.entry)"
-                  class="size-4 shrink-0 text-foreground/70"
+                  class="size-3.5 shrink-0"
+                  :class="node.entry.kind === 'directory'
+                    ? 'text-muted-foreground/50'
+                    : 'text-foreground/40 group-hover:text-foreground/60'"
                 />
-                <span class="min-w-0 flex-1 truncate text-sm">{{ node.entry.name }}</span>
-              </div>
-            </div>
-          </ScrollArea>
-        </div>
-      </TabsContent>
 
-      <!-- ===== Recent Tab ===== -->
-      <TabsContent value="recent" class="flex-1 overflow-hidden m-0 mt-0">
-        <ScrollArea class="h-full">
-          <div v-if="isRecentLoading" class="flex items-center justify-center py-12">
-            <LoaderCircle class="size-5 animate-spin text-muted-foreground" />
-          </div>
-          <div v-else-if="!recentFiles?.length" class="px-4 py-8 text-center">
-            <p class="text-xs text-muted-foreground/50">暂无最近文件</p>
-          </div>
-          <div v-else class="py-2">
-            <div
-              v-for="file in recentFiles"
-	              :key="file.path"
-	              class="group flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-accent/50 transition-colors"
-	              @click="emit('select', createFileEntryFromPath(file.path, file.name))"
-	            >
-              <Clock class="size-4 shrink-0 text-muted-foreground" />
-              <div class="min-w-0 flex-1">
-                <span class="block truncate text-sm">{{ file.name }}</span>
-                <span class="block truncate text-micro text-muted-foreground font-mono">{{ file.relativePath }}</span>
+                <!-- Name -->
+                <template v-if="editingPath === node.entry.path">
+                  <input
+                    :ref="setEditingInputRef"
+                    v-model="editingName"
+                    class="min-w-0 flex-1 h-5 bg-transparent px-1 text-[12px] outline-none border-b border-primary/30 focus:border-primary/60"
+                    @keydown="onRenameKeydown"
+                    @blur="confirmRename"
+                    @click.stop
+                  />
+                </template>
+                <template v-else>
+                  <span
+                    class="min-w-0 flex-1 truncate text-[12px]"
+                    :class="node.entry.kind === 'directory'
+                      ? 'text-foreground/70 font-medium'
+                      : 'text-foreground/80 group-hover:text-foreground'"
+                  >
+                    {{ node.entry.name }}
+                  </span>
+                </template>
+              </button>
+
+              <!-- Loading spinner -->
+              <div
+                v-if="node.entry.kind === 'directory' && isExpanded(node.entry.path) && isLoading(node.entry.path)"
+                class="absolute right-6 top-1/2 -translate-y-1/2"
+              >
+                <LoaderCircle class="size-3 animate-spin text-muted-foreground/30" />
+              </div>
+
+              <!-- More actions trigger -->
+              <DropdownMenuTrigger as-child>
+                <button
+                  type="button"
+                  class="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm opacity-0 transition-all duration-150 hover:bg-accent/60 group-hover:opacity-100"
+                  :class="isFavorited(node.entry.path) ? 'opacity-100' : ''"
+                  @click.stop
+                >
+                  <MoreVertical class="size-3 text-muted-foreground/40" />
+                </button>
+              </DropdownMenuTrigger>
+
+              <!-- Empty hint -->
+              <div
+                v-if="
+                  node.entry.kind === 'directory' &&
+                  isExpanded(node.entry.path) &&
+                  !isLoading(node.entry.path) &&
+                  !props.nodes.some(
+                    (n) =>
+                      n.entry.path !== node.entry.path &&
+                      n.entry.path.startsWith(node.entry.path + '/') &&
+                      n.depth > node.depth,
+                  )
+                "
+                class="py-0.5 text-[10px] text-muted-foreground/25 italic"
+                :style="{ paddingLeft: `${(node.depth + 1) * 14 + 12}px` }"
+              >
+                空文件夹
               </div>
             </div>
+
+            <DropdownMenuContent align="end" class="min-w-[140px]">
+              <DropdownMenuItem v-if="node.entry.kind === 'directory'" @click="handleCreateFolder(node.entry)">
+                <Plus class="size-3.5" />
+                新建文件夹
+              </DropdownMenuItem>
+              <DropdownMenuItem @click="handleRename(node.entry)">
+                <Edit3 class="size-3.5" />
+                重命名
+              </DropdownMenuItem>
+              <DropdownMenuItem v-if="node.entry.kind === 'file'" @click="handleToggleFavorite(node.entry)">
+                <component :is="isFavorited(node.entry.path) ? Star : StarOff" class="size-3.5" />
+                {{ isFavorited(node.entry.path) ? "取消收藏" : "收藏" }}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" @click="handleDelete(node.entry)">
+                <Trash2 class="size-3.5" />
+                删除
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    </ScrollArea>
+
+    <!-- ===== Favorites View ===== -->
+    <ScrollArea v-else-if="viewMode === 'favorites'" class="flex-1">
+      <div v-if="fileFavorites.length === 0" class="flex flex-col items-center py-16 px-4 text-center">
+        <Star class="size-7 text-muted-foreground/15 mb-3" />
+        <p class="text-xs text-muted-foreground/40">暂无收藏</p>
+        <p class="text-[10px] text-muted-foreground/25 mt-1">在文件树中点击星标添加</p>
+      </div>
+      <div v-else class="py-1 px-2 space-y-0.5">
+        <div
+          v-for="favorite in fileFavorites"
+          :key="favorite.id"
+          class="group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/30 transition-colors"
+          @click="emit('select', createFileEntryFromPath(getFavoritePath(favorite), favorite.name))"
+        >
+          <Star class="size-3.5 shrink-0 text-amber-500/50" />
+          <div class="min-w-0 flex-1">
+            <p class="text-[12px] text-foreground truncate">{{ favorite.name }}</p>
+            <p class="text-[10px] text-muted-foreground/30 font-mono truncate">{{ getFavoritePath(favorite) }}</p>
           </div>
-        </ScrollArea>
-      </TabsContent>
-    </Tabs>
+        </div>
+      </div>
+    </ScrollArea>
+
+    <!-- ===== Search View ===== -->
+    <div v-else-if="viewMode === 'search'" class="flex-1 flex flex-col min-h-0">
+      <div class="shrink-0 px-3 pt-1 pb-1.5">
+        <div class="flex h-7 items-center gap-1.5 rounded-md border border-border/30 bg-accent/20 px-2.5 text-muted-foreground/50 focus-within:border-border/60 focus-within:bg-background focus-within:text-foreground transition-all">
+          <Search class="size-3 shrink-0" />
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="搜索文件..."
+            class="min-w-0 flex-1 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/25"
+          />
+          <LoaderCircle v-if="searchLoading" class="size-3 shrink-0 animate-spin text-muted-foreground/30" />
+        </div>
+      </div>
+      <ScrollArea class="flex-1">
+        <div v-if="!searchQuery.trim()" class="px-4 py-10 text-center">
+          <Search class="size-5 text-muted-foreground/10 mb-2 mx-auto" />
+          <p class="text-[11px] text-muted-foreground/30">输入关键词搜索</p>
+        </div>
+        <div v-else-if="searchResults.length === 0" class="px-4 py-10 text-center">
+          <p class="text-[11px] text-muted-foreground/30">未找到匹配文件</p>
+        </div>
+        <div v-else class="py-0.5 px-2">
+          <div
+            v-for="node in searchResults"
+            :key="node.entry.path"
+            class="group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/30 transition-colors"
+            @click="emit('select', node.entry)"
+          >
+            <component
+              :is="getEntryIcon(node.entry)"
+              class="size-3.5 shrink-0 text-muted-foreground/40"
+            />
+            <div class="min-w-0 flex-1">
+              <span class="block truncate text-[12px] text-foreground">{{ node.entry.name }}</span>
+              <span class="block truncate text-[10px] text-muted-foreground/30 font-mono">{{ node.entry.path }}</span>
+            </div>
+          </div>
+        </div>
+      </ScrollArea>
+    </div>
+
+    <!-- ===== Recent View ===== -->
+    <ScrollArea v-else-if="viewMode === 'recent'" class="flex-1">
+      <div v-if="isRecentLoading" class="flex items-center justify-center py-16">
+        <LoaderCircle class="size-4 animate-spin text-muted-foreground/20" />
+      </div>
+      <div v-else-if="!recentFiles?.length" class="px-4 py-10 text-center">
+        <Clock class="size-5 text-muted-foreground/10 mb-2 mx-auto" />
+        <p class="text-[11px] text-muted-foreground/30">暂无最近文件</p>
+      </div>
+      <div v-else class="py-0.5 px-2">
+        <div
+          v-for="file in recentFiles"
+          :key="file.path"
+          class="group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/30 transition-colors"
+          @click="emit('select', createFileEntryFromPath(file.path, file.name))"
+        >
+          <Clock class="size-3.5 shrink-0 text-muted-foreground/25" />
+          <div class="min-w-0 flex-1">
+            <span class="block truncate text-[12px] text-foreground">{{ file.name }}</span>
+            <span class="block truncate text-[10px] text-muted-foreground/30 font-mono">{{ file.relativePath }}</span>
+          </div>
+        </div>
+      </div>
+    </ScrollArea>
 
     <!-- ===== Delete Confirmation Dialog ===== -->
     <AlertDialog :open="deleteTarget !== null" @update:open="onDeleteDialogOpenChange">

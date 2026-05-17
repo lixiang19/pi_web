@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Copy, Check, Pencil, RefreshCw } from "lucide-vue-next";
+import { Copy, Check } from "lucide-vue-next";
 import { Markdown } from "vue-stream-markdown";
 import "vue-stream-markdown/index.css";
 
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   PiTextContent,
   UiConversationMessage,
@@ -19,15 +18,6 @@ import {
 const props = defineProps<{
   message: UiConversationMessage;
   isFinalAssistantMessage?: boolean;
-  /** 是否禁用编辑/重试（任务会话等） */
-  isForkDisabled?: boolean;
-  /** 禁用原因 tooltip */
-  forkDisabledReason?: string;
-}>();
-
-const emit = defineEmits<{
-  edit: [message: UiConversationMessage];
-  retry: [message: UiConversationMessage];
 }>();
 
 const textContents = computed<PiTextContent[]>(() => {
@@ -76,16 +66,6 @@ const handleCopy = async () => {
     isCopied.value = false;
   }, 2000);
 };
-
-const handleEdit = () => {
-  if (props.isForkDisabled) return;
-  emit("edit", props.message);
-};
-
-const handleRetry = () => {
-  if (props.isForkDisabled) return;
-  emit("retry", props.message);
-};
 </script>
 
 <template>
@@ -104,34 +84,6 @@ const handleRetry = () => {
           :content="content.text"
           class="max-w-none break-words text-body-lg leading-6 [&:not(:last-child)]:mb-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-2 [&_code]:break-words"
         />
-        <div class="mt-1 flex justify-end">
-          <Tooltip v-if="isForkDisabled">
-            <TooltipTrigger as-child>
-              <Button
-                variant="ghost"
-                size="sm"
-                class="h-6 gap-1 px-1.5 text-caption text-muted-foreground/40 cursor-not-allowed"
-                disabled
-              >
-                <Pencil class="size-3" />
-                编辑
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <p class="max-w-[200px] text-xs">{{ forkDisabledReason || '此会话不支持编辑' }}</p>
-            </TooltipContent>
-          </Tooltip>
-          <Button
-            v-else
-            variant="ghost"
-            size="sm"
-            class="h-6 gap-1 px-1.5 text-caption text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
-            @click="handleEdit"
-          >
-            <Pencil class="size-3" />
-            编辑
-          </Button>
-        </div>
       </div>
 
       <div v-else class="space-y-2">
@@ -171,33 +123,6 @@ const handleRetry = () => {
           <Check v-if="isCopied" class="size-3" />
           <Copy v-else class="size-3" />
           {{ isCopied ? "已复制" : "复制" }}
-        </Button>
-
-        <Tooltip v-if="isForkDisabled">
-          <TooltipTrigger as-child>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="h-6 gap-1 px-1.5 text-caption text-muted-foreground/40 cursor-not-allowed"
-              disabled
-            >
-              <RefreshCw class="size-3" />
-              重试
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <p class="max-w-[200px] text-xs">{{ forkDisabledReason || '此会话不支持重试' }}</p>
-          </TooltipContent>
-        </Tooltip>
-        <Button
-          v-else
-          variant="ghost"
-          size="sm"
-          class="h-6 gap-1 px-1.5 text-caption text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
-          @click="handleRetry"
-        >
-          <RefreshCw class="size-3" />
-          重试
         </Button>
       </div>
     </div>

@@ -15,7 +15,7 @@ import {
 const registerDeviceSchema = z.object({
   deviceId: z.string().min(1),
   name: z.string().min(1),
-  deviceType: z.enum(["server", "desktop", "android"]),
+  deviceType: z.enum(["server", "desktop", "android", "browser"]),
   capabilities: z.record(z.string(), z.boolean()).optional(),
 });
 
@@ -167,7 +167,7 @@ export function createPublicAndroidDeviceRouter() {
     "/register",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        if (req.body?.deviceType !== "android") {
+        if (req.body?.deviceType !== "android" && req.body?.deviceType !== "browser") {
           next();
           return;
         }
@@ -201,7 +201,7 @@ export function createPublicAndroidDeviceRouter() {
       try {
         const payload = heartbeatSchema.parse(req.body ?? {});
         const device = await getDevice(payload.deviceId);
-        if (device?.deviceType !== "android") {
+        if (device?.deviceType !== "android" && device?.deviceType !== "browser") {
           next();
           return;
         }
@@ -229,7 +229,7 @@ export function createPublicAndroidDeviceRouter() {
       try {
         const deviceId = String(req.params.deviceId);
         const device = await getDevice(deviceId);
-        if (device?.deviceType !== "android") {
+        if (device?.deviceType !== "android" && device?.deviceType !== "browser") {
           next();
           return;
         }
@@ -244,9 +244,7 @@ export function createPublicAndroidDeviceRouter() {
           throw error;
         }
 
-        res.status(403).json({
-          error: "Android devices do not receive runtime bundles",
-        });
+        res.status(403).json({ error: "Capture-only devices do not receive runtime bundles" });
       } catch (error) {
         next(error);
       }

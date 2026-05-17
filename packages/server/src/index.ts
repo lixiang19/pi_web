@@ -42,11 +42,11 @@ import {
 	normalizeOptionalFsPath,
 } from "./file-manager.js";
 import { createGitService } from "./git-service.js";
-import { createIsoGitService } from "./iso-git-service.js";
 import { createNotesRouter } from "./notes.js";
 import { createProjectContextResolver } from "./project-context.js";
 import { createCoreRouter } from "./routes/core.js";
 import { createGitRouter } from "./routes/git.js";
+import { createWorkspaceVersionRouter } from "./routes/workspace-version.js";
 import { createSystemRouter } from "./routes/system.js";
 import { createWorkspaceDataRouter } from "./routes/workspace-data.js";
 import { createProjectRouter } from "./routes/projects.js";
@@ -76,6 +76,7 @@ import {
 import { createNotificationsRouter } from "./routes/notifications.js";
 import { createSessionAttachmentsRouter, validateAttachmentIds, buildAttachmentContext } from "./session-attachments.js";
 import { createFleetingRouter } from "./routes/fleeting.js";
+import { createBrowserCapturesRouter } from "./routes/browser-captures.js";
 import { createMobileCapturesRouter } from "./routes/mobile-captures.js";
 import {
 	createBackgroundJobQueue,
@@ -305,7 +306,6 @@ const projectContextResolver =
 	createProjectContextResolver(defaultWorkspaceDir);
 const sessionMetadataStore = createSessionMetadataStore();
 const gitService = createGitService();
-const isoGitService = createIsoGitService();
 const worktreeService = createWorktreeService(gitService);
 
 let automationStore: AutomationStore | undefined;
@@ -315,6 +315,9 @@ let isConversionEnabled: (() => boolean) | undefined;
 let graphRunner: GraphMaintenanceRunner | undefined;
 const fleetingRunnerRef: {
 	value?: ReturnType<typeof createFleetingAnalysisRunner>;
+} = {};
+const conversionClientRef: {
+	value?: ConversionServiceClient | null;
 } = {};
 
 /**
@@ -869,6 +872,10 @@ app.use("/api/mobile/captures", createMobileCapturesRouter({
 	workspaceDir: defaultWorkspaceDir,
 	getAnalysisRunner: () => fleetingRunnerRef.value,
 }));
+app.use("/api/browser/captures", createBrowserCapturesRouter({
+	db: await initializeRidgeDb(defaultWorkspaceDir),
+	getAnalysisRunner: () => fleetingRunnerRef.value,
+}));
 app.use(authRuntime.requireApiAuth);
 app.use(createDeviceRegistrationRouter({ defaultWorkspaceDir, getRidgeDb }));
 
@@ -876,6 +883,8 @@ app.use("/api/fleeting", createFleetingRouter({
 	db: await initializeRidgeDb(defaultWorkspaceDir),
 	workspaceDir: defaultWorkspaceDir,
 	getAnalysisRunner: () => fleetingRunnerRef.value,
+	getConversionClient: () => conversionClientRef.value ?? undefined,
+	markRagTargetPending,
 }));
 
 // ===== Notes API =====
@@ -2104,9 +2113,12 @@ app.use("/api/projects", worktreeRouter);
 const gitRouter = createGitRouter({
 	defaultWorkspaceDir,
 	gitService,
-	isoGitService,
 });
 app.use("/api/git", gitRouter);
+const workspaceVersionRouter = createWorkspaceVersionRouter({
+	defaultWorkspaceDir,
+});
+app.use("/api/workspace/version", workspaceVersionRouter);
 // ===== Error Handler =====
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 	if (error instanceof z.ZodError) {
@@ -2251,6 +2263,7 @@ export async function startServer() {
 			apiKey: conversionConfig.apiKey,
 		})
 		: null;
+	conversionClientRef.value = conversionClient;
 
 	isConversionEnabled = () => conversionClient !== null && conversionConfig !== null;
 

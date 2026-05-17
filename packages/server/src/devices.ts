@@ -14,12 +14,13 @@ export interface DeviceRecord {
 }
 
 export type RegisteredDeviceRecord = DeviceRecord & { token: string };
-export type DeviceType = "server" | "desktop" | "android";
+export type DeviceType = "server" | "desktop" | "android" | "browser";
 
 export const DEVICE_TOKEN_BYTES = 32;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
-const DEVICE_TYPES = new Set<DeviceType>(["server", "desktop", "android"]);
+const DEVICE_TYPES = new Set<DeviceType>(["server", "desktop", "android", "browser"]);
 const ANDROID_CAPABILITIES = new Set(["mobile_capture", "camera", "microphone"]);
+const BROWSER_CAPABILITIES = new Set(["browser_capture", "silent_reading_capture"]);
 
 function generateToken(): string {
   return `rdt_${crypto.randomBytes(DEVICE_TOKEN_BYTES).toString("base64url")}`;
@@ -41,17 +42,19 @@ export function normalizeDeviceCapabilities(
   deviceType: DeviceType,
   capabilities: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  if (deviceType !== "android") {
+  if (deviceType !== "android" && deviceType !== "browser") {
     return { ...capabilities };
   }
 
   const normalized: Record<string, boolean> = {};
+  const allowedCapabilities =
+    deviceType === "android" ? ANDROID_CAPABILITIES : BROWSER_CAPABILITIES;
 
   for (const [key, value] of Object.entries(capabilities)) {
     if (typeof value !== "boolean") {
       throw httpError(`Invalid capability value for ${key}`, 400, "INVALID_DEVICE_CAPABILITY");
     }
-    if (ANDROID_CAPABILITIES.has(key)) {
+    if (allowedCapabilities.has(key)) {
       normalized[key] = value;
     }
   }

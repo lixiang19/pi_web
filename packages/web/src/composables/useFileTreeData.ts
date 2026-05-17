@@ -117,6 +117,12 @@ export function useFileTreeData(rootDir: () => string) {
 			return [];
 		}
 
+		const isHiddenFile = (name: string): boolean => {
+			if (name === ".DS_Store") return true;
+			if (name.startsWith(".")) return true;
+			return false;
+		};
+
 		const flatten = (
 			directoryPath: string,
 			depth: number,
@@ -125,6 +131,7 @@ export function useFileTreeData(rootDir: () => string) {
 			const nodes: VisibleTreeNode[] = [];
 
 			for (const entry of entries) {
+				if (entry.kind === "file" && isHiddenFile(entry.name)) continue;
 				nodes.push({ entry, depth });
 
 				if (entry.kind === "directory" && isDirectoryExpanded(entry.path)) {

@@ -99,8 +99,8 @@ export function createBundleRouter(defaultWorkspaceDir: string) {
 					error.statusCode = 404;
 					throw error;
 				}
-				if (device.deviceType === "android") {
-					const error = new Error("Android devices do not receive runtime bundles") as {
+				if (device.deviceType === "android" || device.deviceType === "browser") {
+					const error = new Error("Capture-only devices do not receive runtime bundles") as {
 						statusCode: number;
 					} & Error;
 					error.statusCode = 403;

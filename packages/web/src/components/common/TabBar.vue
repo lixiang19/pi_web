@@ -97,15 +97,15 @@ function onDragEnd() {
           <X class="size-3 text-muted-foreground" />
         </button>
       </div>
-    </div>
 
-    <!-- + 新建主页按钮 -->
-    <button
-      type="button"
-      class="ml-1 flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-soft hover:text-foreground"
-      @click="emit('new-tab')"
-    >
-      <Plus class="size-4" />
-    </button>
+      <!-- + 新建主页按钮 -->
+      <button
+        type="button"
+        class="ml-1 flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-soft hover:text-foreground"
+        @click="emit('new-tab')"
+      >
+        <Plus class="size-4" />
+      </button>
+    </div>
   </div>
 </template>

@@ -83,6 +83,7 @@
 - [归档会话只读] 归档只读必须前后端双层生效：server 同步 `sessions.archived` 与 `session_index.archived`，归档后 `messages/ask/permissions/cancel` 返回 403 且 desktop 不转发；web 从 session summary/snapshot 派生 `composer.isDisabled`，显示只读原因并保留草稿。
 - [乐观消息去重] Pi SDK 会给 user message 也发 `message_start/message_end`，Web 端已有乐观用户消息时，server SSE 桥接必须过滤这两类 user 事件，否则每次发送都会重复一条 user 消息
 - [Git能力探测] Git 面板显隐不能靠 `getGitStatus()` 报错倒推；要单独提供轻量 `isGitRepository` 探测链路，把“能力判断”和“状态读取”拆开
+- [Git与版本边界] Git 只服务真实 `.git` 项目；工作空间隐藏版本必须走“版本”入口和 `/api/workspace/version/*`，只提供状态、diff、提交版本，禁止 fallback 到 ridge 内置 Git 或暴露分支/远程/push/pull。
 - [消息可见性] 多轮会话的历史折叠必须是显式 UI 状态，不能把“最后一轮切片显示”藏在渲染默认值里；否则用户继续输入会误以为旧消息被删，但底层 session/jsonl 其实完整
 - [历史分页] 会话历史分页单位必须是 user 轮次，不是消息条数；工具消息/thinking/toolResult 会放大消息数，若按条数截窗，UI 与用户心智必然错位
 - [导航去重] 会话侧栏不要再维护“最近访问”这类二次导航；标签页已承担最近工作集语义，侧栏应只保留稳定信息架构（项目/搜索），否则状态重复、localStorage 重复、认知也重复
@@ -140,6 +141,8 @@
 - [子代理上下文] task 子代理继承上下文时必须写入 child `SessionManager` 的真实消息历史；不要再把父会话压成 system prompt 文本块，否则 toolResult/assistant 结构会丢失，resume 与真实回放也会错位
 - [笔记页边界] Obsidian 感的首要来源是 vault 侧栏、编辑外壳和 Milkdown 局部主题分层；不要为了视觉相似把双链/标签/图谱混入基础笔记 API。
 - [文件管理写边界] 文件页新建、移动、上传、删除必须复用服务端统一 root/realpath 校验；删除走系统回收区也必须先校验工作区边界，不能直接把用户传入路径交给 trash。
+- [文件通知清理] 删除工作空间文件/目录时，必须同步删除 `notification_events` 中 `related_type='file'` 且 `related_id` 精确或目录前缀匹配的失败通知；否则 e2e/临时文件删除后通知中心会残留不可重试的陈旧通知。
+- [summary缺文件跳过] `summary.daily` 读取 session jsonl 时遇到 `ENOENT` 应完成为 `{ skipped: true, reason: "session_file_missing" }`，不重试、不写 `background_job.failed`，因为会话文件已清理时用户没有可执行恢复动作。
 - [标签页 HTML 嵌套] 标签栏外层如果是 button，内层关闭按钮不能再用 button；改用 div + cursor-pointer 替代外层交互容器
 - [自动保存 debounce] 自动保存用 2s setTimeout debounce，切换/关闭标签时 flushAutoSave 清除定时器并立即保存；保存失败保持 dirty 标记
 - [笔记页边界] 笔记 API 的 rename/delete 独立新增路由（PATCH /api/notes/rename, DELETE /api/notes），不复用通用文件管理 /api/files/entries 边界
@@ -985,3 +988,14 @@
 - [module:memory][2026-05-17] 对话记忆 L1 以日期 Markdown 为真源，daily 会话条目写结构化 Atom；服务端补齐 `id/status/observedAt/sourceSessionId`。
 - [module:memory][2026-05-17] L2 Scenario 写入 `记忆/scenarios/<scenario-slug>.md`，必须引用 L1 Atom ID，不保存不可追溯的新事实。
 - [module:memory][2026-05-17] L3 `MEMORY.md` 只保留启动注入需要的当前有效结论，每条使用 `[scope][date]` 格式；敏感信息、非法 scope/date 和无引用 Scenario 会被过滤。
+
+## 2026-05-18 Chrome 浏览器阅读插件
+
+- [module:capture][2026-05-18] Chrome 插件应注册为 `browser` 设备，只做浏览器采集入口；进入闪念的浏览器内容只保存脱敏 URL，后续沉淀交给现有闪念处理、RAG、图谱、Wiki 和后台 Agent。
+- [module:capture][2026-05-18] 浏览器自动采集必须依赖真实阅读信号，且服务端保存 URL 前删除敏感 query 和 `utm_*` 跟踪参数。
+- [module:capture][2026-05-18] 浏览器 URL 闪念处理为剪藏时，由 Node 调 Python Converter 的 `document.markdown` + `markitdown` 拉取网页并转 Markdown；成功后写 `剪藏/<标题>.md`、创建 `clips`、触发 RAG，失败时保留原闪念。
+- [module:converter][2026-05-18] Converter 处理 `input.url` 网页且 URL 路径无扩展名时，必须按 `mimeType` 或响应 `Content-Type` 补临时扩展名，例如 `text/html` 补 `.html`，让 MarkItDown 走 HTML 转换路径。
+
+## 2026-05-18 工作空间隐藏版本 ignore
+
+- [module:workspace-version][2026-05-18] 隐藏版本 ignore 是服务端契约，不是 UI 展示规则；`.DS_Store`、`.ridge`、`.git`、依赖目录、构建产物和缓存目录必须在 status、diff、commit 三条路径同时过滤。

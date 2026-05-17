@@ -40,10 +40,6 @@ defineProps<{
   skills: SkillCatalogItem[];
   status: SessionSummary["status"];
   thinkingOptions: Array<{ value: ThinkingLevel; label: string }>;
-  /** 是否禁用分叉 */
-  isForkDisabled?: boolean;
-  /** 禁用原因 */
-  forkDisabledReason?: string;
 }>();
 
 const emit = defineEmits<{
@@ -63,8 +59,6 @@ const emit = defineEmits<{
   selectProjectPath: [path: string];
   abort: [];
   toggleResourcePicker: [];
-  editMessage: [message: UiConversationMessage];
-  retryMessage: [message: UiConversationMessage];
   "update:draftText": [text: string];
 }>();
 
@@ -103,14 +97,10 @@ function handleSelectThinking(value: ThinkingLevel) {
       :is-loading-older="isLoadingOlder"
       :messages="messages"
       :status="status"
-      :is-fork-disabled="isForkDisabled"
-      :fork-disabled-reason="forkDisabledReason"
       @load-earlier="emit('loadEarlier')"
       @dismiss-ask="emit('dismissAsk', $event)"
       @submit-ask="(askId, answers) => emit('respondAsk', askId, answers)"
       @submit-permission="(requestId, action) => emit('respondPermission', requestId, action)"
-      @edit-message="emit('editMessage', $event)"
-      @retry-message="emit('retryMessage', $event)"
     />
 
     <WorkbenchComposer

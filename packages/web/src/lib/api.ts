@@ -879,6 +879,52 @@ export function gitCheckout(payload: { cwd: string; branchName: string }) {
 	});
 }
 
+export function gitShowDiff(payload: {
+	cwd: string;
+	filePath: string;
+	staged?: boolean;
+}) {
+	const params = new URLSearchParams();
+	params.set("cwd", payload.cwd);
+	params.set("filePath", payload.filePath);
+	if (payload.staged) params.set("staged", "true");
+	return request<import("./types").GitDiffResponse>(
+		`/api/git/diff?${params.toString()}`,
+	);
+}
+
+export function getWorkspaceVersionStatus(root: string) {
+	return request<GitStatusResponse>(
+		`/api/workspace/version/status?root=${encodeURIComponent(root)}`,
+	);
+}
+
+export function workspaceVersionCommit(payload: {
+	root: string;
+	message: string;
+	files: string[];
+}) {
+	return request<{ ok: true; hash: string | null; files: string[] }>(
+		"/api/workspace/version/commit",
+		{
+			method: "POST",
+			body: JSON.stringify(payload),
+		},
+	);
+}
+
+export function workspaceVersionShowDiff(payload: {
+	root: string;
+	filePath: string;
+}) {
+	const params = new URLSearchParams();
+	params.set("root", payload.root);
+	params.set("filePath", payload.filePath);
+	return request<import("./types").GitDiffResponse>(
+		`/api/workspace/version/diff?${params.toString()}`,
+	);
+}
+
 export function gitRenameBranch(payload: {
 	cwd: string;
 	oldName: string;

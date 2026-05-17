@@ -412,6 +412,9 @@ const readStoredSessionMessages = async (sessionFile: string): Promise<AgentMess
 	return messages;
 };
 
+const isMissingFileError = (error: unknown): boolean =>
+	error instanceof Error && "code" in error && error.code === "ENOENT";
+
 const extractJsonObject = (text: string): unknown => {
 	const match = text.match(/\{[\s\S]*\}/);
 	if (!match) {
@@ -915,7 +918,19 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 		}
 
 		try {
-			const messages = await readStoredSessionMessages(payload.sessionFile);
+			let messages: AgentMessage[];
+			try {
+				messages = await readStoredSessionMessages(payload.sessionFile);
+			} catch (error) {
+				if (isMissingFileError(error)) {
+					options.jobQueue.complete(job.jobId, {
+						skipped: true,
+						reason: "session_file_missing",
+					});
+					return;
+				}
+				throw error;
+			}
 			const prompt = buildSummaryPrompt(payload as SummaryJobPayload, messages);
 			const backgroundModel = await resolveBackgroundModel(
 				modelRegistry,

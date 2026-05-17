@@ -77,6 +77,7 @@ export interface GitService {
 
   commit(cwd: string, message: string, files: string[]): Promise<{ hash: string }>;
   getDiffStats(cwd: string): Promise<{ staged: GitDiffStat[]; unstaged: GitDiffStat[] }>;
+  getFileDiff(cwd: string, filePath: string, staged?: boolean): Promise<string>;
 
   createBranch(cwd: string, branchName: string, fromRef?: string): Promise<void>;
   checkoutBranch(cwd: string, branchName: string): Promise<void>;
@@ -258,6 +259,11 @@ export function createGitService(): GitService {
     return { staged, unstaged };
   };
 
+  const getFileDiff = async (cwd: string, filePath: string, staged = false): Promise<string> => {
+    const args = staged ? ['diff', '--cached', '--', filePath] : ['diff', '--', filePath];
+    return runGit(cwd, args);
+  };
+
   const createBranch = async (cwd: string, branchName: string, fromRef?: string): Promise<void> => {
     const args = ['checkout', '-b', branchName];
     if (fromRef) args.push(fromRef);
@@ -357,6 +363,7 @@ export function createGitService(): GitService {
     push,
     commit,
     getDiffStats,
+    getFileDiff,
     createBranch,
     checkoutBranch,
     renameBranch,

@@ -3,7 +3,8 @@ import { type Ref, ref, watch } from "vue";
 import { getGitRepositoryStatus } from "@/lib/api";
 
 export interface GitRepositoryStatus {
-	engine: "cli" | "iso";
+	isRepository: boolean;
+	engine: "cli" | "none";
 	canCommit: boolean;
 	canPushPull: boolean;
 	canWorktree: boolean;

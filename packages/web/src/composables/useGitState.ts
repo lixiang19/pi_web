@@ -29,7 +29,7 @@ export function useGitState(
 
 	const refreshStatus = async () => {
 		const dir = cwd.value;
-		if (!dir) {
+		if (!dir || !repoStatus.value?.isRepository) {
 			status.value = null;
 			return;
 		}
@@ -46,7 +46,7 @@ export function useGitState(
 
 	const refreshBranches = async () => {
 		const dir = cwd.value;
-		if (!dir) {
+		if (!dir || !repoStatus.value?.isRepository) {
 			branches.value = null;
 			return;
 		}
@@ -74,6 +74,7 @@ export function useGitState(
 	const doFetch = async () => {
 		const dir = cwd.value;
 		if (!dir) return;
+		if (!repoStatus.value?.isRepository) return;
 		if (!repoStatus.value?.canPushPull) return;
 
 		isSyncing.value = true;
@@ -94,6 +95,7 @@ export function useGitState(
 	const doPull = async () => {
 		const dir = cwd.value;
 		if (!dir) return;
+		if (!repoStatus.value?.isRepository) return;
 		if (!repoStatus.value?.canPushPull) return;
 
 		isSyncing.value = true;
@@ -114,13 +116,14 @@ export function useGitState(
 	const doPush = async () => {
 		const dir = cwd.value;
 		if (!dir) return;
+		if (!repoStatus.value?.isRepository) return;
 		if (!repoStatus.value?.canPushPull) return;
 
 		isSyncing.value = true;
 		error.value = "";
 		try {
 			await gitPush({ cwd: dir });
-			await refreshStatus();
+			await refresh();
 		} catch (caughtError) {
 			error.value =
 				caughtError instanceof Error
@@ -138,6 +141,7 @@ export function useGitState(
 	) => {
 		const dir = cwd.value;
 		if (!dir) return;
+		if (!repoStatus.value?.isRepository) return;
 
 		isCommitting.value = true;
 		error.value = "";
@@ -159,9 +163,9 @@ export function useGitState(
 
 	// 当 cwd 变化时自动刷新
 	watch(
-		cwd,
-		(nextCwd) => {
-			if (nextCwd) {
+		[cwd, repoStatus],
+		([nextCwd, nextRepoStatus]) => {
+			if (nextCwd && nextRepoStatus?.isRepository) {
 				void refresh();
 			} else {
 				status.value = null;

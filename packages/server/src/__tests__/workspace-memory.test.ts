@@ -69,6 +69,55 @@ afterEach(async () => {
 });
 
 describe("workspace memory agents", () => {
+	it("skips summary jobs whose session file was already removed", async () => {
+		const workspaceDir = await createWorkspace();
+		const db = createDb();
+		const queue = createBackgroundJobQueue(db);
+		const missingSessionFile = path.join(workspaceDir, "missing-session.jsonl");
+		const job = queue.enqueue({
+			type: "summary.daily",
+			relatedType: "session",
+			relatedId: "missing-session",
+			payload: {
+				sessionId: "missing-session",
+				sessionFile: missingSessionFile,
+				title: "已删除会话",
+				cwd: workspaceDir,
+				workspaceDir,
+				projectLabel: "聊天",
+				projectRoot: workspaceDir,
+				dailyDate: "2026-05-15",
+				dailyYear: "2026",
+				dailyMonth: "05",
+				dailyTime: "09:30",
+				endedAt: Date.UTC(2026, 4, 15, 9, 30),
+			},
+			maxAttempts: 3,
+			notifyOnFailure: true,
+		});
+
+		const workers = createWorkspaceMemoryWorkers({
+			jobQueue: queue,
+			workspaceDir,
+			createAgentSessionFn: async () => {
+				throw new Error("summary agent should not run for a missing session file");
+			},
+		});
+
+		await workers.processSummaryJob();
+
+		expect(queue.get(job.jobId)?.status).toBe("completed");
+		expect(queue.get(job.jobId)?.result).toEqual({
+			skipped: true,
+			reason: "session_file_missing",
+		});
+		const notification = db
+			.prepare("SELECT * FROM notification_events WHERE event_type = 'background_job.failed'")
+			.get() as unknown;
+		expect(notification).toBeUndefined();
+		db.close();
+	});
+
 	it("appends a session summary to the daily timeline and queues memory maintenance", async () => {
 		const workspaceDir = await createWorkspace();
 		const db = createDb();

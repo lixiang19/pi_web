@@ -82,7 +82,7 @@
 会话标签页内由 `WorkspaceChatTab.vue` 渲染，其内部布局为：
 
 - **中间主区域**：`WorkbenchChatPanel` → `WorkbenchMessageStream` + `WorkbenchComposer`。
-- **右侧工作侧栏**：固定四个 tab（摘要、文件、Git、Diff），通过 shadcn-vue `Tabs` 切换。
+- **右侧工作侧栏**：默认显示摘要、文件、版本；只有当前运行目录是真实 Git 仓库时才显示 Git。
 
 ### 消息操作
 
@@ -96,8 +96,8 @@
 
 - **摘要**：纯前端从当前 `usePerSessionChat` 计算属性投影（标题、ID、状态、轮次、运行位置、模型、Agent）。
 - **文件**：复用 `WorkspaceFileTree.vue`，`rootDir` 取自 `chat.fileTreeRoot.value`（工作空间会话为 `workspaceDir`，项目会话为项目目录）。
-- **Git**：复用 `WorkbenchGitPanel.vue`，通过 `useGitRepositoryStatus` 探测当前 `fileTreeRoot` 是否为 Git 仓库；非 Git 仓库显示不可用状态。
-- **Diff**：第一版显示占位说明"Diff 暂不可用/等待隐藏版本管理"，不做伪装。
+- **Git**：复用 `WorkbenchGitPanel.vue`，通过 `useGitRepositoryStatus` 探测当前 `fileTreeRoot` 是否有真实 `.git`；普通工作空间和内部项目不渲染 Git tab，不再 fallback 到 ridge 内置版本库。
+- **版本**：复用 `WorkbenchVersionPanel.vue`，固定读取工作空间隐藏版本 API：`/api/workspace/version/status`、`/diff`、`/commit`。只提供变更查看、diff 和提交版本，不暴露分支、远程、push/pull。
 
 ## 空间 HTML 私有预览
 

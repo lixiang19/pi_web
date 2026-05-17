@@ -40,6 +40,7 @@
 - API Key 使用 `Authorization: Bearer <key>`，默认从 `RIDGE_CONVERTER_API_KEYS` 读取；
 - 支持 multipart 文件上传、HTTPS URL、base64 Data URI，拒绝本地路径、非 HTTPS URL、localhost/private network URL；
 - `document.markdown`：默认走 MarkItDown，覆盖文本、Markdown、HTML、PDF、DOCX、PPTX、XLSX、CSV、JSON 等 MarkItDown 支持的输入；
+- `input.url` 指向网页且路径没有扩展名时，Converter 按响应 `Content-Type` 或调用方传入的 `mimeType` 补齐临时文件扩展名，例如 `text/html` 补 `.html`，保证 MarkItDown 能按 HTML 处理；
 - `document.ocr_markdown`：默认走 MarkItDown；图片输入也交给 MarkItDown 图片转换；
 - `image.ocr`：默认走 MarkItDown 图片转换（EXIF + 可选 LLM caption），`options.engine="tesseract"` 时才走本地 pytesseract fallback；
 - `image.description`：默认走 MarkItDown 图片转换；配置 `OPENAI_API_KEY` 后向 MarkItDown 注入 OpenAI client/model；
@@ -322,6 +323,30 @@ Body: ConversionJob (同 GET /v1/conversions/{jobId})
 - 回调需验签（HMAC 或 URL 内嵌 token）；
 - 根据 `clientJobId` 或 `metadata.ridgeFileId` 关联到具体任务记录；
 - 若找不到关联记录，返回 `200` 避免 Converter 重试风暴（幂等投递）。
+
+### 11.5 闪念 URL 剪藏流程
+
+```
+Chrome 插件 / 浏览器网址采集
+  → POST /api/browser/captures
+    → fleeting_notes.content = 脱敏 URL
+    → 用户处理为剪藏
+      → POST /api/fleeting/{noteId}/process/clip
+        → Node 调用 POST /v1/conversions
+            task=document.markdown
+            input.url=<URL>
+            input.mimeType=text/html
+            options.engine=markitdown
+        → 下载 Markdown artifact
+        → 写入 剪藏/<标题>.md
+        → INSERT clips(content=Markdown, url=<URL>)
+        → DELETE fleeting_notes
+        → markRagTargetPending(剪藏/<标题>.md)
+```
+
+- 转换失败时返回错误并保留原闪念；
+- 剪藏 Markdown 文件由 Node 写入工作空间，Converter 不直接写 workspace；
+- URL 剪藏不经过 `file_processing_status`，它属于闪念处理动作，不是文件上传转换任务。
 
 ---
 

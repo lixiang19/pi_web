@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import socket
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -38,6 +39,15 @@ MIME_EXTENSION_MAP = {
 def _safe_filename_from_mime(mime_type: str | None) -> str:
     normalized = (mime_type or "").split(";", 1)[0].strip().lower()
     return f"input{MIME_EXTENSION_MAP.get(normalized, '.bin')}"
+
+
+def _filename_from_url(url: str, mime_type: str | None) -> str:
+    parsed = urlparse(url)
+    raw_name = Path(parsed.path.rstrip("/")).name or _safe_filename_from_mime(mime_type)
+    if Path(raw_name).suffix:
+        return raw_name
+    normalized = (mime_type or "").split(";", 1)[0].strip().lower()
+    return f"{raw_name}{MIME_EXTENSION_MAP.get(normalized, '.bin')}"
 
 
 def source_from_base64(input_: ConversionInput, settings: ConverterSettings) -> SourceFile:
@@ -105,6 +115,6 @@ async def source_from_url(input_: ConversionInput, settings: ConverterSettings) 
     data = response.content
     if len(data) > settings.max_file_size_bytes:
         raise ConverterError("file_too_large", f"Input exceeds {settings.max_file_size_bytes} bytes", 413)
-    filename = input_.url.rstrip("/").rsplit("/", 1)[-1] or _safe_filename_from_mime(input_.mimeType)
     mime_type = input_.mimeType or response.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
+    filename = _filename_from_url(input_.url, mime_type)
     return SourceFile(filename=filename, mime_type=mime_type, data=data)

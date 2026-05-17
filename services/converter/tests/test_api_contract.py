@@ -120,6 +120,60 @@ def test_local_file_paths_are_rejected_in_json_input() -> None:
     assert response.json()["error"]["code"] == "invalid_input"
 
 
+def test_url_html_without_extension_is_named_for_markitdown(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class FakeResult:
+        markdown = "# URL HTML"
+
+    class FakeMarkItDown:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def convert(self, path: str) -> FakeResult:
+            calls.append(Path(path).suffix)
+            return FakeResult()
+
+    class FakeResponse:
+        status_code = 200
+        content = b"<html><body><h1>URL HTML</h1></body></html>"
+        headers = {"content-type": "text/html; charset=utf-8"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, url: str) -> FakeResponse:
+            assert url == "https://example.com/article"
+            return FakeResponse()
+
+    monkeypatch.setattr("socket.getaddrinfo", lambda *args, **kwargs: [(None, None, None, None, ("93.184.216.34", 443))])
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("markitdown.MarkItDown", FakeMarkItDown)
+    client = make_client()
+
+    response = client.post(
+        "/v1/conversions",
+        headers=auth_headers(),
+        json={
+            "task": "document.markdown",
+            "input": {"url": "https://example.com/article"},
+            "waitMs": 30000,
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "succeeded"
+    assert response.json()["artifacts"][0]["name"] == "article.md"
+    assert calls == [".html"]
+
+
 def test_cancel_marks_queued_or_running_job_canceled() -> None:
     app = create_app(
         ConverterSettings(

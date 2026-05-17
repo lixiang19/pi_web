@@ -33,4 +33,22 @@ describe("workspace hidden version points", () => {
 		const status = await createIsoGitService().getStatus(ctx);
 		expect(status.files).toEqual([]);
 	});
+
+	it("ignores macOS metadata when creating workspace version points", async () => {
+		const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "ridge-workspace-version-"));
+		cleanupDirs.push(workspaceDir);
+		const dsStorePath = path.join(workspaceDir, ".DS_Store");
+		await fs.writeFile(dsStorePath, "metadata", "utf-8");
+
+		const result = await commitWorkspaceVersionPoint({
+			workspaceDir,
+			files: [dsStorePath],
+			message: "保存系统元数据",
+		});
+
+		expect(result).toEqual({ hash: null, files: [] });
+		const ctx = getWorkspaceVersionContext(workspaceDir);
+		const status = await createIsoGitService().getStatus(ctx);
+		expect(status.files).toEqual([]);
+	});
 });

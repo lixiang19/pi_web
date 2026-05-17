@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { createIsoGitService, type IsoGitContext } from "./iso-git-service.js";
+import { createIsoGitService, isWorkspaceVersionIgnoredPath, type IsoGitContext } from "./iso-git-service.js";
 import type { HttpError } from "./types/index.js";
 import { getDataDir, toPosixPath } from "./utils/paths.js";
 
@@ -44,6 +44,7 @@ async function toWorkspaceRelativePath(workspaceDir: string, filePath: string): 
 	}
 	const segments = toPosixPath(relative).split("/");
 	if (segments.includes(".ridge")) return null;
+	if (isWorkspaceVersionIgnoredPath(toPosixPath(relative))) return null;
 
 	try {
 		const realTarget = await fs.realpath(target);

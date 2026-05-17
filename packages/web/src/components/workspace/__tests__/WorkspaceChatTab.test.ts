@@ -3,6 +3,7 @@ import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WorkspaceChatTab from "../WorkspaceChatTab.vue";
 import type { ResourceCatalogResponse } from "@/lib/types";
+import type { GitRepositoryStatus } from "@/composables/useGitRepositoryStatus";
 
 const mockComposer = {
 	draftText: "",
@@ -30,6 +31,14 @@ const mockResources = ref<ResourceCatalogResponse>({
 		skills: [],
 		commands: [],
 	},
+});
+const mockGitStatus = ref<GitRepositoryStatus>({
+	isRepository: true,
+	engine: "cli" as const,
+	canCommit: true,
+	canPushPull: true,
+	canWorktree: true,
+	label: "Git",
 });
 
 vi.mock("@/composables/usePerSessionChat", () => ({
@@ -76,10 +85,7 @@ vi.mock("@/composables/usePerSessionChat", () => ({
 
 vi.mock("@/composables/useGitRepositoryStatus", () => ({
 	useGitRepositoryStatus: () => ({
-		status: computed(() => ({
-			branch: "",
-			summary: { modified: 0, added: 0, deleted: 0, untracked: 0 },
-		})),
+		status: computed(() => mockGitStatus.value),
 		refresh: vi.fn(),
 	}),
 }));
@@ -109,6 +115,14 @@ describe("WorkspaceChatTab", () => {
 				commands: [],
 			},
 		};
+		mockGitStatus.value = {
+			isRepository: true,
+			engine: "cli",
+			canCommit: true,
+			canPushPull: true,
+			canWorktree: true,
+			label: "Git",
+		};
 	});
 
 	it("loads the session and auto-submits the home initial prompt with selected options", async () => {
@@ -127,6 +141,7 @@ describe("WorkspaceChatTab", () => {
 					WorkbenchChatPanel: true,
 					WorkspaceFileTree: true,
 					WorkbenchGitPanel: true,
+					WorkbenchVersionPanel: true,
 					Tabs: { template: "<div><slot /></div>" },
 					TabsList: { template: "<div><slot /></div>" },
 					TabsTrigger: { template: "<button><slot /></button>" },
@@ -177,6 +192,7 @@ describe("WorkspaceChatTab", () => {
 					}),
 					WorkspaceFileTree: true,
 					WorkbenchGitPanel: true,
+					WorkbenchVersionPanel: true,
 					Tabs: { template: "<div><slot /></div>" },
 					TabsList: { template: "<div><slot /></div>" },
 					TabsTrigger: { template: "<button><slot /></button>" },
@@ -262,6 +278,7 @@ describe("WorkspaceChatTab", () => {
 					}),
 					WorkspaceFileTree: true,
 					WorkbenchGitPanel: true,
+					WorkbenchVersionPanel: true,
 					Tabs: { template: "<div><slot /></div>" },
 					TabsList: { template: "<div><slot /></div>" },
 					TabsTrigger: { template: "<button><slot /></button>" },
@@ -298,6 +315,69 @@ describe("WorkspaceChatTab", () => {
 
 		await wrapper.get('[data-test="inject-command"]').trigger("click");
 		expect(mockComposer.draftText).toBe("请基于当前上下文规划今天任务 $deep-review /summarize ");
+	});
+
+	it("keeps Git and workspace versions as separate right sidebar tabs", () => {
+		const wrapper = mount(WorkspaceChatTab, {
+			props: {
+				sessionId: "session-home-first",
+				workspaceDir: "/tmp/project",
+			},
+			global: {
+				stubs: {
+					WorkbenchChatPanel: true,
+					WorkspaceFileTree: true,
+					WorkbenchGitPanel: true,
+					WorkbenchVersionPanel: true,
+					Tabs: { template: "<div><slot /></div>" },
+					TabsList: { template: "<div><slot /></div>" },
+					TabsTrigger: { template: "<button><slot /></button>" },
+					TabsContent: { template: "<div><slot /></div>" },
+					ScrollArea: { template: "<div><slot /></div>" },
+					Separator: true,
+				},
+			},
+		});
+
+		const tabLabels = wrapper.findAll("button").map((button) => button.text());
+		expect(tabLabels).toContain("Git");
+		expect(tabLabels).toContain("版本");
+	});
+
+	it("hides the Git tab when the current directory is not a real Git repository", () => {
+		mockGitStatus.value = {
+			isRepository: false,
+			engine: "none",
+			canCommit: false,
+			canPushPull: false,
+			canWorktree: false,
+			label: "非 Git 仓库",
+		};
+
+		const wrapper = mount(WorkspaceChatTab, {
+			props: {
+				sessionId: "session-home-first",
+				workspaceDir: "/tmp/project",
+			},
+			global: {
+				stubs: {
+					WorkbenchChatPanel: true,
+					WorkspaceFileTree: true,
+					WorkbenchGitPanel: true,
+					WorkbenchVersionPanel: true,
+					Tabs: { template: "<div><slot /></div>" },
+					TabsList: { template: "<div><slot /></div>" },
+					TabsTrigger: { template: "<button><slot /></button>" },
+					TabsContent: { template: "<div><slot /></div>" },
+					ScrollArea: { template: "<div><slot /></div>" },
+					Separator: true,
+				},
+			},
+		});
+
+		const tabLabels = wrapper.findAll("button").map((button) => button.text());
+		expect(tabLabels).toEqual(expect.arrayContaining(["摘要", "文件", "版本"]));
+		expect(tabLabels).not.toContain("Git");
 	});
 
 	it("submits the main workspace chat draft after prompt skill and command injection", async () => {
@@ -358,6 +438,7 @@ describe("WorkspaceChatTab", () => {
 					}),
 					WorkspaceFileTree: true,
 					WorkbenchGitPanel: true,
+					WorkbenchVersionPanel: true,
 					Tabs: { template: "<div><slot /></div>" },
 					TabsList: { template: "<div><slot /></div>" },
 					TabsTrigger: { template: "<button><slot /></button>" },
@@ -408,6 +489,7 @@ describe("WorkspaceChatTab", () => {
 					}),
 					WorkspaceFileTree: true,
 					WorkbenchGitPanel: true,
+					WorkbenchVersionPanel: true,
 					Tabs: { template: "<div><slot /></div>" },
 					TabsList: { template: "<div><slot /></div>" },
 					TabsTrigger: { template: "<button><slot /></button>" },
