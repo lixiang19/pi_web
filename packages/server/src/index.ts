@@ -5,10 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import {
-	AuthStorage,
-	ModelRegistry,
-} from "@mariozechner/pi-coding-agent";
 import cors from "cors";
 import express, {
 	type NextFunction,
@@ -139,6 +135,11 @@ import type {
 } from "./types/index.js";
 import { atomicWriteFile } from "./utils/fs.js";
 import { getDataDir, getRidgeDbPath, toPosixPath } from "./utils/paths.js";
+import {
+	createPiDefaultAuthStorage,
+	createPiDefaultModelRegistry,
+} from "./pi-default-config.js";
+import { syncBuiltInPiConfigToDefaultAgentDir } from "./pi-config-sync.js";
 import { normalizeString } from "./utils/strings.js";
 import {
 	ensureWorkspaceTemplate,
@@ -294,8 +295,9 @@ const upload = multer({
 	},
 });
 
-const authStorage = AuthStorage.create();
-const modelRegistry = ModelRegistry.create(authStorage);
+await syncBuiltInPiConfigToDefaultAgentDir();
+const authStorage = createPiDefaultAuthStorage();
+const modelRegistry = createPiDefaultModelRegistry(authStorage);
 const activeSessions = new Map<string, SessionRecord>();
 const openingSessionRecords = new Map<string, Promise<SessionRecord>>();
 const projectContextResolver =

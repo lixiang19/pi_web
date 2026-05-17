@@ -45,8 +45,8 @@ describe("Desktop Bundle Sync E2E", () => {
     const token = regRes.body.token;
 
     // 2. Prepare workspace with a skill and agent for bundle
-    const wsSkillsDir = path.join(os.homedir(), "ridge-workspace", ".pi", "skills");
-    const wsAgentsDir = path.join(os.homedir(), "ridge-workspace", ".pi", "agents");
+    const wsSkillsDir = path.join(os.homedir(), ".pi", "agent", "skills");
+    const wsAgentsDir = path.join(os.homedir(), ".pi", "agent", "agents");
     await fs.mkdir(wsSkillsDir, { recursive: true });
     await fs.mkdir(wsAgentsDir, { recursive: true });
     const skillSubdir = path.join(wsSkillsDir, "desktop-skill");
@@ -78,9 +78,9 @@ describe("Desktop Bundle Sync E2E", () => {
     });
 
     expect(result.bundleId).toBeTruthy();
-    expect(result.bundleVersion).toBeGreaterThanOrEqual(1);
-    expect(result.materializedDir).toBeTruthy();
-    expect(result.materializedHash).toBeTruthy();
+	    expect(result.bundleVersion).toBeGreaterThanOrEqual(1);
+	    expect(result.materializedDir).toBe(path.join(os.homedir(), ".pi", "agent"));
+	    expect(result.materializedHash).toBeTruthy();
     expect(result.acked).toBe(true);
 
     // 5. Verify materialized directory contains the skill
@@ -104,10 +104,15 @@ describe("Desktop Bundle Sync E2E", () => {
     expect(servedRow).toBeDefined();
     expect(servedRow!.materialized_hash).toBe(result.materializedHash);
 
-    // 7. Verify Pi resourceLoader uses materialized dir (not real ~/.pi)
+	    // 7. Verify Pi resourceLoader uses the overwritten default config root
     const { createDesktopResourceLoader } = await import("../desktop-bundle-sync.js");
     const rl = createDesktopResourceLoader(result.materializedDir, os.homedir());
     await rl.reload();
+    expect(Reflect.get(rl, "agentDir")).toBe(result.materializedDir);
+    const settingsManager = Reflect.get(rl, "settingsManager") as {
+      getDefaultProvider(): string | undefined;
+    };
+    expect(settingsManager.getDefaultProvider()).toBe("aurora");
     const skills = rl.getSkills().skills.map((s) => s.name);
     expect(skills).toContain("desktop-skill");
     expect(skills).not.toContain("real-skill");

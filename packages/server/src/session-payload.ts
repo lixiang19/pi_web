@@ -23,9 +23,9 @@ import {
 	resolveExistingRealPath,
 } from "./file-manager.js";
 import {
-	createPiAgentScopeSettingsManager,
-	getPiAgentScopeAgentDir,
-} from "./pi-resource-scope.js";
+	createPiDefaultSettingsManager,
+	getPiDefaultAgentDir,
+} from "./pi-default-config.js";
 import type { createProjectContextResolver } from "./project-context.js";
 import {
 	applySessionAgentSelection,
@@ -599,8 +599,8 @@ export const buildResourceCatalog = (
 };
 
 export const createTransientCatalogSession = async (cwd: string) => {
-	const settingsManager = createPiAgentScopeSettingsManager(cwd);
-	const agentDir = getPiAgentScopeAgentDir();
+	const settingsManager = createPiDefaultSettingsManager(cwd);
+	const agentDir = getPiDefaultAgentDir();
 	const resourceLoader = new DefaultResourceLoader({
 		cwd,
 		agentDir,
@@ -639,7 +639,7 @@ export const ensureSessionRecord = async (
 	const pendingRecord = (async (): Promise<SessionRecord> => {
 		const lookup = await getIndexedSessionLookupOrThrow(sessionId);
 		const sessionManager = SessionManager.open(lookup.sessionFile);
-		const settingsManager = createPiAgentScopeSettingsManager(lookup.cwd);
+		const settingsManager = createPiDefaultSettingsManager(lookup.cwd);
 		const recordState: Partial<SessionRecord> = {
 			cwd: lookup.cwd,
 			pendingAskRecords: new Map(),

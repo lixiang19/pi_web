@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { DeviceRecord } from './devices.js';
+import { getPiDefaultAgentDir } from './pi-default-config.js';
 
 // ===== Config Schemas (Problem 14: real contracts) =====
 export const mcpServerSchema = z.object({
@@ -34,14 +35,7 @@ export const toolsSchema = z.object({
   })).optional(),
 });
 
-export const modelsSchema = z.object({
-  models: z.array(z.object({
-    name: z.string().min(1),
-    provider: z.string().min(1),
-    baseUrl: z.string().url().optional(),
-    apiKey: z.string().optional(),
-  })).optional(),
-});
+export const modelsSchema = z.record(z.string(), z.unknown());
 
 // Config filename -> schema mapping
 const CONFIG_SCHEMAS: Record<string, z.ZodSchema<unknown>> = {
@@ -136,9 +130,11 @@ export async function generateRuntimeBundle(
   const bundleId = `bundle-${device.deviceId}-${Date.now()}`;
   const files = new Map<string, BundleResource>();
 
-  // 1. Global agents (recursive)
-  const globalAgentsDir = path.join(workspaceDir, '.pi', 'agents');
-  const globalAgents = await loadResourcesRecursive(globalAgentsDir, files, 'agents');
+  const serverAgentDir = getPiDefaultAgentDir();
+
+  // 1. Server-level agents (recursive)
+  const serverAgentsDir = path.join(serverAgentDir, 'agents');
+  const globalAgents = await loadResourcesRecursive(serverAgentsDir, files, 'agents');
 
   // 2. Project agents overlay (if projectPath provided)
   let agents = globalAgents;
@@ -151,9 +147,9 @@ export async function generateRuntimeBundle(
     ];
   }
 
-  // 3. Global skills (recursive)
-  const globalSkillsDir = path.join(workspaceDir, '.pi', 'skills');
-  const globalSkills = await loadResourcesRecursive(globalSkillsDir, files, 'skills');
+  // 3. Server-level skills (recursive)
+  const serverSkillsDir = path.join(serverAgentDir, 'skills');
+  const globalSkills = await loadResourcesRecursive(serverSkillsDir, files, 'skills');
 
   // 4. Project skills overlay
   let allSkills = globalSkills;
@@ -170,10 +166,12 @@ export async function generateRuntimeBundle(
   const skills = filterSkillsByDevice(allSkills, device);
 
   // 6. Config files (JSON) — with schema validation
-  const mcp = await loadJsonConfig(workspaceDir, 'mcp.json');
-  const tools = await loadJsonConfig(workspaceDir, 'tools.json');
-  const permissions = await loadJsonConfig(workspaceDir, 'permissions.json');
-  const modelConfig = await loadJsonConfig(workspaceDir, 'models.json');
+  const mcp = await loadAgentJsonConfig(serverAgentDir, 'mcp.json', files);
+  const tools = await loadAgentJsonConfig(serverAgentDir, 'tools.json', files);
+  const permissions = await loadAgentJsonConfig(serverAgentDir, 'permissions.json', files);
+  const modelConfig = await loadAgentJsonConfig(serverAgentDir, 'models.json', files);
+  await addRawConfigFile(serverAgentDir, 'auth.json', files);
+  await addRawConfigFile(serverAgentDir, 'settings.json', files);
 
   // 7. Startup context
   const startupContext: BundleManifest['startupContext'] = {};
@@ -319,6 +317,24 @@ export async function loadJsonConfig(
   filename: string,
 ): Promise<Record<string, unknown>> {
   const filePath = path.join(workspaceDir, '.pi', filename);
+  return loadJsonConfigFile(filePath, filename);
+}
+
+async function loadAgentJsonConfig(
+  agentDir: string,
+  filename: string,
+  files: Map<string, BundleResource>,
+): Promise<Record<string, unknown>> {
+  const filePath = path.join(agentDir, filename);
+  const config = await loadJsonConfigFile(filePath, filename);
+  await addRawConfigFile(agentDir, filename, files);
+  return config;
+}
+
+async function loadJsonConfigFile(
+  filePath: string,
+  filename: string,
+): Promise<Record<string, unknown>> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = safeParseJson(content, filename);
@@ -351,6 +367,35 @@ export async function loadJsonConfig(
       new Error(`Config error in ${filename}: ${err.message || 'unknown error'}`),
       { statusCode: 400 }
     );
+  }
+}
+
+async function addRawConfigFile(
+  agentDir: string,
+  filename: string,
+  files: Map<string, BundleResource>,
+): Promise<void> {
+  const filePath = path.join(agentDir, filename);
+  try {
+    const stats = await fs.stat(filePath);
+    if (!stats.isFile()) {
+      return;
+    }
+    const content = await fs.readFile(filePath, 'utf-8');
+    files.set(filename, {
+      name: filename,
+      path: filename,
+      content,
+      encoding: 'utf-8',
+      mtime: stats.mtimeMs,
+      mode: stats.mode,
+      executable: Boolean(stats.mode & 0o111),
+    });
+  } catch (error) {
+    const err = error as { code?: string };
+    if (err.code !== 'ENOENT') {
+      throw error;
+    }
   }
 }
 

@@ -28,9 +28,9 @@ import {
 	resolveExistingRealPath,
 } from "./file-manager.js";
 import {
-	createPiAgentScopeSettingsManager,
-	getPiAgentScopeAgentDir,
-} from "./pi-resource-scope.js";
+	createPiDefaultSettingsManager,
+	getPiDefaultAgentDir,
+} from "./pi-default-config.js";
 import type { createProjectContextResolver } from "./project-context.js";
 import type { SessionMetadataStore } from "./session-metadata.js";
 import { getProjects } from "./storage/index.js";
@@ -497,8 +497,8 @@ export const createAgentConfigResponse = (agent: AgentConfigInternal) => ({
 export const createSessionResourceLoader = (record: SessionRecord) =>
 	new DefaultResourceLoader({
 		cwd: record.cwd,
-		agentDir: getPiAgentScopeAgentDir(),
-		settingsManager: createPiAgentScopeSettingsManager(record.cwd),
+		agentDir: getPiDefaultAgentDir(),
+		settingsManager: createPiDefaultSettingsManager(record.cwd),
 		appendSystemPromptOverride: (base: string[]) => {
 			const sections = [...base];
 			const memoryInjection = buildWorkspaceMemoryInjectionSync(
@@ -968,7 +968,7 @@ export const createSessionRecord = async ({
 		sessionManager.newSession({ parentSession: parentSessionPath });
 	}
 
-	const settingsManager = createPiAgentScopeSettingsManager(cwd);
+	const settingsManager = createPiDefaultSettingsManager(cwd);
 	const recordState: Partial<SessionRecord> = {
 		cwd,
 		settingsManager,
@@ -979,8 +979,7 @@ export const createSessionRecord = async ({
 		selectedPermissionPolicy: null,
 	};
 	// Use bundle-backed resourceLoader when a materialized bundle dir is provided.
-	// This ensures Pi reads agents/skills/config from the server-provided bundle
-	// instead of the desktop's real ~/.pi directory.
+	// This points Pi at the config root that was overwritten with the bundle.
 	const resourceLoader = materializedBundleDir
 		? createBundleBackedResourceLoader(materializedBundleDir, cwd)
 		: createSessionResourceLoader(recordState as SessionRecord);

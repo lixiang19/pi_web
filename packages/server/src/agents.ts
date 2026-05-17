@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
-import { getAgentDir, parseFrontmatter } from '@mariozechner/pi-coding-agent';
+import { parseFrontmatter } from '@mariozechner/pi-coding-agent';
 import { normalizeAgentPermission } from './agent-permissions.js';
 import { DEFAULT_AGENTS } from './default-agents.js';
+import { getPiDefaultAgentDir } from './pi-default-config.js';
 import type {
   AgentMode,
   AgentScope,
@@ -192,7 +193,7 @@ const isDirectory = async (targetPath: string): Promise<boolean> => {
   }
 };
 
-const getUserAgentsDir = (): string => path.join(getAgentDir(), 'agents');
+const getUserAgentsDir = (): string => path.join(getPiDefaultAgentDir(), 'agents');
 
 const findNearestProjectAgentsDir = async (cwd: string): Promise<string | null> => {
   let currentDir = path.resolve(cwd);

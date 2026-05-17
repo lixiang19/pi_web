@@ -15,6 +15,7 @@ import {
 } from "../project-service.js";
 
 const WORKSPACE = path.join(os.homedir(), "ridge-workspace");
+const PI_AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
 
 async function setupAuth() {
   return createAuthenticatedAgent(app);
@@ -31,6 +32,9 @@ async function clearTestData() {
 
 async function clearWorkspaceTestFiles() {
   const testDirs = [
+    path.join(PI_AGENT_DIR, "agents"),
+    path.join(PI_AGENT_DIR, "skills"),
+    path.join(PI_AGENT_DIR, "mcp.json"),
     path.join(WORKSPACE, ".pi", "agents"),
     path.join(WORKSPACE, ".pi", "skills"),
     path.join(WORKSPACE, ".pi", "mcp.json"),
@@ -435,9 +439,9 @@ describe("Task 30 - 项目注册与内部/外部仓库", () => {
   });
 
   it("GET /api/devices/:deviceId/bundle 生成 runtime bundle 含完整结构", async () => {
-    // Setup workspace .pi structure
-    const agentsDir = path.join(WORKSPACE, ".pi", "agents");
-    const skillsDir = path.join(WORKSPACE, ".pi", "skills");
+	    // Setup server Pi default config structure
+	    const agentsDir = path.join(PI_AGENT_DIR, "agents");
+	    const skillsDir = path.join(PI_AGENT_DIR, "skills");
     await fs.mkdir(agentsDir, { recursive: true });
     await fs.mkdir(skillsDir, { recursive: true });
     await fs.writeFile(path.join(agentsDir, "agent1.md"), "# Agent1", "utf-8");
@@ -463,8 +467,8 @@ describe("Task 30 - 项目注册与内部/外部仓库", () => {
   });
 
   it("Mac-only Skill 只下发给 Mac 设备", async () => {
-    const agentsDir = path.join(WORKSPACE, ".pi", "agents");
-    const skillsDir = path.join(WORKSPACE, ".pi", "skills");
+	    const agentsDir = path.join(PI_AGENT_DIR, "agents");
+	    const skillsDir = path.join(PI_AGENT_DIR, "skills");
     await fs.mkdir(agentsDir, { recursive: true });
     await fs.mkdir(skillsDir, { recursive: true });
     await fs.writeFile(
@@ -780,9 +784,9 @@ describe("Task 32 - Runtime Bundle", () => {
   });
 
   it("GET /api/devices/:deviceId/bundle 生成 runtime bundle 含完整结构", async () => {
-    // Setup workspace resources
-    const agentsDir = path.join(WORKSPACE, ".pi", "agents");
-    const skillsDir = path.join(WORKSPACE, ".pi", "skills");
+    // Setup server Pi default config resources
+    const agentsDir = path.join(PI_AGENT_DIR, "agents");
+    const skillsDir = path.join(PI_AGENT_DIR, "skills");
     const memDir = path.join(WORKSPACE, "记忆");
     const wikiDir = path.join(WORKSPACE, "Wiki");
     await fs.mkdir(agentsDir, { recursive: true });
@@ -791,7 +795,7 @@ describe("Task 32 - Runtime Bundle", () => {
     await fs.mkdir(wikiDir, { recursive: true });
     await fs.writeFile(path.join(agentsDir, "coder.pi.md"), "# Coder", "utf-8");
     await fs.writeFile(path.join(skillsDir, "test.md"), "# Test Skill", "utf-8");
-    await fs.writeFile(path.join(WORKSPACE, ".pi", "mcp.json"), '{"servers":[]}', "utf-8");
+	    await fs.writeFile(path.join(PI_AGENT_DIR, "mcp.json"), '{"servers":[]}', "utf-8");
     await fs.writeFile(path.join(memDir, "MEMORY.md"), "## Startup memory", "utf-8");
     await fs.writeFile(path.join(wikiDir, "index.md"), "# Wiki\n\n- Startup wiki", "utf-8");
 
@@ -818,14 +822,14 @@ describe("Task 32 - Runtime Bundle", () => {
     // Cleanup
     await fs.rm(path.join(agentsDir, "coder.pi.md"), { force: true });
     await fs.rm(path.join(skillsDir, "test.md"), { force: true });
-    await fs.rm(path.join(WORKSPACE, ".pi", "mcp.json"), { force: true });
+	    await fs.rm(path.join(PI_AGENT_DIR, "mcp.json"), { force: true });
     await fs.rm(path.join(memDir, "MEMORY.md"), { force: true });
     await fs.rm(path.join(wikiDir, "index.md"), { force: true });
   });
 
   it("Mac-only Skill 只下发给 Mac 设备", async () => {
     // Setup: create a mock skill with [mac] tag
-    const skillsDir = path.join(WORKSPACE, ".pi", "skills");
+	    const skillsDir = path.join(PI_AGENT_DIR, "skills");
     await fs.mkdir(skillsDir, { recursive: true });
     await fs.writeFile(path.join(skillsDir, "mac-tool[mac].md"), "# Mac Tool", "utf-8");
     await fs.writeFile(path.join(skillsDir, "general-tool.md"), "# General Tool", "utf-8");
@@ -885,8 +889,8 @@ describe("Task 32 - Runtime Bundle", () => {
     const projectId = projRes.body.id;
     _resetValidatePathViaDesktopTesting();
 
-    // Seed workspace .pi for bundle generation
-    const agentsDir = path.join(WORKSPACE, ".pi", "agents");
+	    // Seed server Pi default config for bundle generation
+    const agentsDir = path.join(PI_AGENT_DIR, "agents");
     await fs.mkdir(agentsDir, { recursive: true });
     await fs.writeFile(path.join(agentsDir, "agent1.md"), "# Agent1", "utf-8");
 
@@ -1537,10 +1541,9 @@ describe("Task 32 - Bundle 物化与配置", () => {
   it("bundle 物化到本地目录并正确写入文件", async () => {
     const { generateRuntimeBundle, materializeBundle } = await import("../runtime-bundle.js");
     const { registerDevice } = await import("../devices.js");
-
-    // Setup workspace resources
-    const agentsDir = path.join(WORKSPACE, ".pi", "agents");
-    const skillsDir = path.join(WORKSPACE, ".pi", "skills");
+    // Setup server Pi default config resources
+    const agentsDir = path.join(PI_AGENT_DIR, "agents");
+    const skillsDir = path.join(PI_AGENT_DIR, "skills");
     await fs.mkdir(agentsDir, { recursive: true });
     await fs.mkdir(skillsDir, { recursive: true });
     await fs.writeFile(path.join(agentsDir, "test-agent.md"), "# Agent", "utf-8");
@@ -1576,8 +1579,7 @@ describe("Task 32 - Bundle 物化与配置", () => {
   it("bundle 物化时旧文件被清理", async () => {
     const { generateRuntimeBundle, materializeBundle } = await import("../runtime-bundle.js");
     const { registerDevice } = await import("../devices.js");
-
-    const agentsDir = path.join(WORKSPACE, ".pi", "agents");
+    const agentsDir = path.join(PI_AGENT_DIR, "agents");
     await fs.mkdir(agentsDir, { recursive: true });
     await fs.writeFile(path.join(agentsDir, "agent1.md"), "# Agent1", "utf-8");
 
@@ -1615,8 +1617,8 @@ describe("Task 32 - Bundle 物化与配置", () => {
     const { generateRuntimeBundle } = await import("../runtime-bundle.js");
     const { registerDevice } = await import("../devices.js");
 
-    // Global skill
-    const globalSkillsDir = path.join(WORKSPACE, ".pi", "skills");
+    // Server-level skill
+    const globalSkillsDir = path.join(PI_AGENT_DIR, "skills");
     await fs.mkdir(globalSkillsDir, { recursive: true });
     await fs.writeFile(path.join(globalSkillsDir, "shared.md"), "# Global", "utf-8");
 
@@ -1656,14 +1658,14 @@ describe("Task 32 - Bundle 物化与配置", () => {
     await fs.rm(path.join(WORKSPACE, ".pi", "mcp.json"), { force: true });
   });
 
-  it("bundle-backed resourceLoader 从物化目录读取 skill，不读取真实 ~/.pi", async () => {
+  it("bundle-backed resourceLoader 从指定物化目录读取 skill", async () => {
     const { generateRuntimeBundle, materializeBundle } = await import("../runtime-bundle.js");
     const { registerDevice } = await import("../devices.js");
     const { createBundleBackedResourceLoader } = await import("../bundle-resource-loader.js");
 
     // Setup workspace with a bundle-specific skill
-    const agentsDir = path.join(WORKSPACE, ".pi", "agents");
-    const skillsDir = path.join(WORKSPACE, ".pi", "skills");
+    const agentsDir = path.join(PI_AGENT_DIR, "agents");
+    const skillsDir = path.join(PI_AGENT_DIR, "skills");
     await fs.mkdir(agentsDir, { recursive: true });
     await fs.mkdir(skillsDir, { recursive: true });
     // Create skill in a named subdirectory with proper frontmatter
@@ -1681,8 +1683,8 @@ describe("Task 32 - Bundle 物化与配置", () => {
       "utf-8",
     );
 
-    // Also write to real ~/.pi to prove it is NOT read
-    const realPiDir = path.join(os.homedir(), ".pi", "skills");
+    // Also write a sibling skill to prove the explicit materialized dir wins.
+    const realPiDir = path.join(os.tmpdir(), `ridge-other-skills-${Date.now()}`);
     const realSkillSubdir = path.join(realPiDir, "real-skill");
     await fs.mkdir(realSkillSubdir, { recursive: true });
     await fs.writeFile(

@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 
 import { Type } from '@sinclair/typebox';
 import {
@@ -14,10 +13,9 @@ import type { Api, Message, Model } from '@mariozechner/pi-ai';
 
 import { compileAgentPermission, createPermissionGateExtension } from './agent-permissions.js';
 import {
-  createPiAgentScopeSettingsManager,
-  getPiAgentScopeAgentDir,
-  isPiResourceIsolationEnabled,
-} from './pi-resource-scope.js';
+  createPiDefaultSettingsManager,
+  getPiDefaultAgentDir,
+} from './pi-default-config.js';
 import { discoverAgents, normalizeThinkingLevel, type AgentConfigInternal } from './agents.js';
 import type { HttpError, SessionRecord, ThinkingLevel } from './types/index.js';
 
@@ -221,10 +219,10 @@ const loadSkillBlocks = async (cwd: string, names: string[] | undefined): Promis
   }
 
   const projectDir = await findNearestProjectSkillsDir(cwd);
-  const globalDir = path.join(os.homedir(), '.pi', 'skills');
+  const runtimeDir = path.join(getPiDefaultAgentDir(), 'skills');
   const searchDirs = [
     projectDir,
-    isPiResourceIsolationEnabled() ? null : globalDir,
+    runtimeDir,
   ].filter((dir): dir is string => Boolean(dir));
   const blocks: string[] = [];
 
@@ -421,14 +419,14 @@ const runChildSession = async (
     maxTurns?: number | null;
   },
 ): Promise<void> => {
-  const settingsManager = createPiAgentScopeSettingsManager(parentRecord.cwd);
+  const settingsManager = createPiDefaultSettingsManager(parentRecord.cwd);
   let permissionPolicy: ReturnType<typeof compileAgentPermission> | null = null;
 
   const childSystemPrompt = await buildSubagentSystemPrompt(agent, parentRecord);
 
   const resourceLoader = new DefaultResourceLoader({
     cwd: parentRecord.cwd,
-    agentDir: getPiAgentScopeAgentDir(),
+    agentDir: getPiDefaultAgentDir(),
     settingsManager,
     appendSystemPromptOverride: (base: string[]) => [...base, childSystemPrompt],
     extensionFactories: [createPermissionGateExtension(() => permissionPolicy)],

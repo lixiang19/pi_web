@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "exa": {
+      "lifecycle": "lazy",
+      "url": "https://mcp.exa.ai/mcp?tools=web_search_exa,deep_search_exa,get_code_context_exa,crawling_exa,company_research_exa,deep_researcher_start,deep_researcher_check"
+    },
+    "grep_app": {
+      "lifecycle": "lazy",
+      "url": "https://mcp.grep.app"
+    }
+  }
+}

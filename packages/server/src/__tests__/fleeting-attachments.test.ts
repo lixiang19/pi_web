@@ -395,13 +395,14 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.post(`/api/fleeting/${noteId}/attachments`)
 			.attach("files", Buffer.from("content"), { filename: "doc.txt" });
 
-		// Monkey-patch db.prepare to throw on INSERT so the copy succeeds but transaction fails
+			// Monkey-patch db.prepare to throw on INSERT so the copy succeeds but transaction fails
 			const originalPrepare = db.prepare.bind(db);
-			const prepareSpy = vi.spyOn(db, "prepare").mockImplementation((sql: string) => {
-				if (sql.includes("INSERT INTO workspace_tasks")) {
+			const prepareSpy = vi.spyOn(db, "prepare").mockImplementation((sql: unknown) => {
+				const source = typeof sql === "string" ? sql : String(sql);
+				if (source.includes("INSERT INTO workspace_tasks")) {
 					throw new Error("Simulated DB failure");
 				}
-				return originalPrepare(sql);
+				return originalPrepare(source);
 			});
 
 		const res = await request(app)

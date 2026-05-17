@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
@@ -10,6 +11,10 @@ import {
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import type { createBackgroundJobQueue } from "./background-jobs.js";
+import {
+	createPiDefaultAuthStorage,
+	createPiDefaultModelRegistry,
+} from "./pi-default-config.js";
 import type { ThinkingLevel } from "./types/index.js";
 import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
@@ -60,13 +65,51 @@ interface SummaryJobPayload extends EnqueueSessionSummaryInput {
 interface SummaryResult {
 	title: string;
 	summary: string;
-	decisions: string[];
-	facts: string[];
+	atoms: SummaryAtomInput[];
 	artifacts: string[];
 }
 
+type MemoryAtomType = "preference" | "decision" | "constraint" | "lesson" | "fact" | "workflow";
+type MemoryAtomConfidence = "explicit" | "inferred";
+
+interface SummaryAtomInput {
+	type: MemoryAtomType;
+	scope: string;
+	confidence: MemoryAtomConfidence;
+	evidence: string;
+	content: string;
+}
+
+interface CompletedMemoryAtom extends SummaryAtomInput {
+	id: string;
+	status: "active";
+	observedAt: string;
+	sourceSessionId: string;
+}
+
 interface MemoryMaintainResult {
-	memories: string[];
+	scenarios: ScenarioUpdate[];
+	memories: MemoryEntryInput[];
+}
+
+interface ScenarioAtomRef {
+	id: string;
+	date: string;
+	note: string;
+}
+
+interface ScenarioUpdate {
+	slug: string;
+	title: string;
+	conclusions: string[];
+	atomRefs: ScenarioAtomRef[];
+	superseded: string[];
+}
+
+interface MemoryEntryInput {
+	scope: string;
+	date: string;
+	content: string;
 }
 
 export interface WorkspaceMemoryWorkersOptions {
@@ -87,8 +130,22 @@ const WIKI_HEADER = "# Wiki\n";
 const MAX_TRANSCRIPT_CHARS = 32_000;
 const MAX_MEMORY_CHARS = 4_000;
 const MAX_MEMORY_LINES = 40;
+const MAX_SCENARIO_CONTEXT_CHARS = 16_000;
 const SENSITIVE_PATTERN =
 	/(token|api[_-]?key|apikey|password|passwd|secret|private key|私钥|密码|密钥|令牌|sk-[a-z0-9_-]{8,})/i;
+const MEMORY_ATOM_TYPES = new Set<MemoryAtomType>([
+	"preference",
+	"decision",
+	"constraint",
+	"lesson",
+	"fact",
+	"workflow",
+]);
+const MEMORY_ATOM_CONFIDENCES = new Set<MemoryAtomConfidence>(["explicit", "inferred"]);
+const MEMORY_SCOPE_PATTERN = /^(global|pi_web|module:[a-z0-9_-]+|task:[a-z0-9_-]+|repo:[a-z0-9_-]+)$/i;
+const MEMORY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MEMORY_ATOM_ID_PATTERN = /^mem_\d{8}_\d{4}_\d{3}$/;
+const SCENARIO_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,80}$/i;
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
@@ -101,6 +158,20 @@ const localDateParts = (timestamp: number) => {
 		hour: pad2(date.getHours()),
 		minute: pad2(date.getMinutes()),
 	};
+};
+
+const formatLocalIso = (timestamp: number): string => {
+	const date = new Date(timestamp);
+	const offsetMinutes = -date.getTimezoneOffset();
+	const sign = offsetMinutes >= 0 ? "+" : "-";
+	const absoluteOffset = Math.abs(offsetMinutes);
+	return [
+		`${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`,
+		"T",
+		`${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`,
+		sign,
+		`${pad2(Math.floor(absoluteOffset / 60))}:${pad2(absoluteOffset % 60)}`,
+	].join("");
 };
 
 export const buildDailyInfo = (timestamp: number) => {
@@ -219,7 +290,7 @@ const isSensitiveMemory = (value: string) => SENSITIVE_PATTERN.test(value);
 const readMemoryLines = async (workspaceDir: string): Promise<string[]> => {
 	const filePath = await ensureMemoryFile(workspaceDir);
 	const content = await fs.readFile(filePath, "utf8");
-	return content
+	return stripTopHeading(content, MEMORY_HEADER)
 		.split(/\r?\n/)
 		.map((line) => normalizeMemoryLine(line))
 		.filter(Boolean);
@@ -264,7 +335,12 @@ export const applyExplicitMemoryCommand = async (
 	const existing = await readMemoryLines(workspaceDir);
 	if (command.action === "remember") {
 		if (isSensitiveMemory(value)) return false;
-		await writeMemoryLines(workspaceDir, [value, ...existing.filter((line) => line !== value)]);
+		const datedValue = formatMemoryEntry({
+			scope: "global",
+			date: buildDailyInfo(Date.now()).dailyDate,
+			content: value,
+		});
+		await writeMemoryLines(workspaceDir, [datedValue, ...existing.filter((line) => line !== datedValue)]);
 		return true;
 	}
 
@@ -349,6 +425,38 @@ const normalizeStringArray = (value: unknown): string[] => {
 	return value.map((item) => normalizeString(item)).filter(Boolean);
 };
 
+const parseSummaryAtoms = (value: unknown): SummaryAtomInput[] => {
+	if (!Array.isArray(value)) return [];
+	const atoms: SummaryAtomInput[] = [];
+	for (const item of value) {
+		if (!item || typeof item !== "object") continue;
+		const data = item as Record<string, unknown>;
+		const type = normalizeString(data.type) as MemoryAtomType;
+		const confidence = normalizeString(data.confidence) as MemoryAtomConfidence;
+		const scope = normalizeString(data.scope);
+		const evidence = normalizeString(data.evidence);
+		const content = normalizeString(data.content);
+		if (
+			!MEMORY_ATOM_TYPES.has(type) ||
+			!MEMORY_ATOM_CONFIDENCES.has(confidence) ||
+			!MEMORY_SCOPE_PATTERN.test(scope) ||
+			!evidence ||
+			!content
+		) {
+			continue;
+		}
+		if (isSensitiveMemory(`${evidence}\n${content}`)) continue;
+		atoms.push({
+			type,
+			scope,
+			confidence,
+			evidence,
+			content,
+		});
+	}
+	return atoms;
+};
+
 const isPathWithin = (root: string, target: string): boolean => {
 	const relative = path.relative(path.resolve(root), path.resolve(target));
 	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
@@ -415,8 +523,7 @@ const parseSummaryResult = (raw: unknown): SummaryResult => {
 	return {
 		title,
 		summary,
-		decisions: normalizeStringArray(data.decisions),
-		facts: normalizeStringArray(data.facts),
+		atoms: parseSummaryAtoms(data.atoms),
 		artifacts: normalizeStringArray(data.artifacts),
 	};
 };
@@ -427,8 +534,101 @@ const parseMemoryMaintainResult = (raw: unknown): MemoryMaintainResult => {
 	}
 	const data = raw as Record<string, unknown>;
 	return {
-		memories: normalizeStringArray(data.memories),
+		scenarios: parseScenarioUpdates(data.scenarios),
+		memories: parseMemoryEntries(data.memories),
 	};
+};
+
+const parseScenarioAtomRefs = (value: unknown): ScenarioAtomRef[] => {
+	if (!Array.isArray(value)) return [];
+	const refs: ScenarioAtomRef[] = [];
+	for (const item of value) {
+		if (!item || typeof item !== "object") continue;
+		const data = item as Record<string, unknown>;
+		const id = normalizeString(data.id);
+		const date = normalizeString(data.date);
+		const note = normalizeString(data.note);
+		if (!MEMORY_ATOM_ID_PATTERN.test(id) || !MEMORY_DATE_PATTERN.test(date) || !note) {
+			continue;
+		}
+		if (isSensitiveMemory(`${id}\n${date}\n${note}`)) continue;
+		refs.push({ id, date, note });
+	}
+	return refs;
+};
+
+const parseScenarioUpdates = (value: unknown): ScenarioUpdate[] => {
+	if (!Array.isArray(value)) return [];
+	const scenarios: ScenarioUpdate[] = [];
+	for (const item of value) {
+		if (!item || typeof item !== "object") continue;
+		const data = item as Record<string, unknown>;
+		const slug = normalizeString(data.slug);
+		const title = normalizeString(data.title);
+		const conclusions = normalizeStringArray(data.conclusions).filter(
+			(conclusion) => !isSensitiveMemory(conclusion),
+		);
+		const atomRefs = parseScenarioAtomRefs(data.atomRefs);
+		const superseded = normalizeStringArray(data.superseded).filter(
+			(item) => !isSensitiveMemory(item),
+		);
+		if (
+			!SCENARIO_SLUG_PATTERN.test(slug) ||
+			!title ||
+			conclusions.length === 0 ||
+			atomRefs.length === 0 ||
+			isSensitiveMemory(`${title}\n${slug}`)
+		) {
+			continue;
+		}
+		scenarios.push({ slug, title, conclusions, atomRefs, superseded });
+	}
+	return scenarios;
+};
+
+const parseMemoryEntries = (value: unknown): MemoryEntryInput[] => {
+	if (!Array.isArray(value)) return [];
+	const entries: MemoryEntryInput[] = [];
+	for (const item of value) {
+		if (!item || typeof item !== "object") continue;
+		const data = item as Record<string, unknown>;
+		const scope = normalizeString(data.scope);
+		const date = normalizeString(data.date);
+		const content = normalizeString(data.content);
+		if (
+			!MEMORY_SCOPE_PATTERN.test(scope) ||
+			!MEMORY_DATE_PATTERN.test(date) ||
+			!content ||
+			isSensitiveMemory(content)
+		) {
+			continue;
+		}
+		entries.push({ scope, date, content });
+	}
+	return entries;
+};
+
+const readScenarioContext = async (workspaceDir: string): Promise<string> => {
+	const scenarioDir = path.join(workspaceDir, "记忆", "scenarios");
+	let entries: Dirent[];
+	try {
+		entries = await fs.readdir(scenarioDir, { withFileTypes: true });
+	} catch {
+		return "";
+	}
+	const pages: string[] = [];
+	for (const entry of entries) {
+		if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+		const slug = entry.name.slice(0, -3);
+		if (!SCENARIO_SLUG_PATTERN.test(slug)) continue;
+		const filePath = path.join(scenarioDir, entry.name);
+		if (!isPathWithin(scenarioDir, filePath)) continue;
+		const content = await readTextFileIfExists(filePath);
+		if (content.trim()) {
+			pages.push(`<!-- ${entry.name} -->\n${content.trim()}`);
+		}
+	}
+	return pages.join("\n\n").slice(-MAX_SCENARIO_CONTEXT_CHARS);
 };
 
 const buildSummaryPrompt = (payload: SummaryJobPayload, messages: AgentMessage[]) => {
@@ -448,7 +648,13 @@ const buildSummaryPrompt = (payload: SummaryJobPayload, messages: AgentMessage[]
 - 只输出 JSON，不要解释。
 - title 是一句短标题。
 - summary 是一句短摘要。
-- decisions、facts、artifacts 都是字符串数组。
+- atoms 是结构化 L1 Atom 数组，每个 Atom 只表达一个事实、偏好、决策、约束或教训。
+- Atom type 只能是 preference、decision、constraint、lesson、fact、workflow。
+- Atom scope 只能是 global、pi_web、module:<name>、task:<id>、repo:<name>。
+- Atom confidence 只能是 explicit 或 inferred。
+- Atom evidence 必须是足够支撑 content 的用户原话或短证据。
+- 临时操作、一次性命令、未确认推测、敏感信息不要写入 atoms。
+- artifacts 是字符串数组。
 - 工作空间产物写相对路径。
 - 外部项目产物写项目名和项目内相对路径。
 - 不生成单个会话摘要文件，不整理旧 daily。
@@ -462,28 +668,32 @@ const buildSummaryPrompt = (payload: SummaryJobPayload, messages: AgentMessage[]
 ${transcript || "无可读消息"}
 
 JSON 格式：
-{"title":"","summary":"","decisions":[],"facts":[],"artifacts":[]}`;
+{"title":"","summary":"","atoms":[{"type":"decision","scope":"module:memory","confidence":"explicit","evidence":"","content":""}],"artifacts":[]}`;
 };
 
-const buildMemoryPrompt = (memory: string, daily: string) => `你是 ridge 的 memory agent。请读取今天 daily 和当前 MEMORY，维护短小的全局长期记忆。
+const buildMemoryPrompt = (memory: string, daily: string, scenarios: string) => `你是 ridge 的 memory agent。请读取今天 daily 里的 L1 Atom、现有 Scenario 和当前 MEMORY，维护 L2 Scenario 与 L3 MEMORY。
 
 要求：
 - 只输出 JSON，不要解释。
-- memories 是自然短句数组，按重要性排序。
-- 新事实覆盖旧事实。
-- 删除旧弱记忆，让总量保持很短。
-- 不写来源。
+- scenarios 是需要写入的场景页数组，slug 只能用小写英文、数字和连字符。
+- Scenario 只写当前结论、依据 Atom 和历史覆盖；必须引用 atomRefs，不要产生无法追溯的新事实。
+- memories 是当前应写入 MEMORY 的条目数组，每条必须包含 scope、date、content。
+- 新近且明确的新结论覆盖旧弱结论。
+- 删除旧弱记忆，让总量保持很短；MEMORY 不写完整证据，证据留在 L1。
 - 不写 token、密码、私钥、密钥等敏感信息。
 - 临时进度、一次性命令、刚改过的文件、短期调试结论不要进入 MEMORY。
 
 当前 MEMORY:
 ${memory || "# MEMORY"}
 
+现有 Scenario:
+${scenarios || "无"}
+
 今天 daily:
 ${daily || "无"}
 
 JSON 格式：
-{"memories":[]}`;
+{"scenarios":[{"slug":"conversation-memory","title":"对话记忆系统","conclusions":[],"atomRefs":[{"id":"mem_20260517_1032_001","date":"2026-05-17","note":""}],"superseded":[]}],"memories":[{"scope":"module:memory","date":"2026-05-17","content":""}]}`;
 
 const runAgentJson = async (
 	options: {
@@ -543,6 +753,43 @@ const formatListBlock = (items: string[]) =>
 		? `\n${items.map((item) => `  - ${item}`).join("\n")}`
 		: " 无";
 
+const quoteMemoryValue = (value: string): string => JSON.stringify(value);
+
+const completeSummaryAtoms = (
+	payload: SummaryJobPayload,
+	summary: SummaryResult,
+): CompletedMemoryAtom[] => {
+	const observedAt = formatLocalIso(payload.endedAt ?? Date.now());
+	const datePart = payload.dailyDate.replaceAll("-", "");
+	const timePart = payload.dailyTime.replace(":", "");
+	return summary.atoms.map((atom, index) => ({
+		...atom,
+		id: `mem_${datePart}_${timePart}_${String(index + 1).padStart(3, "0")}`,
+		status: "active",
+		observedAt,
+		sourceSessionId: payload.sessionId,
+	}));
+};
+
+const formatAtomBlock = (atoms: CompletedMemoryAtom[]) => {
+	if (atoms.length === 0) return "无";
+	return atoms
+		.map((atom) =>
+			[
+				`- id: ${atom.id}`,
+				`  type: ${atom.type}`,
+				`  scope: ${atom.scope}`,
+				`  status: ${atom.status}`,
+				`  confidence: ${atom.confidence}`,
+				`  observedAt: ${atom.observedAt}`,
+				`  sourceSessionId: ${atom.sourceSessionId}`,
+				`  evidence: ${quoteMemoryValue(atom.evidence)}`,
+				`  content: ${quoteMemoryValue(atom.content)}`,
+			].join("\n"),
+		)
+		.join("\n\n");
+};
+
 const appendDailySummary = async (
 	workspaceDir: string,
 	payload: SummaryJobPayload,
@@ -559,17 +806,23 @@ const appendDailySummary = async (
 		`## ${payload.dailyTime} ${payload.sessionId} ${summary.title}`,
 		"",
 		`- 摘要：${summary.summary}`,
-		`- 决策：${formatListBlock(summary.decisions)}`,
-		`- 事实：${formatListBlock(summary.facts)}`,
+		"",
+		"### L1-Atom",
+		"",
+		formatAtomBlock(completeSummaryAtoms(payload, summary)),
+		"",
 		`- 产物：${formatListBlock(summary.artifacts)}`,
 		"",
 	].join("\n");
 	await fs.writeFile(filePath, `${current.replace(/\s*$/, "\n")}${entry}`, "utf8");
 };
 
+const formatMemoryEntry = (entry: MemoryEntryInput): string =>
+	normalizeMemoryLine(`[${entry.scope}][${entry.date}] ${entry.content}`);
+
 const normalizeMaintainedMemory = (result: MemoryMaintainResult): string[] => {
 	const lines = result.memories
-		.map(normalizeMemoryLine)
+		.map(formatMemoryEntry)
 		.filter(Boolean)
 		.filter((line) => !isSensitiveMemory(line));
 	const unique = [...new Set(lines)];
@@ -583,6 +836,34 @@ const normalizeMaintainedMemory = (result: MemoryMaintainResult): string[] => {
 		total = nextTotal;
 	}
 	return kept;
+};
+
+const formatScenarioPage = (scenario: ScenarioUpdate) => {
+	const sections = [
+		`# ${scenario.title}`,
+		"",
+		"## 当前结论",
+		"",
+		...scenario.conclusions.map((conclusion) => `- ${conclusion}`),
+		"",
+		"## 依据 Atom",
+		"",
+		...scenario.atomRefs.map((ref) => `- \`${ref.id}\`：${ref.date} ${ref.note}`),
+	];
+	if (scenario.superseded.length > 0) {
+		sections.push("", "## 历史覆盖", "", ...scenario.superseded.map((item) => `- ${item}`));
+	}
+	return `${sections.join("\n")}\n`;
+};
+
+const writeScenarioPages = async (workspaceDir: string, scenarios: ScenarioUpdate[]) => {
+	const scenarioDir = path.join(workspaceDir, "记忆", "scenarios");
+	await fs.mkdir(scenarioDir, { recursive: true });
+	for (const scenario of scenarios) {
+		const filePath = path.join(scenarioDir, `${scenario.slug}.md`);
+		if (!isPathWithin(scenarioDir, filePath)) continue;
+		await fs.writeFile(filePath, formatScenarioPage(scenario), "utf8");
+	}
 };
 
 export const enqueueSessionSummaryJob = (
@@ -611,8 +892,9 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 	start: () => void;
 	stop: () => void;
 } {
-	const authStorage = options.authStorage ?? AuthStorage.create();
-	const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage);
+	const authStorage = options.authStorage ?? createPiDefaultAuthStorage();
+	const modelRegistry =
+		options.modelRegistry ?? createPiDefaultModelRegistry(authStorage);
 	const createAgentSessionFn =
 		options.createAgentSessionFn ??
 		(realCreateAgentSession as unknown as CreateAgentSessionFn);
@@ -702,6 +984,7 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 					dailyMonth: payload.dailyMonth,
 				}),
 			);
+			const scenarios = await readScenarioContext(options.workspaceDir);
 			const backgroundModel = await resolveBackgroundModel(
 				modelRegistry,
 				await resolveMaybe(options.resolveBackgroundModel),
@@ -717,9 +1000,10 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 					backgroundModel,
 					backgroundThinkingLevel,
 				},
-				buildMemoryPrompt(currentMemory, daily),
+				buildMemoryPrompt(currentMemory, daily, scenarios),
 			);
 			const result = parseMemoryMaintainResult(raw);
+			await writeScenarioPages(options.workspaceDir, result.scenarios);
 			const nextLines = normalizeMaintainedMemory(result);
 			const currentLines = await readMemoryLines(options.workspaceDir);
 			const changed = nextLines.join("\n") !== currentLines.join("\n");
@@ -729,6 +1013,7 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 			options.jobQueue.complete(job.jobId, {
 				changed,
 				memoryCount: nextLines.length,
+				scenarioCount: result.scenarios.length,
 			});
 		} catch (error) {
 			options.jobQueue.fail(

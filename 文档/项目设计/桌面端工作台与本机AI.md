@@ -25,7 +25,7 @@
 
 ## Runtime Bundle
 
-桌面本机 Pi 不读取用户真实 `~/.pi` 作为 ridge 全局配置。
+桌面本机 Pi 使用默认 `~/.pi/agent`，ridge 以覆盖写入方式管理配置。
 
 每次启动本机项目会话前，服务器生成完整 ridge runtime bundle 并下发给桌面端。
 

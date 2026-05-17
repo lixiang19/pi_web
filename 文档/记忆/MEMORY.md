@@ -10,7 +10,7 @@
 - [Agent注册表] agent 系统不能只依赖磁盘发现，必须先有内置默认 agent，再让 project/user 配置覆盖；否则 schema 一收紧，功能会出现“系统支持但列表为空”的假故障
 - [输入安全] 所有服务端写入必须白名单校验，防止原型污染（**proto** 注入）
 - [目录边界] 工作区文件树与 Home 目录项目选择必须拆成两个接口，不能共用一套 root 校验（安全语义不同）
-- [Pi资源隔离] 临时禁全局 prompts/skills/extensions/themes/AGENTS 时，不能只换 `SettingsManager(agentDir)`；`DefaultResourceLoader` 也必须显式传同一个隔离 `agentDir`，否则会回落 `getAgentDir()` 继续扫 `~/.pi/agent`。auth/models/sessions 可继续走全局。
+- [Pi默认配置覆盖] ridge 只使用 Pi 默认配置根 `~/.pi/agent`，不另造配置根；仓库内置配置在 `packages/server/pi-default-config/`，server 启动时非破坏性覆盖写入，保留 Pi sessions 和用户自定义 skills/prompts 等目标侧资源。
 - [项目真源] 已添加项目必须是真源；会话列表、文件树、worktree 归属都从项目列表收敛，禁止再从 session 或 server 启动目录反推项目边界
 - [系统聊天项目] 工作区 `chat` 是独立系统项目：它要进入会话归属与新聊天默认落点，但不能混入 `/api/projects` 的用户项目列表
 - [工作区默认目录] 运行时工作区绝不能默认回落到仓库根或 npm 启动目录；默认工作空间是 `~/ridge-workspace`，当前路径记录在 `~/.pi/ridge.db`
@@ -801,7 +801,7 @@
 
 - V2 阶段 3 已归档到 `文档/功能开发/归档/45-V2阶段3桌面端与本机项目上线闭环.md`。
 - `文档/功能开发/index.md` 已把 Task 14、30、31、32 和阶段 3 汇总项标为完成；30/31/32 单项任务已移入 `文档/功能开发/归档/`。
-- 阶段 3 的完成口径不是新增兼容层，而是确认当前真实链路：设备注册/token/心跳/离线清理、WebSocket 调度、runtime bundle 下载/物化/ack、桌面会话 SSE 回传、离线拒绝、桌面采集入口、不读取用户真实 `~/.pi` 作为 ridge 全局配置。
+- 阶段 3 的完成口径不是新增兼容层，而是确认当前真实链路：设备注册/token/心跳/离线清理、WebSocket 调度、runtime bundle 下载/物化/ack、桌面会话 SSE 回传、离线拒绝、桌面采集入口、使用 Pi 默认 `~/.pi/agent`，ridge 覆盖式写入配置。
 
 ### 验收证据
 
@@ -978,3 +978,9 @@
 - `cd packages/web && pnpm exec vitest run` 312/312 通过。
 - 7 个主题文件审查确认兼容新 Token。
 - `cd packages/web && pnpm test src/components/workspace/__tests__/HomePage.test.ts` 通过。
+
+## 2026-05-17 对话记忆抽取细化
+
+- [module:memory][2026-05-17] 对话记忆 L1 以日期 Markdown 为真源，daily 会话条目写结构化 Atom；服务端补齐 `id/status/observedAt/sourceSessionId`。
+- [module:memory][2026-05-17] L2 Scenario 写入 `记忆/scenarios/<scenario-slug>.md`，必须引用 L1 Atom ID，不保存不可追溯的新事实。
+- [module:memory][2026-05-17] L3 `MEMORY.md` 只保留启动注入需要的当前有效结论，每条使用 `[scope][date]` 格式；敏感信息、非法 scope/date 和无引用 Scenario 会被过滤。

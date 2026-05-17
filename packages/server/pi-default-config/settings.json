@@ -1,0 +1,18 @@
+{
+  "defaultProvider": "aurora",
+  "defaultModel": "kimi2.6",
+  "defaultThinkingLevel": "high",
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3
+  },
+  "quietStartup": true,
+  "lastChangelogVersion": "0.70.6",
+  "packages": [
+    "npm:pi-mcp-adapter"
+  ],
+  "transport": "websocket",
+  "instructions": [
+    "instructions/design.md"
+  ]
+}

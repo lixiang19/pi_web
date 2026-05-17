@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Bot, CalendarClock, Play, Save, Trash2 } from "lucide-vue-next";
+import { Bot, Clock, Trash2 } from "lucide-vue-next";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -25,7 +26,6 @@ const props = defineProps<{
   draft: AutomationRuleDraft;
   agentOptions: AutomationOption[];
   isSaving: boolean;
-  isRunnable: boolean;
   modelOptions: AutomationOption[];
   nextRunText: string;
   projectOptions: AutomationOption[];
@@ -73,6 +73,16 @@ const handleModelChange = (value: unknown) => {
   updateDraft({ model: String(value) === NONE_VALUE ? "" : String(value) });
 };
 
+const runStatusDot = (status: AutomationRun["status"]) => {
+  if (status === "success") {
+    return "bg-green-500";
+  }
+  if (status === "skipped") {
+    return "bg-amber-500";
+  }
+  return "bg-red-500";
+};
+
 const runStatusText = (status: AutomationRun["status"]) => {
   if (status === "success") {
     return "成功";
@@ -94,185 +104,160 @@ const formatRunTime = (value: number) =>
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col">
-    <header class="ridge-panel-header flex min-h-16 shrink-0 items-center justify-between gap-4 px-6">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <CalendarClock class="size-4 text-primary" />
-          <p class="text-caption font-black uppercase tracking-[0.24em] text-primary/70">
-            Scheduled Chat
-          </p>
-        </div>
-        <h1 class="mt-1 truncate text-lg font-semibold tracking-tight">
-          定时会话
-        </h1>
-      </div>
-
-      <div class="flex shrink-0 items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          :disabled="!isRunnable || isSaving"
-          @click="emit('run')"
-        >
-          <Play class="size-4" />
-          立即创建
-        </Button>
-        <Button
-          type="button"
-          :disabled="isSaving"
-          @click="emit('save')"
-        >
-          <Save class="size-4" />
-          保存
-        </Button>
-      </div>
-    </header>
-
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto flex w-full max-w-4xl flex-col gap-7 px-6 py-6">
-        <section class="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px]">
-          <div class="space-y-2">
-            <Label for="automation-name">名称</Label>
-            <Input
-              id="automation-name"
-              :model-value="draft.name"
-              placeholder="项目晨报"
-              @update:model-value="updateDraft({ name: String($event) })"
-            />
+      <div class="mx-auto flex w-full max-w-3xl flex-col gap-5 px-5 py-5">
+
+        <!-- ===== Card 1: 基础配置 ===== -->
+        <div class="rounded-xl border border-default bg-card/40 p-5 space-y-5">
+          <div class="grid gap-5 sm:grid-cols-[1fr_160px]">
+            <div class="space-y-2">
+              <Label for="automation-name">规则名称</Label>
+              <Input
+                id="automation-name"
+                :model-value="draft.name"
+                placeholder="项目晨报"
+                @update:model-value="updateDraft({ name: String($event) })"
+              />
+            </div>
+
+            <div class="space-y-2">
+              <Label>状态</Label>
+              <div class="flex h-9 items-center gap-2">
+                <Switch
+                  :checked="draft.enabled"
+                  @update:checked="updateDraft({ enabled: $event })"
+                />
+                <span class="text-sm text-muted-foreground">
+                  {{ draft.enabled ? "已启用" : "已暂停" }}
+                </span>
+              </div>
+            </div>
           </div>
 
-          <div class="space-y-2">
-            <Label>状态</Label>
-            <Button
-              type="button"
-              variant="outline"
-              class="w-full justify-start"
-              @click="updateDraft({ enabled: !draft.enabled })"
-            >
-              {{ draft.enabled ? "启用" : "暂停" }}
-            </Button>
-          </div>
-        </section>
+          <div class="grid gap-5 sm:grid-cols-2">
+            <div class="space-y-2">
+              <Label>运行上下文</Label>
+              <Select
+                :model-value="draft.scope"
+                @update:model-value="updateDraft({ scope: String($event) === 'project' ? 'project' : 'workspace' })"
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="workspace">工作空间</SelectItem>
+                  <SelectItem value="project">项目</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        <section class="grid gap-4 md:grid-cols-2">
-          <div class="space-y-2">
-            <Label>运行上下文</Label>
-            <Select
-              :model-value="draft.scope"
-              @update:model-value="updateDraft({ scope: String($event) === 'project' ? 'project' : 'workspace' })"
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="workspace">工作空间</SelectItem>
-                <SelectItem value="project">项目</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            <div v-if="draft.scope === 'project'" class="space-y-2">
+              <Label>绑定项目</Label>
+              <Select
+                :model-value="draft.projectId || NONE_VALUE"
+                @update:model-value="updateDraft({ projectId: String($event) === NONE_VALUE ? '' : String($event) })"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择项目" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem :value="NONE_VALUE">未选择</SelectItem>
+                  <SelectItem
+                    v-for="project in projectOptions"
+                    :key="project.value"
+                    :value="project.value"
+                  >
+                    {{ project.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div v-if="draft.scope === 'project'" class="space-y-2">
-            <Label>绑定项目</Label>
-            <Select
-              :model-value="draft.projectId || NONE_VALUE"
-              @update:model-value="updateDraft({ projectId: String($event) === NONE_VALUE ? '' : String($event) })"
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="选择项目" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem :value="NONE_VALUE">未选择</SelectItem>
-                <SelectItem
-                  v-for="project in projectOptions"
-                  :key="project.value"
-                  :value="project.value"
-                >
-                  {{ project.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <div v-else class="space-y-2">
+              <Label for="automation-cwd">工作目录</Label>
+              <Input
+                id="automation-cwd"
+                :model-value="draft.cwd"
+                @update:model-value="updateDraft({ cwd: String($event) })"
+              />
+            </div>
           </div>
+        </div>
 
-          <div v-else class="space-y-2">
-            <Label for="automation-cwd">工作目录</Label>
-            <Input
-              id="automation-cwd"
-              :model-value="draft.cwd"
-              @update:model-value="updateDraft({ cwd: String($event) })"
-            />
+        <!-- ===== Card 2: AI 设置 ===== -->
+        <div class="rounded-xl border border-default bg-card/40 p-5 space-y-5">
+          <div class="grid gap-5 sm:grid-cols-3">
+            <div class="space-y-2">
+              <Label>Agent</Label>
+              <Select
+                :model-value="draft.agent || NONE_VALUE"
+                @update:model-value="handleAgentChange"
+              >
+                <SelectTrigger class="gap-2">
+                  <Bot class="size-4 text-muted-foreground" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem :value="NONE_VALUE">直接模式</SelectItem>
+                  <SelectItem
+                    v-for="agent in agentOptions"
+                    :key="agent.value"
+                    :value="agent.value"
+                  >
+                    {{ agent.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div class="space-y-2">
+              <Label>模型</Label>
+              <Select
+                :model-value="draft.model || NONE_VALUE"
+                @update:model-value="handleModelChange"
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem :value="NONE_VALUE">系统默认</SelectItem>
+                  <SelectItem
+                    v-for="model in modelOptions"
+                    :key="model.value"
+                    :value="model.value"
+                  >
+                    {{ model.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div class="space-y-2">
+              <Label>思考深度</Label>
+              <Select
+                :model-value="draft.thinkingLevel"
+                @update:model-value="updateDraft({ thinkingLevel: $event as ThinkingLevel })"
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="thinking in thinkingOptions"
+                    :key="thinking.value"
+                    :value="thinking.value"
+                  >
+                    {{ thinking.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        </section>
+        </div>
 
-        <section class="grid gap-4 md:grid-cols-2">
-          <div class="space-y-2">
-            <Label>Agent</Label>
-            <Select
-              :model-value="draft.agent || NONE_VALUE"
-              @update:model-value="handleAgentChange"
-            >
-              <SelectTrigger>
-                <Bot class="size-4 text-muted-foreground" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem :value="NONE_VALUE">直接模式</SelectItem>
-                <SelectItem
-                  v-for="agent in agentOptions"
-                  :key="agent.value"
-                  :value="agent.value"
-                >
-                  {{ agent.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div class="space-y-2">
-            <Label>模型</Label>
-            <Select
-              :model-value="draft.model || NONE_VALUE"
-              @update:model-value="handleModelChange"
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem :value="NONE_VALUE">系统默认</SelectItem>
-                <SelectItem
-                  v-for="model in modelOptions"
-                  :key="model.value"
-                  :value="model.value"
-                >
-                  {{ model.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div class="space-y-2">
-            <Label>思考</Label>
-            <Select
-              :model-value="draft.thinkingLevel"
-              @update:model-value="updateDraft({ thinkingLevel: $event as ThinkingLevel })"
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="thinking in thinkingOptions"
-                  :key="thinking.value"
-                  :value="thinking.value"
-                >
-                  {{ thinking.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </section>
-
-        <section class="space-y-4">
-          <div class="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+        <!-- ===== Card 3: 调度计划 ===== -->
+        <div class="rounded-xl border border-default bg-card/40 p-5 space-y-5">
+          <div class="grid gap-5 sm:grid-cols-[200px_1fr]">
             <div class="space-y-2">
               <Label>频率</Label>
               <Select
@@ -301,7 +286,7 @@ const formatRunTime = (value: number) =>
             </div>
 
             <div v-else class="space-y-2">
-              <Label for="automation-interval">间隔分钟</Label>
+              <Label for="automation-interval">间隔（分钟）</Label>
               <Input
                 id="automation-interval"
                 type="number"
@@ -315,37 +300,41 @@ const formatRunTime = (value: number) =>
           <div v-if="draft.scheduleType === 'weekly'" class="space-y-2">
             <Label>星期</Label>
             <div class="flex flex-wrap gap-2">
-              <Button
+              <button
                 v-for="day in weekdays"
                 :key="day.value"
                 type="button"
-                size="sm"
-                :variant="draft.weekdays.includes(day.value) ? 'default' : 'outline'"
-                class="h-8 w-9 px-0"
+                class="flex size-9 items-center justify-center rounded-full border text-sm transition-all duration-150 hover:bg-soft"
+                :class="draft.weekdays.includes(day.value)
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-default bg-transparent text-muted-foreground'"
                 @click="updateWeekday(day.value)"
               >
                 {{ day.label }}
-              </Button>
+              </button>
             </div>
           </div>
 
-          <div class="rounded-lg bg-soft px-3 py-2 text-xs text-muted-foreground">
-            下一次会话：{{ nextRunText }}
+          <div class="flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2 text-sm">
+            <Clock class="size-4 text-primary" />
+            <span class="text-primary font-medium">下次运行：{{ nextRunText }}</span>
           </div>
-        </section>
+        </div>
 
-        <section class="space-y-2">
+        <!-- ===== Card 4: Prompt ===== -->
+        <div class="rounded-xl border border-default bg-card/40 p-5 space-y-2">
           <Label for="automation-prompt">发送给 AI 的消息</Label>
           <Textarea
             id="automation-prompt"
             :model-value="draft.prompt"
-            class="min-h-52 resize-none"
+            class="min-h-44 resize-none focus-visible:ring-primary/30"
             placeholder="请总结这个项目今天需要关注的事情，并给出下一步建议。"
             @update:model-value="updateDraft({ prompt: String($event) })"
           />
-        </section>
+        </div>
 
-        <section class="space-y-2 border-t border-default pt-4">
+        <!-- ===== Card 5: 运行记录 ===== -->
+        <div class="rounded-xl border border-default bg-card/40 p-5 space-y-3">
           <Label>运行记录</Label>
           <div v-if="recentRuns.length === 0" class="rounded-lg bg-soft px-3 py-3 text-sm text-muted-foreground">
             还没有运行记录
@@ -354,46 +343,41 @@ const formatRunTime = (value: number) =>
             <div
               v-for="run in recentRuns"
               :key="run.id"
-              class="rounded-lg border border-default bg-card/60 px-3 py-2"
+              class="flex items-start gap-3 rounded-lg border border-default px-3 py-2.5"
             >
-              <div class="flex items-center justify-between gap-3 text-sm">
-                <span class="font-medium">{{ runStatusText(run.status) }}</span>
-                <div class="flex shrink-0 items-center gap-2">
-                  <span class="text-xs text-muted-foreground">{{ formatRunTime(run.createdAt) }}</span>
-                  <Button
-                    v-if="run.status !== 'success'"
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="重试自动化"
-                    :disabled="!isRunnable || isSaving"
-                    @click="emit('run')"
-                  >
-                    <Play class="size-3.5" />
-                  </Button>
+              <div
+                class="mt-1.5 size-2 shrink-0 rounded-full"
+                :class="runStatusDot(run.status)"
+              />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-sm font-medium">{{ runStatusText(run.status) }}</span>
+                  <span class="shrink-0 text-caption text-muted-foreground">{{ formatRunTime(run.createdAt) }}</span>
                 </div>
+                <p v-if="run.reason" class="mt-0.5 text-caption text-muted-foreground">
+                  {{ run.reason }}
+                </p>
+                <p v-if="run.sessionId" class="mt-0.5 truncate text-caption text-muted-foreground">
+                  会话：{{ run.sessionId }}
+                </p>
               </div>
-              <p v-if="run.reason" class="mt-1 text-xs text-muted-foreground">
-                {{ run.reason }}
-              </p>
-              <p v-if="run.sessionId" class="mt-1 truncate text-xs text-muted-foreground">
-                会话：{{ run.sessionId }}
-              </p>
             </div>
           </div>
-        </section>
+        </div>
 
-        <section class="flex justify-end border-t border-default pt-4">
+        <!-- ===== Footer: Delete ===== -->
+        <div class="flex justify-end pb-4">
           <Button
             type="button"
-            variant="destructive"
-            :disabled="!draft.id || isSaving"
+            variant="ghost"
+            size="sm"
+            class="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
             @click="emit('delete')"
           >
             <Trash2 class="size-4" />
-            删除
+            删除规则
           </Button>
-        </section>
+        </div>
       </div>
     </div>
   </section>

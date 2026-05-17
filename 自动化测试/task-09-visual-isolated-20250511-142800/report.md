@@ -31,7 +31,7 @@ PORT=3106 nohup pnpm exec vite --port 5186 > /Users/lixiang/.local/share/opencod
 - **初始 PID**: 45894
 - **状态**: 已启动，Vite 显示 `ready in 173 ms`
 
-> **脚本隔离说明**：项目根目录 `package.json` 有 `dev:isolated` 脚本，但它是通过环境变量 `RIDGE_PI_ISOLATED=1` 启动 server，并未直接暴露端口参数。若要通过项目脚本隔离 server 端口，需额外设置 `PORT=3105` 环境变量；当前直接为两个包分别执行启动命令，并手动指定 `PORT` 与 `--port`，实现完全隔离。
+> **历史说明**：当时曾使用独立启动脚本验证视觉状态；当前该脚本和旧环境开关已删除，服务端 Pi 配置固定走 ridge 管理目录。
 
 ### 4. HTTP 可达性确认
 

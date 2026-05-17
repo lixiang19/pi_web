@@ -30,8 +30,8 @@
 | 23 RAG 更新删除移动规则 | ✅ | ✅ | ✅ | N/A | ✅ | N/A | ✅ |
 | 24 全局搜索资产导航器 | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ |
 | 25 后台任务队列与重试 | N/A | ✅ | ✅ | N/A | ✅ | N/A | ✅ |
-| 26 summary agent daily 会话记忆 | N/A | ✅ | ✅ | ✅ | ✅ | N/A | ✅ |
-| 27 memory agent MEMORY 维护与注入 | N/A | ✅ | ✅ | N/A | ✅ | N/A | ✅ |
+| 26 summary agent daily L1 会话记忆 | N/A | ✅ | ✅ | ✅ | ✅ | N/A | ✅ |
+| 27 memory agent L2/L3 维护与注入 | N/A | ✅ | ✅ | N/A | ✅ | N/A | ✅ |
 | 28 Kuzu 图谱存储与抽取 | N/A | ✅ | ✅ | N/A | ✅ | N/A | ✅ |
 | 29 Wiki 夜间维护与 index 注入 | N/A | ✅ | ✅ | N/A | ✅ | N/A | ✅ |
 | 30 项目注册与内部项目外部仓库 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -56,6 +56,7 @@
 | 54 Android 任务查看与轻操作 | N/A | ✅ | ✅ | ✅ | ✅ | ⏳ 真机验收归任务 55 | ✅ |
 | 57 独立 Python 转化后端 | N/A | ✅ | N/A | N/A | ✅ | N/A | ✅ |
 | 58 工作空间主页重新设计 | ✅ | N/A | N/A | ✅ | ✅ | N/A | ✅ |
+| 59 Pi 默认配置覆盖写入 | N/A | ✅ | N/A | N/A | ✅ | N/A | ✅ |
 
 ### 真实实现口径（2026-05-12）
 
@@ -66,8 +67,8 @@
 - **22 RAG 标准产物索引与 chunk**：`rag-indexer.ts` 已按 Markdown 标题、段落、表格、代码块切 chunk，并读取 `.metadata.json`；空间 `index.html` 作为 HTML 标准源进入 RAG；`search_chunks` 保存 `source_path`、`heading_path`、`content_hash`、`file_type`、`embedding_id`、`embedding_vector`、行号等来源定位字段；检索使用精确文本召回 + 本地 embedding 相似度；外部路径、`.ridge`、`.originals`、realpath 越界 symlink 不进入 RAG。`rag-standard-indexer.test.ts` 覆盖结构化 chunk、metadata、embedding、hash skip、空间 HTML、外部路径/符号链接排除和来源定位。
 - **23 RAG 更新删除移动规则**：Markdown 上传同步索引；普通 Markdown 编辑写 `refresh_policy=deferred` 并保留旧 chunk；RAG worker 每天 03:00 运行 deferred 夜间入口，显式 `rag.index` job 按 manual 重建；`POST /api/workspace/rag/refresh` 手动立即重建且校验 realpath 边界；删除文件/目录清理 RAG 表；移动/改名更新 RAG metadata；索引失败写 `notification_events`。`rag-standard-indexer.test.ts`、`rag-worker-e2e.test.ts` 和 `rag-consumer.test.ts` 覆盖手动刷新、夜间刷新、删除、移动、失败通知和默认工作空间消费链路。
 - **24 全局搜索资产导航器**：左侧固定「搜索」入口已接入 `WorkspaceSearchView.vue` 单例标签；`GET /api/workspace/search` 聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间、RAG。后端仍支持类型/时间/目录/项目筛选给内部调用，但用户界面已收敛为一个搜索框和扁平结果列表，不展示类型筛选、类型分组、索引状态或 Wiki/记忆/RAG 等内部名词；结果可打开文件、项目主页、任务页、会话、空间预览。`workspace-search-api.test.ts` 覆盖聚合、类型筛选、项目内 file/RAG、目录边界筛选、缺失空间入口、符号链接越界和外部项目文件内容排除；`WorkspaceSearchView.test.ts` 覆盖极简空态、异常重新整理和普通结果不暴露手动刷新。
-- **26 summary agent daily 会话记忆**：`POST /api/sessions/:sessionId/end` 结束会话并排队 `summary.daily`；关闭会话 tab 会调用该入口；summary agent 只读 session 文件，服务端追加 `记忆/daily/YYYY/MM/YYYY-MM-DD.md`，不生成单会话摘要文件；同一 daily date 串行写入，不同 session 不误去重。`workspace-memory.test.ts` 与 `background-jobs.test.ts` 覆盖。
-- **27 memory agent MEMORY 维护与注入**：`memory.maintain` 在 summary 后维护 `记忆/MEMORY.md`；消息入口支持显式“记住/忘掉”立即改写；服务端过滤敏感信息；新会话启动和 resource reload 注入 `MEMORY.md` 与 `Wiki/index.md` XML 块，空文件不注入，并包含“记忆可能过时，当前用户最新话语和当前文件事实优先”提醒。`workspace-memory.test.ts` 覆盖。
+- **26 summary agent daily L1 会话记忆**：`POST /api/sessions/:sessionId/end` 结束会话并排队 `summary.daily`；关闭会话 tab 会调用该入口；summary agent 只读 session 文件，服务端追加 `记忆/daily/YYYY/MM/YYYY-MM-DD.md`，每个会话条目写 `### L1-Atom`，并补齐 Atom 的 `id/status/observedAt/sourceSessionId`；不生成单会话摘要文件；同一 daily date 串行写入，不同 session 不误去重。`workspace-memory.test.ts` 与 `background-jobs.test.ts` 覆盖。
+- **27 memory agent L2/L3 维护与注入**：`memory.maintain` 在 summary 后维护 `记忆/scenarios/<scenario-slug>.md` 与 `记忆/MEMORY.md`；Scenario 必须引用 L1 Atom ID，不写不可追溯的新事实；`MEMORY.md` 只保留当前启动注入需要的 `[scope][date]` 有效结论；消息入口支持显式“记住/忘掉”立即改写；服务端过滤敏感信息、非法 scope/date、越界 Scenario 和无引用 Scenario；新会话启动和 resource reload 注入 `MEMORY.md` 与 `Wiki/index.md` XML 块，空文件不注入，并包含“记忆可能过时，当前用户最新话语和当前文件事实优先”提醒。`workspace-memory.test.ts` 覆盖。
 - **28 Kuzu 图谱存储与抽取**：`graph-store.ts` 使用 Kuzu Node.js 客户端写入 `.ridge/graph.kuzu/database.kuzu`，初始化写 `.ridge/graph.kuzu/schema.cypher`；schema 包含 Project/File/Task/Person/Org/Concept/Tech/Source/Decision 节点和带 `evidence/source_path/confidence/updated_at` 的 EvidenceRelation，证据统一截断为 80 字以内。`graph-agent.ts` 只从已索引 Markdown 标准产物、daily 和内部项目 Markdown 收集输入，排除外部项目、`.ridge`、`.originals` 和非 Markdown 原件；直接读取来源前校验 `realpath`，防止内部项目根目录符号链接越界；`rag-worker.ts` 夜间链路在 deferred RAG 后触发 graph runner；`POST /api/workspace/graph/corrections` 支持用户自然语言纠错后由 graph agent 写回，并有 HTTP 集成测试。`GET /api/workspace/backup` 生成真实备份 ZIP，包含 `.ridge/graph.kuzu`，排除可重建缓存并跳过符号链接；隐藏 Git exclude 包含 `.ridge`。测试覆盖真实 Kuzu 写入读回、graph store/schema/纠错、source 边界与 symlink 防护、夜间顺序、纠错 API、备份 ZIP/API、隐藏 Git exclude 和初始化 schema 文件。
 - **29 Wiki 夜间维护与 index 注入**：`wiki-agent.ts` 收集当前 `Wiki/**/*.md`、`记忆/MEMORY.md`、daily、已索引 Markdown RAG chunk 和 Kuzu 图谱快照；Wiki agent 严格返回 JSON，只允许相对 `Wiki/` 的 `.md` 路径，拒绝绝对路径、`..`、`Wiki/` 前缀、隐藏路径和符号链接写入路径。`rag-worker.ts` 夜间链路为 deferred RAG -> graph -> Wiki -> immediate RAG，保证 Wiki 写入或未索引保留页在本轮进入 RAG；删除 Wiki 页同步清理 RAG target。`runtime-bundle.ts` 和普通会话注入均读取当前真源 `记忆/MEMORY.md` 与 `Wiki/index.md`，空 index 不注入。`wiki-agent.test.ts`、`graph-worker.test.ts`、`task30-31-32.test.ts` 覆盖。
 - **14 桌面采集入口**：Tauri 桌面端菜单栏/托盘采集入口已覆盖文字、剪贴板、当前选区、浏览器网址、区域/窗口/全屏截图、文件和录音。Rust 端通过 `pbpaste`、sentinel + Cmd+C、AppleScript/System Events、`screencapture` 获取本机内容；前端 `FleetingCaptureButton.vue` 统一保存到闪念，未登录或离线时明确拒绝。`desktop-bridge.test.ts`、`FleetingCaptureButton.test.ts` 与 Rust 单测覆盖桥接、元数据和截图命令。

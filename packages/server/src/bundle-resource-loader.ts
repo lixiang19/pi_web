@@ -1,28 +1,23 @@
-import path from "node:path";
 import { DefaultResourceLoader, SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { RuntimeBundle } from "./runtime-bundle.js";
+import { getPiDefaultAgentDir } from "./pi-default-config.js";
 
 /**
  * Create a Pi DefaultResourceLoader backed by a materialized bundle directory.
  *
- * This ensures Pi reads agents/skills/config from the server-provided bundle
- * instead of the desktop's real ~/.pi directory.
+ * This points Pi at the directory that was overwritten with the server bundle.
  */
 export function createBundleBackedResourceLoader(
 	materializedDir: string,
 	cwd: string,
 ): DefaultResourceLoader {
-	const agentDir = path.join(materializedDir, "agents");
-	const skillsDir = path.join(materializedDir, "skills");
+	const agentDir = materializedDir;
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 
 	return new DefaultResourceLoader({
 		cwd,
 		agentDir,
 		settingsManager,
-		// Pull skills from the materialized bundle skills directory
-		additionalSkillPaths: [skillsDir],
-		// Do not load from real user home
 		noExtensions: false,
 		noSkills: false,
 		noPromptTemplates: false,
@@ -33,16 +28,13 @@ export function createBundleBackedResourceLoader(
 
 /**
  * Materialize a bundle and return the path to the materialized directory.
- * Uses a deterministic path under the OS tmpdir for the device.
+ * Uses Pi's default ~/.pi/agent config root so device-side bundle sync is overwrite-only.
  */
 export async function materializeBundleToDeviceDir(
-	deviceId: string,
+	_deviceId: string,
 	bundle: RuntimeBundle,
 ): Promise<string> {
-	const targetDir = path.join(
-		process.env.RIDGE_BUNDLE_DIR || path.join(process.env.HOME || "/tmp", ".ridge", "bundles"),
-		deviceId,
-	);
+	const targetDir = getPiDefaultAgentDir();
 	const { materializeBundle } = await import("./runtime-bundle.js");
 	await materializeBundle(bundle, targetDir);
 	return targetDir;

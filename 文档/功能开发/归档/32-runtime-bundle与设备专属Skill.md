@@ -30,7 +30,7 @@
 ## 不做
 
 - 不依赖纯内存注入。
-- 不读取用户真实 `~/.pi` 作为 ridge 全局配置。
+- 使用 Pi 默认 `~/.pi/agent`，ridge 覆盖式写入配置。
 - 桌面本地配置不参与合并。
 
 ## 验收
@@ -78,4 +78,4 @@
 - Skill 原始文件可被 Pi read。
 - Mac-only Skill 只下发给 Mac 设备。
 - 项目 `.pi/skills` 覆盖全局 Skill。
-- 不读取用户真实 `~/.pi` 作为 ridge 全局配置。
+- 使用 Pi 默认 `~/.pi/agent`，ridge 覆盖式写入配置。

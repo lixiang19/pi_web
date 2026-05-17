@@ -10,7 +10,6 @@
     "dev": "concurrently -n server,web -c cyan,yellow \"npm run dev --workspace @pi/server\" \"wait-on tcp:127.0.0.1:${PORT:-3000} && npm run dev --workspace @pi/web\"",
     "dev:web": "npm run dev --workspace @pi/web",
     "dev:server": "npm run dev --workspace @pi/server",
-    "dev:isolated": "concurrently -n server,web -c cyan,yellow \"RIDGE_PI_ISOLATED=1 npm run dev --workspace @pi/server\" \"wait-on tcp:127.0.0.1:${PORT:-3000} && npm run dev --workspace @pi/web\"",
     "dev:desktop": "npm run dev --workspace @pi/desktop",
     "build": "npm run build --workspace @pi/server && npm run build --workspace @pi/web",
     "build:web": "npm run build --workspace @pi/web",

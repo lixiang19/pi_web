@@ -4,14 +4,15 @@ import crypto from "node:crypto";
 import { materializeBundle } from "./runtime-bundle.js";
 import type { BundleResource, RuntimeBundle } from "./runtime-bundle.js";
 import { createBundleBackedResourceLoader } from "./bundle-resource-loader.js";
+import { getPiDefaultAgentDir } from "./pi-default-config.js";
 
 /**
  * Desktop-side bundle sync client.
  *
  * Implements the full desktop bundle lifecycle:
  *   1. GET bundle from server
- *   2. Materialize to local deterministic directory
- *   3. Configure Pi resourceLoader with materialized bundle dir
+ *   2. Materialize by overwriting Pi's default ~/.pi/agent config root
+ *   3. Configure Pi resourceLoader with the default config root
  *   4. POST ack back to server (with materializedHash)
  *
  * This runs in the Node context (server test helpers or future Tauri
@@ -31,11 +32,9 @@ export interface BundleSyncResult {
  */
 export async function materializeDesktopBundle(
 	bundle: RuntimeBundle,
-	deviceId: string,
+	_deviceId: string,
 ): Promise<{ materializedDir: string; materializedHash: string }> {
-	const baseDir = process.env.RIDGE_BUNDLE_DIR
-		|| path.join(process.env.HOME || "/tmp", ".ridge", "bundles");
-	const materializedDir = path.join(baseDir, deviceId);
+	const materializedDir = getPiDefaultAgentDir();
 
 	// Remove stale files, then materialize
 	await fs.rm(materializedDir, { recursive: true, force: true });

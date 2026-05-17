@@ -13,7 +13,7 @@ export default defineConfig({
 	},
 	webServer: [
 		{
-			command: "PORT=5187 RIDGE_PI_ISOLATED=1 pnpm --filter @pi/server run dev",
+			command: "PORT=5187 pnpm --filter @pi/server run dev",
 			port: 5187,
 			reuseExistingServer: true,
 			timeout: 30000,

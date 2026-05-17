@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { ArrowLeft, Bot } from "lucide-vue-next";
+
+import { Button } from "@/components/ui/button";
 import AutomationRuleEditor from "@/components/automation/AutomationRuleEditor.vue";
 import AutomationRuleList from "@/components/automation/AutomationRuleList.vue";
 import {
@@ -22,6 +25,9 @@ const automations = useAutomations();
 const core = usePiChatCore();
 const projectsStore = useProjects();
 
+type Mode = "list" | "edit";
+
+const mode = ref<Mode>("list");
 const selectedId = ref("");
 
 const defaultCwd = computed(() =>
@@ -63,6 +69,12 @@ const selectedRuns = computed(() =>
     : [],
 );
 
+const selectedRule = computed(() =>
+  automations.rules.value.find((rule) => rule.id === selectedId.value),
+);
+
+const isNew = computed(() => !selectedId.value);
+
 const canSave = computed(() => {
   if (!draft.value.name.trim() || !draft.value.prompt.trim()) {
     return false;
@@ -97,19 +109,29 @@ const nextRunText = computed(() => {
   }).format(nextRunAt);
 });
 
-const selectRule = (id: string) => {
-  const rule = automations.rules.value.find((item) => item.id === id);
-  if (!rule) {
-    return;
-  }
-
-  selectedId.value = rule.id;
-  draft.value = createAutomationDraft({ rule });
+const goToList = () => {
+  mode.value = "list";
+  selectedId.value = "";
 };
 
-const createNewRule = () => {
-  selectedId.value = "";
-  draft.value = createAutomationDraft({ projectPath: defaultCwd.value });
+const goToEdit = (id?: string) => {
+  if (id) {
+    const rule = automations.rules.value.find((item) => item.id === id);
+    if (!rule) return;
+    selectedId.value = rule.id;
+    draft.value = createAutomationDraft({ rule });
+  } else {
+    selectedId.value = "";
+    draft.value = createAutomationDraft({ projectPath: defaultCwd.value });
+  }
+  mode.value = "edit";
+};
+
+const toggleRule = async (id: string, enabled: boolean) => {
+  const rule = await automations.setEnabled(id, enabled);
+  if (selectedId.value === id && mode.value === "edit") {
+    draft.value = createAutomationDraft({ rule });
+  }
 };
 
 const saveRule = async () => {
@@ -124,13 +146,6 @@ const saveRule = async () => {
   if (saved) {
     selectedId.value = saved.id;
     draft.value = createAutomationDraft({ rule: saved });
-  }
-};
-
-const toggleRule = async (id: string, enabled: boolean) => {
-  const rule = await automations.setEnabled(id, enabled);
-  if (selectedId.value === id) {
-    draft.value = createAutomationDraft({ rule });
   }
 };
 
@@ -150,7 +165,7 @@ const deleteRule = async () => {
   }
 
   await automations.remove(draft.value.id);
-  createNewRule();
+  goToList();
 };
 
 watch(
@@ -191,40 +206,80 @@ onMounted(async () => {
     core.bootPromise.value,
     projectsStore.load().catch(() => []),
   ]);
-
-  if (automations.rules.value[0]) {
-    selectRule(automations.rules.value[0].id);
-  } else {
-    createNewRule();
-  }
 });
 </script>
 
 <template>
   <div class="flex h-full min-h-0 bg-background text-foreground">
+    <!-- ===== List Mode ===== -->
     <AutomationRuleList
-      class="w-[340px] shrink-0"
+      v-if="mode === 'list'"
       :rules="automations.rules.value"
-      :selected-id="selectedId"
-      @create="createNewRule"
-      @select="selectRule"
+      :is-loading="automations.isLoading.value"
+      @create="goToEdit()"
+      @select="goToEdit"
       @toggle="toggleRule"
     />
 
-    <AutomationRuleEditor
-      :draft="draft"
-      :agent-options="agentOptions"
-      :is-runnable="Boolean(draft.id)"
-      :is-saving="automations.isLoading.value"
-      :model-options="modelOptions"
-      :next-run-text="nextRunText"
-      :project-options="projectOptions"
-      :recent-runs="selectedRuns"
-      :thinking-options="thinkingOptions"
-      @delete="deleteRule"
-      @run="runRule"
-      @save="saveRule"
-      @update-draft="draft = $event"
-    />
+    <!-- ===== Edit Mode ===== -->
+    <template v-else>
+      <div class="flex min-h-0 flex-1 flex-col">
+        <!-- Header -->
+        <header class="ridge-panel-header flex min-h-14 shrink-0 items-center gap-3 px-5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            class="gap-1.5 text-muted-foreground hover:text-foreground"
+            @click="goToList"
+          >
+            <ArrowLeft class="size-4" />
+            返回
+          </Button>
+
+          <div class="h-4 w-px bg-border/50" />
+
+          <div class="flex items-center gap-2">
+            <Bot class="size-4 text-primary" />
+            <h1 class="text-sm font-semibold tracking-tight">
+              {{ isNew ? "新建定时会话" : selectedRule?.name }}
+            </h1>
+          </div>
+
+          <div class="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              :disabled="!draft.id || automations.isLoading.value"
+              @click="runRule"
+            >
+              立即运行
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              :disabled="!canSave || automations.isLoading.value"
+              @click="saveRule"
+            >
+              保存
+            </Button>
+          </div>
+        </header>
+
+        <AutomationRuleEditor
+          :draft="draft"
+          :agent-options="agentOptions"
+          :is-saving="automations.isLoading.value"
+          :model-options="modelOptions"
+          :next-run-text="nextRunText"
+          :project-options="projectOptions"
+          :recent-runs="selectedRuns"
+          :thinking-options="thinkingOptions"
+          @delete="deleteRule"
+          @update-draft="draft = $event"
+        />
+      </div>
+    </template>
   </div>
 </template>

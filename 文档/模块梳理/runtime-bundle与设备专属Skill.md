@@ -30,8 +30,9 @@ interface BundleManifest {
 
 ## Bundle 内容来源
 
-1. **全局 Agents**：`~/ridge-workspace/.pi/agents/*`
-2. **全局 Skills**：`~/ridge-workspace/.pi/skills/*`
+0. **ridge 内置 Pi 配置**：`packages/server/pi-default-config/`，服务启动时覆盖写入到 `~/.pi/agent`，但不删除目标侧已有 sessions、用户 skills、用户 prompts 等资源
+1. **服务器整体 Agents**：`~/.pi/agent/agents/*`
+2. **服务器整体 Skills**：`~/.pi/agent/skills/*`
 3. **项目级覆盖**：`{projectPath}/.pi/agents/*`、`{projectPath}/.pi/skills/*`
 4. **启动上下文**：`~/ridge-workspace/记忆/MEMORY.md`、`~/ridge-workspace/Wiki/index.md`
 5. **配置已校验**：MCP / Tools / Permissions / Models 均通过 Zod schema 验证，非法 JSON 抛 400，缺失返回 {}
@@ -64,6 +65,8 @@ Android 设备的 capability 固定收口到 `mobile_capture`、`camera`、`micr
 - **越界 symlink 拒绝**：`symlink: "../../escape"` → 400
 - **危险 mode 位过滤**：物化时 `mode & 0o777`，去除 setuid/setgid/sticky
 - **桌面端在启动 Pi 前调用**，将 bundle 写入 ridge 管理目录
+- server 和桌面设备端都使用 Pi 默认配置根 `~/.pi/agent`，ridge 只做覆盖式写入，不再另造运行时配置根。
+- server 启动链路先执行 `syncBuiltInPiConfigToDefaultAgentDir()`，再创建 Pi auth/model/settings 对象；同步会覆盖内置同名文件，但保留 `/Users/lixiang/.pi/agent/` 下不在内置目录中的已有资源。
 
 ## API
 
@@ -84,8 +87,8 @@ Android 设备的 capability 固定收口到 `mobile_capture`、`camera`、`micr
 
 - Mac-only Skill 只下发给 `skill_mac: true` 的设备
 - 通用 Skill 所有设备都接收
-- 项目目录 `.pi/skills` 按 Pi 原机制读取，覆盖 bundle 中的全局 Skill
-- 不读取用户真实 `~/.pi` 作为 ridge 全局配置
+- 项目目录 `.pi/skills` 按 Pi 原机制读取，覆盖 bundle 中的服务器整体 Skill
+- 使用 Pi 默认 `~/.pi/agent`，ridge 从 `packages/server/pi-default-config/` 覆盖式写入配置
 - 物化时旧文件被清理、权限恢复、符号链接重建
 - Bundle ack 严格比对 served 记录，错误 hash/version 拒绝并结构化记录
 - Android 设备注册后不返回 runtime bundle，主动请求 bundle 返回 403。

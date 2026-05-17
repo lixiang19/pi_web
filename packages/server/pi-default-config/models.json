@@ -1,0 +1,54 @@
+{
+  "providers": {
+    "aurora": {
+      "baseUrl": "http://163.7.2.84:8085/v1",
+      "api": "openai-responses",
+      "apiKey": "sk-fPOie4NGHL8QgNTOc",
+      "compat": {
+        "supportsReasoningEffort": true,
+        "reasoningEffortMap": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "medium",
+          "high": "high",
+          "xhigh": "xhigh"
+        }
+      },
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 400000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "name": "GPT-5.4 Mini",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 400000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "kimi2.6",
+          "name": "kimi2.6",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 256000,
+          "maxTokens": 256000
+        }
+      ]
+    }
+  }
+}
