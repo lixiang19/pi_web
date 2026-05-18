@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>闪念 · 新探索</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body {
+  font-family: "Inter Variable", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #f8fafc; color: #0f172a;
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+const T = { bg: '#f8fafc', fg: '#0f172a', card: '#fff', border: '#e2e8f0', muted: '#64748b', soft: '#f1f5f9', primary: '#4f46e5', primaryLight: '#eef2ff', danger: '#ef4444', success: '#22c55e', warning: '#f59e0b' };
+
+const I = {
+  bulb: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>,
+  journal: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>,
+  task: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
+  clip: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>,
+  milestone: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>,
+  trash: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
+  wand: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 4V2m0 2v2m0-2h2m-2 0h-2m-4.5 7.5L21 3"/><path d="M3 21l11-11"/></svg>,
+  send: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
+  x: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  plus: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+};
+
+const fmt = (ts) => { const d = new Date(ts); const n = new Date(); const m = Math.floor((n-d)/60000); if (m<1) return '刚刚'; if (m<60) return `${m}分钟前`; const h = Math.floor(m/60); if (h<24) return `${h}小时前`; return `${Math.floor(h/24)}天前`; };
+
+const MOCK = [
+  { id: '1', content: '考虑用 React Server Components 重构列表页，减少客户端 bundle', createdAt: Date.now()-60000, status: 'suggested', reco: 'journal', attachments: [] },
+  { id: '2', content: 'Dashboard 加「今日专注度」趋势热力图', createdAt: Date.now()-300000, status: 'analyzing', attachments: [{ name: 'sketch.png', mime:'image/png' }] },
+  { id: '3', content: 'https://react.dev/blog/2024/12/05/react-19 新 API 对项目的影响评估', createdAt: Date.now()-7200000, status: 'suggested', reco:'clip', attachments: [] },
+  { id: '4', content: '数据库迁移方案 & API 认证流程改进', createdAt: Date.now()-86400000, status: 'suggested', reco:'task', attachments: [{ name:'notes.md', mime:'text/markdown' }, { name:'flow.jpg', mime:'image/jpeg' }] },
+  { id: '5', content: '统一项目中错误处理方式', createdAt: Date.now()-172800000, status: 'failed', attachments: [] },
+  { id: '6', content: '类型系统和函数式编程在 TS 中的实践（播客 20min）', createdAt: Date.now()-604800000, status: 'unanalyzed', attachments: [{ name:'recording.webm', mime:'audio/webm' }] },
+];
+
+const AttIcon = ({ mime, s=14 }) => {
+  const c = mime?.startsWith('image/') ? '#8b5cf6' : mime?.startsWith('audio/') ? '#ec4899' : '#3b82f6';
+  return <span style={{color:c}}><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></span>;
+};
+
+const ST = { suggested: { label: '待处理', dot: T.primary }, analyzing: { label: '分析中', dot: T.warning }, failed: { label: '失败', dot: T.danger }, unanalyzed: { label: '等待', dot: '#cbd5e1' } };
+
+/* ───────── Tab Bar ───────── */
+const TABS = [
+  { key: 'X', label: 'X · 卡片栈', desc: '一次一张，专注处理' },
+  { key: 'Y', label: 'Y · 分栏', desc: '左列表右详情' },
+  { key: 'Z', label: 'Z · 命令行', desc: '键盘驱动，极速' },
+];
+
+const App = () => {
+  const [tab, setTab] = useState('X');
+  const Comp = tab === 'X' ? DesignX : tab === 'Y' ? DesignY : DesignZ;
+  return <div style={{height:'100vh', display:'flex', flexDirection:'column'}}>
+    <div style={{display:'flex', justifyContent:'center', gap:2, padding:'14px 16px 0', borderBottom:'1px solid '+T.border, background:T.bg}}>
+      {TABS.map(t => {
+        const a = tab === t.key;
+        return <button key={t.key} onClick={() => setTab(t.key)} style={{
+          padding:'10px 20px 12px', border:'none', borderBottom:'2px solid '+(a ? T.primary : 'transparent'),
+          background:'transparent', cursor:'pointer', fontFamily:'inherit',
+        }}>
+          <div style={{fontSize:13, fontWeight:500, color: a ? T.primary : T.muted}}>{t.label}</div>
+          <div style={{fontSize:10, color: T.muted+'99', marginTop:1}}>{t.desc}</div>
+        </button>;
+      })}
+    </div>
+    <div style={{flex:1, overflow:'hidden'}}><Comp /></div>
+  </div>;
+};
+
+/* ════════════════════════════════════
+   X · 卡片栈 — 一次一张，无干扰
+   ════════════════════════════════════ */
+const DesignX = () => {
+  const [stack, setStack] = useState(MOCK);
+  const [idx, setIdx] = useState(0);
+  const current = stack[idx];
+
+  const next = () => { if (idx < stack.length - 1) setIdx(i => i + 1); };
+  const prev = () => { if (idx > 0) setIdx(i => i - 1); };
+  const remove = () => {
+    const n = [...stack]; n.splice(idx, 1);
+    setStack(n);
+    if (idx >= n.length) setIdx(Math.max(0, n.length - 1));
+  };
+
+  if (!current) return <div style={{display:'flex', height:'100%', alignItems:'center', justifyContent:'center', color: T.muted, fontSize:14}}>🎉 全部处理完毕</div>;
+
+  const s = ST[current.status];
+  return <div style={{height:'100%', display:'flex', flexDirection:'column', padding:'24px 24px 0'}}>
+    {/* 进度 */}
+    <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20}}>
+      <span style={{fontSize:12, color:T.muted}}>闪念 {idx + 1} / {stack.length}</span>
+      <div style={{display:'flex', gap:3, flex:1, marginLeft:16, marginRight:16}}>
+        {stack.map((_, i) => <div key={i} style={{
+          flex:1, height:3, borderRadius:2,
+          background: i === idx ? T.primary : i < idx ? T.primary + '40' : T.border,
+          transition:'all 0.3s',
+        }} />)}
+      </div>
+      <button style={xBtn} onClick={remove}>{I.trash}</button>
+    </div>
+
+    {/* 卡片 */}
+    <div style={{
+      flex:1, borderRadius:20, background:T.card, border:'1px solid '+T.border,
+      boxShadow:'0 4px 24px rgba(0,0,0,0.06)',
+      display:'flex', flexDirection:'column',
+      overflow:'hidden',
+    }}>
+      <div style={{flex:1, padding:'28px 28px 20px', overflowY:'auto'}}>
+        <div style={{fontSize:15, lineHeight:1.7, color:T.fg, whiteSpace:'pre-wrap', marginBottom:16}}>{current.content}</div>
+        {current.attachments.length > 0 && <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+          {current.attachments.map((a, i) => <span key={i} style={{
+            display:'inline-flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:8,
+            background:T.soft, fontSize:11, color:T.muted,
+          }}><AttIcon mime={a.mime} s={12} />{a.name}</span>)}
+        </div>}
+
+        {current.status === 'failed' && <div style={{marginTop:16, padding:'8px 12px', borderRadius:8, background:'#fef2f2', fontSize:11, color:T.danger}}>
+          分析失败，可重试或手动处理
+        </div>}
+      </div>
+
+      {/* 状态 */}
+      <div style={{padding:'0 28px 8px', display:'flex', alignItems:'center', gap:6}}>
+        <span style={{width:6, height:6, borderRadius:'50%', background:s.dot}} />
+        <span style={{fontSize:11, color:T.muted}}>{s.label}</span>
+        <span style={{fontSize:11, color:T.muted+'60'}}>· {fmt(current.createdAt)}</span>
+      </div>
+
+      {/* 操作按钮 */}
+      <div style={{padding:'12px 16px 16px', borderTop:'1px solid '+T.border, display:'flex', gap:6, justifyContent:'center'}}>
+        {current.status === 'suggested' && <BigBtn icon={I.wand} label="AI 建议" sub={current.reco === 'journal' ? '写入日记' : current.reco === 'task' ? '创建任务' : '保存剪藏'} color={T.primary} />}
+        <BigBtn icon={I.journal} label="日记" color="#6366f1" />
+        <BigBtn icon={I.task} label="任务" color="#059669" />
+        <BigBtn icon={I.clip} label="剪藏" color="#d97706" />
+        <BigBtn icon={I.milestone} label="里程碑" color="#7c3aed" />
+      </div>
+    </div>
+
+    {/* 导航 */}
+    <div style={{display:'flex', justifyContent:'center', gap:12, padding:'16px 0 24px'}}>
+      <button disabled={idx === 0} onClick={prev} style={{
+        height:40, padding:'0 20px', borderRadius:10, border:'1px solid '+T.border, background:T.card,
+        color: idx === 0 ? T.muted+'40' : T.fg, cursor: idx === 0 ? 'default' : 'pointer',
+        fontSize:12, fontWeight:500, fontFamily:'inherit',
+      }}>← 上一条</button>
+      <button onClick={next} style={{
+        height:40, padding:'0 20px', borderRadius:10, border:'none', background:T.primary, color:'#fff',
+        cursor:'pointer', fontSize:12, fontWeight:600, fontFamily:'inherit',
+      }}>下一条 →</button>
+    </div>
+
+    {/* 快速输入 */}
+    <div style={{marginTop:'auto', borderTop:'1px solid '+T.border, padding:'12px 0 20px', display:'flex', gap:8}}>
+      <input placeholder="捕捉新想法…" style={{
+        flex:1, height:40, padding:'0 14px', borderRadius:10, border:'1.5px solid '+T.border,
+        fontSize:13, outline:'none', fontFamily:'inherit', background:T.card,
+      }} />
+      <button style={{height:40, width:40, borderRadius:10, border:'none', background:T.primary, color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center'}}>{I.send}</button>
+    </div>
+  </div>;
+};
+
+const BigBtn = ({ icon, label, sub, color }) => (
+  <button style={{
+    flex:1, maxWidth:120,
+    padding:'10px 4px', borderRadius:10, border:'1px solid '+T.border,
+    background:T.card, cursor:'pointer', fontFamily:'inherit',
+    display:'flex', flexDirection:'column', alignItems:'center', gap:3,
+    transition:'all 0.12s',
+  }}>
+    <span style={{color}}>{icon}</span>
+    <span style={{fontSize:11, fontWeight:500, color:T.fg}}>{label}</span>
+    {sub && <span style={{fontSize:9, color:T.muted+'80', lineHeight:1.2}}>{sub}</span>}
+  </button>
+);
+
+/* ════════════════════════════════════
+   Y · 分栏 — 左列表右详情
+   ════════════════════════════════════ */
+const DesignY = () => {
+  const [selected, setSelected] = useState(MOCK[0]);
+  const [text, setText] = useState('');
+
+  return <div style={{height:'100%', display:'flex'}}>
+    {/* 左栏：列表 */}
+    <div style={{width:300, borderRight:'1px solid '+T.border, display:'flex', flexDirection:'column', background:T.bg}}>
+      <div style={{padding:'16px 16px 12px', borderBottom:'1px solid '+T.border}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10}}>
+          <span style={{fontSize:13, fontWeight:600}}>闪念 <span style={{fontWeight:400, color:T.muted, fontSize:11}}>{MOCK.length}</span></span>
+          <button style={yIconBtn}>{I.plus}</button>
+        </div>
+        <input placeholder="搜索闪念…" style={{
+          width:'100%', height:32, padding:'0 10px', borderRadius:8, border:'1px solid '+T.border,
+          fontSize:12, outline:'none', fontFamily:'inherit', background:T.card,
+        }} />
+      </div>
+      <div style={{flex:1, overflowY:'auto'}}>
+        {MOCK.map(n => {
+          const s = ST[n.status];
+          const sel = selected?.id === n.id;
+          return <div key={n.id} onClick={() => setSelected(n)} style={{
+            padding:'10px 16px', cursor:'pointer',
+            background: sel ? T.primaryLight : 'transparent',
+            borderLeft: '3px solid ' + (sel ? T.primary : 'transparent'),
+            borderBottom: '1px solid ' + T.border + '80',
+            transition:'all 0.1s',
+          }}>
+            <div style={{fontSize:12, lineHeight:1.4, color:T.fg, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', marginBottom:4}}>
+              {n.content}
+            </div>
+            <div style={{display:'flex', alignItems:'center', gap:6}}>
+              <span style={{width:4, height:4, borderRadius:'50%', background:s.dot}} />
+              <span style={{fontSize:10, color:T.muted+'70'}}>{s.label}</span>
+              <span style={{fontSize:10, color:T.muted+'50'}}>{fmt(n.createdAt)}</span>
+              {n.attachments.length > 0 && <span style={{fontSize:10, color:T.muted+'50'}}>📎 {n.attachments.length}</span>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+
+    {/* 右栏：详情 */}
+    <div style={{flex:1, display:'flex', flexDirection:'column', background:T.card}}>
+      {selected ? <div style={{flex:1, display:'flex', flexDirection:'column', padding:'24px 32px 0'}}>
+        <div style={{flex:1, overflowY:'auto'}}>
+          <div style={{fontSize:15, lineHeight:1.7, color:T.fg, whiteSpace:'pre-wrap', marginBottom:16}}>{selected.content}</div>
+          <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:16, padding:'8px 12px', borderRadius:8, background:T.soft, fontSize:11, color:T.muted}}>
+            <span style={{width:6, height:6, borderRadius:'50%', background:ST[selected.status].dot}} />
+            {ST[selected.status].label} · {fmt(selected.createdAt)}
+            {selected.status === 'failed' && <><span style={{color:T.danger}}>分析失败</span><button style={yTextBtn}>重试</button></>}
+            {selected.status === 'suggested' && <span style={{marginLeft:'auto', padding:'2px 8px', borderRadius:4, background:T.primary+'14', color:T.primary, fontSize:10, fontWeight:500}}>
+              AI 建议转为{selected.reco === 'journal' ? '日记' : selected.reco === 'task' ? '任务' : '剪藏'}
+            </span>}
+            <span style={{marginLeft:'auto'}}><button style={yTextBtn}>{I.trash} 删除</button></span>
+          </div>
+          {selected.attachments.map((a,i) => <span key={i} style={{
+            display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:8,
+            border:'1px solid '+T.border, fontSize:12, color:T.muted, marginRight:6,
+          }}><AttIcon mime={a.mime} s={14} />{a.name}</span>)}
+          <div style={{marginTop:20, padding:16, borderRadius:12, border:'1px solid '+T.border, background:T.bg}}>
+            <div style={{display:'flex', gap:8, marginBottom:10}}>
+              {['日记','任务','里程碑','剪藏'].map(l => <button key={l} style={{
+                height:28, padding:'0 10px', borderRadius:6, border:'1px solid '+T.border, background:T.card,
+                color:T.fg, cursor:'pointer', fontSize:11, fontFamily:'inherit',
+              }}>{l}</button>)}
+            </div>
+            <textarea placeholder="编辑内容后处理…" style={{
+              width:'100%', minHeight:80, padding:10, borderRadius:8, border:'1px solid '+T.border,
+              fontSize:12, lineHeight:1.5, fontFamily:'inherit', resize:'vertical', background:T.card,
+            }} />
+            <div style={{display:'flex', justifyContent:'flex-end', gap:6, marginTop:10}}>
+              <button style={yPrimBtn}>处理</button>
+            </div>
+          </div>
+        </div>
+      </div> : <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:T.muted, fontSize:13}}>选择一条闪念</div>}
+    </div>
+  </div>;
+};
+
+const yIconBtn = { width:28, height:28, borderRadius:8, border:'none', background:'transparent', color:T.muted, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' };
+const yTextBtn = { border:'none', background:'transparent', color:T.muted, cursor:'pointer', fontSize:11, fontFamily:'inherit', display:'inline-flex', alignItems:'center', gap:3 };
+const yPrimBtn = { height:30, padding:'0 16px', borderRadius:6, border:'none', background:T.primary, color:'#fff', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit' };
+
+/* ════════════════════════════════════
+   Z · 命令行 — Cmd+K 式
+   ════════════════════════════════════ */
+const DesignZ = () => {
+  const [notes, setNotes] = useState(MOCK);
+  const [input, setInput] = useState('');
+  const [focus, setFocus] = useState(false);
+  const [showCmd, setShowCmd] = useState(false);
+
+  const captureAndProcess = (cmd) => {
+    if (!input.trim()) return;
+    const label = cmd === '/j' ? '写入日记' : cmd === '/t' ? '创建任务' : cmd === '/c' ? '保存剪藏' : '暂存';
+    const newNote = { id: Date.now()+'', content: input.trim(), createdAt: Date.now(), status: 'done', processedTo: label };
+    setNotes(prev => [newNote, {id: Date.now()+1+'', content: input.trim() + ' ('+label+')', createdAt: Date.now(), status: cmd ? 'done' : 'unanalyzed', processedTo: cmd ? label : null}, ...prev]);
+    setInput('');
+    setShowCmd(false);
+  };
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { captureAndProcess(null); return; }
+    if (e.key === 'Enter' && !e.shiftKey) { captureAndProcess(null); return; }
+    if (e.key === '/' && input === '') { setShowCmd(true); setFocus(true); return; }
+    if (e.key === 'Escape') { setShowCmd(false); setInput(''); }
+  };
+
+  return <div style={{height:'100%', display:'flex', flexDirection:'column'}}>
+    {/* 命令输入区 */}
+    <div style={{
+      padding:'20px 28px 16px', borderBottom:'1px solid '+T.border,
+      background: focus ? T.card : 'transparent',
+      transition:'all 0.2s',
+    }}>
+      {showCmd && <div style={{
+        display:'flex', gap:4, marginBottom:8,
+      }}>
+        {['/j 日记', '/t 任务', '/c 剪藏', '/m 里程碑', '/ Esc 取消'].map(cmd => {
+          const [k, ...rest] = cmd.split(' ');
+          return <span key={cmd} style={{
+            padding:'3px 8px', borderRadius:5,
+            background: T.primaryLight, color: T.primary, fontSize:10, fontWeight:500,
+            fontFamily:'monospace',
+          }}>{k} <span style={{fontWeight:400, opacity:0.7}}>{rest.join(' ')}</span></span>;
+        })}
+      </div>}
+      <div style={{display:'flex', gap:8, alignItems:'center'}}>
+        <input
+          autoFocus value={input} onChange={e => { setInput(e.target.value); if (e.target.value.startsWith('/')) setShowCmd(true); }}
+          onKeyDown={handleKey} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+          placeholder="输入闪念，回车暂存 · / 看命令 · Cmd+Enter 快速保存"
+          style={{
+            flex:1, height:44, padding:'0 14px', borderRadius:10,
+            border:'1.5px solid '+(focus ? T.primary+'60' : T.border),
+            outline:'none', fontSize:13, fontFamily:'inherit', background:T.card,
+            transition:'all 0.2s',
+          }}
+        />
+        <button onClick={() => captureAndProcess(null)} style={{
+          height:44, width:44, borderRadius:10, border:'none', background:input.trim() ? T.primary : T.muted+'20',
+          color:input.trim() ? '#fff' : T.muted+'50', cursor: input.trim() ? 'pointer' : 'default',
+          display:'flex', alignItems:'center', justifyContent:'center',
+        }}>{I.send}</button>
+      </div>
+      <div style={{display:'flex', gap:16, marginTop:8, fontSize:10, color:T.muted+'60'}}>
+        <span>回车 = 暂存待分析</span>
+        <span>Cmd+Enter = 直接处理</span>
+        <span>输入 / 查看命令</span>
+      </div>
+    </div>
+
+    {/* 列表 */}
+    <div style={{flex:1, overflowY:'auto', padding:'8px 28px 20px'}}>
+      {notes.length === 0 && <div style={{padding:'60px 0', textAlign:'center', color:T.muted+'80', fontSize:13}}>
+        没有闪念，输入上方开始捕捉
+      </div>}
+      {notes.map(n => {
+        const isDone = n.status === 'done';
+        return <div key={n.id} style={{
+          display:'flex', alignItems:'center', gap:10,
+          padding:'10px 0',
+          borderBottom:'1px solid '+T.border+'80',
+          opacity: isDone ? 0.5 : 1,
+        }}>
+          <div style={{
+            width:16, height:16, borderRadius:'50%',
+            border: isDone ? 'none' : '2px solid '+T.primary+'60',
+            background: isDone ? T.success : 'transparent',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            color:'#fff', fontSize:10,
+            flexShrink:0,
+          }}>{isDone ? '✓' : ''}</div>
+          <div style={{flex:1, fontSize:13, color: isDone ? T.muted : T.fg, textDecoration: isDone ? 'line-through' : 'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+            {n.content}
+          </div>
+          {n.processedTo && <span style={{fontSize:10, color:T.primary, background:T.primaryLight, padding:'2px 6px', borderRadius:4, flexShrink:0}}>{n.processedTo}</span>}
+          <span style={{fontSize:10, color:T.muted+'60', flexShrink:0}}>{fmt(n.createdAt)}</span>
+        </div>;
+      })}
+    </div>
+  </div>;
+};
+
+const xBtn = { width:32, height:32, borderRadius:8, border:'none', background:'transparent', color:T.muted+'60', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' };
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

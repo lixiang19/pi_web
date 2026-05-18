@@ -8,10 +8,10 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5175";
  *
  * 验证场景：
  * 1. 闪念列表可见处理操作按钮（日记、任务、里程碑、剪藏、删除）
- * 2. 闪念→任务处理（填写表单、确认后闪念消失）
- * 3. 闪念→里程碑处理（填写表单、确认后闪念消失）
- * 4. 闪念→剪藏处理（确认后闪念消失）
- * 5. 闪念→附件处理（带附件闪念处理为正式附件后消失）
+ * 2. 闪念→任务处理（填写表单、确认后闪念标记已处理）
+ * 3. 闪念→里程碑处理（填写表单、确认后闪念标记已处理）
+ * 4. 闪念→剪藏处理（确认后闪念标记已处理）
+ * 5. 闪念→附件处理（带附件闪念处理为正式附件后标记已处理）
  */
 test.describe("任务16：闪念处理为正式对象", () => {
 	test.beforeEach(async ({ page }) => {
@@ -22,21 +22,17 @@ test.describe("任务16：闪念处理为正式对象", () => {
 		await page.waitForURL(`${BASE_URL}/`, { timeout: 5000 });
 	});
 
-	// Helper: 在 inbox 中找到包含特定文本的笔记段落，然后在其卡片内点击指定按钮
+	// Helper: 在 inbox 中找到包含特定文本的闪念卡片，展开后点击指定按钮
 	async function clickNoteButton(page, noteContent, buttonName) {
-		const noteParagraph = page.locator("p.whitespace-pre-wrap").filter({ hasText: noteContent });
-		const noteCard = noteParagraph.locator("xpath=ancestor::div[contains(@class, 'rounded-lg')][1]");
+		const noteCard = page.locator("article").filter({ hasText: noteContent }).first();
+		await noteCard.getByRole("button", { name: "展开闪念" }).click();
 		await noteCard.getByRole("button", { name: buttonName }).click();
 	}
 
-	// Helper: 断言 inbox 区域中不再包含特定笔记文本
-	async function expectNoteDisappeared(page, noteContent) {
-		const inboxSection = page
-			.locator("div")
-			.filter({ has: page.getByRole("heading", { name: "待处理闪念" }) });
-		await expect(
-			inboxSection.locator("p.whitespace-pre-wrap").filter({ hasText: noteContent }),
-		).toHaveCount(0);
+	// Helper: 断言闪念仍保留，并显示已处理
+	async function expectNoteHandled(page, noteContent) {
+		const noteCard = page.locator("article").filter({ hasText: noteContent }).first();
+		await expect(noteCard).toContainText("已处理");
 	}
 
 	test("闪念列表可见处理操作按钮", async ({ page }) => {
@@ -58,6 +54,7 @@ test.describe("任务16：闪念处理为正式对象", () => {
 
 		// 验证处理按钮可见（等待 inbox 列表加载）
 		await page.waitForSelector("text=/测试闪念 - 按钮可见性验收/");
+		await page.locator("article").filter({ hasText: "测试闪念 - 按钮可见性验收" }).first().getByRole("button", { name: "展开闪念" }).click();
 		await expect(page.getByRole("button", { name: "日记" }).first()).toBeVisible();
 		await expect(page.getByRole("button", { name: "任务" }).first()).toBeVisible();
 		await expect(page.getByRole("button", { name: "里程碑" }).first()).toBeVisible();
@@ -65,7 +62,7 @@ test.describe("任务16：闪念处理为正式对象", () => {
 		await expect(page.getByRole("button", { name: "删除" }).first()).toBeVisible();
 	});
 
-	test("闪念→任务处理流程（填写表单、确认后闪念消失）", async ({ page }) => {
+	test("闪念→任务处理流程（填写表单、确认后闪念标记已处理）", async ({ page }) => {
 		const noteContent = "测试闪念 - 任务处理验收 " + Date.now();
 		// 创建测试闪念
 		await page.evaluate(async (content) => {
@@ -94,11 +91,10 @@ test.describe("任务16：闪念处理为正式对象", () => {
 		// 提交创建任务
 		await page.getByRole("button", { name: "创建任务", exact: true }).click();
 
-		// 验证闪念从 inbox 列表中消失
-		await expectNoteDisappeared(page, noteContent);
+		await expectNoteHandled(page, noteContent);
 	});
 
-	test("闪念→里程碑处理流程（填写表单、确认后闪念消失）", async ({ page }) => {
+	test("闪念→里程碑处理流程（填写表单、确认后闪念标记已处理）", async ({ page }) => {
 		const noteContent = "测试闪念 - 里程碑处理验收 " + Date.now();
 		await page.evaluate(async (content) => {
 			await fetch("/api/fleeting", {
@@ -122,10 +118,10 @@ test.describe("任务16：闪念处理为正式对象", () => {
 
 		await page.getByRole("button", { name: "创建里程碑", exact: true }).click();
 
-		await expectNoteDisappeared(page, noteContent);
+		await expectNoteHandled(page, noteContent);
 	});
 
-	test("闪念→剪藏处理流程（确认后闪念消失）", async ({ page }) => {
+	test("闪念→剪藏处理流程（确认后闪念标记已处理）", async ({ page }) => {
 		const noteContent = "测试闪念 - 剪藏处理验收 " + Date.now();
 		await page.evaluate(async (content) => {
 			await fetch("/api/fleeting", {
@@ -146,10 +142,10 @@ test.describe("任务16：闪念处理为正式对象", () => {
 
 		await page.getByRole("button", { name: "保存剪藏", exact: true }).click();
 
-		await expectNoteDisappeared(page, noteContent);
+		await expectNoteHandled(page, noteContent);
 	});
 
-	test("闪念→附件处理流程（带附件闪念处理后消失）", async ({ page }) => {
+	test("闪念→附件处理流程（带附件闪念处理后标记已处理）", async ({ page }) => {
 		const noteContent = "测试闪念 - 附件处理验收 " + Date.now();
 		const noteId = await page.evaluate(async (content) => {
 			const response = await fetch("/api/fleeting", {
@@ -179,6 +175,6 @@ test.describe("任务16：闪念处理为正式对象", () => {
 		await page.waitForSelector(`text=${noteContent}`);
 		await clickNoteButton(page, noteContent, "附件");
 
-		await expectNoteDisappeared(page, noteContent);
+		await expectNoteHandled(page, noteContent);
 	});
 });

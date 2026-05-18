@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>闪念 · 3 种设计方案</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; width: 100%; }
+body {
+  font-family: "Inter Variable", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #f8fafc;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+#root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+const COLORS = {
+  primary: '#4f46e5',
+  primaryLight: '#eef2ff',
+  bg: '#f8fafc',
+  card: '#ffffff',
+  fg: '#0f172a',
+  muted: '#64748b',
+  border: '#e2e8f0',
+  soft: '#f1f5f9',
+  success: '#22c55e',
+  warning: '#f59e0b',
+  danger: '#ef4444',
+  amber: '#d97706',
+  indigo: '#6366f1',
+};
+
+const STATUS = {
+  suggested: { label: '已分析', color: COLORS.primary, dot: COLORS.primary },
+  analyzing: { label: '分析中', color: COLORS.amber, dot: COLORS.warning },
+  failed: { label: '分析失败', color: COLORS.danger, dot: COLORS.danger },
+  unanalyzed: { label: '等待分析', color: COLORS.muted, dot: '#cbd5e1' },
+};
+
+const MOCK_NOTES = [
+  {
+    id: '1', content: '考虑用 React Server Components 重构项目中的列表页，可以大幅减少客户端 bundle。需要评估一下对现有路由的影响。',
+    createdAt: Date.now() - 60000, attachments: [],
+    analysisStatus: 'suggested', recommendationType: 'journal', recommendationText: '建议转为日记',
+  },
+  {
+    id: '2', content: '灵感：Dashboard 可以加一个「今日专注度」趋势图，用热力图展示一天中哪些时段效率最高。',
+    createdAt: Date.now() - 300000, attachments: [
+      { id: 'a1', originalName: 'sketch-trend.png', mimeType: 'image/png', size: 204800 },
+    ],
+    analysisStatus: 'analyzing',
+  },
+  {
+    id: '3', content: 'https://react.dev/blog/2024/12/05/react-19 这篇文章讲 React 19 的新 API，需要读一下看看对我们的项目有没有影响。',
+    createdAt: Date.now() - 7200000, attachments: [],
+    analysisStatus: 'suggested', recommendationType: 'clip', recommendationText: '建议转为剪藏',
+  },
+  {
+    id: '4', content: '整理上周的会议笔记，发现有两个决定需要跟进：1) 数据库迁移方案 2) 新的 API 认证流程。',
+    createdAt: Date.now() - 86400000, attachments: [
+      { id: 'a2', originalName: 'meeting-notes.md', mimeType: 'text/markdown', size: 4096 },
+      { id: 'a3', originalName: 'auth-flow.jpg', mimeType: 'image/jpeg', size: 512000 },
+    ],
+    analysisStatus: 'suggested', recommendationType: 'task', recommendationText: '建议转为任务',
+  },
+  {
+    id: '5', content: '文档：需要统一项目中所有的错误处理方式。目前有些地方用 throw，有些用 return Result，不一致导致维护成本高。',
+    createdAt: Date.now() - 172800000, attachments: [],
+    analysisStatus: 'failed', lastError: 'API 超时',
+  },
+  {
+    id: '6', content: 'Podcast 录了一段关于类型安全的思考',
+    createdAt: Date.now() - 604800000, attachments: [
+      { id: 'a4', originalName: 'recording.webm', mimeType: 'audio/webm', size: 3145728 },
+    ],
+    analysisStatus: 'unanalyzed',
+  },
+];
+
+const AttachIcon = ({ mimeType, size }) => {
+  const isImg = mimeType.startsWith('image/');
+  const isAudio = mimeType.startsWith('audio/');
+  const svgSize = size || 14;
+  if (isImg) return <svg width={svgSize} height={svgSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>;
+  if (isAudio) return <svg width={svgSize} height={svgSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>;
+  return <svg width={svgSize} height={svgSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>;
+};
+
+const fmtTime = (ts) => {
+  const d = new Date(ts);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return '刚刚';
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} 小时前`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay} 天前`;
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+};
+
+const fmtSize = (b) => {
+  if (b < 1024) return `${b} B`;
+  if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / 1048576).toFixed(1)} MB`;
+};
+
+/* ───────── Design A: 消息流 ───────── */
+const DesignA = () => {
+  const [notes] = useState(MOCK_NOTES);
+  const [text, setText] = useState('');
+
+  return <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', maxWidth: 640, margin: '0 auto', padding: '0 20px' }}>
+    <div style={{ padding: '24px 0 16px', borderBottom: '1px solid ' + COLORS.border, marginBottom: 16 }}>
+      <h1 style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={COLORS.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        闪念
+      </h1>
+    </div>
+    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 12 }}>
+      {notes.slice().reverse().map(n => <AChat key={n.id} note={n} />)}
+    </div>
+    <div style={{ padding: '12px 0 20px', borderTop: '1px solid ' + COLORS.border, marginTop: 'auto', background: COLORS.bg }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <textarea value={text} onChange={e => setText(e.target.value)} placeholder="写下此刻的想法…"
+            style={{ width: '100%', minHeight: 44, maxHeight: 120, padding: '10px 14px', borderRadius: 12, border: '1.5px solid ' + COLORS.border, background: COLORS.card, fontSize: 13, lineHeight: 1.5, resize: 'none', outline: 'none', fontFamily: 'inherit' }} />
+          <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'flex', gap: 4 }}>
+            <button style={btnIconStyle}><AttachIcon mimeType="file" size={16} /></button>
+            <button style={btnIconStyle}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
+          </div>
+        </div>
+        <button style={{ height: 44, width: 44, borderRadius: 12, background: COLORS.primary, color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>;
+};
+
+const btnIconStyle = {
+  width: 28, height: 28, borderRadius: 8, border: 'none', background: 'transparent',
+  color: COLORS.muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  opacity: 0.5, transition: 'opacity 0.15s',
+};
+btnIconStyle[':hover'] = { opacity: 1, background: COLORS.soft };
+
+const AChat = ({ note }) => {
+  const [hover, setHover] = useState(false);
+  const st = STATUS[note.analysisStatus];
+  return <div
+    onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+    style={{
+      padding: '12px 16px', borderRadius: 14, background: COLORS.card,
+      border: '1px solid ' + (hover ? COLORS.primary + '40' : COLORS.border),
+      transition: 'border-color 0.2s, box-shadow 0.2s',
+      boxShadow: hover ? '0 2px 8px rgba(79,70,229,0.06)' : 'none',
+      position: 'relative',
+    }}>
+    <div style={{ fontSize: 13, lineHeight: 1.6, color: COLORS.fg, whiteSpace: 'pre-wrap', marginBottom: 8 }}>{note.content}</div>
+    {note.attachments.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+      {note.attachments.map(a => <span key={a.id} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8,
+        background: COLORS.soft, fontSize: 11, color: COLORS.muted,
+      }}>
+        <AttachIcon mimeType={a.mimeType} size={12} />
+        <span style={{ maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.originalName}</span>
+        <span style={{ opacity: 0.5 }}>{fmtSize(a.size)}</span>
+      </span>)}
+    </div>}
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: st.color }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot }} />
+        {st.label}{note.recommendationText ? ' · ' + note.recommendationText : ''}
+      </span>
+      <span style={{ fontSize: 10, color: COLORS.muted + '80' }}>{fmtTime(note.createdAt)}</span>
+    </div>
+    {hover && <div style={{
+      position: 'absolute', top: '50%', right: -40, transform: 'translateY(-50%)',
+      display: 'flex', flexDirection: 'column', gap: 4,
+    }}>
+      <ActionIcon label="日记"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></ActionIcon>
+      <ActionIcon label="任务"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></ActionIcon>
+      <ActionIcon label="剪藏"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg></ActionIcon>
+      <ActionIcon label="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={COLORS.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></ActionIcon>
+    </div>}
+  </div>;
+};
+
+const ActionIcon = ({ label, children }) => (
+  <button title={label} style={{
+    width: 28, height: 28, borderRadius: 8, border: '1px solid ' + COLORS.border,
+    background: COLORS.card, color: COLORS.muted, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.04)', transition: 'all 0.15s',
+  }}>{children}</button>
+);
+
+/* ───────── Design B: 卡片桌 ───────── */
+const DesignB = () => {
+  const [notes] = useState(MOCK_NOTES);
+  const [text, setText] = useState('');
+
+  return <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', maxWidth: 960, margin: '0 auto', padding: '0 24px' }}>
+    <div style={{ padding: '24px 0 20px', borderBottom: '1px solid ' + COLORS.border, marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h1 style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={COLORS.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+          闪念 <span style={{ fontSize: 12, fontWeight: 400, color: COLORS.muted }}>· {notes.length} 条待处理</span>
+        </h1>
+        <span style={{ fontSize: 11, color: COLORS.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: COLORS.warning, display: 'inline-block' }} />
+          {notes.filter(n => n.analysisStatus === 'analyzing').length} 分析中
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder="快速捕捉… Cmd+Enter 保存"
+          style={{ flex: 1, height: 40, padding: '0 14px', borderRadius: 10, border: '1.5px solid ' + COLORS.border, background: COLORS.card, fontSize: 13, outline: 'none', fontFamily: 'inherit' }} />
+        <button style={bActionBtn(COLORS.primary, '#fff')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> 保存</button>
+        <button style={bActionBtn('transparent', COLORS.muted)}><AttachIcon mimeType="file" size={15} /></button>
+        <button style={bActionBtn('transparent', COLORS.muted)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
+      </div>
+    </div>
+    <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, alignContent: 'start' }}>
+      {notes.map(n => <BCard key={n.id} note={n} />)}
+    </div>
+  </div>;
+};
+
+const bActionBtn = (bg, color) => ({
+  height: 36, padding: bg === 'transparent' ? '0 8px' : '0 16px', borderRadius: 10,
+  border: bg === 'transparent' ? '1.5px solid ' + COLORS.border : 'none',
+  background: bg, color, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit',
+  transition: 'all 0.15s',
+});
+
+const BCard = ({ note }) => {
+  const st = STATUS[note.analysisStatus];
+  return <div style={{
+    borderRadius: 12, background: COLORS.card, border: '1px solid ' + COLORS.border,
+    borderLeft: '3px solid ' + st.dot,
+    overflow: 'hidden', transition: 'box-shadow 0.2s',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+  }}>
+    <div style={{ padding: '14px 16px 12px' }}>
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: COLORS.fg, whiteSpace: 'pre-wrap', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: 8 }}>{note.content}</div>
+      {note.attachments.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+        {note.attachments.map(a => <span key={a.id} style={{
+          padding: '3px 8px', borderRadius: 6, background: COLORS.soft, fontSize: 10, color: COLORS.muted,
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+        }}>
+          <AttachIcon mimeType={a.mimeType} size={11} />
+          <span style={{ maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.originalName}</span>
+        </span>)}
+      </div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, color: st.color, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
+          {st.label}
+        </span>
+        <span style={{ fontSize: 10, color: COLORS.muted + '80' }}>{fmtTime(note.createdAt)}</span>
+        {note.analysisStatus === 'suggested' && <span style={{
+          marginLeft: 'auto', fontSize: 10, padding: '2px 8px', borderRadius: 4,
+          background: COLORS.primaryLight, color: COLORS.primary, fontWeight: 500,
+        }}>AI 建议 {note.recommendationType === 'journal' ? '日记' : note.recommendationType === 'task' ? '任务' : '剪藏'}</span>}
+      </div>
+    </div>
+    <div style={{ borderTop: '1px solid ' + COLORS.border, padding: '8px 12px', display: 'flex', gap: 2, background: COLORS.soft + '60' }}>
+      <BCardBtn label="日记"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></BCardBtn>
+      <BCardBtn label="任务"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></BCardBtn>
+      <BCardBtn label="里程碑"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></BCardBtn>
+      <BCardBtn label="剪藏"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg></BCardBtn>
+      <div style={{ flex: 1 }} />
+      <BCardBtn label="删除" color={COLORS.danger + '80'}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></BCardBtn>
+    </div>
+  </div>;
+};
+
+const BCardBtn = ({ label, color, children }) => (
+  <button title={label} style={{
+    height: 28, width: 28, borderRadius: 6, border: 'none', background: 'transparent',
+    color: color || COLORS.muted + '90', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 11, transition: 'all 0.15s',
+  }}>{children}</button>
+);
+
+/* ───────── Design C: 瀑布流 ───────── */
+const DesignC = () => {
+  const [notes] = useState(MOCK_NOTES);
+  const [expanded, setExpanded] = useState({});
+  const [text, setText] = useState('');
+
+  const toggle = (id) => setExpanded(p => ({ ...p, [id]: !p[id] }));
+
+  return <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', maxWidth: 640, margin: '0 auto', padding: '0 24px' }}>
+    <div style={{ padding: '24px 0 16px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid ' + COLORS.border, marginBottom: 8 }}>
+      <div style={{ width: 32, height: 32, borderRadius: 10, background: COLORS.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', color: COLORS.primary }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+      </div>
+      <div style={{ flex: 1 }}>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder="快速捕捉…"
+          style={{ width: '100%', height: 36, border: 'none', borderBottom: '1.5px solid ' + COLORS.border, background: 'transparent', fontSize: 13, outline: 'none', fontFamily: 'inherit', padding: '0 4px' }} />
+      </div>
+      <button style={{ height: 28, padding: '0 12px', borderRadius: 8, background: COLORS.primary, color: '#fff', border: 'none', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>保存</button>
+    </div>
+    <div style={{ flex: 1, overflowY: 'auto', paddingTop: 4 }}>
+      {notes.map((n, i) => <CTimelineItem key={n.id} note={n} index={i} expanded={!!expanded[n.id]} onToggle={() => toggle(n.id)} />)}
+    </div>
+  </div>;
+};
+
+const CTimelineItem = ({ note, index, expanded, onToggle }) => {
+  const st = STATUS[note.analysisStatus];
+  return <div style={{ display: 'flex', gap: 12, paddingLeft: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 16, flexShrink: 0 }}>
+      <div style={{ width: 10, height: 10, borderRadius: '50%', background: st.dot, border: '2px solid ' + COLORS.bg, boxShadow: '0 0 0 1px ' + st.dot, marginTop: 14 }} />
+      {index < MOCK_NOTES.length - 1 && <div style={{ flex: 1, width: 1, background: COLORS.border, marginTop: 4 }} />}
+    </div>
+    <div style={{ flex: 1, paddingBottom: 12, cursor: 'pointer' }} onClick={onToggle}>
+      <div style={{
+        borderRadius: 10, padding: expanded ? 14 : '12px 14px',
+        background: expanded ? COLORS.card : 'transparent',
+        border: expanded ? '1px solid ' + COLORS.border : '1px solid transparent',
+        transition: 'all 0.2s',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: COLORS.fg, whiteSpace: 'pre-wrap', ...(!expanded ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } : {}) }}>
+            {note.content}
+          </div>
+          <span style={{ fontSize: 10, color: COLORS.muted + '60', whiteSpace: 'nowrap', marginTop: 2 }}>{fmtTime(note.createdAt)}</span>
+        </div>
+        {!expanded && note.attachments.length > 0 && <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
+          {note.attachments.map(a => <span key={a.id} style={{ width: 20, height: 20, borderRadius: 4, background: COLORS.soft, display: 'flex', alignItems: 'center', justifyContent: 'center', color: COLORS.muted }}>
+            <AttachIcon mimeType={a.mimeType} size={10} />
+          </span>)}
+        </div>}
+        {expanded && <>
+          {note.attachments.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, marginBottom: 10 }}>
+            {note.attachments.map(a => <span key={a.id} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6,
+              background: COLORS.soft, fontSize: 11, color: COLORS.muted,
+            }}>
+              <AttachIcon mimeType={a.mimeType} size={12} />
+              <span style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.originalName}</span>
+            </span>)}
+          </div>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 10, borderTop: '1px solid ' + COLORS.border }}>
+            <span style={{ fontSize: 10, color: st.color, display: 'inline-flex', alignItems: 'center', gap: 3, marginRight: 4 }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
+              {st.label}
+            </span>
+            <button style={cBtn} title="转为日记"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg><span>日记</span></button>
+            <button style={cBtn} title="转为任务"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>任务</span></button>
+            <button style={cBtn} title="保存剪藏"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span>剪藏</span></button>
+            <button style={{ ...cBtn, color: COLORS.danger + '80' }} title="删除"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button>
+          </div>
+        </>}
+        {!expanded && <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 10, color: st.color }}>
+            <span style={{ width: 4, height: 4, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
+            {st.label}
+          </span>
+          {note.analysisStatus === 'suggested' && <span style={{ fontSize: 10, color: COLORS.primary }}>· {note.recommendationText}</span>}
+          {note.attachments.length > 0 && <span style={{ fontSize: 10, color: COLORS.muted + '60' }}>· {note.attachments.length} 个附件</span>}
+        </div>}
+      </div>
+    </div>
+  </div>;
+};
+
+const cBtn = {
+  height: 26, padding: '0 8px', borderRadius: 6, border: '1px solid ' + COLORS.border,
+  background: COLORS.card, color: COLORS.muted, cursor: 'pointer',
+  fontSize: 10, fontWeight: 500,
+  display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit',
+  transition: 'all 0.15s',
+};
+
+/* ───────── 主 App ───────── */
+const App = () => {
+  const [tab, setTab] = useState(0);
+  const designs = [
+    { name: 'A · 消息流', desc: 'Chat-Style — 底部输入，向上对话，操作悬浮于右侧' },
+    { name: 'B · 卡片桌', desc: 'Card Desk — 双列网格，顶部快速捕捉，批量操作' },
+    { name: 'C · 瀑布流', desc: 'Timeline — 时间线布局，点击展开，高效扫描' },
+  ];
+
+  return <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', justifyContent: 'center', gap: 4, padding: '14px 16px 0', background: COLORS.bg, borderBottom: '1px solid ' + COLORS.border }}>
+      {designs.map((d, i) => (
+        <button key={i} onClick={() => setTab(i)} style={{
+          padding: '10px 18px 12px', border: 'none', borderBottom: '2px solid ' + (tab === i ? COLORS.primary : 'transparent'),
+          background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: tab === i ? COLORS.primary : COLORS.muted }}>{d.name}</span>
+          <div style={{ fontSize: 10, color: COLORS.muted + '90', marginTop: 2 }}>{d.desc}</div>
+        </button>
+      ))}
+    </div>
+    <div style={{ flex: 1, overflow: 'hidden' }}>
+      {tab === 0 && <DesignA />}
+      {tab === 1 && <DesignB />}
+      {tab === 2 && <DesignC />}
+    </div>
+  </div>;
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

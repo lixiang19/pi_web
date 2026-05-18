@@ -240,28 +240,28 @@ onUnmounted(() => {
 		<!-- 采集面板 -->
 		<div
 			v-if="open"
-			class="w-[min(calc(100vw-3rem),400px)] rounded-2xl border border-default bg-card shadow-2xl"
+			class="w-[min(calc(100vw-3rem),400px)] rounded-xl border border-default bg-card shadow-lg"
 		>
 			<!-- 头部 -->
-			<div class="flex items-center justify-between border-b border-subtle px-4 py-3">
-				<div class="flex items-center gap-2">
+			<div class="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-default">
+				<div class="flex items-center gap-2.5">
 					<div class="flex size-7 items-center justify-center rounded-lg bg-primary/10">
 						<Sparkles class="size-4 text-primary" />
 					</div>
 					<span class="text-sm font-medium text-foreground">捕捉灵感</span>
 				</div>
-				<Button variant="ghost" size="icon" class="size-7 text-muted-foreground" @click="open = false">
+				<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/50 hover:text-foreground hover:bg-soft" @click="open = false">
 					<X class="size-4" />
 				</Button>
 			</div>
 
 			<!-- 内容区 -->
-			<div class="px-4 pt-3 pb-4">
+			<div class="px-5 pt-4 pb-5">
 				<!-- 文字输入 -->
 				<div v-if="mode === 'text'">
 					<Textarea
 						v-model="content"
-						class="min-h-[120px] resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none outline-none ring-0 placeholder:text-muted-foreground/40 focus-visible:ring-0"
+						class="min-h-[128px] resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none outline-none ring-0 placeholder:text-muted-foreground/40 focus-visible:ring-0"
 						placeholder="写下此刻的想法，稍后处理..."
 						@keydown.ctrl.enter="save"
 						@keydown.meta.enter="save"
@@ -269,23 +269,26 @@ onUnmounted(() => {
 				</div>
 
 				<!-- 文件 -->
-				<div v-else-if="mode === 'file'" class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-default bg-subtle/50 py-8">
+				<div v-else-if="mode === 'file'" class="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-default bg-soft/50 py-10 transition-colors hover:bg-soft">
 					<input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileSelect" />
 					<div class="flex size-12 items-center justify-center rounded-full bg-soft">
-						<Paperclip class="size-5 text-muted-foreground" />
+						<Paperclip class="size-5 text-muted-foreground/60" />
 					</div>
-					<Button variant="outline" size="sm" class="h-8" @click="triggerFileInput">
-						选择文件
-					</Button>
-					<p v-if="selectedFiles.length > 0" class="text-caption text-muted-foreground">
-						已选 {{ selectedFiles.length }} 个文件
-					</p>
+					<div class="text-center">
+						<Button variant="outline" size="sm" class="h-8" @click="triggerFileInput">
+							选择文件
+						</Button>
+						<p v-if="selectedFiles.length > 0" class="mt-2 text-caption text-muted-foreground">
+							已选 {{ selectedFiles.length }} 个文件
+						</p>
+						<p v-else class="mt-1.5 text-caption text-muted-foreground/50">或拖拽文件到此处</p>
+					</div>
 				</div>
 
 				<!-- 录音 -->
-				<div v-else-if="mode === 'audio'" class="flex flex-col items-center gap-3 rounded-xl border border-default py-8">
-					<div class="flex size-12 items-center justify-center rounded-full bg-red-50">
-						<Mic class="size-5 text-red-500" />
+				<div v-else-if="mode === 'audio'" class="flex flex-col items-center gap-4 rounded-xl border border-default bg-soft/30 py-10">
+					<div class="flex size-12 items-center justify-center rounded-full bg-destructive/10">
+						<Mic class="size-5 text-destructive" />
 					</div>
 					<Button
 						v-if="!isRecording && !recordedBlob"
@@ -298,51 +301,60 @@ onUnmounted(() => {
 						开始录音
 					</Button>
 					<div v-else-if="isRecording" class="flex items-center gap-3">
-						<span class="size-2.5 animate-pulse rounded-full bg-red-500" />
-						<span class="text-sm text-muted-foreground">正在录音...</span>
+						<span class="relative flex size-2.5">
+							<span class="absolute inline-flex size-full animate-ping rounded-full bg-destructive opacity-60" />
+							<span class="relative inline-flex size-2.5 rounded-full bg-destructive" />
+						</span>
+						<span class="text-sm text-muted-foreground">正在录音…</span>
 						<Button variant="outline" size="sm" class="h-7" @click="stopRecording">停止</Button>
 					</div>
-					<p v-else-if="recordedBlob" class="text-sm text-green-600">录音完成</p>
+					<p v-else-if="recordedBlob" class="flex items-center gap-1.5 text-sm text-primary">
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+						录音已就绪
+					</p>
 				</div>
 
 				<!-- 模式切换 + 保存 -->
-				<div class="mt-3 flex items-center justify-between">
-					<div class="flex items-center gap-1">
+				<div class="mt-4 flex items-center justify-between">
+					<div class="flex items-center gap-0.5 rounded-lg bg-soft p-0.5">
 						<Button
 							variant="ghost"
-							size="icon"
-							class="size-8"
+							size="sm"
+							class="h-7 gap-1.5 px-2.5 text-xs"
+							:class="mode === 'text' ? 'text-foreground bg-card shadow-xs' : 'text-muted-foreground hover:text-foreground'"
 							aria-label="文字采集"
-							:class="mode === 'text' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
 							@click="setMode('text')"
 						>
-							<Lightbulb class="size-4" />
+							<Lightbulb class="size-3.5" />
+							文字
 						</Button>
 						<Button
 							variant="ghost"
-							size="icon"
-							class="size-8"
+							size="sm"
+							class="h-7 gap-1.5 px-2.5 text-xs"
+							:class="mode === 'file' ? 'text-foreground bg-card shadow-xs' : 'text-muted-foreground hover:text-foreground'"
 							aria-label="文件采集"
-							:class="mode === 'file' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
 							@click="setMode('file')"
 						>
-							<FileText class="size-4" />
+							<FileText class="size-3.5" />
+							文件
 						</Button>
 						<Button
 							variant="ghost"
-							size="icon"
-							class="size-8"
+							size="sm"
+							class="h-7 gap-1.5 px-2.5 text-xs"
+							:class="mode === 'audio' ? 'text-foreground bg-card shadow-xs' : 'text-muted-foreground hover:text-foreground'"
 							aria-label="录音采集"
-							:class="mode === 'audio' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
 							@click="setMode('audio')"
 						>
-							<Mic class="size-4" />
+							<Mic class="size-3.5" />
+							录音
 						</Button>
 					</div>
 
 					<Button
 						size="sm"
-						class="h-8 gap-1.5 px-4"
+						class="h-8 gap-1.5 px-4 text-xs font-medium shadow-xs"
 						:disabled="!canSave"
 						@click="save"
 					>
@@ -352,7 +364,7 @@ onUnmounted(() => {
 				</div>
 
 				<!-- 离线/未登录提示 -->
-				<div v-if="!isAuthenticated || !isOnline" class="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-micro text-destructive">
+				<div v-if="!isAuthenticated || !isOnline" class="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-micro text-destructive">
 					<span v-if="!isAuthenticated">未登录，采集不可用</span>
 					<span v-else-if="!isOnline">服务器离线，采集不可用</span>
 				</div>
@@ -362,7 +374,7 @@ onUnmounted(() => {
 		<!-- 触发按钮 -->
 		<Button
 			size="icon"
-			class="size-12 rounded-full shadow-xl transition-transform hover:scale-105"
+			class="size-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 transition-all duration-200 hover:scale-110 hover:shadow-xl hover:shadow-primary/30 active:scale-105"
 			aria-label="打开闪念捕捉"
 			@click="open = !open"
 		>

@@ -58,13 +58,14 @@
 | 58 工作空间主页重新设计 | ✅ | N/A | N/A | ✅ | ✅ | N/A | ✅ |
 | 59 Pi 默认配置覆盖写入 | N/A | ✅ | N/A | N/A | ✅ | N/A | ✅ |
 | 61 Chrome 浏览器阅读插件 | N/A | ✅ | ✅ | ✅ | ✅ | ⏳ Chrome 实机加载待验收 | ⏳ |
+| 63 闪念已处理保留与瀑布流重构 | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ |
 
 ### 真实实现口径（2026-05-12）
 
 以下按**当前工作树静态证据**记录，未验证/未合并的其他 worktree 实现不标为已完成：
 
 - **13 闪念临时附件生命周期**：后端 `fleeting-attachments.ts` 含 store/get/delete/migrate；`fleeting.ts` 含上传/列表/清理/迁移全链路；前端 `InboxView.vue` 渲染附件列表（图标+文件名+大小）及附件处理按钮。`fleeting_attachments` 表在 migration v8。已标 ✅。
-- **16 闪念处理为正式对象**：`routes/fleeting.ts` 已实现 `process/journal`、`process/clip`、`process/task`、`process/milestone`、`process/attachment` 全部五种处理路径。task 和 milestone 支持 `projectId` 参数，所有 process 路由使用 `db.transaction()` 包裹目标创建 + 闪念删除。附件迁移在事务外执行，失败时闪念保留。`fleeting-api.test.ts` 覆盖全部处理路径、失败保留、项目选择等场景。前端 `InboxView.vue` 提供任务/里程碑/剪藏/附件/日记处理按钮和对话框，`useInbox.ts` 封装处理函数。已标 ✅。
+- **16/63 闪念处理为正式对象**：`routes/fleeting.ts` 已实现 `process/journal`、`process/clip`、`process/task`、`process/milestone`、`process/attachment` 全部五种处理路径。task 和 milestone 支持 `projectId` 参数，所有 process 路由使用 `db.transaction()` 包裹目标创建 + 闪念标记已处理；处理成功后保留 `fleeting_notes`，把 `status` 置为 `processed`，临时附件记录和临时文件仍会清理。附件迁移在事务外执行，失败时闪念保留为未处理。`fleeting-api.test.ts` 覆盖全部处理路径、失败保留、项目选择等场景。前端 `InboxView.vue` 使用瀑布流时间线样式，提供全部/未处理/已处理过滤、已处理徽标、任务/里程碑/剪藏/附件/日记处理按钮和对话框，`useInbox.ts` 封装处理函数。已标 ✅。
 - **22 RAG 标准产物索引与 chunk**：`rag-indexer.ts` 已按 Markdown 标题、段落、表格、代码块切 chunk，并读取 `.metadata.json`；空间 `index.html` 作为 HTML 标准源进入 RAG；`search_chunks` 保存 `source_path`、`heading_path`、`content_hash`、`file_type`、`embedding_id`、`embedding_vector`、行号等来源定位字段；检索使用精确文本召回 + 本地 embedding 相似度；外部路径、`.ridge`、`.originals`、realpath 越界 symlink 不进入 RAG。`rag-standard-indexer.test.ts` 覆盖结构化 chunk、metadata、embedding、hash skip、空间 HTML、外部路径/符号链接排除和来源定位。
 - **23 RAG 更新删除移动规则**：Markdown 上传同步索引；普通 Markdown 编辑写 `refresh_policy=deferred` 并保留旧 chunk；RAG worker 每天 03:00 运行 deferred 夜间入口，显式 `rag.index` job 按 manual 重建；`POST /api/workspace/rag/refresh` 手动立即重建且校验 realpath 边界；删除文件/目录清理 RAG 表；移动/改名更新 RAG metadata；索引失败写 `notification_events`。`rag-standard-indexer.test.ts`、`rag-worker-e2e.test.ts` 和 `rag-consumer.test.ts` 覆盖手动刷新、夜间刷新、删除、移动、失败通知和默认工作空间消费链路。
 - **24 全局搜索资产导航器**：`WorkspaceSearchView.vue` 与 `GET /api/workspace/search` 保留为真实搜索能力，但主左侧固定入口不再展示「搜索」。搜索 API 聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间、RAG。后端仍支持类型/时间/目录/项目筛选给内部调用，搜索组件保持一个搜索框和扁平结果列表，不展示类型筛选、类型分组、索引状态或 Wiki/记忆/RAG 等内部名词；结果可打开文件、项目主页、任务页、会话、空间预览。`workspace-search-api.test.ts` 覆盖聚合、类型筛选、项目内 file/RAG、目录边界筛选、缺失空间入口、符号链接越界和外部项目文件内容排除；`WorkspaceSearchView.test.ts` 覆盖极简空态、异常重新整理和普通结果不暴露手动刷新。

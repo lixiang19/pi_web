@@ -340,7 +340,7 @@ Chrome 插件 / 浏览器网址采集
         → 下载 Markdown artifact
         → 写入 剪藏/<标题>.md
         → INSERT clips(content=Markdown, url=<URL>)
-        → DELETE fleeting_notes
+        → UPDATE fleeting_notes.status = 'processed'
         → markRagTargetPending(剪藏/<标题>.md)
 ```
 

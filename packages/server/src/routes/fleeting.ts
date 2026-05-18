@@ -225,6 +225,23 @@ const getNoteOrThrow = (db: RidgeDatabase, noteId: string) => {
 	return note;
 };
 
+const assertNoteCanProcess = (note: Record<string, unknown>) => {
+	if (note.status === "processed") {
+		throw makeHttpError("闪念已处理", 409);
+	}
+};
+
+const markNoteProcessed = (
+	db: RidgeDatabase,
+	noteId: string,
+	now = Date.now(),
+) => {
+	db.prepare(
+		"UPDATE fleeting_notes SET status = 'processed', updated_at = ? WHERE note_id = ?",
+	).run(now, noteId);
+	return toPublicNote(getNoteOrThrow(db, noteId));
+};
+
 const firstUrlPattern = /https?:\/\/[^\s<>"')]+/i;
 
 const extractUrl = (value: string): string => {
@@ -554,7 +571,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 	router.delete("/:noteId", async (req: Request, res: Response, next: NextFunction) => {
 		try {
 			const noteId = req.params.noteId;
-			// 1. 清理临时附件（先删 DB 和文件，再删闪念记录）
+			// 手动删除闪念时，同步清理临时附件。
 			await deleteFleetingAttachmentsForNote(db, workspaceDir, noteId);
 
 			const info = db
@@ -616,7 +633,8 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 		"/:noteId/process/journal",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				getNoteOrThrow(db, req.params.noteId);
+				const note = getNoteOrThrow(db, req.params.noteId);
+				assertNoteCanProcess(note);
 				const payload = journalSchema.parse(req.body ?? {});
 				const { migratedPaths } = await copyFleetingAttachmentsToFormal(
 					db,
@@ -624,13 +642,19 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					req.params.noteId,
 				);
 				const journalPath = await appendToTodayJournal(workspaceDir, payload.content);
+				let processedNote: ReturnType<typeof toPublicNote> | null = null;
 				const cleanup = db.transaction(() => {
 					deleteFleetingAttachmentRecords(db, req.params.noteId);
-					db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
+					processedNote = markNoteProcessed(db, req.params.noteId);
 				});
 				cleanup();
 				await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
-				res.json({ deleted: true, journalPath, migratedAttachments: migratedPaths });
+				res.json({
+					processed: true,
+					note: processedNote,
+					journalPath,
+					migratedAttachments: migratedPaths,
+				});
 			} catch (error) {
 				forwardError(error, next);
 			}
@@ -645,6 +669,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			let migratedPaths: string[] = [];
 			try {
 				const note = getNoteOrThrow(db, req.params.noteId);
+				assertNoteCanProcess(note);
 				const payload = clipSchema.parse(req.body ?? {});
 				const url = extractUrl(payload.url) || extractUrl(String(note.content));
 				const content = url
@@ -678,6 +703,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				migratedPaths = copied.migratedPaths;
 				const now = Date.now();
 				const clipId = makeId("clip");
+				let processedNote: ReturnType<typeof toPublicNote> | null = null;
 				const createAndDelete = db.transaction(() => {
 					deleteFleetingAttachmentRecords(db, req.params.noteId);
 					db.prepare(
@@ -693,14 +719,13 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 						now,
 						now,
 					);
-					db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(
-						req.params.noteId,
-					);
+					processedNote = markNoteProcessed(db, req.params.noteId, now);
 				});
 				createAndDelete();
 				await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
 				res.json({
-					deleted: true,
+					processed: true,
+					note: processedNote,
 					clip: {
 						id: clipId,
 						title: payload.title,
@@ -731,7 +756,8 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 	// ====== process/task ======
 	router.post("/:noteId/process/task", async (req: Request, res: Response, next: NextFunction) => {
 		try {
-			getNoteOrThrow(db, req.params.noteId);
+			const note = getNoteOrThrow(db, req.params.noteId);
+			assertNoteCanProcess(note);
 			const payload = taskSchema.parse(req.body ?? {});
 			const { migratedPaths } = await copyFleetingAttachmentsToFormal(
 				db,
@@ -741,6 +767,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			const defaultMilestoneId = ensureDefaultMilestone(db, workspaceDir);
 			const now = Date.now();
 			const taskId = createId("task");
+			let processedNote: ReturnType<typeof toPublicNote> | null = null;
 
 			const createAndDelete = db.transaction(() => {
 				deleteFleetingAttachmentRecords(db, req.params.noteId);
@@ -766,7 +793,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					now,
 					now,
 				);
-				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
+				processedNote = markNoteProcessed(db, req.params.noteId, now);
 			});
 			createAndDelete();
 			await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
@@ -775,7 +802,8 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				.prepare("SELECT * FROM workspace_tasks WHERE task_id = ?")
 				.get(taskId) as Record<string, unknown>;
 			res.json({
-				deleted: true,
+				processed: true,
+				note: processedNote,
 				task: {
 					id: row.task_id,
 					workspacePath: row.workspace_path,
@@ -802,7 +830,8 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 	// ====== process/milestone ======
 	router.post("/:noteId/process/milestone", async (req: Request, res: Response, next: NextFunction) => {
 		try {
-			getNoteOrThrow(db, req.params.noteId);
+			const note = getNoteOrThrow(db, req.params.noteId);
+			assertNoteCanProcess(note);
 			const payload = milestoneSchema.parse(req.body ?? {});
 			const { migratedPaths } = await copyFleetingAttachmentsToFormal(
 				db,
@@ -811,6 +840,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 			);
 			const now = Date.now();
 			const milestoneId = createId("milestone");
+			let processedNote: ReturnType<typeof toPublicNote> | null = null;
 
 			const createAndDelete = db.transaction(() => {
 				deleteFleetingAttachmentRecords(db, req.params.noteId);
@@ -834,7 +864,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 					now,
 					now,
 				);
-				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
+				processedNote = markNoteProcessed(db, req.params.noteId, now);
 			});
 			createAndDelete();
 			await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
@@ -843,7 +873,8 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				.prepare("SELECT * FROM workspace_milestones WHERE milestone_id = ?")
 				.get(milestoneId) as Record<string, unknown>;
 			res.json({
-				deleted: true,
+				processed: true,
+				note: processedNote,
 				milestone: {
 					id: row.milestone_id,
 					workspacePath: row.workspace_path,
@@ -869,7 +900,8 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 	// ====== process/attachment ======
 	router.post("/:noteId/process/attachment", async (req: Request, res: Response, next: NextFunction) => {
 		try {
-			getNoteOrThrow(db, req.params.noteId);
+			const note = getNoteOrThrow(db, req.params.noteId);
+			assertNoteCanProcess(note);
 			const attachments = getFleetingAttachments(db, req.params.noteId);
 			if (attachments.length === 0) {
 				const error = new Error("该闪念没有附件") as HttpError;
@@ -881,13 +913,18 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				workspaceDir,
 				req.params.noteId,
 			);
+			let processedNote: ReturnType<typeof toPublicNote> | null = null;
 			const cleanup = db.transaction(() => {
 				deleteFleetingAttachmentRecords(db, req.params.noteId);
-				db.prepare("DELETE FROM fleeting_notes WHERE note_id = ?").run(req.params.noteId);
+				processedNote = markNoteProcessed(db, req.params.noteId);
 			});
 			cleanup();
 			await deleteFleetingTempFiles(workspaceDir, req.params.noteId);
-			res.json({ deleted: true, migratedAttachments: migratedPaths });
+			res.json({
+				processed: true,
+				note: processedNote,
+				migratedAttachments: migratedPaths,
+			});
 		} catch (error) {
 			forwardError(error, next);
 		}

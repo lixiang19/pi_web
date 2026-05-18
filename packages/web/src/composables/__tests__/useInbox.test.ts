@@ -68,11 +68,13 @@ describe("useWorkspaceInbox", () => {
 		mockGetFleetingAttachments.mockResolvedValue({ attachments: [] });
 		mockCreateFleetingNote.mockResolvedValue({ note });
 		mockProcessFleetingToJournal.mockResolvedValue({
-			deleted: true,
+			processed: true,
+			note: { ...note, status: "processed", updatedAt: 2000 },
 			journalPath: "/workspace/日记/2026/05/2026-05-08.md",
 		});
 		mockProcessFleetingToClip.mockResolvedValue({
-			deleted: true,
+			processed: true,
+			note: { ...note, status: "processed", updatedAt: 2000 },
 			clip: {
 				id: "clip-1",
 				title: "资料",
@@ -84,7 +86,8 @@ describe("useWorkspaceInbox", () => {
 			},
 		});
 		mockProcessFleetingToTask.mockResolvedValue({
-			deleted: true,
+			processed: true,
+			note: { ...note, status: "processed", updatedAt: 2000 },
 			task: {
 				id: "task-1",
 				workspacePath: "/workspace",
@@ -145,21 +148,25 @@ describe("useWorkspaceInbox", () => {
 		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(2);
 	});
 
-	it("removes a note after journal processing succeeds", async () => {
+	it("keeps a note and drops the pending count after journal processing succeeds", async () => {
 		mockProcessFleetingToJournal.mockResolvedValue({
-			deleted: true,
+			processed: true,
+			note: { ...note, status: "processed", updatedAt: 2000 },
 			journalPath: "/workspace/日记/2026/05/2026-05-08.md",
 			migratedAttachments: ["/workspace/附件/file.txt"],
 		});
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(store.count.value).toBe(1));
 		await store.processToJournal("flash-1", "今天复盘闪念系统");
+		expect(store.inboxFiles.value).toHaveLength(1);
+		expect(store.inboxFiles.value[0]).toMatchObject({ id: "flash-1", status: "processed" });
 		expect(store.count.value).toBe(0);
 	});
 
-	it("removes a note after clip processing succeeds", async () => {
+	it("keeps a note after clip processing succeeds", async () => {
 		mockProcessFleetingToClip.mockResolvedValue({
-			deleted: true,
+			processed: true,
+			note: { ...note, status: "processed", updatedAt: 2000 },
 			clip: {
 				id: "clip-1",
 				title: "资料",
@@ -174,13 +181,17 @@ describe("useWorkspaceInbox", () => {
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(store.count.value).toBe(1));
 		await store.processToClip("flash-1", { title: "资料", content: "资料" });
+		expect(store.inboxFiles.value).toHaveLength(1);
+		expect(store.inboxFiles.value[0]).toMatchObject({ id: "flash-1", status: "processed" });
 		expect(store.count.value).toBe(0);
 	});
 
-	it("creates a task from a note and removes it from queue", async () => {
+	it("creates a task from a note and marks it processed in the queue", async () => {
 		const store = useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(store.count.value).toBe(1));
 		await store.processToTask("flash-1", { title: "整理任务系统", priority: "normal", acceptanceCriteria: "完成" });
+		expect(store.inboxFiles.value).toHaveLength(1);
+		expect(store.inboxFiles.value[0]).toMatchObject({ id: "flash-1", status: "processed" });
 		expect(store.count.value).toBe(0);
 		expect(mockProcessFleetingToTask).toHaveBeenCalledWith("flash-1", { title: "整理任务系统", priority: "normal", acceptanceCriteria: "完成" });
 	});

@@ -16,7 +16,7 @@
 - Chrome 插件包在 `packages/browser-extension`。
 - 插件支持连接 ridge、自动保存认真读过的页面、手动保存当前页、域名排除和离线队列重试。
 - 闪念处理为剪藏时，如果闪念内容是 URL，Node 后端调用 Python Converter 的 `document.markdown` + `markitdown`，把网页转成 Markdown。
-- 转换成功后写入 `剪藏/<标题>.md`，创建 `clips` 记录，触发 RAG 索引，并删除原闪念。
+- 转换成功后写入 `剪藏/<标题>.md`，创建 `clips` 记录，触发 RAG 索引，并把原闪念标记为已处理。
 - 转换失败时保留原闪念，不写入剪藏文件。
 
 ## 插件规则

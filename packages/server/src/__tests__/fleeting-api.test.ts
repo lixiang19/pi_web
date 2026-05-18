@@ -196,7 +196,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(list.body.notes).toEqual([]);
 	});
 
-	it("writes to today's journal and deletes the original fleeting note", async () => {
+	it("writes to today's journal and marks the original fleeting note as processed", async () => {
 		const created = await request(app)
 			.post("/api/fleeting")
 			.send({ content: "今天把闪念系统边界讨论清楚了" });
@@ -206,7 +206,12 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.send({ content: "今天把闪念系统边界讨论清楚了" });
 
 		expect(res.status).toBe(200);
-		expect(res.body.deleted).toBe(true);
+		expect(res.body.processed).toBe(true);
+		expect(res.body.note).toMatchObject({
+			id: created.body.note.id,
+			content: "今天把闪念系统边界讨论清楚了",
+			status: "processed",
+		});
 		const today = new Date();
 		const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 		const journalPath = path.join(
@@ -220,7 +225,11 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			"今天把闪念系统边界讨论清楚了",
 		);
 		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toEqual([]);
+		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes[0]).toMatchObject({
+			id: created.body.note.id,
+			status: "processed",
+		});
 	});
 
 	it("appends multiple fleeting notes under a single journal heading", async () => {
@@ -253,7 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(content).toContain("第二条日记闪念");
 	});
 
-	it("converts URL fleeting notes through the Python converter, writes a Markdown clip file, and deletes the original fleeting note", async () => {
+	it("converts URL fleeting notes through the Python converter, writes a Markdown clip file, and marks the original fleeting note as processed", async () => {
 		const created = await request(app)
 			.post("/api/fleeting")
 			.send({ content: "https://example.com/article" });
@@ -270,7 +279,11 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(res.status).toBe(200);
 		expect(res.body.clip.title).toBe("好文");
 		expect(res.body.clip.markdownPath).toBe("剪藏/好文.md");
-		expect(res.body.deleted).toBe(true);
+		expect(res.body.processed).toBe(true);
+		expect(res.body.note).toMatchObject({
+			id: created.body.note.id,
+			status: "processed",
+		});
 		expect(createConversion).toHaveBeenCalledWith(expect.objectContaining({
 			task: "document.markdown",
 			input: { url: "https://example.com/article", mimeType: "text/html" },
@@ -347,7 +360,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		]);
 	});
 
-	it("creates a task and deletes the original fleeting note", async () => {
+	it("creates a task and marks the original fleeting note as processed", async () => {
 		const created = await request(app)
 			.post("/api/fleeting")
 			.send({ content: "明天整理任务系统" });
@@ -358,7 +371,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.send({ title: "整理任务系统", priority: "normal", acceptanceCriteria: "完成闪念处理功能" });
 
 		expect(res.status).toBe(200);
-		expect(res.body.deleted).toBe(true);
+		expect(res.body.processed).toBe(true);
 		expect(res.body.task).toBeTruthy();
 		expect(res.body.task.title).toBe("整理任务系统");
 		expect(res.body.task.status).toBe("pending");
@@ -374,10 +387,11 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		});
 
 		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toEqual([]);
+		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes[0]).toMatchObject({ id: noteId, status: "processed" });
 	});
 
-	it("creates a milestone and deletes the original fleeting note", async () => {
+	it("creates a milestone and marks the original fleeting note as processed", async () => {
 		const created = await request(app)
 			.post("/api/fleeting")
 			.send({ content: "建立Q2里程碑" });
@@ -388,7 +402,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.send({ title: "Q2 里程碑", goal: "完成核心功能", acceptanceCriteria: "所有模块通过验收" });
 
 		expect(res.status).toBe(200);
-		expect(res.body.deleted).toBe(true);
+		expect(res.body.processed).toBe(true);
 		expect(res.body.milestone).toBeTruthy();
 		expect(res.body.milestone.title).toBe("Q2 里程碑");
 		expect(res.body.milestone.status).toBe("pending");
@@ -404,7 +418,8 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		});
 
 		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toEqual([]);
+		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes[0]).toMatchObject({ id: noteId, status: "processed" });
 	});
 
 	it("migrates attachments to formal directory on attachment processing", async () => {
@@ -421,7 +436,7 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.post(`/api/fleeting/${noteId}/process/attachment`);
 
 		expect(res.status).toBe(200);
-		expect(res.body.deleted).toBe(true);
+		expect(res.body.processed).toBe(true);
 		expect(res.body.migratedAttachments).toHaveLength(1);
 		expect(res.body.migratedAttachments[0]).toContain("附件/doc.txt");
 
@@ -430,7 +445,8 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(content).toBe("attachment content");
 
 		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toEqual([]);
+		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes[0]).toMatchObject({ id: noteId, status: "processed" });
 	});
 
 	it("keeps the fleeting note when task creation fails due to missing required fields", async () => {

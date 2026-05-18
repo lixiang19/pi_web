@@ -1032,7 +1032,7 @@ export type FleetingRecommendationType = "journal" | "clip" | "task" | "delete";
 export interface FleetingNote {
 	id: string;
 	content: string;
-	status: "pending" | "processing";
+	status: "pending" | "processing" | "processed";
 	analysisStatus: "unanalyzed" | "analyzing" | "suggested" | "failed";
 	recommendationType: FleetingRecommendationType | null;
 	recommendationText: string | null;
@@ -1130,7 +1130,7 @@ export function deleteFleetingNote(noteId: string) {
 }
 
 export function processFleetingToJournal(noteId: string, content: string) {
-	return request<{ deleted: true; journalPath: string; migratedAttachments?: string[]; failedAttachments?: string[] }>(
+	return request<{ processed: true; note: FleetingNote; journalPath: string; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/journal`,
 		{
 			method: "POST",
@@ -1143,7 +1143,7 @@ export function processFleetingToClip(
 	noteId: string,
 	data: { title: string; url?: string; content: string; source?: string },
 ) {
-	return request<{ deleted: true; clip: ClipRecord; migratedAttachments?: string[]; failedAttachments?: string[] }>(
+	return request<{ processed: true; note: FleetingNote; clip: ClipRecord; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/clip`,
 		{
 			method: "POST",
@@ -1156,7 +1156,7 @@ export function processFleetingToTask(
 	noteId: string,
 	data: { title: string; priority: WorkspaceTaskPriority; acceptanceCriteria: string; dueDate?: number | null; projectId?: string | null },
 ) {
-	return request<{ deleted: true; task: WorkspaceTask; migratedAttachments?: string[]; failedAttachments?: string[] }>(
+	return request<{ processed: true; note: FleetingNote; task: WorkspaceTask; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/task`,
 		{
 			method: "POST",
@@ -1169,7 +1169,7 @@ export function processFleetingToMilestone(
 	noteId: string,
 	data: { title: string; goal: string; acceptanceCriteria: string; dueDate?: number | null; color?: string; projectId?: string | null },
 ) {
-	return request<{ deleted: true; milestone: WorkspaceMilestone; migratedAttachments?: string[]; failedAttachments?: string[] }>(
+	return request<{ processed: true; note: FleetingNote; milestone: WorkspaceMilestone; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/milestone`,
 		{
 			method: "POST",
@@ -1179,7 +1179,7 @@ export function processFleetingToMilestone(
 }
 
 export function processFleetingToAttachment(noteId: string) {
-	return request<{ deleted: true; migratedAttachments?: string[]; failedAttachments?: string[] }>(
+	return request<{ processed: true; note: FleetingNote; migratedAttachments?: string[]; failedAttachments?: string[] }>(
 		`/api/fleeting/${noteId}/process/attachment`,
 		{ method: "POST" },
 	);

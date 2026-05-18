@@ -217,7 +217,8 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.send({ content: "带附件的日记闪念" });
 
 		expect(res.status).toBe(200);
-		expect(res.body.deleted).toBe(true);
+		expect(res.body.processed).toBe(true);
+		expect(res.body.note).toMatchObject({ id: noteId, status: "processed" });
 		expect(res.body.migratedAttachments).toHaveLength(1);
 		expect(res.body.migratedAttachments[0]).toContain("附件/diary.txt");
 
@@ -246,7 +247,8 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.send({ title: "剪藏", content: "带附件的剪藏闪念" });
 
 		expect(res.status).toBe(200);
-		expect(res.body.deleted).toBe(true);
+		expect(res.body.processed).toBe(true);
+		expect(res.body.note).toMatchObject({ id: noteId, status: "processed" });
 		expect(res.body.migratedAttachments).toHaveLength(1);
 
 		// Verify file migrated
@@ -333,12 +335,14 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 			.send({ title: "整理任务系统", priority: "normal", acceptanceCriteria: "完成" });
 
 		expect(res.status).toBe(200);
-		expect(res.body.deleted).toBe(true);
+		expect(res.body.processed).toBe(true);
+		expect(res.body.note).toMatchObject({ id: noteId, status: "processed" });
 		expect(res.body.task.title).toBe("整理任务系统");
 		expect(res.body.migratedAttachments).toHaveLength(1);
 
 		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toEqual([]);
+		expect(list.body.notes).toHaveLength(1);
+		expect(list.body.notes[0]).toMatchObject({ id: noteId, status: "processed" });
 
 		const formalPath = path.join(workspaceDir, "附件", "task.txt");
 		const content = await fs.readFile(formalPath, "utf-8");

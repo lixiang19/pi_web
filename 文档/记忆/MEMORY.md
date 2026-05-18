@@ -154,7 +154,7 @@
 - [编辑器保存状态] WorkspaceMarkdownEditor 自管 saveStatus，通过 @update:save-status 事件上报到 WorkspacePage 的 saveStatusMap，TabBar 的 tabBarItems computed 读取 map 值反映圆点状态
 - [路径规范] 工作空间内部统一用绝对路径（workspaceDir 为前缀），只在调后端 API 时转为相对路径（strip workspaceDir 前缀）。CalendarView/DashboardView emit 的 open-file 路径必须也是绝对路径
 - [createNote 必须支持路径] 后端 createNote API 必须增强支持指定子目录路径，否则日记（日记/YYYY/MM/）、闪念（收件箱/）都无法正确创建
-- [闪念队列边界] 闪念 PRD 语义是 DB 临时队列，不是 `收件箱/*.md` 文件列表；处理成功即删除原闪念，日记/剪藏必须由目标系统确认成功后再清队列，任务未接入时只能提示且保留闪念
+- [闪念队列边界] 闪念 PRD 语义是 DB 队列，不是 `收件箱/*.md` 文件列表；处理成功后不删除原闪念，而是保留 `fleeting_notes` 并把 `status` 标记为 `processed`；只有用户手动删除时才移除记录。日记/剪藏/任务/里程碑/附件必须由目标系统确认成功后才能标记已处理。
 - [闪念刷新链路] 全局闪念入口保存后必须广播前端事件或走实时通道通知收件箱 store；否则 DB 已写入但当前页面 badge/list 不会更新。后台分析建议完成前 store 需要轮询或 SSE 刷新。
 - [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
 - [首页选择器异步默认值] 首页这类长驻标签页不要只在 setup 时拷贝异步 props；模型/Agent/thinking 默认值从 core/settings 异步到达后，需要在“不覆盖用户有效选择”的前提下同步本地选择状态
@@ -368,8 +368,8 @@
 - **Rust 侧提取纯函数并测**：`parse_browser_url_output`、`shell_escape`、`generate_sentinel` 提取为独立函数后，Rust 测试可覆盖核心逻辑，不依赖 AppleScript 实际执行。
 
 1) **任务系统真源**：当前真源是 `~/.pi/ridge.db` 的 `workspace_tasks` / `workspace_milestones`，不是 `<workspace>/.ridge/ridge.db` 的 `tasks`；旧 2026-05-01 "task #13 任务 SQLite 真源最小实现" 说法已废弃，功能编号 13 现在是闪念临时附件生命周期。
-2) **闪念正式处理**：`routes/fleeting.ts` 中 `process/journal` 和 `process/clip` 已实现（写入日记/剪藏并删除闪念）；`process/task` 仅返回 202 且保留闪念；`process/milestone` 与 `process/attachment` 未实现。
-3) **闪念临时附件**：`.ridge/fleeting-attachments` 目录模板已在 `workspace-chat.ts` 就位，但附件上传 API、DB 引用字段、清理/迁移逻辑均未闭环；会话附件 `session_attachments` 是另一套独立体系。
+2) **闪念正式处理**：`routes/fleeting.ts` 中 `process/journal`、`process/clip`、`process/task`、`process/milestone`、`process/attachment` 已实现；处理成功会创建正式对象、清理临时附件，并把原闪念标记为 `processed` 保留在列表中。
+3) **闪念临时附件**：`.ridge/fleeting-attachments` 是闪念临时附件目录；附件上传 API、`fleeting_attachments` DB 引用、删除清理和处理成功迁移到正式 `附件/` 均已闭环。会话附件 `session_attachments` 是另一套独立体系。
 4) **任务15 fleeting agent 分析建议**：已实现后台 AI 分析系统。审查发现 6 个阻断问题并全部修复。
    - **问题1（路由时序）**：`createFleetingRouter()` 在 `index.ts` 模块加载时执行，`getAnalysisRunner()` 返回 `undefined` 后被永久缓存为 `undefined`，导致所有 `POST /api/fleeting` 都不会触发分析。**修复**：移除 `const analysisRunner = getAnalysisRunner?.()` 提前解构，改为每次请求时实时调用 `getAnalysisRunner?.()?.run(id)`。
    - **问题2（worker ReferenceError）**：`createFleetingAnalysisWorker` 解构漏了 `modelSpec`，运行时调用 `runAnalysis({..., modelSpec})` 触发 `ReferenceError`。**修复**：恢复 `modelSpec` 解构。

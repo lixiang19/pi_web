@@ -119,7 +119,8 @@ describe("InboxView", () => {
 		mockGetFleetingAttachments.mockResolvedValue({ attachments: [] });
 		mockCreateFleetingNote.mockResolvedValue({ note });
 		mockProcessFleetingToTask.mockResolvedValue({
-			deleted: true,
+			processed: true,
+			note: { ...note, status: "processed", updatedAt: Date.now() },
 			task: {
 				id: "task-1",
 				workspacePath: "/workspace",
@@ -138,7 +139,8 @@ describe("InboxView", () => {
 			},
 		});
 		mockProcessFleetingToMilestone.mockResolvedValue({
-			deleted: true,
+			processed: true,
+			note: { ...note, status: "processed", updatedAt: Date.now() },
 			milestone: {
 				id: "ms-1",
 				workspacePath: "/workspace",
@@ -165,12 +167,26 @@ describe("InboxView", () => {
 
 		await flushPromises();
 		expect(wrapper.text()).toContain("明天整理任务系统");
-		expect(wrapper.text()).toContain("建议转为任务");
+		expect(wrapper.text()).toContain("按建议");
 		// 纯图标按钮通过 aria-label 存在性验证
 		expect(wrapper.find('button[aria-label="转为日记"]').exists()).toBe(true);
 		expect(wrapper.find('button[aria-label="转为任务"]').exists()).toBe(true);
 		expect(wrapper.find('button[aria-label="转为里程碑"]').exists()).toBe(true);
 		expect(wrapper.find('button[aria-label="保存剪藏"]').exists()).toBe(true);
+		expect(wrapper.find('button[aria-label="删除"]').exists()).toBe(true);
+	});
+
+	it("renders processed notes with handled state and without process actions", async () => {
+		mockGetFleetingNotes.mockResolvedValue({
+			notes: [{ ...note, status: "processed" as const }],
+		});
+		const wrapper = mount(InboxView, {
+			props: { workspaceDir: "/workspace" },
+		});
+
+		await flushPromises();
+		expect(wrapper.text()).toContain("已处理");
+		expect(wrapper.find('button[aria-label="转为任务"]').exists()).toBe(false);
 		expect(wrapper.find('button[aria-label="删除"]').exists()).toBe(true);
 	});
 

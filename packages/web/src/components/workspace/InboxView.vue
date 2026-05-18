@@ -14,6 +14,11 @@ import {
 	Mic,
 	Paperclip,
 	Wand2,
+	Lightbulb,
+	Link,
+	Send,
+	StopCircle,
+	X,
 } from "lucide-vue-next";
 import { toast } from "vue-sonner";
 
@@ -27,6 +32,13 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkspaceInbox, type InboxItem } from "@/composables/useInbox";
 import { useProjects } from "@/composables/useProjects";
@@ -40,6 +52,8 @@ const {
 	inboxFiles,
 	isLoading,
 	count,
+	totalCount,
+	processedCount,
 	analyzingCount,
 	deleteItem,
 	captureNote,
@@ -62,12 +76,71 @@ onMounted(() => {
 });
 
 const activeNote = ref<InboxItem | null>(null);
+const activeFilter = ref<"all" | "processed" | "unprocessed">("all");
+const expandedNotes = ref<Record<string, boolean>>({});
+
+const visibleNotes = computed(() => {
+	if (activeFilter.value === "processed") {
+		return inboxFiles.value.filter((note) => note.status === "processed");
+	}
+	if (activeFilter.value === "unprocessed") {
+		return inboxFiles.value.filter((note) => note.status !== "processed");
+	}
+	return inboxFiles.value;
+});
+
+const filterItems = computed(() => [
+	{ key: "all" as const, label: "全部", count: totalCount.value },
+	{ key: "unprocessed" as const, label: "未处理", count: count.value },
+	{ key: "processed" as const, label: "已处理", count: processedCount.value },
+]);
+
+const toggleExpanded = (noteId: string) => {
+	expandedNotes.value = {
+		...expandedNotes.value,
+		[noteId]: !expandedNotes.value[noteId],
+	};
+};
+
+const isProcessed = (note: InboxItem) => note.status === "processed";
+
+const hasUrl = (text: string) => /https?:\/\/\S+/.test(text);
+
+const previewContent = (text: string) => {
+	const stripped = text.replace(/https?:\/\/\S+/g, "").trim();
+	return stripped || text;
+};
+
+const statusLabel = (note: InboxItem) => {
+	if (note.status === "processed") return "已处理";
+	if (note.analysisStatus === "analyzing") return "分析中";
+	if (note.analysisStatus === "failed") return note.lastError ? `分析失败：${note.lastError}` : "分析失败";
+	if (note.analysisStatus === "unanalyzed") return "等待分析";
+	return note.recommendationText || "已分析";
+};
+
+const statusPillClass = (note: InboxItem) => {
+	if (note.status === "processed") return "bg-primary/10 text-primary";
+	if (note.analysisStatus === "analyzing") return "bg-amber-500/10 text-amber-600 dark:text-amber-400";
+	if (note.analysisStatus === "failed") return "bg-destructive/10 text-destructive";
+	if (note.analysisStatus === "suggested") return "bg-primary/10 text-primary";
+	return "bg-soft text-muted-foreground";
+};
+
+const statusDotClass = (note: InboxItem) => {
+	if (note.status === "processed") return "bg-primary";
+	if (note.analysisStatus === "analyzing") return "bg-amber-400 animate-pulse";
+	if (note.analysisStatus === "failed") return "bg-destructive";
+	if (note.analysisStatus === "suggested") return "bg-primary";
+	return "bg-muted-foreground/30";
+};
 
 /* ───────── 新建闪念 ───────── */
 
 const newNoteContent = ref("");
 const isSaving = ref(false);
 const selectedFiles = ref<File[]>([]);
+const captureFocused = ref(false);
 const isRecording = ref(false);
 const recordedBlob = ref<Blob | null>(null);
 const mediaRecorder = ref<MediaRecorder | null>(null);
@@ -146,6 +219,10 @@ const canSave = computed(() => {
 	return newNoteContent.value.trim().length > 0 || selectedFiles.value.length > 0 || recordedBlob.value !== null;
 });
 
+const captureExpanded = computed(
+	() => captureFocused.value || canSave.value || selectedFiles.value.length > 0 || recordedBlob.value !== null || isRecording.value,
+);
+
 const doCapture = async (type: DesktopCaptureType, text: string, attachments?: { name: string; mimeType: string; base64: string }[]) => {
 	if (!isAuthenticated.value) { toast.error("未登录，采集不可用"); return; }
 	if (!isOnline.value) { toast.error("服务器离线，采集不可用"); return; }
@@ -213,6 +290,7 @@ const handleCaptureKeydown = (e: KeyboardEvent) => {
 /* ───────── 列表卡片操作 ───────── */
 
 const openJournalDialog = (note: InboxItem) => {
+	if (isProcessed(note)) return;
 	activeNote.value = note;
 	journalContent.value = note.draft || note.content;
 	journalDialogOpen.value = true;
@@ -221,6 +299,7 @@ const openJournalDialog = (note: InboxItem) => {
 const firstUrl = (text: string) => text.match(/https?:\/\/\S+/)?.[0] ?? "";
 
 const openClipDialog = (note: InboxItem) => {
+	if (isProcessed(note)) return;
 	activeNote.value = note;
 	clipContent.value = note.draft || note.content;
 	clipUrl.value = firstUrl(note.content);
@@ -230,6 +309,7 @@ const openClipDialog = (note: InboxItem) => {
 };
 
 const openTaskDialog = (note: InboxItem) => {
+	if (isProcessed(note)) return;
 	activeNote.value = note;
 	taskTitle.value = note.content.split("\n")[0]?.slice(0, 80) || "未命名任务";
 	taskPriority.value = "normal";
@@ -239,6 +319,7 @@ const openTaskDialog = (note: InboxItem) => {
 };
 
 const openMilestoneDialog = (note: InboxItem) => {
+	if (isProcessed(note)) return;
 	activeNote.value = note;
 	milestoneTitle.value = note.content.split("\n")[0]?.slice(0, 80) || "未命名里程碑";
 	milestoneGoal.value = "";
@@ -248,12 +329,14 @@ const openMilestoneDialog = (note: InboxItem) => {
 };
 
 const handleAttachment = async (note: InboxItem) => {
+	if (isProcessed(note)) return;
 	const atts = getNoteAttachments(note.id);
 	if (atts.length === 0) { toast.error("该闪念没有附件"); return; }
 	await processToAttachment(note.id);
 };
 
 const handleSuggestion = (note: InboxItem) => {
+	if (isProcessed(note)) return;
 	if (note.recommendationType === "journal") openJournalDialog(note);
 	else if (note.recommendationType === "clip") openClipDialog(note);
 	else if (note.recommendationType === "task") openTaskDialog(note);
@@ -335,247 +418,286 @@ const confirmMilestone = async () => {
 </script>
 
 <template>
-	<div class="flex h-full flex-col bg-background">
-		<!-- 新建闪念卡片 -->
-		<div class="shrink-0 px-6 pt-5 pb-2">
-			<div
-			class="mx-auto max-w-2xl overflow-hidden rounded-2xl border border-white/15 bg-background/55 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.1)] ring-1 ring-black/[0.02] backdrop-blur-md"
+	<div class="relative flex h-full flex-col overflow-hidden bg-background text-foreground">
+		<header class="flex shrink-0 items-center justify-between border-b border-default px-7 py-4">
+			<div class="flex items-center gap-2.5">
+				<div class="flex size-8 items-center justify-center rounded-[10px] bg-primary/10 text-primary">
+					<Lightbulb class="size-[18px]" />
+				</div>
+				<div>
+					<h1 class="text-hero font-semibold leading-tight">闪念</h1>
+					<p class="text-caption text-muted-foreground">{{ count }} 条待处理</p>
+				</div>
+			</div>
+			<div class="flex items-center gap-2">
+				<span v-if="analyzingCount > 0" class="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-caption text-primary">
+					<span class="size-1.5 rounded-full bg-primary animate-pulse" />
+					{{ analyzingCount }} 分析中
+				</span>
+				<span v-if="!isAuthenticated" class="inline-flex items-center rounded-md bg-destructive/10 px-2 py-1 text-micro font-medium text-destructive">未登录</span>
+				<span v-else-if="!isOnline" class="inline-flex items-center rounded-md bg-destructive/10 px-2 py-1 text-micro font-medium text-destructive">离线</span>
+			</div>
+		</header>
+
+		<div class="flex shrink-0 gap-1 border-b border-default px-7 py-2.5">
+			<button
+				v-for="item in filterItems"
+				:key="item.key"
+				class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-caption font-medium transition-colors"
+				:class="activeFilter === item.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-soft hover:text-foreground'"
+				@click="activeFilter = item.key"
 			>
-			<!-- 内容区 —— 输入 + 附件 + 录音 + 工具 -->
-			<div class="px-4 pt-4 pb-3">
-				<!-- 文字输入（始终可见，可空） -->
-				<div class="min-h-[100px]">
+				<span
+					v-if="item.key !== 'all'"
+					class="size-1.5 rounded-full"
+					:class="activeFilter === item.key ? 'bg-primary-foreground' : item.key === 'processed' ? 'bg-primary' : 'bg-muted-foreground/30'"
+				/>
+				{{ item.label }}
+				<span class="tabular-nums opacity-70">{{ item.count }}</span>
+			</button>
+		</div>
+
+		<div class="flex-1 overflow-y-auto px-7 pt-3 pb-36">
+			<div class="mx-auto max-w-2xl">
+				<div v-if="isLoading" class="flex flex-col items-center justify-center gap-3 py-24">
+					<div class="size-7 rounded-full border-2 border-muted/50 border-t-primary animate-spin" />
+					<p class="text-body-sm text-muted-foreground/50">加载中…</p>
+				</div>
+
+				<div v-else-if="visibleNotes.length === 0" class="flex flex-col items-center justify-center py-24">
+					<div class="mb-4 flex size-14 items-center justify-center rounded-2xl bg-soft text-muted-foreground/40">
+						<Lightbulb class="size-6" />
+					</div>
+					<p class="text-body-sm font-medium text-muted-foreground/70">没有闪念</p>
+				</div>
+
+				<div v-else>
+					<div
+						v-for="(note, index) in visibleNotes"
+						:key="note.id"
+						class="group flex gap-3.5"
+					>
+						<div class="flex w-5 shrink-0 flex-col items-center">
+							<button
+								class="mt-4 rounded-full bg-background transition-all duration-200"
+								:class="expandedNotes[note.id] ? 'size-3.5 border-[3px] border-primary' : 'size-3 border-[2.5px] hover:border-primary/80'"
+								:style="{ borderColor: expandedNotes[note.id] ? undefined : isProcessed(note) ? 'var(--primary)' : 'color-mix(in oklab, var(--muted-foreground), transparent 65%)' }"
+								:aria-label="expandedNotes[note.id] ? '收起闪念' : '展开闪念'"
+								@click="toggleExpanded(note.id)"
+							/>
+							<div
+								v-if="index < visibleNotes.length - 1"
+								class="mt-1.5 w-px flex-1 transition-colors"
+								:class="expandedNotes[note.id] ? 'bg-primary/30' : 'bg-border/60'"
+							/>
+						</div>
+
+						<article class="flex-1 pb-2">
+							<div
+								class="rounded-xl border bg-card shadow-xs transition-all duration-200 hover:shadow-sm"
+								:class="[
+									isProcessed(note) ? 'border-primary/20' : note.analysisStatus === 'suggested' ? 'border-primary/20 hover:border-primary/40' : 'border-default hover:border-strong',
+									expandedNotes[note.id] ? 'px-4 py-3.5' : 'px-3.5 py-2.5',
+								]"
+							>
+								<div
+									v-if="!expandedNotes[note.id]"
+									class="cursor-pointer"
+									@click="toggleExpanded(note.id)"
+								>
+									<div class="flex min-h-6 items-center gap-1.5">
+										<component
+											:is="getAttachmentIcon(getNoteAttachments(note.id)[0]?.mimeType || '')"
+											v-if="getNoteAttachments(note.id).length > 0"
+											class="size-3.5 shrink-0 text-muted-foreground/50"
+										/>
+										<Link v-if="hasUrl(note.content)" class="size-3.5 shrink-0 text-primary/60" />
+										<span class="min-w-0 flex-1 truncate text-body text-foreground/85">
+											{{ previewContent(note.content) }}
+										</span>
+										<span
+											v-if="isProcessed(note)"
+											class="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-micro font-medium text-primary"
+										>
+											<span class="size-1 rounded-full bg-primary" />
+											已处理
+										</span>
+										<span class="shrink-0 text-micro text-muted-foreground/50 tabular-nums">{{ formatTime(note.createdAt) }}</span>
+									</div>
+
+									<div
+										class="mt-1 hidden items-center gap-1 border-t border-default/60 pt-1.5 group-hover:flex"
+										@click.stop
+									>
+										<Button v-if="!isProcessed(note) && note.analysisStatus === 'suggested'" size="sm" class="h-6 gap-1 px-2 text-micro" @click="handleSuggestion(note)">
+											<Wand2 class="size-3" />
+											按建议
+										</Button>
+										<Button v-if="!isProcessed(note)" variant="outline" size="sm" class="h-6 gap-1 px-2 text-micro" aria-label="转为日记" @click="openJournalDialog(note)">
+											<BookOpen class="size-3" />
+											日记
+										</Button>
+										<Button v-if="!isProcessed(note)" variant="outline" size="sm" class="h-6 gap-1 px-2 text-micro" aria-label="转为任务" @click="openTaskDialog(note)">
+											<CheckSquare class="size-3" />
+											任务
+										</Button>
+										<Button v-if="!isProcessed(note)" variant="outline" size="sm" class="h-6 gap-1 px-2 text-micro" aria-label="转为里程碑" @click="openMilestoneDialog(note)">
+											<Flag class="size-3" />
+											里程碑
+										</Button>
+										<Button v-if="!isProcessed(note)" variant="outline" size="sm" class="h-6 gap-1 px-2 text-micro" aria-label="保存剪藏" @click="openClipDialog(note)">
+											<Bookmark class="size-3" />
+											剪藏
+										</Button>
+										<Button v-if="!isProcessed(note) && (note.analysisStatus === 'failed' || note.lastError)" variant="ghost" size="icon" class="size-6 text-muted-foreground" aria-label="重试分析" @click="retryAnalysis(note.id)">
+											<RefreshCw class="size-3" />
+										</Button>
+										<div class="flex-1" />
+										<Button variant="ghost" size="icon" class="size-6 text-muted-foreground/60 hover:text-destructive" aria-label="删除" @click="deleteItem(note.id)">
+											<Trash2 class="size-3" />
+										</Button>
+									</div>
+								</div>
+
+								<div v-else>
+									<div v-if="hasUrl(note.content)" class="mb-2 inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-caption font-medium text-primary">
+										<Link class="size-3.5" />
+										链接
+									</div>
+									<p class="whitespace-pre-wrap break-words text-body leading-relaxed text-foreground">{{ note.content }}</p>
+
+									<div v-if="getNoteAttachments(note.id).length > 0" class="mt-3 flex flex-wrap gap-1.5">
+										<span
+											v-for="att in getNoteAttachments(note.id)"
+											:key="att.id"
+											class="inline-flex items-center gap-1.5 rounded-lg border border-default bg-soft px-2.5 py-1 text-caption text-muted-foreground"
+										>
+											<component :is="getAttachmentIcon(att.mimeType)" class="size-3.5 shrink-0" />
+											<span class="max-w-24 truncate">{{ att.originalName }}</span>
+											<span class="text-micro tabular-nums text-muted-foreground/50">{{ formatFileSize(att.size) }}</span>
+										</span>
+									</div>
+
+									<div class="mt-3 border-t border-default pt-2.5">
+										<div class="mb-2.5 flex items-center gap-2">
+											<span class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-micro font-medium" :class="statusPillClass(note)">
+												<span class="size-1.5 rounded-full" :class="statusDotClass(note)" />
+												{{ statusLabel(note) }}
+											</span>
+											<span class="text-micro text-muted-foreground/55 tabular-nums">{{ formatTime(note.createdAt) }}</span>
+											<Button v-if="!isProcessed(note) && (note.analysisStatus === 'failed' || note.lastError)" variant="ghost" size="icon" class="size-6 text-muted-foreground" aria-label="重试分析" @click="retryAnalysis(note.id)">
+												<RefreshCw class="size-3" />
+											</Button>
+										</div>
+
+										<div class="flex flex-wrap items-center gap-1">
+											<Button v-if="!isProcessed(note) && note.analysisStatus === 'suggested'" size="sm" class="h-7 gap-1.5 px-3 text-micro" @click="handleSuggestion(note)">
+												<Wand2 class="size-3" />
+												按建议处理
+											</Button>
+											<template v-if="!isProcessed(note)">
+												<Button variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="转为日记" @click="openJournalDialog(note)">
+													<BookOpen class="size-3.5" />
+													日记
+												</Button>
+												<Button variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="转为任务" @click="openTaskDialog(note)">
+													<CheckSquare class="size-3.5" />
+													任务
+												</Button>
+												<Button variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="转为里程碑" @click="openMilestoneDialog(note)">
+													<Flag class="size-3.5" />
+													里程碑
+												</Button>
+												<Button variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="保存剪藏" @click="openClipDialog(note)">
+													<Bookmark class="size-3.5" />
+													剪藏
+												</Button>
+												<Button v-if="getNoteAttachments(note.id).length > 0" variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="查看附件" @click="handleAttachment(note)">
+													<Archive class="size-3.5" />
+													附件
+												</Button>
+											</template>
+											<div class="flex-1" />
+											<Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-micro text-muted-foreground/70 hover:text-destructive" aria-label="删除" @click="deleteItem(note.id)">
+												<Trash2 class="size-3.5" />
+												删除
+											</Button>
+										</div>
+									</div>
+								</div>
+							</div>
+						</article>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-b from-background/0 via-background to-background px-7 pt-5 pb-6">
+			<div
+				class="pointer-events-auto mx-auto max-w-2xl overflow-hidden rounded-[14px] border bg-card shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all"
+				:class="captureExpanded ? 'border-primary/40' : 'border-default'"
+			>
+				<div :class="captureExpanded ? 'px-4 pt-3.5' : 'px-3.5 py-2.5'">
 					<Textarea
 						v-model="newNoteContent"
 						:disabled="isSaving"
-						class="h-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none outline-none ring-0 placeholder:text-muted-foreground/30 focus-visible:ring-0"
-						placeholder="写下此刻的想法，稍后处理…"
+						class="max-h-32 resize-none border-0 bg-transparent p-0 text-body leading-relaxed shadow-none outline-none ring-0 placeholder:text-muted-foreground/40 focus-visible:ring-0"
+						:class="captureExpanded ? 'min-h-[60px]' : 'min-h-6'"
+						placeholder="捕捉此刻的想法…"
+						@focus="captureFocused = true"
+						@blur="captureFocused = false"
 						@keydown="handleCaptureKeydown"
 					/>
 				</div>
 
-				<!-- 附件预览条 -->
-				<div v-if="selectedFiles.length > 0" class="mt-2 flex flex-wrap gap-1.5">
+				<div v-if="captureExpanded && selectedFiles.length > 0" class="flex flex-wrap gap-1.5 px-4 pt-2">
 					<span
 						v-for="(file, i) in selectedFiles"
 						:key="i"
-						class="group/att inline-flex items-center gap-1 rounded-lg border border-subtle bg-muted/[0.3] px-2.5 py-1 text-xs text-muted-foreground"
+						class="inline-flex items-center gap-1.5 rounded-lg border border-default bg-soft px-2.5 py-1 text-caption text-muted-foreground"
 					>
 						<Paperclip class="size-3.5 shrink-0" />
-						<span class="max-w-[140px] truncate">{{ file.name }}</span>
-						<button
-							class="ml-0.5 rounded-sm p-0.5 text-muted-foreground/40 hover:text-destructive"
-							@click="removeFile(i)"
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+						<span class="max-w-36 truncate">{{ file.name }}</span>
+						<button class="rounded-sm p-0.5 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive" @click="removeFile(i)">
+							<X class="size-3" />
 						</button>
 					</span>
 				</div>
 
-				<!-- 录音状态条 -->
-				<div v-if="isRecording || recordedBlob" class="mt-2 flex items-center gap-2">
-					<!-- 录音中 -->
-					<div v-if="isRecording" class="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-600 dark:border-rose-800/30 dark:bg-rose-500/10">
+				<div v-if="captureExpanded && (isRecording || recordedBlob)" class="px-4 pt-2">
+					<div v-if="isRecording" class="inline-flex items-center gap-2 rounded-full bg-destructive/10 px-3 py-1.5 text-caption text-destructive">
 						<span class="relative flex size-2">
-							<span class="absolute inline-flex size-full animate-ping rounded-full bg-rose-400 opacity-75" />
-							<span class="relative inline-flex size-2 rounded-full bg-rose-500" />
+							<span class="absolute inline-flex size-full animate-ping rounded-full bg-destructive opacity-60" />
+							<span class="relative inline-flex size-2 rounded-full bg-destructive" />
 						</span>
 						<span>正在录音…</span>
-						<button class="rounded-full p-0.5 hover:bg-rose-100 dark:hover:bg-rose-500/20" @click="stopRecording">
-							<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" class="text-rose-500"><rect width="16" height="16" x="4" y="4" rx="2"/></svg>
+						<button class="rounded-full p-0.5 text-destructive/70 transition-colors hover:bg-destructive/10 hover:text-destructive" @click="stopRecording">
+							<StopCircle class="size-3.5" />
 						</button>
 					</div>
-					<!-- 录音完成 -->
-					<div v-else-if="recordedBlob" class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-600 dark:border-emerald-800/30 dark:bg-emerald-500/10">
-						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" class="text-emerald-500"><path d="M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm5.5 11.5L18 9l-1.414-1.414L11.5 12.672 8.914 10.086 7.5 11.5l3.5 3.5 1.5-1.5z"/></svg>
+					<div v-else-if="recordedBlob" class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-caption text-primary">
+						<span class="size-1.5 rounded-full bg-primary" />
 						<span>录音已就绪</span>
-						<button class="rounded-full p-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-500/20" @click="clearRecording">
-							<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+						<button class="rounded-full p-0.5 text-primary/70 transition-colors hover:bg-primary/10 hover:text-primary" @click="clearRecording">
+							<X class="size-3.5" />
 						</button>
 					</div>
 				</div>
 
-				<!-- 底部工具栏 -->
-				<div class="mt-3 flex items-center justify-between gap-3">
-					<div class="flex items-center gap-3">
-						<span v-if="count > 0" class="text-xs text-muted-foreground/70">{{ count }} 条</span>
-						<span v-if="analyzingCount > 0" class="inline-flex items-center gap-1 text-xs text-primary">
-							<span class="size-1.5 rounded-full bg-primary animate-pulse" />
-							{{ analyzingCount }} 分析中
-						</span>
-						<span v-if="!isAuthenticated" class="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">未登录</span>
-						<span v-else-if="!isOnline" class="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">离线</span>
-					</div>
-
-					<div class="flex items-center gap-1.5">
+				<div class="flex items-center justify-between px-3.5 transition-all" :class="captureExpanded ? 'py-3' : 'py-1.5'">
+					<div class="flex items-center gap-1">
 						<input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileSelect" />
-						<!-- 附件按钮 -->
-						<button
-							class="flex size-7 items-center justify-center rounded-md text-xs text-muted-foreground/60 transition-colors hover:text-foreground hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
-							aria-label="上传文件"
-							@click="triggerFileInput"
-						>
+						<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:bg-soft hover:text-foreground" aria-label="上传文件" @click="triggerFileInput">
 							<Paperclip class="size-3.5" />
-						</button>
-						<!-- 录音按钮 -->
-						<button
-							class="flex size-7 items-center justify-center rounded-md text-xs text-muted-foreground/60 transition-colors hover:text-foreground hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
-							:class="{ 'text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10': isRecording }"
-							aria-label="录音"
-							@click="startRecording"
-						>
+						</Button>
+						<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:bg-soft hover:text-foreground" :class="{ 'text-destructive hover:text-destructive hover:bg-destructive/10': isRecording }" aria-label="录音" @click="isRecording ? stopRecording() : startRecording()">
 							<Mic class="size-3.5" />
-						</button>
-
-						<Button
-							size="sm"
-							class="h-8 gap-1.5 px-4 text-xs font-medium shadow-sm transition-shadow hover:shadow-md"
-							:disabled="!canSave"
-							@click="handleSave"
-						>
-							<LoaderCircle v-if="isSaving" class="size-3.5 animate-spin" />
-							{{ isSaving ? "保存中" : "保存" }}
 						</Button>
 					</div>
-				</div>
-			</div>
-			</div>
-		</div>
-
-		<!-- 内容区 -->
-		<div class="flex-1 overflow-y-auto px-6 pb-8">
-			<div class="mx-auto max-w-2xl">
-				<!-- 加载状态 -->
-				<div v-if="isLoading" class="flex flex-col items-center justify-center gap-3 py-24">
-					<div class="relative size-8">
-						<div class="absolute inset-0 rounded-full border-2 border-muted" />
-						<div class="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-					</div>
-					<p class="text-sm text-muted-foreground/60">加载中…</p>
-				</div>
-
-				<!-- 空状态 -->
-				<div v-else-if="count === 0" class="flex flex-col items-center justify-center py-28">
-					<div class="relative mb-5 flex size-16 items-center justify-center">
-						<div class="absolute inset-0 rounded-2xl bg-primary/[0.04] ring-1 ring-primary/[0.06]" />
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="28"
-							height="28"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.5"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							class="relative text-muted-foreground/40"
-						>
-							<path d="M12 6v6l4 2" />
-							<circle cx="12" cy="12" r="10" />
-						</svg>
-					</div>
-					<p class="text-sm font-medium text-muted-foreground/60">没有待处理的闪念</p>
-					<p class="mt-1 text-xs text-muted-foreground/35">先捕捉灵感，AI 会帮你分类处理</p>
-				</div>
-
-				<!-- 列表 -->
-				<div v-else class="space-y-3">
-					<div
-						v-for="note in inboxFiles"
-						:key="note.id"
-						class="group relative overflow-hidden rounded-xl border border-default bg-card shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] ring-1 ring-black/[0.02] transition-all duration-200 hover:border-strong hover:shadow-[0_2px_8px_0_rgba(0,0,0,0.05)]"
-					>
-						<div class="p-5">
-							<div class="flex items-start justify-between gap-4">
-								<p class="flex-1 whitespace-pre-wrap text-sm leading-relaxed text-foreground">{{ note.content }}</p>
-								<div class="flex shrink-0 items-center gap-2 pt-0.5">
-									<span class="text-caption text-muted-foreground/50 tabular-nums">{{ formatTime(note.createdAt) }}</span>
-								</div>
-							</div>
-
-							<!-- 附件 -->
-							<div v-if="getNoteAttachments(note.id).length > 0" class="mt-3 flex flex-wrap gap-1.5">
-								<div
-									v-for="att in getNoteAttachments(note.id)"
-									:key="att.id"
-									class="inline-flex items-center gap-1.5 rounded-lg border border-subtle bg-muted/[0.3] px-2.5 py-1 text-xs text-muted-foreground"
-								>
-									<component :is="getAttachmentIcon(att.mimeType)" class="size-3.5 shrink-0" />
-									<span class="max-w-[120px] truncate">{{ att.originalName }}</span>
-									<span class="tabular-nums text-muted-foreground/50">{{ formatFileSize(att.size) }}</span>
-								</div>
-							</div>
-
-							<!-- 建议状态 -->
-							<div class="mt-3 flex items-center gap-2">
-								<span
-									class="inline-flex items-center gap-1.5 text-caption"
-									:class="{
-										'text-amber-600': note.analysisStatus === 'analyzing',
-										'text-rose-600': note.analysisStatus === 'failed',
-										'text-muted-foreground/50': note.analysisStatus === 'unanalyzed',
-										'text-primary/80': note.analysisStatus === 'suggested',
-									}"
-								>
-									<span
-										v-if="note.analysisStatus === 'analyzing'"
-										class="size-1.5 rounded-full bg-amber-400 animate-pulse"
-									/>
-									<span
-										v-if="note.analysisStatus === 'failed'"
-										class="size-1.5 rounded-full bg-rose-400"
-									/>
-									<span
-										v-if="note.analysisStatus === 'suggested'"
-										class="size-1.5 rounded-full bg-primary/60"
-									/>
-									{{ note.analysisStatus === 'analyzing' ? '建议生成中' : note.analysisStatus === 'failed' ? `分析失败${note.lastError ? `：${note.lastError}` : ''}` : note.analysisStatus === 'unanalyzed' ? '等待分析' : note.recommendationText || '已有建议' }}
-								</span>
-								<Button
-									v-if="note.analysisStatus === 'failed' || note.lastError"
-									variant="ghost"
-									size="sm"
-									class="h-5 gap-1 px-1.5 text-micro text-muted-foreground hover:text-foreground"
-									@click="retryAnalysis(note.id)"
-								>
-									<RefreshCw class="size-3" />
-									重试
-								</Button>
-							</div>
-
-							<!-- 操作按钮 -->
-							<div class="mt-3.5 flex items-center gap-1">
-								<Button
-									v-if="note.analysisStatus === 'suggested'"
-									size="sm"
-									class="h-7 gap-1.5 text-xs font-medium"
-									@click="handleSuggestion(note)"
-								>
-									<Wand2 class="size-3" />
-									按建议处理
-								</Button>
-								<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:text-foreground" aria-label="转为日记" @click="openJournalDialog(note)">
-									<BookOpen class="size-3.5" />
-								</Button>
-								<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:text-foreground" aria-label="转为任务" @click="openTaskDialog(note)">
-									<CheckSquare class="size-3.5" />
-								</Button>
-								<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:text-foreground" aria-label="转为里程碑" @click="openMilestoneDialog(note)">
-									<Flag class="size-3.5" />
-								</Button>
-								<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:text-foreground" aria-label="保存剪藏" @click="openClipDialog(note)">
-									<Bookmark class="size-3.5" />
-								</Button>
-								<Button v-if="getNoteAttachments(note.id).length > 0" variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:text-foreground" aria-label="查看附件" @click="handleAttachment(note)">
-									<Archive class="size-3.5" />
-								</Button>
-								<div class="flex-1" />
-								<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/5" aria-label="删除" @click="deleteItem(note.id)">
-									<Trash2 class="size-3.5" />
-								</Button>
-							</div>
-						</div>
-					</div>
+					<Button size="icon" class="size-8 rounded-[10px]" :disabled="!canSave" aria-label="保存闪念" @click="handleSave">
+						<LoaderCircle v-if="isSaving" class="size-4 animate-spin" />
+						<Send v-else class="size-4" />
+					</Button>
 				</div>
 			</div>
 		</div>
@@ -586,7 +708,7 @@ const confirmMilestone = async () => {
 		<DialogContent>
 			<DialogHeader>
 				<DialogTitle>写入今日日记</DialogTitle>
-				<DialogDescription>闪念会追加到今天的日记，成功后从收件箱删除。</DialogDescription>
+				<DialogDescription>闪念会追加到今天的日记，成功后标记为已处理。</DialogDescription>
 			</DialogHeader>
 			<Textarea v-model="journalContent" class="min-h-32" />
 			<DialogFooter>
@@ -601,7 +723,7 @@ const confirmMilestone = async () => {
 		<DialogContent>
 			<DialogHeader>
 				<DialogTitle>保存为剪藏</DialogTitle>
-				<DialogDescription>剪藏会保存到 DB，成功后从收件箱删除。</DialogDescription>
+				<DialogDescription>剪藏会保存到 DB，成功后标记为已处理。</DialogDescription>
 			</DialogHeader>
 			<div class="space-y-3">
 				<Input v-model="clipTitle" placeholder="标题" />
@@ -621,7 +743,7 @@ const confirmMilestone = async () => {
 		<DialogContent>
 			<DialogHeader>
 				<DialogTitle>创建任务</DialogTitle>
-				<DialogDescription>从闪念创建任务，成功后从收件箱删除。</DialogDescription>
+				<DialogDescription>从闪念创建任务，成功后标记为已处理。</DialogDescription>
 			</DialogHeader>
 			<div class="space-y-3">
 				<Input v-model="taskTitle" placeholder="任务标题" />
@@ -660,7 +782,7 @@ const confirmMilestone = async () => {
 		<DialogContent>
 			<DialogHeader>
 				<DialogTitle>创建里程碑</DialogTitle>
-				<DialogDescription>从闪念创建里程碑，成功后从收件箱删除。</DialogDescription>
+				<DialogDescription>从闪念创建里程碑，成功后标记为已处理。</DialogDescription>
 			</DialogHeader>
 			<div class="space-y-3">
 				<Input v-model="milestoneTitle" placeholder="里程碑标题" />
