@@ -49,6 +49,7 @@ import type { FixedEntry } from "@/components/workspace/WorkspaceSidebar.vue";
 import { useTerminalContextOptions } from "@/composables/useTerminalContextOptions";
 import { useTerminalPool } from "@/composables/useTerminalPool";
 import { useDashboard } from "@/composables/useDashboard";
+import { useAIDashboard } from "@/composables/useAIDashboard";
 import { useRecentActivity } from "@/composables/useRecentActivity";
 import { useNotifications } from "@/composables/useNotifications";
 import { useSettingsStore } from "@/stores/settings";
@@ -61,7 +62,7 @@ import {
 import type { SessionProjectView } from "@/lib/session-sidebar";
 import { getRecentFiles, type RecentFileItem, uploadSessionAttachments, deleteSession, endSession } from "@/lib/api";
 import { createSession as createSessionApi } from "@/lib/api";
-import type { FileTreeEntry, ThinkingLevel } from "@/lib/types";
+import type { FileTreeEntry, ThinkingLevel, TodayRecommendation } from "@/lib/types";
 import { toast } from "vue-sonner";
 import FilesView from "@/components/workspace/FilesView.vue";
 import { useWorkspaceFiles } from "@/composables/useWorkspaceFiles";
@@ -345,13 +346,23 @@ const notificationCount = notificationsStore.unhandledCount;
 const dashboard = useDashboard(() => workspaceDir.value);
 
 // 最近活动
-const { items: recentActivity } = useRecentActivity({
+useRecentActivity({
 	recentFiles: recentFiles,
 	todayTasks: tasksStore.todayTasks,
 	recentMoments: inboxStore.recentItems,
 	sessions: core.sessions,
 	todayJournalPath: dashboard.todayJournalPath,
 	hasTodayJournal: dashboard.hasTodayJournal,
+});
+
+// AI 仪表盘（昨日回顾 + 今日推荐）
+const { yesterdayReview, todayRecommendations } = useAIDashboard({
+	recentFiles: recentFiles,
+	todayTasks: tasksStore.todayTasks,
+	recentMoments: inboxStore.recentItems,
+	sessions: core.sessions,
+	hasTodayJournal: dashboard.hasTodayJournal,
+	todayJournalPath: dashboard.todayJournalPath,
 });
 
 // .md 文件编辑器保存状态
@@ -636,6 +647,25 @@ function handleOpenTasks() {
 	handleOpenSingletonFeature("tasks");
 }
 
+function handleRecommendationClick(rec: TodayRecommendation) {
+	switch (rec.action) {
+		case "continue-session":
+			if (rec.actionTarget) handleOpenSession(rec.actionTarget);
+			break;
+		case "open-file":
+			if (rec.actionTarget) handleSelectFile(createFileTreeEntryFromPath(rec.actionTarget));
+			break;
+		case "open-inbox":
+			handleOpenSingletonFeature("moments");
+			break;
+		case "open-tasks":
+			handleOpenTasks();
+			break;
+		case "open-sessions":
+			break;
+	}
+}
+
 // ===== 同步文件预览状态到分屏标签页 =====
 
 // 当 preview.tabs 变化时（如文件加载完成），同步 status 到分屏标签
@@ -792,19 +822,16 @@ watch(saveStatusMap, syncPreviewStatusToSplitPanes, { deep: true });
             <HomePage
               v-if="tab.kind === 'home'"
               :workspace-dir="workspaceDir"
-              :recent-files="recentFiles"
-              :recent-activity="recentActivity"
-              :is-recent-loading="isRecentLoading"
               :models="core.models?.value ?? []"
               :agents="core.agents?.value ?? []"
               :default-model="settingsStore.defaultModel || core.defaultModel?.value || ''"
               :default-agent="settingsStore.defaultAgent"
               :default-thinking-level="settingsStore.defaultThinkingLevel"
               :is-sending="homeSubmittingTabIds.has(tab.id)"
+              :yesterday-review="yesterdayReview"
+              :today-recommendations="todayRecommendations"
               @submit="handleHomeSubmit(tab.id, $event)"
-              @open-file="handleSelectFile(createFileTreeEntryFromPath($event))"
-              @open-session="handleOpenSession($event)"
-              @open-tasks="handleOpenTasks"
+              @recommendation-click="handleRecommendationClick"
             />
 			</ErrorBoundary>
           </div>

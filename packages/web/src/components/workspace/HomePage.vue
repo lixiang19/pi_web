@@ -1,33 +1,32 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import {
+	ArrowRight,
+	Bot,
 	CheckSquare,
 	FileText,
 	Lightbulb,
 	MessageSquare,
+	Paperclip,
 	SendHorizontal,
 	Sparkles,
-	Calendar,
-	Paperclip,
+	TrendingUp,
 	X,
-	ArrowUpRight,
-	Bot,
 	LoaderCircle,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 } from "@/components/ui/select";
-import { fileIconByExtension } from "@/composables/useFileIcons";
-import type { RecentActivityItem } from "@/composables/useRecentActivity";
-import type { RecentFileItem } from "@/lib/api";
-import type { AgentSummary, ThinkingLevel } from "@/lib/types";
+import type { AgentSummary, ThinkingLevel, TodayRecommendation, YesterdayReview } from "@/lib/types";
+import type { AIDashboardStatIcon } from "@/lib/types";
 import { thinkingOptions } from "@/composables/useWorkbenchSessionState";
 
 export type HomeSubmitPayload = {
@@ -40,23 +39,22 @@ export type HomeSubmitPayload = {
 
 const props = defineProps<{
 	workspaceDir: string;
-	recentFiles: RecentFileItem[];
-	recentActivity: RecentActivityItem[];
-	isRecentLoading: boolean;
 	models: Array<{ label: string; value: string }>;
 	agents: AgentSummary[];
 	defaultModel: string;
 	defaultAgent: string;
 	defaultThinkingLevel: ThinkingLevel;
 	isSending?: boolean;
+	yesterdayReview: YesterdayReview;
+	todayRecommendations: TodayRecommendation[];
 }>();
 
 const emit = defineEmits<{
 	(e: "submit", payload: HomeSubmitPayload): void;
-	(e: "open-file", path: string): void;
-	(e: "open-session", sessionId: string): void;
-	(e: "open-tasks"): void;
+	(e: "recommendation-click", rec: TodayRecommendation): void;
 }>();
+
+// ===== AI 输入 =====
 
 const draftText = ref("");
 const isFocused = ref(false);
@@ -141,43 +139,7 @@ function removeAttachment(index: number) {
 	pendingAttachments.value.splice(index, 1);
 }
 
-// ===== 图标映射 =====
-const kindIconMap: Record<string, typeof FileText> = {
-	file: FileText,
-	task: CheckSquare,
-	moment: Lightbulb,
-	journal: Calendar,
-	session: MessageSquare,
-};
-
-const kindLabelMap: Record<string, string> = {
-	file: "文件",
-	task: "待办",
-	moment: "闪念",
-	journal: "日记",
-	session: "会话",
-};
-
-function handleActivityClick(item: RecentActivityItem) {
-	if (item.kind === "file" || item.kind === "journal" || item.kind === "moment") {
-		if (item.filePath) emit("open-file", item.filePath);
-	} else if (item.kind === "session") {
-		if (item.sessionId) emit("open-session", item.sessionId);
-	} else if (item.kind === "task") {
-		emit("open-tasks");
-	}
-}
-
-const visibleActivity = computed(() => props.recentActivity.slice(0, 10));
-const visibleRecentFiles = computed(() => props.recentFiles.slice(0, 5));
-
-const formatDate = (timestamp: number) =>
-	new Intl.DateTimeFormat("zh-CN", {
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	}).format(timestamp);
+// ===== 问候与工具 =====
 
 const greeting = computed(() => {
 	const hour = new Date().getHours();
@@ -193,6 +155,26 @@ const agentOptions = computed(() => {
 		label: agent.displayName || agent.name,
 	}));
 });
+
+// ===== 仪表盘图标映射 =====
+
+const statIconMap: Record<AIDashboardStatIcon, typeof FileText> = {
+	session: MessageSquare,
+	file: FileText,
+	task: CheckSquare,
+	moment: Lightbulb,
+};
+
+const recIconMap: Record<AIDashboardStatIcon, typeof FileText> = {
+	session: MessageSquare,
+	file: FileText,
+	task: CheckSquare,
+	moment: Lightbulb,
+};
+
+function handleRecommendationClick(rec: TodayRecommendation) {
+	emit("recommendation-click", rec);
+}
 </script>
 
 <template>
@@ -202,19 +184,15 @@ const agentOptions = computed(() => {
 
         <!-- ===== AI Hero 区域：问候语 + 输入框 ===== -->
         <section data-testid="home-ai-hero" class="flex min-h-[280px] w-full flex-col items-center justify-center gap-6 pt-10 pb-4">
-          <!-- 问候语 -->
           <div class="flex flex-col items-center gap-1.5 text-center">
             <h1 class="text-2xl font-semibold tracking-tight text-foreground">{{ greeting }}</h1>
             <p class="text-sm text-muted-foreground/70">今天想做什么？</p>
           </div>
 
-          <!-- AI 输入区域：固定宽度 -->
           <div data-testid="home-command-center" class="w-full">
             <form @submit.prevent="handleSubmit">
-              <!-- 输入卡片主体 -->
               <div class="relative rounded-xl bg-card shadow-[0_1px_4px_rgba(61,50,41,0.06),0_0_0_1px_rgba(45,52,54,0.05)] transition-shadow duration-200 hover:shadow-[0_2px_8px_rgba(61,50,41,0.08),0_0_0_1px_rgba(45,52,54,0.06)]">
                 <div class="relative overflow-hidden rounded-xl">
-                  <!-- 附件 chips -->
                   <div v-if="pendingAttachments.length > 0" class="flex flex-wrap gap-1.5 px-4 pt-3">
                     <span
                       v-for="(file, index) in pendingAttachments"
@@ -234,7 +212,6 @@ const agentOptions = computed(() => {
                     </span>
                   </div>
 
-                  <!-- 输入框 -->
                   <Textarea
                     v-model="draftText"
                     placeholder="问我任何事…"
@@ -244,7 +221,6 @@ const agentOptions = computed(() => {
                     @blur="handleBlur"
                   />
 
-                  <!-- 发送按钮（右下角） -->
                   <div class="absolute bottom-3 right-3">
                     <Button
                       type="submit"
@@ -259,13 +235,10 @@ const agentOptions = computed(() => {
                   </div>
                 </div>
 
-                <!-- 分隔线 -->
                 <div class="mx-4 h-px bg-border/60" />
 
-                <!-- 底部工具栏 -->
                 <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-2.5">
                   <div class="flex flex-wrap items-center gap-1">
-                    <!-- 附件 -->
                     <button
                       type="button"
                       data-testid="home-attachment-btn"
@@ -276,7 +249,6 @@ const agentOptions = computed(() => {
                       <span class="font-medium">附件</span>
                     </button>
 
-                    <!-- Model -->
                     <Select v-model="selectedModel" data-testid="select">
                       <SelectTrigger size="sm" class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground">
                         <Sparkles class="size-3.5 shrink-0" />
@@ -289,7 +261,6 @@ const agentOptions = computed(() => {
                       </SelectContent>
                     </Select>
 
-                    <!-- Agent -->
                     <Select v-model="selectedAgent" data-testid="select">
                       <SelectTrigger size="sm" class="h-8 max-w-[140px] gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground">
                         <Bot class="size-3.5 shrink-0" />
@@ -302,7 +273,6 @@ const agentOptions = computed(() => {
                       </SelectContent>
                     </Select>
 
-                    <!-- Thinking -->
                     <Select v-model="selectedThinkingLevel" data-testid="select">
                       <SelectTrigger size="sm" class="h-8 gap-1.5 rounded-md border-0 bg-transparent px-2 text-xs text-muted-foreground transition-all duration-200 hover:bg-soft hover:text-foreground">
                         <Lightbulb class="size-3.5 shrink-0" />
@@ -329,77 +299,116 @@ const agentOptions = computed(() => {
           </div>
         </section>
 
-        <!-- ===== 工作台动态 ===== -->
-        <section data-testid="home-info-grid" class="mt-10">
-          <div class="mb-4 flex items-center gap-3">
+        <!-- ===== 今日推荐 ===== -->
+        <section v-if="todayRecommendations.length > 0" data-testid="home-today-recommendations" class="mt-10">
+          <div class="mb-5 flex items-center gap-3">
             <div class="flex size-7 items-center justify-center rounded-lg bg-primary/10">
-              <Calendar class="size-3.5 text-primary" />
+              <Lightbulb class="size-3.5 text-primary" />
             </div>
-            <span class="text-sm font-semibold text-foreground">工作台动态</span>
-            <span class="h-px flex-1 bg-subtle"></span>
+            <span class="text-sm font-semibold text-foreground">今日推荐</span>
+            <span class="h-px flex-1 bg-subtle" />
           </div>
 
-          <!-- 加载状态 -->
-          <div v-if="isRecentLoading" class="flex items-center gap-2 py-8 text-caption text-muted-foreground">
-            <LoaderCircle class="size-4 animate-spin" />
-            加载中…
-          </div>
-
-          <!-- 空状态 -->
-          <div v-else-if="visibleActivity.length === 0 && visibleRecentFiles.length === 0" class="flex flex-col items-center justify-center py-16">
-            <div class="mb-4 flex size-14 items-center justify-center rounded-2xl bg-soft">
-              <Calendar class="size-7 text-muted-foreground/30" />
-            </div>
-            <p class="text-sm font-medium text-foreground">暂无动态</p>
-            <p class="mt-1 text-caption text-muted-foreground">开始工作，你的动态将出现在这里</p>
-          </div>
-
-          <!-- 动态卡片网格 -->
-          <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <!-- 活动项卡片 -->
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Card
-              v-for="item in visibleActivity"
-              :key="item.id"
+              v-for="rec in todayRecommendations"
+              :key="rec.id"
+              data-testid="recommendation-card"
               class="group cursor-pointer border-default bg-card transition-all hover:border-strong hover:bg-soft hover:shadow-sm"
-              @click="handleActivityClick(item)"
+              @click="handleRecommendationClick(rec)"
             >
               <div class="flex items-start gap-3 p-4">
-                <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-soft group-hover:bg-primary/10">
-                  <component :is="kindIconMap[item.kind]" class="size-4 text-muted-foreground/60 group-hover:text-primary" />
+                <div
+                  :class="[
+                    'flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+                    rec.priority === 'high'
+                      ? 'bg-amber-500/10 group-hover:bg-amber-500/20'
+                      : rec.priority === 'medium'
+                        ? 'bg-primary/10 group-hover:bg-primary/20'
+                        : 'bg-soft group-hover:bg-primary/10',
+                  ]"
+                >
+                  <component
+                    :is="recIconMap[rec.icon]"
+                    :class="[
+                      'size-4 transition-colors',
+                      rec.priority === 'high'
+                        ? 'text-amber-600 dark:text-amber-400 group-hover:text-amber-500'
+                        : 'text-muted-foreground/60 group-hover:text-primary',
+                    ]"
+                  />
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p class="truncate text-body-sm font-medium text-foreground">{{ item.title }}</p>
-                  <div class="mt-1 flex items-center gap-2 text-caption text-muted-foreground/70">
-                    <span>{{ kindLabelMap[item.kind] }}</span>
-                    <span class="text-muted-foreground/30">·</span>
-                    <span class="tabular-nums">{{ formatDate(item.timestamp) }}</span>
+                  <div class="flex items-center gap-2">
+                    <p class="truncate text-body-sm font-medium text-foreground">{{ rec.title }}</p>
+                    <Badge
+                      v-if="rec.priority === 'high'"
+                      variant="destructive"
+                      class="h-4 text-[10px] px-1.5"
+                    >
+                      紧急
+                    </Badge>
                   </div>
-                </div>
-              </div>
-            </Card>
-
-            <!-- 文件项卡片 -->
-            <Card
-              v-for="file in visibleRecentFiles"
-              :key="file.path"
-              class="group cursor-pointer border-default bg-card transition-all hover:border-strong hover:bg-soft hover:shadow-sm"
-              @click="emit('open-file', file.path)"
-            >
-              <div class="flex items-start gap-3 p-4">
-                <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-soft group-hover:bg-primary/10">
-                  <component :is="fileIconByExtension(file.extension)" class="size-4 text-muted-foreground/60 group-hover:text-primary" />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-body-sm font-medium text-foreground">{{ file.name }}</p>
-                  <div class="mt-1 flex items-center gap-2 text-caption text-muted-foreground/70">
-                    <span>文件</span>
-                    <ArrowUpRight class="size-3 text-muted-foreground/40" />
+                  <p class="mt-1 text-xs leading-relaxed text-muted-foreground">{{ rec.reason }}</p>
+                  <div class="mt-2 flex items-center gap-1 text-xs font-medium text-primary/80 group-hover:text-primary">
+                    <span>{{ rec.action }}</span>
+                    <ArrowRight class="size-3" />
                   </div>
                 </div>
               </div>
             </Card>
           </div>
         </section>
+
+        <!-- ===== 昨日回顾 ===== -->
+        <section data-testid="home-yesterday-review" class="mt-10">
+          <div class="mb-5 flex items-center gap-3">
+            <div class="flex size-7 items-center justify-center rounded-lg bg-violet-500/10">
+              <Sparkles class="size-3.5 text-violet-500" />
+            </div>
+            <span class="text-sm font-semibold text-foreground">昨日回顾</span>
+            <Badge variant="secondary" class="text-[10px]">AI 生成</Badge>
+            <span class="h-px flex-1 bg-subtle" />
+          </div>
+
+          <!-- AI 摘要卡 -->
+          <Card class="border-default bg-card p-5">
+            <div class="flex items-start gap-4">
+              <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10">
+                <Sparkles class="size-5 text-violet-500" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-[15px] leading-relaxed text-foreground/90">{{ yesterdayReview.summary }}</p>
+                <div v-if="yesterdayReview.stats.length > 0" class="mt-4 flex flex-wrap gap-2">
+                  <Badge
+                    v-for="stat in yesterdayReview.stats"
+                    :key="stat.label"
+                    variant="outline"
+                    class="gap-1.5 border-violet-500/20 bg-violet-500/5 text-violet-600 dark:text-violet-400"
+                  >
+                    <component :is="statIconMap[stat.icon]" class="size-3" />
+                    <span class="font-semibold tabular-nums">{{ stat.value }}</span>
+                    <span class="text-muted-foreground">{{ stat.label }}</span>
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <!-- 高亮事件 -->
+          <div v-if="yesterdayReview.highlights.length > 0" class="mt-3 space-y-2">
+            <div
+              v-for="(highlight, i) in yesterdayReview.highlights"
+              :key="i"
+              class="flex items-center gap-2 rounded-lg border border-default bg-background px-3 py-2 text-xs text-muted-foreground"
+            >
+              <TrendingUp v-if="highlight.kind === 'trend'" class="size-3.5 shrink-0 text-emerald-500" />
+              <MessageSquare v-else class="size-3.5 shrink-0 text-blue-500" />
+              <span>{{ highlight.text }}</span>
+            </div>
+          </div>
+        </section>
+
       </div>
     </ScrollArea>
   </div>

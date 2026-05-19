@@ -82,6 +82,17 @@ vi.mock("@/composables/useTerminalContextOptions", () => ({
 	useTerminalContextOptions: () => ({ load: vi.fn(), createDefaultPayload: vi.fn().mockReturnValue({}) }),
 }));
 
+vi.mock("@/composables/useAIDashboard", () => ({
+	useAIDashboard: () => ({
+		yesterdayReview: computed(() => ({
+			summary: "",
+			stats: [],
+			highlights: [],
+		})),
+		todayRecommendations: computed(() => []),
+	}),
+}));
+
 const mountWorkspace = () =>
 	mount(WorkspacePage, {
 		global: {

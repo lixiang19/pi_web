@@ -114,10 +114,21 @@ vi.mock("@/composables/useWorkspaceFilePreview", () => ({
 	}),
 }));
 
+vi.mock("@/composables/useAIDashboard", () => ({
+	useAIDashboard: () => ({
+		yesterdayReview: computed(() => ({
+			summary: "",
+			stats: [],
+			highlights: [],
+		})),
+		todayRecommendations: computed(() => []),
+	}),
+}));
+
 const HomePageStub = defineComponent({
 	name: "HomePage",
 	template: `<div data-test="home-page-stub" />`,
-	emits: ["submit", "open-session"],
+	emits: ["submit", "recommendation-click"],
 });
 
 const mountWorkspace = () =>
@@ -180,11 +191,19 @@ describe("WorkspacePage goal to session orchestration", () => {
 		expect(wrapper.text()).toContain("推进 MVP");
 	});
 
-	it("opens an existing chat session from home activity", async () => {
+	it("opens an existing chat session from recommendation click", async () => {
 		sessions.value = [{ id: "session-existing", title: "旧会话" }];
 		const wrapper = mountWorkspace();
 
-		await wrapper.getComponent(HomePageStub).vm.$emit("open-session", "session-existing");
+		await wrapper.getComponent(HomePageStub).vm.$emit("recommendation-click", {
+			id: "rec-1",
+			title: "继续旧会话",
+			reason: "上次会话有待续内容",
+			priority: "high",
+			action: "continue-session",
+			icon: "session",
+			actionTarget: "session-existing",
+		});
 
 		expect(createSession).not.toHaveBeenCalled();
 		expect(wrapper.get('[data-test="workspace-chat-tab"]').text()).toContain("session-existing");

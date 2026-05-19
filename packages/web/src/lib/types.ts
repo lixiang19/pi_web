@@ -182,3 +182,44 @@ export interface NoteTab {
 	saveStatus: "saved" | "unsaved" | "saving" | "error";
 	isLoading: boolean;
 }
+
+// ===== AI Dashboard =====
+
+export type AIDashboardStatIcon = "session" | "file" | "task" | "moment";
+
+export interface AIDashboardStat {
+	label: string;
+	value: string;
+	icon: AIDashboardStatIcon;
+}
+
+export interface AIDashboardHighlight {
+	text: string;
+	kind: "trend" | "insight";
+}
+
+export interface YesterdayReview {
+	summary: string;
+	stats: AIDashboardStat[];
+	highlights: AIDashboardHighlight[];
+}
+
+export type TodayRecommendationPriority = "high" | "medium" | "low";
+
+export type TodayRecommendationAction =
+	| "continue-session"
+	| "open-file"
+	| "open-inbox"
+	| "open-tasks"
+	| "open-sessions";
+
+export interface TodayRecommendation {
+	id: string;
+	title: string;
+	reason: string;
+	priority: TodayRecommendationPriority;
+	action: TodayRecommendationAction;
+	icon: AIDashboardStatIcon;
+	/** action target: sessionId, filePath, etc. */
+	actionTarget?: string;
+}

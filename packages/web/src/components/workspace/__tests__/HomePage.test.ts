@@ -1,9 +1,7 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import HomePage from "@/components/workspace/HomePage.vue";
-import type { RecentActivityItem } from "@/composables/useRecentActivity";
-import type { RecentFileItem } from "@/lib/api";
-import type { AgentSummary, ThinkingLevel } from "@/lib/types";
+import type { AgentSummary, ThinkingLevel, YesterdayReview, TodayRecommendation } from "@/lib/types";
 
 type HomeSubmitPayload = {
 	text: string;
@@ -12,45 +10,53 @@ type HomeSubmitPayload = {
 	thinkingLevel: ThinkingLevel;
 };
 
-const defaultActivity: RecentActivityItem[] = [
-	{
-		id: "file-a",
-		kind: "file",
-		title: "readme.md",
-		timestamp: 5000,
-		filePath: "/ws/readme.md",
-	},
-	{
-		id: "task-b",
-		kind: "task",
-		title: "待办事项",
-		timestamp: 4000,
-		taskId: "task-1",
-	},
-	{
-		id: "moment-c",
-		kind: "moment",
-		title: "一条闪念",
-		timestamp: 3000,
-		filePath: "/ws/收件箱/2026-04-30.md",
-	},
-	{
-		id: "session-d",
-		kind: "session",
-		title: "旧会话",
-		timestamp: 2000,
-		sessionId: "session-old",
-	},
-];
+const defaultYesterdayReview: YesterdayReview = {
+	summary: "昨天你进行了 3 个会话、编辑了 12 个文件。",
+	stats: [
+		{ label: "会话", value: "3", icon: "session" },
+		{ label: "文件编辑", value: "12", icon: "file" },
+		{ label: "待办完成", value: "4", icon: "task" },
+		{ label: "闪念捕获", value: "2", icon: "moment" },
+	],
+	highlights: [
+		{ text: "下午 2-4 点是你效率最高的时段", kind: "trend" },
+	],
+};
 
-const defaultRecentFiles: RecentFileItem[] = [
+const defaultTodayRecommendations: TodayRecommendation[] = [
 	{
-		name: "readme.md",
-		path: "/ws/readme.md",
-		relativePath: "readme.md",
-		modifiedAt: 5000,
-		extension: ".md",
-		size: 100,
+		id: "rec-1",
+		title: "继续「架构重构」",
+		reason: "上次会话有待续内容。",
+		priority: "high",
+		action: "continue-session",
+		icon: "session",
+		actionTarget: "session-1",
+	},
+	{
+		id: "rec-2",
+		title: "整理闪念笔记",
+		reason: "你有 2 条未归档的闪念。",
+		priority: "medium",
+		action: "open-inbox",
+		icon: "moment",
+	},
+	{
+		id: "rec-3",
+		title: "继续编辑 readme.md",
+		reason: "最近修改的文件。",
+		priority: "medium",
+		action: "open-file",
+		icon: "file",
+		actionTarget: "/ws/readme.md",
+	},
+	{
+		id: "rec-4",
+		title: "完成今日待办 (3)",
+		reason: "还有 3 项待办需要处理。",
+		priority: "low",
+		action: "open-tasks",
+		icon: "task",
 	},
 ];
 
@@ -74,14 +80,13 @@ const defaultAgents: AgentSummary[] = [
 
 const defaultProps = {
 	workspaceDir: "/ws",
-	recentFiles: defaultRecentFiles,
-	recentActivity: defaultActivity,
-	isRecentLoading: false,
 	models: defaultModels,
 	agents: defaultAgents,
 	defaultModel: "gpt-4",
 	defaultAgent: "",
 	defaultThinkingLevel: "medium" as const,
+	yesterdayReview: defaultYesterdayReview,
+	todayRecommendations: defaultTodayRecommendations,
 };
 
 function mountHomePage(overrides: Record<string, unknown> = {}) {
@@ -91,6 +96,7 @@ function mountHomePage(overrides: Record<string, unknown> = {}) {
 			stubs: {
 				ScrollArea: { template: "<div><slot /></div>" },
 				Badge: { template: "<span><slot /></span>" },
+				Card: { template: "<div class=\"group\" @click=\"$emit('click')\"><slot /></div>", emits: ["click"] },
 				Textarea: {
 					template:
 						'<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" @focus="$emit(\'focus\')" @blur="$emit(\'blur\')" />',
@@ -117,40 +123,44 @@ function mountHomePage(overrides: Record<string, unknown> = {}) {
 	});
 }
 
-describe("HomePage - 扁平命令行启动台", () => {
-	it("初始展示 ridge 标识、工作空间路径和输入区域", () => {
+describe("HomePage - AI 输入与仪表盘", () => {
+	it("渲染问候语和今日推荐、昨日回顾", () => {
 		const wrapper = mountHomePage();
 		const text = wrapper.text();
-		expect(text).toContain("ridge");
-		expect(text).toContain("/ws");
-		expect(text).toContain("工作台动态");
-		// 验证 Textarea placeholder 存在（placeholder 在 stub 中渲染为属性而非文本）
-		const textarea = wrapper.find("textarea");
-		expect(textarea.attributes("placeholder")).toBe("问我任何事…");
+		expect(text).toContain("好"); // 上午好/下午好/晚上好
+		expect(text).toContain("今日推荐");
+		expect(text).toContain("昨日回顾");
+		expect(text).toContain("AI 生成");
 	});
 
-	it("输入框位于命令行区域，有底线边框样式", () => {
+	it("渲染推荐卡片", () => {
 		const wrapper = mountHomePage();
-		const hero = wrapper.find('[data-testid="home-ai-hero"]');
-		const infoGrid = wrapper.find('[data-testid="home-info-grid"]');
-		const commandCenter = wrapper.find('[data-testid="home-command-center"]');
-
-		expect(hero.exists()).toBe(true);
-		expect(infoGrid.exists()).toBe(true);
-		expect(commandCenter.exists()).toBe(true);
-		expect(hero.classes()).toContain("min-h-[280px]");
+		expect(wrapper.text()).toContain("继续「架构重构」");
+		expect(wrapper.text()).toContain("整理闪念笔记");
 	});
 
-	it("显示工作空间路径和类型标签", () => {
+	it("渲染昨日回顾统计", () => {
 		const wrapper = mountHomePage();
-		const text = wrapper.text();
+		expect(wrapper.text()).toContain("3");
+		expect(wrapper.text()).toContain("会话");
+		expect(wrapper.text()).toContain("12");
+		expect(wrapper.text()).toContain("文件编辑");
+	});
 
-		expect(text).toContain("/ws");
-		// 动态列表中应包含各类型标签
-		expect(text).toContain("文件");
-		expect(text).toContain("待办");
-		expect(text).toContain("闪念");
-		expect(text).toContain("会话");
+	it("渲染高亮事件", () => {
+		const wrapper = mountHomePage();
+		expect(wrapper.text()).toContain("下午 2-4 点是你效率最高的时段");
+	});
+
+	it("点击推荐卡片触发 recommendation-click", async () => {
+		const wrapper = mountHomePage();
+		const recCards = wrapper.findAll('[data-testid="recommendation-card"]');
+		expect(recCards.length).toBeGreaterThanOrEqual(1);
+		await recCards[0]!.trigger("click");
+		expect(wrapper.emitted("recommendation-click")).toBeTruthy();
+		const rec = wrapper.emitted("recommendation-click")![0]![0] as TodayRecommendation;
+		expect(rec.id).toBe("rec-1");
+		expect(rec.action).toBe("continue-session");
 	});
 
 	it("默认展示模型、Agent、思考级别选择器", () => {
@@ -159,10 +169,9 @@ describe("HomePage - 扁平命令行启动台", () => {
 		expect(selects).toHaveLength(3);
 	});
 
-	it("Agent 选择器只显示真实 Agent，默认选择第一个 Agent", async () => {
+	it("Agent 选择器默认选择第一个 Agent", async () => {
 		const wrapper = mountHomePage();
 		expect(wrapper.text()).not.toContain("无 Agent");
-		expect(wrapper.text()).not.toContain("直接对话");
 
 		const textarea = wrapper.find("textarea");
 		await textarea.setValue("使用默认 agent");
@@ -172,22 +181,13 @@ describe("HomePage - 扁平命令行启动台", () => {
 		expect(payload.agent).toBe("coding-agent");
 	});
 
-	it("下拉内容使用受控高度", async () => {
+	it("下拉内容使用受控高度", () => {
 		const wrapper = mountHomePage();
 		const contents = wrapper.findAll('[data-testid="select-content"]');
 		expect(contents).toHaveLength(3);
 		for (const content of contents) {
 			expect(content.classes()).toContain("max-h-72");
 		}
-	});
-
-	it("聚焦后继续保留完整真实控件（模型/Agent/思考级别选择器）", async () => {
-		const wrapper = mountHomePage();
-		const textarea = wrapper.find("textarea");
-		await textarea.trigger("focus");
-
-		const selects = wrapper.findAll('[data-testid="select"]');
-		expect(selects).toHaveLength(3);
 	});
 
 	it("提交首条消息触发 submit 事件，携带完整 payload", async () => {
@@ -204,7 +204,7 @@ describe("HomePage - 扁平命令行启动台", () => {
 		expect(payload.thinkingLevel).toBe("medium");
 	});
 
-	it("异步加载默认模型后同步首页选择值", async () => {
+	it("异步加载默认模型后同步选择值", async () => {
 		const wrapper = mountHomePage({
 			models: [],
 			defaultModel: "",
@@ -227,54 +227,6 @@ describe("HomePage - 扁平命令行启动台", () => {
 		const wrapper = mountHomePage();
 		await wrapper.find("form").trigger("submit.prevent");
 		expect(wrapper.emitted("submit")).toBeFalsy();
-	});
-
-	it("最近动态中文件条目可点击，触发 open-file", async () => {
-		const wrapper = mountHomePage();
-		const buttons = wrapper.findAll("button");
-
-		const fileItem = buttons.find((b) => b.text().includes("readme.md"));
-		expect(fileItem).toBeTruthy();
-		await fileItem!.trigger("click");
-
-		expect(wrapper.emitted("open-file")).toBeTruthy();
-		expect(wrapper.emitted("open-file")![0]![0]).toBe("/ws/readme.md");
-	});
-
-	it("点击会话条目触发 open-session", async () => {
-		const wrapper = mountHomePage();
-		const buttons = wrapper.findAll("button");
-
-		const sessionItem = buttons.find((b) => b.text().includes("旧会话"));
-		expect(sessionItem).toBeTruthy();
-		await sessionItem!.trigger("click");
-
-		expect(wrapper.emitted("open-session")).toBeTruthy();
-		expect(wrapper.emitted("open-session")![0]![0]).toBe("session-old");
-	});
-
-	it("点击待办条目触发 open-tasks", async () => {
-		const wrapper = mountHomePage();
-		const buttons = wrapper.findAll("button");
-
-		const taskItem = buttons.find((b) => b.text().includes("待办事项"));
-		expect(taskItem).toBeTruthy();
-		await taskItem!.trigger("click");
-
-		expect(wrapper.emitted("open-tasks")).toBeTruthy();
-	});
-
-	it("加载中状态显示", () => {
-		const wrapper = mountHomePage({ isRecentLoading: true });
-		expect(wrapper.text()).toContain("加载中");
-	});
-
-	it("空数据状态显示", () => {
-		const wrapper = mountHomePage({
-			recentActivity: [],
-			recentFiles: [],
-		});
-		expect(wrapper.text()).toContain("暂无动态");
 	});
 });
 
@@ -334,7 +286,7 @@ describe("HomePage - 提交 payload 完整性", () => {
 	});
 });
 
-describe("HomePage - 发送状态与失败保留", () => {
+describe("HomePage - 发送状态", () => {
 	it("isSending prop 为 true 时提交按钮禁用", () => {
 		const wrapper = mountHomePage({ isSending: true });
 		const btn = wrapper.find('[data-testid="home-send-btn"]');
@@ -361,7 +313,6 @@ describe("HomePage - 发送状态与失败保留", () => {
 
 		const emitted = wrapper.emitted("submit");
 		expect(emitted).toBeTruthy();
-		// draftText 不应被清空
 		expect((textarea.element as HTMLTextAreaElement).value).toBe("保留输入测试");
 	});
 });
