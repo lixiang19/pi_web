@@ -1000,3 +1000,14 @@
 ## 2026-05-18 工作空间隐藏版本 ignore
 
 - [module:workspace-version][2026-05-18] 隐藏版本 ignore 是服务端契约，不是 UI 展示规则；`.DS_Store`、`.ridge`、`.git`、依赖目录、构建产物和缓存目录必须在 status、diff、commit 三条路径同时过滤。
+
+## 2026-05-19 闪念分析结构化输出
+
+- [module:fleeting][2026-05-19] 闪念分析不能依赖“提示词要求 JSON + 正则解析 assistant 文本”；当前实现只开放 `fleeting_analysis_result` 工具 schema，并从 assistant `toolCall.arguments` 读取结构化建议。未调用工具或结构非法必须进入后台 job 重试/失败路径。
+- [module:fleeting][2026-05-19] 闪念分析调用 Pi 时必须替换系统提示词，而不是在主工作台 Agent 提示词后追加；早期做法是闪念专用 `ResourceLoader`，2026-05-20 后下沉为 `pi-ai complete()` 的 `context.systemPrompt`。
+- [module:fleeting][2026-05-20] 闪念分析不需要 `AgentSession`；应直接调用 `@mariozechner/pi-ai complete()`，但模型和服务商仍从 Pi 的 `settings.json/models.json/auth.json` 解析。服务端只接受 `fleeting_analysis_result` 的 assistant `toolCall.arguments`。
+- [module:fleeting][2026-05-20] Web 文件/音频闪念附件默认走 multipart 上传到 `.ridge/fleeting-attachments/<noteId>/`，不能把文件、PDF、Word、Markdown 或音频读成 base64 塞进 JSON。分析 worker 调模型前提取附件正文：文本类读前缀，PDF/Word/音频/图片走 Python Converter 转 Markdown/转写/OCR，并按字符预算截断后放入 prompt。
+
+## 2026-05-20 分屏主页关闭
+
+- [module:workspace-shell][2026-05-20] `home` 是会话入口但也是普通可关闭标签；根工作台只剩最后一个标签时保留一个主页入口，分屏 pane 的最后一个标签关闭后必须收起 pane，不能用新的主页占位替换。

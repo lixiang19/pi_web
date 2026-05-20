@@ -15,6 +15,7 @@ import { toast } from "vue-sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
+	captureFleetingWithFiles,
 	captureFromDesktop,
 	getAuthSession,
 	type DesktopCaptureType,
@@ -101,22 +102,10 @@ const stopRecording = () => {
 	isRecording.value = false;
 };
 
-const blobToBase64 = (blob: Blob): Promise<string> =>
-	new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onloadend = () => {
-			const result = reader.result as string;
-			const parts = result.split(",");
-			resolve(parts[1] ?? "");
-		};
-		reader.onerror = reject;
-		reader.readAsDataURL(blob);
-	});
-
 const doCapture = async (
 	captureType: DesktopCaptureType,
 	text: string,
-	attachments?: { name: string; mimeType: string; base64: string }[],
+	files?: File[],
 ) => {
 	if (!isAuthenticated.value) {
 		toast.error("桌面端未登录服务器，请先登录");
@@ -129,11 +118,14 @@ const doCapture = async (
 
 	isSaving.value = true;
 	try {
-		await captureFromDesktop({
-			content: text,
-			type: captureType,
-			attachments,
-		});
+		if ((captureType === "file" || captureType === "audio") && files && files.length > 0) {
+			await captureFleetingWithFiles(text, captureType, files);
+		} else {
+			await captureFromDesktop({
+				content: text,
+				type: captureType,
+			});
+		}
 
 		window.dispatchEvent(new CustomEvent("ridge:fleeting-created"));
 		content.value = "";
@@ -164,22 +156,15 @@ const save = async () => {
 	const currentMode = mode.value;
 
 	if (currentMode === "file" && selectedFiles.value.length > 0) {
-		const attachments = await Promise.all(
-			selectedFiles.value.map(async (file) => ({
-				name: file.name,
-				mimeType: file.type || "application/octet-stream",
-				base64: await blobToBase64(file),
-			})),
-		);
-		await doCapture("file", text, attachments);
+		await doCapture("file", text, selectedFiles.value);
 		return;
 	}
 
 	if (currentMode === "audio" && recordedBlob.value) {
-		const base64 = await blobToBase64(recordedBlob.value);
-		await doCapture("audio", text, [
-			{ name: "recording.webm", mimeType: "audio/webm", base64 },
-		]);
+		const audioFile = new File([recordedBlob.value], "recording.webm", {
+			type: "audio/webm",
+		});
+		await doCapture("audio", text, [audioFile]);
 		return;
 	}
 

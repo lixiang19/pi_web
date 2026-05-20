@@ -2254,6 +2254,7 @@ export async function startServer() {
 		modelRegistry,
 		authStorage,
 		workspaceDir: defaultWorkspaceDir,
+		getConversionClient: () => conversionClientRef.value ?? undefined,
 	});
 	fleetingAnalysisWorker.start();
 	const conversionConfig = await loadConversionServiceConfigFromDb();

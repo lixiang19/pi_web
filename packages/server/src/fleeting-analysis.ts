@@ -1,12 +1,28 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import {
-	createAgentSession as realCreateAgentSession,
-	SessionManager as RealSessionManager,
-	AuthStorage,
-	ModelRegistry,
-} from "@mariozechner/pi-coding-agent";
+	complete as realComplete,
+	StringEnum,
+	Type,
+	type Api,
+	type AssistantMessage,
+	type Context,
+	type Model,
+	type ProviderStreamOptions,
+	type ThinkingLevel,
+	type Tool,
+} from "@mariozechner/pi-ai";
 import type { RidgeDatabase } from "./db/index.js";
 import { getFleetingAttachments } from "./fleeting-attachments.js";
 import type { createBackgroundJobQueue } from "./background-jobs.js";
+import { createPiDefaultSettingsManager } from "./pi-default-config.js";
+import {
+	deriveTaskFromExtension,
+	type ConversionJob,
+	type ConversionServiceClient,
+	type DownloadedArtifact,
+} from "./conversion-service-client.js";
 
 type BackgroundJobQueue = ReturnType<typeof createBackgroundJobQueue>;
 
@@ -22,41 +38,26 @@ export interface FleetingAnalysisResult {
 	requiresInput: boolean;
 }
 
-/**
- * Minimal duck-type interface for the session object used by runAnalysis.
- * Allows tests to inject lightweight mocks without needing the full AgentSession type.
- */
-export interface PromptableSession {
-	prompt(prompt: string, options?: unknown): Promise<void>;
-	messages: Array<{ role: string; content: unknown }>;
+export type CompleteFn = (
+	model: Model<Api>,
+	context: Context,
+	options?: ProviderStreamOptions,
+) => Promise<AssistantMessage>;
+
+export interface FleetingAnalysisSettings {
+	defaultProvider?: string;
+	defaultModel?: string;
+	defaultThinkingLevel?: string;
 }
 
-/**
- * Minimal duck-type interface for the session manager used by runAnalysis.
- * Only requires shutdown() for cleanup.
- */
-export interface ShutdownableSessionManager {
-	shutdown(): Promise<void>;
-}
+export type FleetingAnalysisSettingsResolver = (
+	workspaceDir: string,
+) => FleetingAnalysisSettings;
 
-/**
- * Options passed to the injected createAgentSession function.
- */
-export interface InjectedCreateAgentSessionOptions {
-	cwd: string;
-	authStorage: unknown;
-	modelRegistry: unknown;
-	noTools: string;
-	sessionManager: ShutdownableSessionManager;
-}
-
-/**
- * Dependency-injected createAgentSession replacement.
- * Accepts PromptableSession in the result so tests don't need full AgentSession mocks.
- */
-export type CreateAgentSessionFn = (
-	options: InjectedCreateAgentSessionOptions,
-) => Promise<{ session: PromptableSession; extensionsResult: unknown }>;
+type FleetingAnalysisConversionClient = Pick<
+	ConversionServiceClient,
+	"createConversionWithFile" | "downloadArtifacts"
+>;
 
 interface FleetingAnalysisWorkerOptions {
 	db: RidgeDatabase;
@@ -66,9 +67,42 @@ interface FleetingAnalysisWorkerOptions {
 	workspaceDir: string;
 	pollIntervalMs?: number;
 	modelSpec?: string;
-	createAgentSessionFn?: CreateAgentSessionFn;
-	sessionManagerFactory?: (workspaceDir: string) => ShutdownableSessionManager;
+	completeFn?: CompleteFn;
+	settingsResolver?: FleetingAnalysisSettingsResolver;
+	getConversionClient?: () => FleetingAnalysisConversionClient | undefined;
 }
+
+const FLEETING_ANALYSIS_TOOL_NAME = "fleeting_analysis_result";
+const MAX_ATTACHMENT_CONTEXT_CHARS = 16_000;
+const MAX_ATTACHMENT_TEXT_CHARS = 6_000;
+const MAX_DIRECT_TEXT_BYTES = 64 * 1024;
+
+const FLEETING_ANALYSIS_SYSTEM_PROMPT = `你是 ridge 的闪念分析器。你的唯一任务是根据一次闪念内容和附件列表判断后续处理建议。
+
+边界：
+- 只分析用户提供的闪念内容和附件摘要。
+- 不读取项目文件，不执行命令，不使用技能、提示词模板、扩展或上下文文件。
+- 必须以 ${FLEETING_ANALYSIS_TOOL_NAME} 工具调用作为最终结果。
+- 不输出普通文本，不输出 JSON 文本。`;
+
+const analysisResultTool: Tool = {
+	name: FLEETING_ANALYSIS_TOOL_NAME,
+	description: "Return the final structured analysis result for one fleeting note.",
+	parameters: Type.Object({
+		recommendationType: StringEnum(["journal", "clip", "task", "delete"] as const, {
+			description: "闪念建议类型",
+		}),
+		recommendationText: Type.String({
+			description: "简短的理由说明，20字内",
+		}),
+		draft: Type.String({
+			description: "journal 日记草稿；clip 剪藏内容；task 任务标题和描述；delete 留空",
+		}),
+		requiresInput: Type.Boolean({
+			description: "是否还需要用户补充信息",
+		}),
+	}),
+};
 
 const ANALYSIS_PROMPT_TEMPLATE = `你是一个闪念整理助手。请分析以下用户闪念，给出最合适的处理建议。
 
@@ -84,36 +118,35 @@ const ANALYSIS_PROMPT_TEMPLATE = `你是一个闪念整理助手。请分析以�
 附件列表：
 {attachments}
 
-请严格用以下 JSON 格式回复（不要包含任何其他文字）：
-{
-  "recommendationType": "journal|clip|task|delete",
-  "recommendationText": "简短的理由说明（20字内）",
-  "draft": "如果是 journal 给出日记草稿；如果是 clip 给出剪藏内容；如果是 task 给出任务标题和描述；如果是 delete 留空",
-  "requiresInput": false
-}`;
+附件正文（转换或读取后，可能已截断）：
+{attachmentContexts}
+
+必须调用 ${FLEETING_ANALYSIS_TOOL_NAME} 工具返回最终结构化结果。不要输出普通文本，不要输出 JSON 文本。`;
 
 function buildAnalysisPrompt(
 	content: string,
-	attachments: { originalName: string; mimeType: string }[],
+	attachments: { originalName: string; mimeType: string; size?: number }[],
+	attachmentContexts: { originalName: string; content: string; truncated: boolean }[] = [],
 ): string {
 	const attSummary =
 		attachments.length === 0
 			? "无"
 			: attachments
-					.map((a) => `- ${a.originalName} (${a.mimeType})`)
+					.map((a) => `- ${a.originalName} (${a.mimeType}${typeof a.size === "number" ? `, ${a.size} bytes` : ""})`)
 					.join("\n");
+	const contextSummary =
+		attachmentContexts.length === 0
+			? "无"
+			: attachmentContexts
+					.map(
+						(a) =>
+							`## ${a.originalName}${a.truncated ? "（已截断）" : ""}\n${a.content}`,
+					)
+					.join("\n\n");
 	return ANALYSIS_PROMPT_TEMPLATE.replace("{content}", content).replace(
 		"{attachments}",
 		attSummary,
-	);
-}
-
-function extractJsonFromResponse(text: string): unknown {
-	const jsonMatch = text.match(/\{[\s\S]*\}/);
-	if (!jsonMatch) {
-		throw new Error("Response does not contain valid JSON");
-	}
-	return JSON.parse(jsonMatch[0]) as unknown;
+	).replace("{attachmentContexts}", contextSummary);
 }
 
 function parseAnalysisResult(raw: unknown): FleetingAnalysisResult {
@@ -138,40 +171,188 @@ function parseAnalysisResult(raw: unknown): FleetingAnalysisResult {
 	};
 }
 
-function toMessageText(content: unknown): string {
-	if (typeof content === "string") {
-		return content;
+function truncateText(text: string, maxChars: number): { text: string; truncated: boolean } {
+	if (text.length <= maxChars) {
+		return { text, truncated: false };
 	}
-	if (!Array.isArray(content)) {
-		return "";
-	}
-	return content
-		.map((item) => {
-			if (!item || typeof item !== "object") {
-				return "";
-			}
-			const typed = item as Record<string, unknown>;
-			if (typed.type === "text") {
-				return typeof typed.text === "string" ? typed.text : "";
-			}
-			if (typed.type === "thinking") {
-				return typeof typed.thinking === "string" ? typed.thinking : "";
-			}
-			return "";
-		})
-		.filter(Boolean)
-		.join("\n");
+	return { text: text.slice(0, maxChars), truncated: true };
 }
 
-function getLastAssistantText(session: PromptableSession): string {
-	const messages = session.messages;
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const message = messages[i];
-		if (message.role !== "assistant") continue;
-		const text = toMessageText(message.content).trim();
-		if (text) return text;
+function isDirectTextAttachment(attachment: { originalName: string; mimeType: string }): boolean {
+	const mimeType = attachment.mimeType.toLowerCase();
+	const ext = path.extname(attachment.originalName).toLowerCase();
+	return (
+		mimeType.startsWith("text/") ||
+		mimeType === "application/json" ||
+		mimeType === "application/xml" ||
+		[".md", ".markdown", ".txt", ".csv", ".json", ".jsonl", ".yaml", ".yml", ".xml"].includes(ext)
+	);
+}
+
+async function readDirectAttachmentText(storedPath: string): Promise<string> {
+	const handle = await fs.open(storedPath, "r");
+	try {
+		const buffer = Buffer.alloc(MAX_DIRECT_TEXT_BYTES);
+		const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+		return buffer.subarray(0, bytesRead).toString("utf-8");
+	} finally {
+		await handle.close();
 	}
-	return "";
+}
+
+function isTextArtifact(artifact: DownloadedArtifact): boolean {
+	const mimeType = artifact.artifact.mimeType.toLowerCase();
+	const name = artifact.artifact.name.toLowerCase();
+	return (
+		mimeType.startsWith("text/") ||
+		mimeType === "application/json" ||
+		name.endsWith(".md") ||
+		name.endsWith(".markdown") ||
+		name.endsWith(".txt") ||
+		name.endsWith(".json")
+	);
+}
+
+async function getTextFromConversionJob(
+	conversionClient: FleetingAnalysisConversionClient,
+	job: ConversionJob,
+	attachmentName: string,
+): Promise<string> {
+	if (job.status !== "succeeded") {
+		throw new Error(job.error?.message || `附件转换失败: ${attachmentName}`);
+	}
+	const artifacts = await conversionClient.downloadArtifacts(job, {
+		timeoutMs: 60_000,
+		maxSizeBytes: 5 * 1024 * 1024,
+	});
+	const textArtifact = artifacts.find(isTextArtifact);
+	if (!textArtifact) {
+		throw new Error(`附件转换结果缺少文本 artifact: ${attachmentName}`);
+	}
+	return textArtifact.buffer.toString("utf-8");
+}
+
+async function buildAttachmentContexts(
+	attachments: { originalName: string; mimeType: string; storedPath: string; size: number }[],
+	conversionClient: FleetingAnalysisConversionClient | undefined,
+): Promise<{ originalName: string; content: string; truncated: boolean }[]> {
+	const contexts: { originalName: string; content: string; truncated: boolean }[] = [];
+	let remainingChars = MAX_ATTACHMENT_CONTEXT_CHARS;
+
+	for (const attachment of attachments) {
+		if (remainingChars <= 0) break;
+		let text: string | undefined;
+		if (isDirectTextAttachment(attachment)) {
+			text = await readDirectAttachmentText(attachment.storedPath);
+		} else if (conversionClient) {
+			const task = deriveTaskFromExtension(path.extname(attachment.originalName));
+			if (task) {
+				const job = await conversionClient.createConversionWithFile(attachment.storedPath, {
+					task,
+					options: task === "audio.transcription"
+						? { format: "markdown" }
+						: { engine: "markitdown", ocrFallback: true },
+					clientJobId: `fleeting-analysis-${path.basename(attachment.storedPath)}-${Date.now()}`,
+					metadata: {
+						source: "fleeting.analysis",
+						originalName: attachment.originalName,
+						mimeType: attachment.mimeType,
+					},
+					preferredFormat: "markdown",
+					waitMs: 30_000,
+				});
+				text = await getTextFromConversionJob(conversionClient, job, attachment.originalName);
+			}
+		}
+		if (!text?.trim()) continue;
+		const limit = Math.min(MAX_ATTACHMENT_TEXT_CHARS, remainingChars);
+		const truncated = truncateText(text.trim(), limit);
+		contexts.push({
+			originalName: attachment.originalName,
+			content: truncated.text,
+			truncated: truncated.truncated || text.trim().length > limit,
+		});
+		remainingChars -= truncated.text.length;
+	}
+
+	return contexts;
+}
+
+function getAnalysisToolResult(response: AssistantMessage): FleetingAnalysisResult {
+	if (response.stopReason === "error" || response.stopReason === "aborted") {
+		throw new Error(response.errorMessage || "Fleeting analysis model request failed");
+	}
+	for (const block of response.content) {
+		if (block.type !== "toolCall") continue;
+		if (block.name !== FLEETING_ANALYSIS_TOOL_NAME) continue;
+		return parseAnalysisResult(block.arguments);
+	}
+	throw new Error(`Fleeting analysis did not call ${FLEETING_ANALYSIS_TOOL_NAME}`);
+}
+
+function parseModelSpec(modelSpec: string | undefined): { provider: string; modelId: string } | undefined {
+	const normalized = modelSpec?.trim();
+	if (!normalized) return undefined;
+	const slashIndex = normalized.indexOf("/");
+	if (slashIndex <= 0 || slashIndex === normalized.length - 1) {
+		throw new Error(`Invalid fleeting analysis model spec: ${normalized}`);
+	}
+	return {
+		provider: normalized.slice(0, slashIndex),
+		modelId: normalized.slice(slashIndex + 1),
+	};
+}
+
+function resolveDefaultSettings(workspaceDir: string): FleetingAnalysisSettings {
+	const settings = createPiDefaultSettingsManager(workspaceDir);
+	return {
+		defaultProvider: settings.getDefaultProvider(),
+		defaultModel: settings.getDefaultModel(),
+		defaultThinkingLevel: settings.getDefaultThinkingLevel(),
+	};
+}
+
+function resolveReasoningLevel(level: string | undefined): ThinkingLevel | undefined {
+	if (
+		level === "minimal" ||
+		level === "low" ||
+		level === "medium" ||
+		level === "high" ||
+		level === "xhigh"
+	) {
+		return level;
+	}
+	return undefined;
+}
+
+function resolveAnalysisModel(
+	modelRegistry: ModelRegistry,
+	modelSpec: string | undefined,
+	settings: FleetingAnalysisSettings,
+): Model<Api> {
+	modelRegistry.refresh();
+
+	const explicit = parseModelSpec(modelSpec);
+	if (explicit) {
+		const model = modelRegistry.find(explicit.provider, explicit.modelId);
+		if (!model) {
+			throw new Error(
+				`Fleeting analysis model is not available: ${explicit.provider}/${explicit.modelId}`,
+			);
+		}
+		return model;
+	}
+
+	if (settings.defaultProvider && settings.defaultModel) {
+		const model = modelRegistry.find(settings.defaultProvider, settings.defaultModel);
+		if (model) return model;
+	}
+
+	const [firstAvailable] = modelRegistry.getAvailable();
+	if (!firstAvailable) {
+		throw new Error("No configured Pi model is available for fleeting analysis");
+	}
+	return firstAvailable;
 }
 
 async function runAnalysis(
@@ -181,18 +362,20 @@ async function runAnalysis(
 		authStorage: AuthStorage;
 		workspaceDir: string;
 		modelSpec?: string;
-		createAgentSessionFn?: CreateAgentSessionFn;
-		sessionManagerFactory?: (workspaceDir: string) => ShutdownableSessionManager;
+		completeFn?: CompleteFn;
+		settingsResolver?: FleetingAnalysisSettingsResolver;
+		getConversionClient?: () => FleetingAnalysisConversionClient | undefined;
 	},
 	noteId: string,
 ): Promise<FleetingAnalysisResult> {
 	const {
 		db,
 		modelRegistry,
-		authStorage,
 		workspaceDir,
-		createAgentSessionFn = realCreateAgentSession as unknown as CreateAgentSessionFn,
-		sessionManagerFactory = (dir: string) => RealSessionManager.inMemory(dir) as unknown as ShutdownableSessionManager,
+		modelSpec,
+		completeFn = realComplete,
+		settingsResolver = resolveDefaultSettings,
+		getConversionClient,
 	} = options;
 
 	// 1. Read note
@@ -211,40 +394,46 @@ async function runAnalysis(
 	const attachments = getFleetingAttachments(db, noteId).map((att) => ({
 		originalName: att.original_name,
 		mimeType: att.mime_type,
+		storedPath: att.stored_path,
+		size: att.size,
 	}));
 
 	// 3. Build prompt
-	const prompt = buildAnalysisPrompt(content, attachments);
+	const attachmentContexts = await buildAttachmentContexts(
+		attachments,
+		getConversionClient?.(),
+	);
+	const prompt = buildAnalysisPrompt(content, attachments, attachmentContexts);
 
-	// 4. Call LLM via lightweight session (no tools, in-memory)
-	const sessionManager = sessionManagerFactory(workspaceDir);
-	const { session } = await createAgentSessionFn({
-		cwd: workspaceDir,
-		authStorage,
-		modelRegistry,
-		noTools: "all",
-		sessionManager,
-	});
-
-	try {
-		await session.prompt(prompt, { source: "interactive" });
-
-		const responseText = getLastAssistantText(session);
-
-		if (!responseText.trim()) {
-			throw new Error("Empty response from LLM");
-		}
-
-		const rawJson = extractJsonFromResponse(responseText);
-		return parseAnalysisResult(rawJson);
-		} finally {
-			// Best effort cleanup of the temp session
-			try {
-				await (sessionManager as { shutdown?: () => Promise<void> | void }).shutdown?.();
-			} catch {
-				// Ignore cleanup errors
-			}
+	// 4. Call the configured Pi model directly via pi-ai.
+	const settings = settingsResolver(workspaceDir);
+	const model = resolveAnalysisModel(modelRegistry, modelSpec, settings);
+	const auth = await modelRegistry.getApiKeyAndHeaders(model);
+	if (!auth.ok) {
+		throw new Error(auth.error);
 	}
+
+	const completionOptions: ProviderStreamOptions = {
+		apiKey: auth.apiKey,
+		headers: auth.headers,
+		temperature: 0,
+		maxTokens: 800,
+	};
+	const reasoning = model.reasoning
+		? resolveReasoningLevel(settings.defaultThinkingLevel)
+		: undefined;
+	if (reasoning) {
+		completionOptions.reasoning = reasoning;
+	}
+
+	const context: Context = {
+		systemPrompt: FLEETING_ANALYSIS_SYSTEM_PROMPT,
+		messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
+		tools: [analysisResultTool],
+	};
+	const response = await completeFn(model, context, completionOptions);
+
+	return getAnalysisToolResult(response);
 }
 
 export function createFleetingAnalysisRunner(options: {
@@ -314,8 +503,9 @@ export function createFleetingAnalysisWorker(
 		workspaceDir,
 		pollIntervalMs = 5000,
 		modelSpec,
-		createAgentSessionFn,
-		sessionManagerFactory,
+		completeFn,
+		settingsResolver,
+		getConversionClient,
 	} = options;
 
 	let timer: NodeJS.Timeout | null = null;
@@ -349,7 +539,7 @@ export function createFleetingAnalysisWorker(
 		let result: FleetingAnalysisResult;
 		try {
 			result = await runAnalysis(
-				{ db, modelRegistry, authStorage, workspaceDir, modelSpec, createAgentSessionFn, sessionManagerFactory },
+				{ db, modelRegistry, authStorage, workspaceDir, modelSpec, completeFn, settingsResolver, getConversionClient },
 				noteId,
 			);
 		} catch (error) {

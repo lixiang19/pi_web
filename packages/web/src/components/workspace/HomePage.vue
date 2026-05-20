@@ -362,48 +362,33 @@ function handleRecommendationClick(rec: TodayRecommendation) {
 
         <!-- ===== 昨日回顾 ===== -->
         <section data-testid="home-yesterday-review" class="mt-10">
-          <div class="mb-5 flex items-center gap-3">
-            <div class="flex size-7 items-center justify-center rounded-lg bg-violet-500/10">
-              <Sparkles class="size-3.5 text-violet-500" />
-            </div>
-            <span class="text-sm font-semibold text-foreground">昨日回顾</span>
-            <Badge variant="secondary" class="text-[10px]">AI 生成</Badge>
-            <span class="h-px flex-1 bg-subtle" />
+          <div class="mb-4 flex items-center gap-2">
+            <Sparkles class="size-3.5 text-muted-foreground" />
+            <span class="text-xs font-medium text-muted-foreground">昨日回顾</span>
           </div>
 
-          <!-- AI 摘要卡 -->
-          <Card class="border-default bg-card p-5">
-            <div class="flex items-start gap-4">
-              <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10">
-                <Sparkles class="size-5 text-violet-500" />
-              </div>
-              <div class="min-w-0 flex-1">
-                <p class="text-[15px] leading-relaxed text-foreground/90">{{ yesterdayReview.summary }}</p>
-                <div v-if="yesterdayReview.stats.length > 0" class="mt-4 flex flex-wrap gap-2">
-                  <Badge
-                    v-for="stat in yesterdayReview.stats"
-                    :key="stat.label"
-                    variant="outline"
-                    class="gap-1.5 border-violet-500/20 bg-violet-500/5 text-violet-600 dark:text-violet-400"
-                  >
-                    <component :is="statIconMap[stat.icon]" class="size-3" />
-                    <span class="font-semibold tabular-nums">{{ stat.value }}</span>
-                    <span class="text-muted-foreground">{{ stat.label }}</span>
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </Card>
+          <p class="text-sm leading-relaxed text-foreground/80">{{ yesterdayReview.summary }}</p>
 
-          <!-- 高亮事件 -->
-          <div v-if="yesterdayReview.highlights.length > 0" class="mt-3 space-y-2">
+          <div v-if="yesterdayReview.stats.length > 0" class="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+            <div
+              v-for="stat in yesterdayReview.stats"
+              :key="stat.label"
+              class="flex items-center gap-1 text-xs text-muted-foreground"
+            >
+              <component :is="statIconMap[stat.icon]" class="size-3" />
+              <span class="font-medium tabular-nums text-foreground/70">{{ stat.value }}</span>
+              <span>{{ stat.label }}</span>
+            </div>
+          </div>
+
+          <div v-if="yesterdayReview.highlights.length > 0" class="mt-3 space-y-1">
             <div
               v-for="(highlight, i) in yesterdayReview.highlights"
               :key="i"
-              class="flex items-center gap-2 rounded-lg border border-default bg-background px-3 py-2 text-xs text-muted-foreground"
+              class="flex items-center gap-1.5 text-xs text-muted-foreground"
             >
-              <TrendingUp v-if="highlight.kind === 'trend'" class="size-3.5 shrink-0 text-emerald-500" />
-              <MessageSquare v-else class="size-3.5 shrink-0 text-blue-500" />
+              <TrendingUp v-if="highlight.kind === 'trend'" class="size-3 shrink-0 text-emerald-500" />
+              <MessageSquare v-else class="size-3 shrink-0 text-blue-500" />
               <span>{{ highlight.text }}</span>
             </div>
           </div>

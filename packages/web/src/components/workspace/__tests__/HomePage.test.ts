@@ -130,7 +130,6 @@ describe("HomePage - AI 输入与仪表盘", () => {
 		expect(text).toContain("好"); // 上午好/下午好/晚上好
 		expect(text).toContain("今日推荐");
 		expect(text).toContain("昨日回顾");
-		expect(text).toContain("AI 生成");
 	});
 
 	it("渲染推荐卡片", () => {

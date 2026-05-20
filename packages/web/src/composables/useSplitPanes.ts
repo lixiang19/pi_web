@@ -241,6 +241,15 @@ function flattenPaneGroups(root: GridNode): PaneGroup[] {
 	];
 }
 
+function closeEmptyPaneGroup(root: GridNode, paneGroupId: string): GridNode {
+	const parent = findParentSplit(root, paneGroupId);
+	if (!parent) return root;
+
+	const sibling =
+		parent.children[0].id === paneGroupId ? parent.children[1] : parent.children[0];
+	return replaceNodeWith(root, parent.id, sibling);
+}
+
 // ===== Composable =====
 
 export function useSplitPanes() {
@@ -296,8 +305,18 @@ export function useSplitPanes() {
 
 		const newTabs = pane.tabs.filter((t) => t.id !== tabId);
 
-		// 关完标签 → 补一个主页，面板永不为空
+		// 根工作台保留一个入口；分屏里的空面板直接收起，避免主页占位越关越多。
 		if (newTabs.length === 0) {
+			if (root.type !== "pane" || root.id !== paneGroupId) {
+				const newRoot = closeEmptyPaneGroup(root, paneGroupId);
+				rootNode.value = newRoot;
+				if (activePaneGroupId.value === paneGroupId) {
+					const panes = flattenPaneGroups(newRoot);
+					activePaneGroupId.value = panes[0]?.id ?? newRoot.id;
+				}
+				return;
+			}
+
 			const homeTab = createHomeTab();
 			const newPane: PaneGroup = {
 				...pane,

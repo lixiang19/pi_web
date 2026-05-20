@@ -111,6 +111,27 @@ describe("useSplitPanes - 工作台标签类型", () => {
 		expect(remaining.tabs.some((t) => t.id === chatTab.id)).toBe(false);
 	});
 
+	it("closeTab 关闭分屏中的最后一个 home 标签时收起该面板", () => {
+		const sp = useSplitPanes();
+		const originalPaneId = sp.activePaneGroupId.value;
+		const originalHomeId = sp.allPaneGroups.value[0]!.activeTabId;
+
+		sp.splitRight(originalPaneId, originalHomeId);
+
+		const panesAfterSplit = sp.allPaneGroups.value;
+		expect(panesAfterSplit).toHaveLength(2);
+		const generatedHomePane = panesAfterSplit.find((pane) => pane.id === originalPaneId)!;
+		const generatedHomeTab = generatedHomePane.tabs.find((tab) => tab.kind === "home")!;
+
+		sp.closeTab(generatedHomePane.id, generatedHomeTab.id);
+
+		const panesAfterClose = sp.allPaneGroups.value;
+		expect(panesAfterClose).toHaveLength(1);
+		expect(panesAfterClose[0]!.tabs).toHaveLength(1);
+		expect(panesAfterClose[0]!.tabs[0]!.id).toBe(originalHomeId);
+		expect(panesAfterClose[0]!.tabs[0]!.kind).toBe("home");
+	});
+
 	it("+ 按钮创建新 home 标签（handleNewTab 模式）", () => {
 		const sp = useSplitPanes();
 		const paneId = sp.activePaneGroupId.value;

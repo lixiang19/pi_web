@@ -9,6 +9,8 @@ import {
 import { createFleetingRouter } from "../routes/fleeting.js";
 import express from "express";
 import request from "supertest";
+import type { Api, AssistantMessage, Model } from "@mariozechner/pi-ai";
+import { getFleetingAttachments } from "../fleeting-attachments.js";
 
 const createDb = () => {
 	const db = new Database(":memory:");
@@ -17,25 +19,123 @@ const createDb = () => {
 };
 
 // ============================================================================
-// Mock pi-coding-agent createAgentSession so we don't need real API keys
+// Mock pi-ai complete() so we don't need real API keys
 // ============================================================================
-const mockSession = {
-	prompt: vi.fn(),
-	messages: [] as Array<{ role: string; content: unknown }>,
+const mockModel = {
+	provider: "aurora",
+	id: "kimi2.6",
+	name: "kimi2.6",
+	reasoning: true,
+} as Model<Api>;
+
+const baseUsage = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+	},
 };
 
-const mockCreateAgentSession = vi.fn(async (_opts: unknown) => ({
-	session: mockSession,
-	extensionsResult: {},
-})) as unknown as import("../fleeting-analysis.js").CreateAgentSessionFn;
+const createToolCallMessage = (
+	args: Record<string, unknown> = {
+		recommendationType: "clip",
+		recommendationText: "建议收藏",
+		draft: "SQLite article summary",
+		requiresInput: false,
+	},
+): AssistantMessage => ({
+	role: "assistant",
+	content: [
+		{
+			type: "toolCall",
+			id: "call-1",
+			name: "fleeting_analysis_result",
+			arguments: args,
+		},
+	],
+	api: "openai-responses",
+	provider: "aurora",
+	model: "kimi2.6",
+	usage: baseUsage,
+	stopReason: "toolUse",
+	timestamp: Date.now(),
+});
 
-const mockSessionManagerFactory = vi.fn(() => ({
-	shutdown: vi.fn(() => Promise.resolve()),
-})) as unknown as (workspaceDir: string) => import("../fleeting-analysis.js").ShutdownableSessionManager;
+const createTextMessage = (text: string): AssistantMessage => ({
+	role: "assistant",
+	content: [{ type: "text", text }],
+	api: "openai-responses",
+	provider: "aurora",
+	model: "kimi2.6",
+	usage: baseUsage,
+	stopReason: "stop",
+	timestamp: Date.now(),
+});
+
+const mockComplete = vi.fn(async () => createToolCallMessage()) satisfies import("../fleeting-analysis.js").CompleteFn;
+
+const createMockModelRegistry = () => ({
+	refresh: vi.fn(),
+	find: vi.fn((provider: string, modelId: string) =>
+		provider === "aurora" && modelId === "kimi2.6" ? mockModel : undefined,
+	),
+	getAvailable: vi.fn(() => [mockModel]),
+	getApiKeyAndHeaders: vi.fn(async () => ({
+		ok: true as const,
+		apiKey: "test-api-key",
+		headers: { "x-provider": "aurora" },
+	})),
+});
+
+const mockSettingsResolver = vi.fn(() => ({
+	defaultProvider: "aurora",
+	defaultModel: "kimi2.6",
+	defaultThinkingLevel: "high",
+}));
 
 vi.mock("../fleeting-attachments.js", () => ({
 	getFleetingAttachments: vi.fn(() => []),
 }));
+
+const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
+
+const createMockConversionClient = () => ({
+	createConversionWithFile: vi.fn(async () => ({
+		jobId: "conv-1",
+		status: "succeeded" as const,
+		task: "document.markdown" as const,
+		createdAt: new Date().toISOString(),
+		artifacts: [
+			{
+				artifactId: "artifact-1",
+				name: "report.md",
+				mimeType: "text/markdown",
+				size: 32,
+				inline: true,
+				content: "# Report\n\nConverted body",
+			},
+		],
+	})),
+	downloadArtifacts: vi.fn(async () => [
+		{
+			artifact: {
+				artifactId: "artifact-1",
+				name: "report.md",
+				mimeType: "text/markdown",
+				size: 32,
+				inline: true,
+			},
+			buffer: Buffer.from("# Report\n\nConverted body"),
+		},
+	]),
+});
 
 describe("fleeting analysis runner", () => {
 	it("enqueues a job when run is called", () => {
@@ -152,8 +252,10 @@ describe("fleeting analysis runner.resetJob", () => {
 
 describe("fleeting analysis worker", () => {
 	beforeEach(() => {
-		mockSession.prompt.mockReset();
-		mockSession.messages = [];
+		mockComplete.mockReset();
+		mockComplete.mockResolvedValue(createToolCallMessage());
+		mockSettingsResolver.mockClear();
+		mockGetFleetingAttachments.mockReturnValue([]);
 	});
 
 	afterEach(() => {
@@ -171,12 +273,12 @@ describe("fleeting analysis worker", () => {
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: {} as never,
+			modelRegistry: createMockModelRegistry() as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			createAgentSessionFn: mockCreateAgentSession,
-			sessionManagerFactory: mockSessionManagerFactory,
+			completeFn: mockComplete,
+			settingsResolver: mockSettingsResolver,
 		});
 
 		worker.start();
@@ -193,19 +295,100 @@ describe("fleeting analysis worker", () => {
 	it("processes a fleeting job: runs analysis and marks note suggested", async () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
+		const modelRegistry = createMockModelRegistry();
 
 		db.prepare(
 			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
 		).run("note-1", "Read a great article about SQLite", Date.now(), Date.now());
+		mockComplete.mockResolvedValue(createToolCallMessage());
 
-		mockSession.prompt.mockResolvedValue(undefined);
-		mockSession.messages = [
-			{ role: "user", content: "test" },
-			{
-				role: "assistant",
-				content: '{"recommendationType":"clip","recommendationText":"建议收藏","draft":"SQLite article summary","requiresInput":false}',
-			},
-		];
+		queue.enqueue({
+			type: "fleeting.analyze",
+			relatedType: "fleeting_note",
+			relatedId: "note-1",
+			payload: { noteId: "note-1" },
+		});
+		expect(queue.list()).toHaveLength(1);
+
+		const worker = createFleetingAnalysisWorker({
+			db,
+			jobQueue: queue,
+			modelRegistry: modelRegistry as never,
+			authStorage: {} as never,
+			workspaceDir: "/tmp",
+			pollIntervalMs: 10,
+			completeFn: mockComplete,
+			settingsResolver: mockSettingsResolver,
+		});
+
+		worker.start();
+		await new Promise((r) => setTimeout(r, 200));
+		worker.stop();
+
+		const note = db
+			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
+			.get("note-1") as Record<string, unknown>;
+		expect(note.analysis_status).toBe("suggested");
+		expect(note.recommendation_type).toBe("clip");
+		expect(note.recommendation_text).toBe("建议收藏");
+		expect(note.draft).toBe("SQLite article summary");
+		expect(modelRegistry.refresh).toHaveBeenCalled();
+		expect(modelRegistry.find).toHaveBeenCalledWith("aurora", "kimi2.6");
+		expect(modelRegistry.getApiKeyAndHeaders).toHaveBeenCalledWith(mockModel);
+		expect(mockComplete).toHaveBeenCalledWith(
+			mockModel,
+			expect.objectContaining({
+				systemPrompt: expect.stringContaining("ridge 的闪念分析器"),
+				messages: [
+					expect.objectContaining({
+						role: "user",
+						content: expect.stringContaining("Read a great article about SQLite"),
+					}),
+				],
+				tools: [
+					expect.objectContaining({
+						name: "fleeting_analysis_result",
+					}),
+				],
+			}),
+			expect.objectContaining({
+				apiKey: "test-api-key",
+				headers: { "x-provider": "aurora" },
+				temperature: 0,
+				maxTokens: 800,
+				reasoning: "high",
+			}),
+		);
+
+		const job = queue.list()[0];
+		expect(job?.status).toBe("completed");
+		db.close();
+	});
+
+	it("converts binary attachments and sends truncated body to the model", async () => {
+		const db = createDb();
+		const queue = createBackgroundJobQueue(db);
+		const conversionClient = createMockConversionClient();
+		const storedPath = "/tmp/report.pdf";
+
+		db.prepare(
+			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
+		).run("note-1", "Analyze attached report", Date.now(), Date.now());
+		db.prepare(
+			`INSERT INTO fleeting_attachments(
+				attachment_id, note_id, original_name, stored_name, stored_path, mime_type, size, sha256, created_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			"att-1",
+			"note-1",
+			"report.pdf",
+			"att-1-report.pdf",
+			storedPath,
+			"application/pdf",
+			1024,
+			"abc",
+			Date.now(),
+		);
 
 		queue.enqueue({
 			type: "fleeting.analyze",
@@ -217,12 +400,66 @@ describe("fleeting analysis worker", () => {
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: {} as never,
+			modelRegistry: createMockModelRegistry() as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			createAgentSessionFn: mockCreateAgentSession,
-			sessionManagerFactory: mockSessionManagerFactory,
+			completeFn: mockComplete,
+			settingsResolver: mockSettingsResolver,
+			getConversionClient: () => conversionClient,
+		});
+
+		worker.start();
+		await new Promise((r) => setTimeout(r, 200));
+		worker.stop();
+
+		expect(mockComplete).toHaveBeenCalled();
+		expect(conversionClient.createConversionWithFile).toHaveBeenCalledWith(
+			storedPath,
+			expect.objectContaining({
+				task: "document.markdown",
+				preferredFormat: "markdown",
+				waitMs: 30_000,
+			}),
+		);
+		const context = (mockComplete.mock.calls.at(-1) as Parameters<import("../fleeting-analysis.js").CompleteFn> | undefined)?.[1];
+		const userMessage = context?.messages[0]?.content;
+		expect(userMessage).toContain("附件正文");
+		expect(userMessage).toContain("## report.pdf");
+		expect(userMessage).toContain("Converted body");
+		db.close();
+	});
+
+	it("does not accept assistant text JSON when the structured output tool was not called", async () => {
+		const db = createDb();
+		const queue = createBackgroundJobQueue(db, {
+			retryDelaysMs: [0],
+		});
+
+		db.prepare(
+			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
+		).run("note-1", "Read a great article about SQLite", Date.now(), Date.now());
+		mockComplete.mockResolvedValue(
+			createTextMessage('{"recommendationType":"clip","recommendationText":"建议收藏","draft":"SQLite article summary","requiresInput":false}'),
+		);
+
+		queue.enqueue({
+			type: "fleeting.analyze",
+			relatedType: "fleeting_note",
+			relatedId: "note-1",
+			payload: { noteId: "note-1" },
+			maxAttempts: 1,
+		});
+
+		const worker = createFleetingAnalysisWorker({
+			db,
+			jobQueue: queue,
+			modelRegistry: createMockModelRegistry() as never,
+			authStorage: {} as never,
+			workspaceDir: "/tmp",
+			pollIntervalMs: 10,
+			completeFn: mockComplete,
+			settingsResolver: mockSettingsResolver,
 		});
 
 		worker.start();
@@ -232,13 +469,11 @@ describe("fleeting analysis worker", () => {
 		const note = db
 			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
 			.get("note-1") as Record<string, unknown>;
-		expect(note.analysis_status).toBe("suggested");
-		expect(note.recommendation_type).toBe("clip");
-		expect(note.recommendation_text).toBe("建议收藏");
-		expect(note.draft).toBe("SQLite article summary");
+		expect(note.analysis_status).toBe("failed");
+		expect(note.last_error).toBe("Fleeting analysis did not call fleeting_analysis_result");
 
 		const job = queue.list()[0];
-		expect(job?.status).toBe("completed");
+		expect(job?.status).toBe("failed");
 		db.close();
 	});
 
@@ -249,9 +484,7 @@ describe("fleeting analysis worker", () => {
 		db.prepare(
 			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'analyzing', ?, ?)",
 		).run("note-1", "Test", Date.now(), Date.now());
-
-		mockSession.prompt.mockRejectedValue(new Error("LLM timeout"));
-		mockSession.messages = [{ role: "user", content: "test" }];
+		mockComplete.mockRejectedValue(new Error("LLM timeout"));
 
 		queue.enqueue({
 			type: "fleeting.analyze",
@@ -264,12 +497,12 @@ describe("fleeting analysis worker", () => {
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: {} as never,
+			modelRegistry: createMockModelRegistry() as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			createAgentSessionFn: mockCreateAgentSession,
-			sessionManagerFactory: mockSessionManagerFactory,
+			completeFn: mockComplete,
+			settingsResolver: mockSettingsResolver,
 		});
 
 		worker.start();
@@ -297,9 +530,7 @@ describe("fleeting analysis worker", () => {
 		db.prepare(
 			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'analyzing', ?, ?)",
 		).run("note-1", "Test", Date.now(), Date.now());
-
-		mockSession.prompt.mockRejectedValue(new Error("Persistent error"));
-		mockSession.messages = [{ role: "user", content: "test" }];
+		mockComplete.mockRejectedValue(new Error("Persistent error"));
 
 		queue.enqueue({
 			type: "fleeting.analyze",
@@ -313,12 +544,12 @@ describe("fleeting analysis worker", () => {
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: {} as never,
+			modelRegistry: createMockModelRegistry() as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			createAgentSessionFn: mockCreateAgentSession,
-			sessionManagerFactory: mockSessionManagerFactory,
+			completeFn: mockComplete,
+			settingsResolver: mockSettingsResolver,
 		});
 
 		worker.start();
@@ -619,16 +850,15 @@ describe("fleeting router toPublicNote includes failure fields", () => {
 		).run("note-1", "Test content", Date.now(), Date.now());
 
 		// Mock LLM to be slow so we can cancel mid-analysis
-		mockSession.prompt.mockImplementation(async () => {
+		mockComplete.mockImplementation(async () => {
 			await new Promise((r) => setTimeout(r, 80));
+			return createToolCallMessage({
+				recommendationType: "clip",
+				recommendationText: "建议收藏",
+				draft: "d",
+				requiresInput: false,
+			});
 		});
-		mockSession.messages = [
-			{ role: "user", content: "test" },
-			{
-				role: "assistant",
-				content: '{"recommendationType":"clip","recommendationText":"建议收藏","draft":"d","requiresInput":false}',
-			},
-		];
 
 		queue.enqueue({
 			type: "fleeting.analyze",
@@ -640,12 +870,12 @@ describe("fleeting router toPublicNote includes failure fields", () => {
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: {} as never,
+			modelRegistry: createMockModelRegistry() as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			createAgentSessionFn: mockCreateAgentSession,
-			sessionManagerFactory: mockSessionManagerFactory,
+			completeFn: mockComplete,
+			settingsResolver: mockSettingsResolver,
 		});
 
 		worker.start();
@@ -683,11 +913,10 @@ describe("fleeting router toPublicNote includes failure fields", () => {
 		).run("note-1", "Test content", Date.now(), Date.now());
 
 		// Mock LLM to be slow and then fail
-		mockSession.prompt.mockImplementation(async () => {
+		mockComplete.mockImplementation(async () => {
 			await new Promise((r) => setTimeout(r, 80));
 			throw new Error("LLM timeout");
 		});
-		mockSession.messages = [{ role: "user", content: "test" }];
 
 		queue.enqueue({
 			type: "fleeting.analyze",
@@ -700,12 +929,12 @@ describe("fleeting router toPublicNote includes failure fields", () => {
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: {} as never,
+			modelRegistry: createMockModelRegistry() as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			createAgentSessionFn: mockCreateAgentSession,
-			sessionManagerFactory: mockSessionManagerFactory,
+			completeFn: mockComplete,
+			settingsResolver: mockSettingsResolver,
 		});
 
 		worker.start();

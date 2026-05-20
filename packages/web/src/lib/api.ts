@@ -1096,6 +1096,7 @@ export interface DesktopCapturePayload {
 	type: DesktopCaptureType;
 	metadata?: Record<string, unknown>;
 	attachments?: { name: string; mimeType: string; base64: string }[];
+	delayAnalysis?: boolean;
 }
 
 export function captureFromDesktop(payload: DesktopCapturePayload) {
@@ -1117,6 +1118,29 @@ export function uploadFleetingAttachments(noteId: string, files: File[]) {
 		method: "POST",
 		body: formData,
 	});
+}
+
+export async function captureFleetingWithFiles(
+	content: string,
+	type: Extract<DesktopCaptureType, "file" | "audio">,
+	files: File[],
+	metadata?: Record<string, unknown>,
+) {
+	const created = await captureFromDesktop({
+		content,
+		type,
+		metadata,
+		attachments: [],
+		delayAnalysis: true,
+	});
+	const uploaded = files.length > 0
+		? await uploadFleetingAttachments(String(created.note.id), files)
+		: { attachments: [] as FleetingAttachment[] };
+	await triggerFleetingAnalysis(String(created.note.id));
+	return {
+		note: created.note,
+		attachments: uploaded.attachments,
+	};
 }
 
 export function getFleetingAttachments(noteId: string) {

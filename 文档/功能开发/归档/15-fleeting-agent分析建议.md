@@ -77,12 +77,14 @@ worker.start(); // 每 5 秒 claimNext
 执行流程：
 
 1. `claimNext('fleeting-worker')` 获取 `fleeting.analyze` job
-2. 读取闪念内容 + 附件信息
-3. 构造 analysis prompt
-4. 调用 LLM（轻量模型，如 gpt-4o-mini）
-5. 解析输出为 JSON：`{ recommendationType, recommendationText, draft, requiresInput }`
-6. 写入 `fleeting_notes`：`analysis_status = 'suggested'`
-7. `jobQueue.complete(jobId)`
+2. 读取闪念内容 + 附件记录
+3. 为附件构造正文上下文：文本/Markdown/JSON 等只读取前缀，PDF/Word/音频/图片等二进制附件通过 Python Converter 转 Markdown/转写/OCR，再按字符预算截断
+4. 构造 analysis prompt，包含闪念内容、附件列表、截断后的附件正文
+5. 读取 Pi `settings.json/models.json/auth.json`，解析默认服务商、模型、thinking level 和鉴权
+6. 直接调用 `@mariozechner/pi-ai complete()`，`context.tools` 只包含 `fleeting_analysis_result`
+7. 从 assistant `toolCall.arguments` 读取 `{ recommendationType, recommendationText, draft, requiresInput }`
+8. 写入 `fleeting_notes`：`analysis_status = 'suggested'`
+9. `jobQueue.complete(jobId)`
 
 ### 3. 失败处理
 
@@ -132,21 +134,18 @@ POST /api/fleeting/:noteId/analyze   (手动触发重新分析)
 
 附件：{attachments_summary}
 
-请用 JSON 回复：
-{
-  "recommendationType": "journal|clip|task|delete",
-  "recommendationText": "简短的理由说明（20字内）",
-  "draft": "如果是 journal/clip，给出草稿内容；如果是 task，给出任务标题和描述",
-  "requiresInput": false
-}
+附件正文（转换或读取后，可能已截断）：
+{attachment_contexts}
+
+必须调用 `fleeting_analysis_result` 工具返回最终结构化结果；普通文本或 JSON 文本不作为有效分析结果。
 ```
 
 ## 安全与边界
 
 1. **LLM 调用隔离**：使用轻量模型，不暴露完整 Pi 会话能力
-2. **附件信息脱敏**：prompt 中只传附件名和 mimeType，不传内容
+2. **附件边界**：prompt 中只传附件名、mimeType、大小和按预算截断后的正文；不传原始文件、完整大文档或 base64
 3. **频率限制**：同一闪念 5 分钟内不重复分析（`UNIQUE INDEX` + 重试间隔）
-4. **文件大小限制**：附件摘要只列文件名，不读取大文件内容
+4. **文件大小限制**：大附件先通过 Converter 得到正文摘要源，再按单附件和总上下文预算截断
 
 ## 测试策略
 
@@ -156,7 +155,7 @@ POST /api/fleeting/:noteId/analyze   (手动触发重新分析)
 2. **claim & execute**：worker 能认领 job，更新闪念状态为 `suggested`
 3. **retry**：失败 job 能重试，最终失败写入通知
 4. **幂等**：同一闪念不会同时有两个 pending/running job
-5. **prompt 解析**：LLM 输出 JSON 能正确解析并写入 DB
+5. **结构化输出**：LLM 必须调用 `fleeting_analysis_result`，assistant 文本 JSON 会被拒绝并进入重试/失败路径
 
 ### 前端测试
 
@@ -182,7 +181,7 @@ POST /api/fleeting/:noteId/analyze   (手动触发重新分析)
 - `packages/server/src/fleeting-analysis.ts`：核心分析模块
   - `createFleetingAnalysisRunner()`：闪念创建时入队分析 job
   - `createFleetingAnalysisWorker()`：后台轮询 worker，每 5s claimNext
-  - `runAnalysis()`：构造 prompt，调用 LLM（轻量 session，noTools=all），解析 JSON 结果
+  - `runAnalysis()`：构造 prompt，直接调用 `@mariozechner/pi-ai complete()`，只开放 `fleeting_analysis_result` custom tool，并读取 assistant `toolCall.arguments`
 
 ### 后端修改文件
 
@@ -215,11 +214,11 @@ POST /api/fleeting/:noteId/analyze   (手动触发重新分析)
 | 2 | worker 解构漏了 `modelSpec`，运行时 `ReferenceError` | 在 `createFleetingAnalysisWorker` 解构中恢复 `modelSpec` |
 | 3 | `claimNext()` 无 jobType 过滤，fleeting worker 会抢到并 fail 其他 job | 扩展 `claimNext(workerId, jobType?)` SQL 增加 `AND job_type = ?` 过滤；worker 调用 `claimNext("fleeting-worker", "fleeting.analyze")` |
 | 4 | 失败状态未实现：`note` 始终写回 `unanalyzed`；`toPublicNote` 不返回 `lastError`/`retryCount` | worker 根据 `remainingAttempts` 区分：`>0` 写 `unanalyzed`，`=0` 写 `failed`；`toPublicNote` 新增 `lastError` 和 `retryCount` 字段 |
-| 5 | 前端附件上传后 runner 已触发分析，AI 看不到附件 | `handleCapture` 中附件上传成功后显式调用 `retryAnalysis(note.id)` 重新入队 |
-| 6 | 测试未覆盖真实 worker 执行链路和 `getAnalysisRunner` 延迟获取 | 重写测试：mock `createAgentSession` 和 `getFleetingAttachments`；新增 6 项测试覆盖 worker 成功路径、失败重试、最终失败、非 fleeting job 隔离、路由延迟获取、列表返回失败字段 |
+| 5 | 前端附件上传后 runner 已触发分析，AI 看不到附件 | 有附件时创建闪念先 `delayAnalysis`，通过 multipart 上传到 `.ridge/fleeting-attachments/<noteId>/` 后显式调用 `retryAnalysis(note.id)` 重新入队 |
+| 6 | 测试未覆盖真实 worker 执行链路和 `getAnalysisRunner` 延迟获取 | 重写测试：mock `pi-ai complete()`、`ModelRegistry` 和 `getFleetingAttachments`；新增测试覆盖 worker 成功路径、settings 默认模型、失败重试、最终失败、非 fleeting job 隔离、路由延迟获取、列表返回失败字段 |
+| 7 | 前端把文件/音频读成 base64 放进 JSON，PDF/Word/音频也不能直接进入模型 | Web 捕捉入口改为保留 `File[]` 并走 multipart 临时附件上传；worker 分析前调用 Converter 提取二进制附件正文，按预算截断后放入 prompt |
 
 ### 验证结果
 
 - `npm run check`：0 errors / 16 warnings（既有遗留）
 - `pnpm test`：server 218 passed / web 230 passed
-

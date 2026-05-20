@@ -57,6 +57,7 @@ const {
 	analyzingCount,
 	deleteItem,
 	captureNote,
+	uploadAttachments,
 	processToJournal,
 	processToClip,
 	processToTask,
@@ -140,14 +141,15 @@ const statusDotClass = (note: InboxItem) => {
 const newNoteContent = ref("");
 const isSaving = ref(false);
 const selectedFiles = ref<File[]>([]);
-const captureFocused = ref(false);
+const inputFocused = ref(false);
 const isRecording = ref(false);
 const recordedBlob = ref<Blob | null>(null);
 const mediaRecorder = ref<MediaRecorder | null>(null);
-const audioChunks = ref<Blob[]>([]);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const isAuthenticated = ref(true);
 const isOnline = ref(true);
+
+const inputExpanded = computed(() => inputFocused.value || canSave.value || selectedFiles.value.length > 0 || isRecording.value);
 
 const checkAuth = async () => {
 	try {
@@ -157,18 +159,6 @@ const checkAuth = async () => {
 		isAuthenticated.value = false;
 	}
 };
-
-const blobToBase64 = (blob: Blob): Promise<string> =>
-	new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onloadend = () => {
-			const result = reader.result as string;
-			const parts = result.split(",");
-			resolve(parts[1] ?? "");
-		};
-		reader.onerror = reject;
-		reader.readAsDataURL(blob);
-	});
 
 const handleFileSelect = (event: Event) => {
 	const target = event.target as HTMLInputElement;
@@ -189,14 +179,13 @@ const startRecording = async () => {
 	try {
 		const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		const recorder = new MediaRecorder(stream);
-		mediaRecorder.value = recorder;
-		audioChunks.value = [];
-		recorder.ondataavailable = (e) => {
-			if (e.data.size > 0) audioChunks.value.push(e.data);
-		};
+		const chunks: Blob[] = [];
+		recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 		recorder.onstop = () => {
-			recordedBlob.value = new Blob(audioChunks.value, { type: "audio/webm" });
+			recordedBlob.value = new Blob(chunks, { type: "audio/webm" });
 			stream.getTracks().forEach((t) => t.stop());
+			// auto-send on stop
+			if (canSave.value) void handleSave();
 		};
 		recorder.start();
 		isRecording.value = true;
@@ -210,26 +199,29 @@ const stopRecording = () => {
 	isRecording.value = false;
 };
 
-const clearRecording = () => {
-	recordedBlob.value = null;
-};
-
 const canSave = computed(() => {
 	if (isSaving.value) return false;
 	return newNoteContent.value.trim().length > 0 || selectedFiles.value.length > 0 || recordedBlob.value !== null;
 });
 
-const captureExpanded = computed(
-	() => captureFocused.value || canSave.value || selectedFiles.value.length > 0 || recordedBlob.value !== null || isRecording.value,
-);
-
-const doCapture = async (type: DesktopCaptureType, text: string, attachments?: { name: string; mimeType: string; base64: string }[]) => {
+const doCapture = async (type: DesktopCaptureType, text: string, files?: File[]) => {
 	if (!isAuthenticated.value) { toast.error("未登录，采集不可用"); return; }
 	if (!isOnline.value) { toast.error("服务器离线，采集不可用"); return; }
 
 	isSaving.value = true;
 	try {
-		await captureFromDesktop({ content: text, type, attachments });
+		if (files && files.length > 0) {
+			const created = await captureFromDesktop({
+				content: text,
+				type,
+				attachments: [],
+				delayAnalysis: true,
+			});
+			await uploadAttachments(String(created.note.id), files);
+			await retryAnalysis(String(created.note.id));
+		} else {
+			await captureFromDesktop({ content: text, type });
+		}
 		window.dispatchEvent(new CustomEvent("ridge:fleeting-created"));
 		newNoteContent.value = "";
 		selectedFiles.value = [];
@@ -248,31 +240,14 @@ const handleSave = async () => {
 	const hasAudio = recordedBlob.value !== null;
 	const hasText = text.length > 0;
 
-	// 构建附件数组
-	const attachments: { name: string; mimeType: string; base64: string }[] = [];
-
-	if (hasFiles) {
-		const fileAttachments = await Promise.all(
-			selectedFiles.value.map(async (file) => ({
-				name: file.name,
-				mimeType: file.type || "application/octet-stream",
-				base64: await blobToBase64(file),
-			}))
-		);
-		attachments.push(...fileAttachments);
-	}
-
-	if (hasAudio) {
-		attachments.push({
-			name: "recording.webm",
-			mimeType: "audio/webm",
-			base64: await blobToBase64(recordedBlob.value!),
-		});
-	}
-
-	if (hasText || attachments.length > 0) {
-		if (attachments.length > 0) {
-			await doCapture("file", text, attachments);
+	if (hasText || hasFiles || hasAudio) {
+		if (hasFiles) {
+			await doCapture("file", text, selectedFiles.value);
+		} else if (hasAudio && recordedBlob.value) {
+			const audioFile = new File([recordedBlob.value], "recording.webm", {
+				type: "audio/webm",
+			});
+			await doCapture("audio", text, [audioFile]);
 		} else {
 			await captureNote(text);
 			newNoteContent.value = "";
@@ -418,57 +393,114 @@ const confirmMilestone = async () => {
 </script>
 
 <template>
-	<div class="relative flex h-full flex-col overflow-hidden bg-background text-foreground">
-		<header class="flex shrink-0 items-center justify-between border-b border-default px-7 py-4">
-			<div class="flex items-center gap-2.5">
-				<div class="flex size-8 items-center justify-center rounded-[10px] bg-primary/10 text-primary">
-					<Lightbulb class="size-[18px]" />
-				</div>
-				<div>
-					<h1 class="text-hero font-semibold leading-tight">闪念</h1>
-					<p class="text-caption text-muted-foreground">{{ count }} 条待处理</p>
-				</div>
+	<div class="flex h-full flex-col overflow-hidden bg-background">
+		<!-- Filter + analyzing row -->
+		<div class="flex shrink-0 items-center justify-between border-b border-default px-7 py-2.5">
+			<div class="flex items-center gap-1.5">
+				<button v-for="item in filterItems" :key="item.key"
+					class="rounded-lg px-2.5 py-1 text-caption font-medium transition-colors"
+					:class="activeFilter === item.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-soft hover:text-foreground'"
+					@click="activeFilter = item.key"
+				>
+					{{ item.label }}
+					<span class="ml-1 tabular-nums opacity-60">{{ item.count }}</span>
+				</button>
 			</div>
-			<div class="flex items-center gap-2">
-				<span v-if="analyzingCount > 0" class="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-caption text-primary">
-					<span class="size-1.5 rounded-full bg-primary animate-pulse" />
-					{{ analyzingCount }} 分析中
-				</span>
-				<span v-if="!isAuthenticated" class="inline-flex items-center rounded-md bg-destructive/10 px-2 py-1 text-micro font-medium text-destructive">未登录</span>
-				<span v-else-if="!isOnline" class="inline-flex items-center rounded-md bg-destructive/10 px-2 py-1 text-micro font-medium text-destructive">离线</span>
-			</div>
-		</header>
-
-		<div class="flex shrink-0 gap-1 border-b border-default px-7 py-2.5">
-			<button
-				v-for="item in filterItems"
-				:key="item.key"
-				class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-caption font-medium transition-colors"
-				:class="activeFilter === item.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-soft hover:text-foreground'"
-				@click="activeFilter = item.key"
-			>
-				<span
-					v-if="item.key !== 'all'"
-					class="size-1.5 rounded-full"
-					:class="activeFilter === item.key ? 'bg-primary-foreground' : item.key === 'processed' ? 'bg-primary' : 'bg-muted-foreground/30'"
-				/>
-				{{ item.label }}
-				<span class="tabular-nums opacity-70">{{ item.count }}</span>
+			<button v-if="analyzingCount > 0" class="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-caption text-primary">
+				<span class="size-1.5 rounded-full bg-primary animate-pulse" />
+				{{ analyzingCount }}
 			</button>
 		</div>
 
-		<div class="flex-1 overflow-y-auto px-7 pt-3 pb-36">
+		<!-- Timeline: input + notes -->
+		<div class="flex-1 overflow-y-auto px-7 pt-5 pb-8">
 			<div class="mx-auto max-w-2xl">
 				<div v-if="isLoading" class="flex flex-col items-center justify-center gap-3 py-24">
 					<div class="size-7 rounded-full border-2 border-muted/50 border-t-primary animate-spin" />
 					<p class="text-body-sm text-muted-foreground/50">加载中…</p>
 				</div>
 
-				<div v-else-if="visibleNotes.length === 0" class="flex flex-col items-center justify-center py-24">
+				<template v-else>
+				<!-- ──── Input as first timeline item ──── -->
+				<div class="group flex gap-3.5">
+					<div class="flex w-5 shrink-0 flex-col items-center">
+						<div
+							class="mt-4 size-3 rounded-full border-2 transition-all duration-200"
+							:class="inputExpanded || isRecording || selectedFiles.length > 0 || newNoteContent.trim() ? 'border-primary bg-primary/20' : 'border-muted-foreground/30 bg-background'"
+						/>
+						<div class="mt-1.5 w-px flex-1 bg-border/60" />
+					</div>
+					<div class="flex-1 pb-2">
+						<div
+							class="rounded-xl border bg-card transition-all"
+							:class="inputExpanded ? 'border-primary/40 px-4 py-3.5 shadow-xs' : 'border-dashed border-muted-foreground/20 px-3.5 py-3 hover:border-muted-foreground/40 hover:shadow-xs'"
+						>
+							<div class="flex flex-col gap-3">
+								<Textarea
+									v-model="newNoteContent"
+									:disabled="isSaving"
+									class="min-h-6 max-h-32 resize-none border-0 bg-transparent p-0 text-body leading-relaxed shadow-none outline-none ring-0 placeholder:text-muted-foreground/40 focus-visible:ring-0"
+									:class="inputExpanded ? 'min-h-[52px]' : ''"
+									placeholder="捕捉此刻的想法…"
+									@focus="inputFocused = true"
+									@blur="inputFocused = false"
+									@keydown="handleCaptureKeydown"
+								/>
+
+								<!-- Attachments preview -->
+								<div v-if="selectedFiles.length > 0" class="flex flex-wrap gap-1.5">
+									<span v-for="(f, i) in selectedFiles" :key="i" class="inline-flex items-center gap-1.5 rounded-lg border border-default bg-soft px-2 py-1 text-caption text-muted-foreground">
+										<Paperclip class="size-3.5 shrink-0" />
+										<span class="max-w-28 truncate">{{ f.name }}</span>
+										<button class="rounded p-0.5 text-muted-foreground/50 transition-colors hover:text-destructive" @click="removeFile(i)"><X class="size-3" /></button>
+									</span>
+								</div>
+
+								<!-- Recording indicator -->
+								<div v-if="isRecording">
+									<div class="inline-flex items-center gap-2 rounded-full bg-destructive/10 px-3 py-1 text-caption text-destructive">
+										<span class="relative flex size-2"><span class="absolute inline-flex size-full animate-ping rounded-full bg-destructive opacity-60" /><span class="relative inline-flex size-2 rounded-full bg-destructive" /></span>
+										录音中… 松手自动发送
+									</div>
+								</div>
+
+								<!-- Toolbar — always visible -->
+								<div class="flex items-center justify-between">
+									<div class="flex items-center gap-1.5">
+										<input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileSelect" />
+										<Button variant="ghost" size="sm" class="h-7 gap-1.5 px-2.5 text-caption text-muted-foreground/60 hover:bg-soft hover:text-foreground" @click="triggerFileInput">
+											<Paperclip class="size-3.5" />
+											附件
+										</Button>
+										<button
+											class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-caption font-medium transition-all"
+											:class="isRecording
+												? 'bg-destructive/10 text-destructive animate-pulse'
+												: 'bg-primary/10 text-primary hover:bg-primary/20'"
+											@click="isRecording ? stopRecording() : startRecording()"
+										>
+											<Mic v-if="!isRecording" class="size-3.5" />
+											<StopCircle v-else class="size-3.5" />
+											{{ isRecording ? '停止录音' : '语音输入' }}
+										</button>
+									</div>
+									<Button size="sm" class="h-8 gap-1.5 px-3 rounded-[10px]" :disabled="!canSave" @click="handleSave">
+										<LoaderCircle v-if="isSaving" class="size-3.5 animate-spin" />
+										<Send v-else class="size-3.5" />
+										发送
+									</Button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- ──── Notes list ──── -->
+				<div v-if="visibleNotes.length === 0" class="flex flex-col items-center justify-center py-16">
 					<div class="mb-4 flex size-14 items-center justify-center rounded-2xl bg-soft text-muted-foreground/40">
 						<Lightbulb class="size-6" />
 					</div>
-					<p class="text-body-sm font-medium text-muted-foreground/70">没有闪念</p>
+					<p class="text-body-sm font-medium text-muted-foreground/70">还没有闪念</p>
 				</div>
 
 				<div v-else>
@@ -628,80 +660,11 @@ const confirmMilestone = async () => {
 							</div>
 						</article>
 					</div>
-				</div>
 			</div>
-		</div>
-
-		<div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-b from-background/0 via-background to-background px-7 pt-5 pb-6">
-			<div
-				class="pointer-events-auto mx-auto max-w-2xl overflow-hidden rounded-[14px] border bg-card shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all"
-				:class="captureExpanded ? 'border-primary/40' : 'border-default'"
-			>
-				<div :class="captureExpanded ? 'px-4 pt-3.5' : 'px-3.5 py-2.5'">
-					<Textarea
-						v-model="newNoteContent"
-						:disabled="isSaving"
-						class="max-h-32 resize-none border-0 bg-transparent p-0 text-body leading-relaxed shadow-none outline-none ring-0 placeholder:text-muted-foreground/40 focus-visible:ring-0"
-						:class="captureExpanded ? 'min-h-[60px]' : 'min-h-6'"
-						placeholder="捕捉此刻的想法…"
-						@focus="captureFocused = true"
-						@blur="captureFocused = false"
-						@keydown="handleCaptureKeydown"
-					/>
-				</div>
-
-				<div v-if="captureExpanded && selectedFiles.length > 0" class="flex flex-wrap gap-1.5 px-4 pt-2">
-					<span
-						v-for="(file, i) in selectedFiles"
-						:key="i"
-						class="inline-flex items-center gap-1.5 rounded-lg border border-default bg-soft px-2.5 py-1 text-caption text-muted-foreground"
-					>
-						<Paperclip class="size-3.5 shrink-0" />
-						<span class="max-w-36 truncate">{{ file.name }}</span>
-						<button class="rounded-sm p-0.5 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive" @click="removeFile(i)">
-							<X class="size-3" />
-						</button>
-					</span>
-				</div>
-
-				<div v-if="captureExpanded && (isRecording || recordedBlob)" class="px-4 pt-2">
-					<div v-if="isRecording" class="inline-flex items-center gap-2 rounded-full bg-destructive/10 px-3 py-1.5 text-caption text-destructive">
-						<span class="relative flex size-2">
-							<span class="absolute inline-flex size-full animate-ping rounded-full bg-destructive opacity-60" />
-							<span class="relative inline-flex size-2 rounded-full bg-destructive" />
-						</span>
-						<span>正在录音…</span>
-						<button class="rounded-full p-0.5 text-destructive/70 transition-colors hover:bg-destructive/10 hover:text-destructive" @click="stopRecording">
-							<StopCircle class="size-3.5" />
-						</button>
-					</div>
-					<div v-else-if="recordedBlob" class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-caption text-primary">
-						<span class="size-1.5 rounded-full bg-primary" />
-						<span>录音已就绪</span>
-						<button class="rounded-full p-0.5 text-primary/70 transition-colors hover:bg-primary/10 hover:text-primary" @click="clearRecording">
-							<X class="size-3.5" />
-						</button>
-					</div>
-				</div>
-
-				<div class="flex items-center justify-between px-3.5 transition-all" :class="captureExpanded ? 'py-3' : 'py-1.5'">
-					<div class="flex items-center gap-1">
-						<input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileSelect" />
-						<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:bg-soft hover:text-foreground" aria-label="上传文件" @click="triggerFileInput">
-							<Paperclip class="size-3.5" />
-						</Button>
-						<Button variant="ghost" size="icon" class="size-7 text-muted-foreground/60 hover:bg-soft hover:text-foreground" :class="{ 'text-destructive hover:text-destructive hover:bg-destructive/10': isRecording }" aria-label="录音" @click="isRecording ? stopRecording() : startRecording()">
-							<Mic class="size-3.5" />
-						</Button>
-					</div>
-					<Button size="icon" class="size-8 rounded-[10px]" :disabled="!canSave" aria-label="保存闪念" @click="handleSave">
-						<LoaderCircle v-if="isSaving" class="size-4 animate-spin" />
-						<Send v-else class="size-4" />
-					</Button>
-				</div>
-			</div>
+		</template>
 		</div>
 	</div>
+</div>
 
 	<!-- Journal Dialog -->
 	<Dialog v-model:open="journalDialogOpen">
