@@ -9,8 +9,10 @@ import {
 } from "../planning-tools.js";
 import {
 	compileAgentPermission,
+	createPermissionGateExtension,
 	extractPermissionSubject,
 	derivePermissionPattern,
+	loadGlobalPermissionConfig,
 	mapToolToLogicalPermission,
 } from "../agent-permissions.js";
 
@@ -327,11 +329,24 @@ describe("planning tool permissions", () => {
 		}
 	});
 
+	it("maps the subagent launch tool to subagent logical permission", () => {
+		expect(mapToolToLogicalPermission("subagent")).toBe("subagent");
+		expect(extractPermissionSubject("/workspace", "subagent", { agent: "worker" })).toBe("worker");
+		expect(derivePermissionPattern("/workspace", "subagent", { agent: "worker" })).toBe("worker");
+	});
+
+	it("does not assign separate permission keys to subagent helper tools", () => {
+		expect(mapToolToLogicalPermission("steer_subagent")).toBeNull();
+		expect(mapToolToLogicalPermission("get_subagent_result")).toBeNull();
+	});
+
 	it("removes planning tools when task: deny", () => {
 		const available = [
 			"read",
 			"edit",
-			"task",
+			"subagent",
+			"steer_subagent",
+			"get_subagent_result",
 			"create_task",
 			"update_task",
 			"create_milestone",
@@ -344,7 +359,9 @@ describe("planning tool permissions", () => {
 
 		expect(policy.activeToolNames).toContain("read");
 		expect(policy.activeToolNames).toContain("edit");
-		expect(policy.activeToolNames).not.toContain("task");
+		expect(policy.activeToolNames).toContain("subagent");
+		expect(policy.activeToolNames).toContain("steer_subagent");
+		expect(policy.activeToolNames).toContain("get_subagent_result");
 		expect(policy.activeToolNames).not.toContain("create_task");
 		expect(policy.activeToolNames).not.toContain("update_task");
 		expect(policy.activeToolNames).not.toContain("create_milestone");
@@ -352,6 +369,25 @@ describe("planning tool permissions", () => {
 		expect(policy.activeToolNames).not.toContain("move_task");
 		expect(policy.activeToolNames).not.toContain("set_blocked");
 		expect(policy.activeToolNames).not.toContain("set_reviewing");
+	});
+
+	it("removes the subagent tool family when subagent: deny", () => {
+		const available = [
+			"read",
+			"subagent",
+			"steer_subagent",
+			"get_subagent_result",
+			"create_task",
+			"update_task",
+		];
+		const policy = compileAgentPermission("/workspace", { subagent: "deny" }, available);
+
+		expect(policy.activeToolNames).toContain("read");
+		expect(policy.activeToolNames).toContain("create_task");
+		expect(policy.activeToolNames).toContain("update_task");
+		expect(policy.activeToolNames).not.toContain("subagent");
+		expect(policy.activeToolNames).not.toContain("steer_subagent");
+		expect(policy.activeToolNames).not.toContain("get_subagent_result");
 	});
 
 	it("keeps planning tools when no permission config (default allow)", () => {
@@ -372,5 +408,234 @@ describe("planning tool permissions", () => {
 
 		expect(policy.activeToolNames).toContain("create_task");
 		expect(policy.activeToolNames).toContain("update_task");
+	});
+
+	it("globally disables planning tools until an agent explicitly allows task permission", () => {
+		const available = [
+			"read",
+			"create_task",
+			"update_task",
+			"create_milestone",
+			"update_milestone",
+		];
+		const globalPermission = { default: { task: "deny" as const } };
+
+		const defaultPolicy = compileAgentPermission(
+			"/workspace",
+			undefined,
+			available,
+			globalPermission,
+		);
+		expect(defaultPolicy.activeToolNames).not.toContain("create_task");
+		expect(defaultPolicy.activeToolNames).not.toContain("update_task");
+
+		const allowedPolicy = compileAgentPermission(
+			"/workspace",
+			{ task: "allow" },
+			available,
+			globalPermission,
+		);
+		expect(allowedPolicy.activeToolNames).toContain("create_task");
+		expect(allowedPolicy.activeToolNames).toContain("update_task");
+	});
+
+	it("keeps locked global read denies even when the agent and runtime allow the path", async () => {
+		const policy = compileAgentPermission(
+			"/workspace",
+			{ read: "allow" },
+			["read"],
+			{ locked: { read: { "secrets/*": "deny" } } },
+		);
+		let handler:
+			| ((event: {
+					toolName: string;
+					toolCallId: string;
+					input: Record<string, unknown>;
+			  }) => Promise<{ block: boolean; reason: string } | undefined>)
+			| undefined;
+		const extension = createPermissionGateExtension(policy, {
+			getRuntimeRules: () => ({
+				read: [{ pattern: "secrets/*", action: "allow" }],
+			}),
+		});
+		extension({
+			on(eventName: string, callback: typeof handler) {
+				if (eventName === "tool_call") {
+					handler = callback;
+				}
+			},
+		} as never);
+
+		const result = await handler?.({
+			toolName: "read",
+			toolCallId: "read-1",
+			input: { path: "secrets/api-key.txt" },
+		});
+
+		expect(result).toMatchObject({
+			block: true,
+			reason: "PERMISSION_DENIED:read:read:secrets/api-key.txt",
+		});
+	});
+
+	it("requires approval by default when a path tool accesses outside the cwd", async () => {
+		const externalPath = path.join(os.tmpdir(), "ridge-external-permission.txt");
+		const policy = compileAgentPermission("/workspace", { read: "allow" }, ["read"]);
+		let handler:
+			| ((event: {
+					toolName: string;
+					toolCallId: string;
+					input: Record<string, unknown>;
+			  }) => Promise<{ block: boolean; reason: string } | undefined>)
+			| undefined;
+		const extension = createPermissionGateExtension(policy);
+		extension({
+			on(eventName: string, callback: typeof handler) {
+				if (eventName === "tool_call") {
+					handler = callback;
+				}
+			},
+		} as never);
+
+		const result = await handler?.({
+			toolName: "read",
+			toolCallId: "read-external",
+			input: { path: externalPath },
+		});
+
+		expect(result).toMatchObject({
+			block: true,
+			reason: "PERMISSION_APPROVAL_REQUIRES_UI:external_directory:read",
+		});
+	});
+
+	it("allows configured external_directory patterns with home expansion", async () => {
+		const homeExternalFile = path.join(os.homedir(), "ridge-external-permissions", "notes.md");
+		const policy = compileAgentPermission(
+			"/workspace",
+			{
+				read: "allow",
+				external_directory: {
+					"~/ridge-external-permissions/**": "allow",
+				},
+			},
+			["read"],
+		);
+		let handler:
+			| ((event: {
+					toolName: string;
+					toolCallId: string;
+					input: Record<string, unknown>;
+			  }) => Promise<{ block: boolean; reason: string } | undefined>)
+			| undefined;
+		const extension = createPermissionGateExtension(policy);
+		extension({
+			on(eventName: string, callback: typeof handler) {
+				if (eventName === "tool_call") {
+					handler = callback;
+				}
+			},
+		} as never);
+
+		const result = await handler?.({
+			toolName: "read",
+			toolCallId: "read-home-external",
+			input: { path: homeExternalFile },
+		});
+
+		expect(result).toBeUndefined();
+	});
+
+	it("applies path permission rules inside an allowed external_directory", async () => {
+		const homeExternalFile = path.join(os.homedir(), "ridge-external-permissions", "notes.md");
+		const policy = compileAgentPermission(
+			"/workspace",
+			{
+				external_directory: {
+					"~/ridge-external-permissions/**": "allow",
+				},
+				edit: {
+					"~/ridge-external-permissions/**": "deny",
+				},
+			},
+			["edit"],
+		);
+		let handler:
+			| ((event: {
+					toolName: string;
+					toolCallId: string;
+					input: Record<string, unknown>;
+			  }) => Promise<{ block: boolean; reason: string } | undefined>)
+			| undefined;
+		const extension = createPermissionGateExtension(policy);
+		extension({
+			on(eventName: string, callback: typeof handler) {
+				if (eventName === "tool_call") {
+					handler = callback;
+				}
+			},
+		} as never);
+
+		const result = await handler?.({
+			toolName: "edit",
+			toolCallId: "edit-home-external",
+			input: { path: homeExternalFile },
+		});
+
+		expect(result).toMatchObject({
+			block: true,
+			reason: `PERMISSION_DENIED:edit:edit:${homeExternalFile}`,
+		});
+	});
+
+	it("does not run external_directory approval for paths inside cwd", async () => {
+		const policy = compileAgentPermission("/workspace", { read: "allow" }, ["read"]);
+		let handler:
+			| ((event: {
+					toolName: string;
+					toolCallId: string;
+					input: Record<string, unknown>;
+			  }) => Promise<{ block: boolean; reason: string } | undefined>)
+			| undefined;
+		const extension = createPermissionGateExtension(policy);
+		extension({
+			on(eventName: string, callback: typeof handler) {
+				if (eventName === "tool_call") {
+					handler = callback;
+				}
+			},
+		} as never);
+
+		const result = await handler?.({
+			toolName: "read",
+			toolCallId: "read-internal",
+			input: { path: "/workspace/src/index.ts" },
+		});
+
+		expect(result).toBeUndefined();
+	});
+
+	it("loads global permissions from permissions.json and treats a missing file as no global config", async () => {
+		const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "ridge-permissions-"));
+
+		await expect(loadGlobalPermissionConfig(agentDir)).resolves.toBeUndefined();
+
+		await fs.writeFile(
+			path.join(agentDir, "permissions.json"),
+			JSON.stringify(
+				{
+					default: { task: "deny" },
+					locked: { read: { "secrets/*": "deny" } },
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+
+		await expect(loadGlobalPermissionConfig(agentDir)).resolves.toEqual({
+			default: { task: "deny" },
+			locked: { read: { "secrets/*": "deny" } },
+		});
 	});
 });

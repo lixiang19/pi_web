@@ -161,7 +161,7 @@ export function createCoreRouter(deps: CoreDeps) {
 				const agents = await discoverAgents(cwd);
 				res.json(
 					agents
-						.filter((agent) => agent.enabled !== false && agent.mode !== "task")
+						.filter((agent) => agent.enabled !== false && agent.visible !== false && agent.name !== "fleeting-agent" && agent.name !== "memory-agent" && agent.mode !== "task")
 						.map(createAgentSummary),
 				);
 			} catch (error) {

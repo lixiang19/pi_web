@@ -57,7 +57,8 @@
 - [任务处理会话索引与边界] 创建 task processing session 后必须同时写 `workspace_tasks.processing_session_id` 和 `session_index(session_type='task', task_id)`；PATCH/messages 对任务会话显式传普通 Agent 必须在加载 Pi runtime 前返回 400，只允许 `task-agent`。
 - [建议动作幂等] 通知建议的 `accept_suggestion` 必须在事务内先 claim 非终态通知再执行正式写入；否则重复点击/并发请求会让 `task.create`、`milestone.create` 这类建议重复落库。
 - [乐观更新] 任务 toggle/create/delete 应先本地更新状态、失败再回滚，避免每次操作后 await load() 全量重新加载的延迟感
-- [规划工具权限] 多个工具应共享同一个逻辑权限键（如 7 个规划工具全部映射到 `task`），而不是每个工具一个键。`compileAgentPermission` 移除工具时不能只按 `normalizeString === permissionKey`，要单独遍历 `PLANNING_TOOL_NAMES`，否则 deny 不会生效。`extractPermissionSubject` 和 `derivePermissionPattern` 对规划工具返回工具名本身，让 `task: ask` 的 permission request 能精确归类到 `task`。子代理 `task` 工具与规划工具共享同一个逻辑权限键，这是设计意图。
+- [规划工具与子代理权限] 7 个规划工具全部映射到 `task`，子代理主工具映射到 `subagent`。`compileAgentPermission` 移除规划工具时遍历 `PLANNING_TOOL_NAMES`；移除子代理时同时移除 `subagent`、`steer_subagent`、`get_subagent_result`。`steer_subagent` 和 `get_subagent_result` 不单独生成权限审批，可用性跟随主工具。
+- [外部目录权限] `external_directory` 是独立安全防护权限，工具访问会话 `cwd` 外路径时默认 `ask`；目录放行后仍叠加普通工具权限，`read` / `ls` / `edit` 路径规则支持 `~` 和 `$HOME`。
 - [Checkbox ID] checkbox 任务 ID 不能含数组下标（顺序变化会致 key 失效），只能用 (sourcePath, lineNumber) 组合
 - [Checkbox toggle] 文件行号定位 toggle 必须带 expectedText 校验，防止文件被编辑后行号偏移改错行
 - [草稿标签] 多标签工作台不能把“打开标签”和“创建服务端 session”合并；新建会话必须先落在前端草稿标签，cwd 继承链至少保持 payload -> 当前活动标签 -> workspaceDir
@@ -648,7 +649,7 @@
 - 会话结束入口是 `POST /api/sessions/:sessionId/end`；前端关闭会话 tab、页面卸载和 `pagehide` 时都会尝试调用该入口。
 - `/api/sessions/:sessionId/end` 对同一 session 的 `summary.daily` 做幂等保护；已有 pending/running/completed 且未 failed/cancelled 的 job 时返回原 job，不重复入队。
 - `summary.daily` job 以 session 为去重键，以 payload `dailyDate` 为串行 scope；同一天不同会话都能排队，但 daily 写入不会并发。
-- summary agent 只读 `sessionFile`，返回结构化 JSON；服务端把结果追加到 `记忆/daily/YYYY/MM/YYYY-MM-DD.md`，不生成单会话摘要文件。
+- summary agent 只读 `sessionFile`，当前实现返回 Markdown 正文；服务端把结果追加到 `记忆/daily/YYYY/MM/YYYY-MM-DD.md`，不生成单会话摘要文件。旧的结构化方案已在 2026-05-20 被取代。
 - summary agent 产物路径由服务端二次归一：工作空间产物写 workspace 相对路径；外部项目绝对路径写成 `项目名: 项目内相对路径`，避免 daily 泄露本机绝对路径。
 - 非 active session 的 `/end` 会从 `session_contexts` 补 `projectLabel/projectRoot`，避免外部项目路径归一化降级。
 - 后台 summary/memory agent 使用独立设置 `backgroundAgentModel` / `backgroundAgentThinkingLevel`；模型通过 Pi `ModelRegistry.find(provider, model)` 解析，未配置模型时交给 Pi SDK 默认选择；设置页提供可见配置入口。
@@ -986,8 +987,8 @@
 
 ## 2026-05-17 对话记忆抽取细化
 
-- [module:memory][2026-05-17] 对话记忆 L1 以日期 Markdown 为真源，daily 会话条目写结构化 Atom；服务端补齐 `id/status/observedAt/sourceSessionId`。
-- [module:memory][2026-05-17] L2 Scenario 写入 `记忆/scenarios/<scenario-slug>.md`，必须引用 L1 Atom ID，不保存不可追溯的新事实。
+- [module:memory][2026-05-17] 对话记忆 L1 以日期 Markdown 为真源。2026-05-20 后 daily 会话条目直接写 Markdown 摘要，不再写结构化 Atom。
+- [module:memory][2026-05-17] L2 Scenario 写入 `记忆/scenarios/<scenario-slug>.md`。2026-05-20 后由真实 `memory-agent` 基于 daily 维护，不再要求引用旧结构化条目 ID。
 - [module:memory][2026-05-17] L3 `MEMORY.md` 只保留启动注入需要的当前有效结论，每条使用 `[scope][date]` 格式；敏感信息、非法 scope/date 和无引用 Scenario 会被过滤。
 
 ## 2026-05-18 Chrome 浏览器阅读插件
@@ -1003,11 +1004,29 @@
 
 ## 2026-05-19 闪念分析结构化输出
 
-- [module:fleeting][2026-05-19] 闪念分析不能依赖“提示词要求 JSON + 正则解析 assistant 文本”；当前实现只开放 `fleeting_analysis_result` 工具 schema，并从 assistant `toolCall.arguments` 读取结构化建议。未调用工具或结构非法必须进入后台 job 重试/失败路径。
-- [module:fleeting][2026-05-19] 闪念分析调用 Pi 时必须替换系统提示词，而不是在主工作台 Agent 提示词后追加；早期做法是闪念专用 `ResourceLoader`，2026-05-20 后下沉为 `pi-ai complete()` 的 `context.systemPrompt`。
-- [module:fleeting][2026-05-20] 闪念分析不需要 `AgentSession`；应直接调用 `@mariozechner/pi-ai complete()`，但模型和服务商仍从 Pi 的 `settings.json/models.json/auth.json` 解析。服务端只接受 `fleeting_analysis_result` 的 assistant `toolCall.arguments`。
-- [module:fleeting][2026-05-20] Web 文件/音频闪念附件默认走 multipart 上传到 `.ridge/fleeting-attachments/<noteId>/`，不能把文件、PDF、Word、Markdown 或音频读成 base64 塞进 JSON。分析 worker 调模型前提取附件正文：文本类读前缀，PDF/Word/音频/图片走 Python Converter 转 Markdown/转写/OCR，并按字符预算截断后放入 prompt。
+- [module:fleeting][2026-05-19] 已被 2026-05-20 内置闪念 Agent 真实处理取代：早期结构化建议工具只用于生成建议，不再是当前实现。
+- [module:fleeting][2026-05-19] 已被 2026-05-20 内置闪念 Agent 真实处理取代：早期系统提示词替换/`pi-ai complete()` 路径不再是当前实现。
+- [module:fleeting][2026-05-20] 已被 2026-05-20 内置闪念 Agent 真实处理取代：当前实现需要内存 `AgentSession`，不再直接调用 `@mariozechner/pi-ai complete()`。
+- [module:fleeting][2026-05-20] Web 文件/音频闪念附件默认走 multipart 上传到 `.ridge/fleeting-attachments/<noteId>/`，不能把文件、PDF、Word、Markdown 或音频读成 base64 塞进 JSON。闪念 Agent worker 启动前提取附件正文：文本类读前缀，PDF/Word/音频/图片走 Python Converter 转 Markdown/转写/OCR，并按字符预算截断后放入内部 Agent prompt。
 
 ## 2026-05-20 分屏主页关闭
 
 - [module:workspace-shell][2026-05-20] `home` 是会话入口但也是普通可关闭标签；根工作台只剩最后一个标签时保留一个主页入口，分屏 pane 的最后一个标签关闭后必须收起 pane，不能用新的主页占位替换。
+
+## 2026-05-20 全局权限基线
+
+- [module:agent-permission][2026-05-20] `~/.pi/agent/permissions.json` 是可选全局权限基线；文件不存在或未配置某个权限键时仍默认 `allow`。
+- [module:agent-permission][2026-05-20] 全局 `default` / `defaults` 可被 Agent frontmatter 的 `permission` 覆盖，适合 `default.task: deny` 后只给特定 Agent 配 `permission.task: allow`。
+- [module:agent-permission][2026-05-20] 全局 `locked` 是硬拒绝层，只接受 `deny`，优先于 Agent 权限和运行时 `always` 授权；永久敏感文件路径应放入 `locked.read`。
+- [module:agent-permission][2026-05-20] 子代理主工具和权限键统一为 `subagent`；规划工具仍归 `task`。`subagent: deny` 同时移除主工具和两个辅助工具，辅助工具不单独审批。
+
+## 2026-05-20 内置闪念 Agent 真实处理
+
+- [module:fleeting][2026-05-20] 闪念后台处理现在启动不可见内置 `fleeting-agent` 的内存 `AgentSession`，由真实 Agent 直接读写工作空间、运行 bash、使用任务/里程碑规划工具完成沉淀。
+- [module:fleeting][2026-05-20] 闪念内部会话不保存 transcript，但会注入与普通会话同源的工作空间记忆/Wiki 上下文。
+- [module:fleeting][2026-05-20] `fleeting-agent` 是内部 Agent：`visible:false`、前端 `/api/agents` 不返回、普通会话不能选择、普通 Agent 不能通过 `subagent` 调用；权限只显式拒绝 `ask: deny` 和 `subagent: deny`。
+- [module:fleeting][2026-05-20] 闪念 Agent 完成后必须调用统一 `complete_internal_task`；`completed` 写 `status='processed'` 与 `analysis_status='processed'`，`failed` 写 `analysis_status='failed'` 与 `last_error`。
+- [module:fleeting][2026-05-20] 旧的闪念建议 schema 已被真实处理完成工具取代；Agent 异常或未调用完成工具走后台 job 重试/最终失败路径。
+- [module:internal-agent][2026-05-20] 内部 Agent 统一使用 `complete_internal_task({ status, summary, error? })` 汇报结果；工具由 worker 绑定 agent/job/相关对象，Agent 不传 note_id、session_id 或对象列表。
+- [module:memory][2026-05-20] summary agent 使用基础 `@mariozechner/pi-ai complete()`，不创建 `AgentSession`，只输出 daily Markdown；memory-agent 是真实不可见内部 Agent，维护 `记忆/MEMORY.md` 与 `记忆/scenarios/*.md`。
+- [module:memory][2026-05-20] `memory-agent` 权限固定为 `ask/subagent/bash: deny`，编辑只允许 `记忆/MEMORY.md` 与 `记忆/scenarios/*`，完成后调用 `complete_internal_task`。

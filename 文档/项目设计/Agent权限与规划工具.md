@@ -101,7 +101,8 @@ Skill 沿用 Pi 资源发现机制。
 - `bash`；
 - `edit`；
 - `ask`；
-- `task`。
+- `task`；
+- `subagent`。
 
 Agent 工具权限边界受当前运行位置限制。
 
@@ -110,6 +111,15 @@ Agent 工具权限边界受当前运行位置限制。
 - 设备离线时不能运行该设备项目会话。
 
 运行时用户选择 `always` 授权时，保留运行时授权规则。
+
+全局权限通过服务器级 `~/.pi/agent/permissions.json` 配置。
+
+- 没有 `permissions.json` 或没有配置某个权限键时，默认仍是开启。
+- `default` / `defaults` 表示全局默认权限，可被 Agent 自己的 `permission` 显式覆盖。
+- `locked` 表示全局硬拒绝，只接受 `deny`，优先于 Agent 权限和运行时 `always` 授权。
+- 需要默认关闭任务规划工具时，配置 `default.task: deny`；需要使用规划工具的 Agent 再显式配置 `permission.task: allow`。
+- 需要默认关闭子代理时，配置 `default.subagent: deny`；需要使用子代理的 Agent 再显式配置 `permission.subagent: allow`。
+- 需要永远禁止读取的文件路径放入 `locked.read`。
 
 ## 规划工具
 
@@ -130,7 +140,7 @@ Agent 工具权限边界受当前运行位置限制。
 - 把任务改为完成；
 - 把里程碑改为完成。
 
-规划工具所有 Agent 都可用。
+规划工具默认所有 Agent 都可用；如果全局 `default.task` 配置为 `deny`，则只有显式 `permission.task: allow` 的 Agent 可用。
 
 规划工具纳入 `task` 权限，按 Agent 权限规则决定 `allow / ask / deny`。
 
@@ -147,6 +157,9 @@ todo 是 Pi 自定义工具，不属于正式任务系统。
 
 保留现有 subagent 能力。
 
+- 子代理主工具名为 `subagent`。
+- 子代理主工具权限键为 `subagent`。
+- 辅助工具 `steer_subagent`、`get_subagent_result` 不单独生成权限审批，可用性跟随 `subagent` 主工具。
 - 子代理是真实持久子会话。
 - 子代理使用自己的 Agent 配置。
 - 子代理权限仍受 Agent 权限和运行位置约束。

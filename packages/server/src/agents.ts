@@ -38,6 +38,7 @@ const SUPPORTED_FRONTMATTER_FIELDS = new Set([
   'skills',
   'inherit_context',
   'run_in_background',
+  'visible',
   'enabled',
   'permission',
 ]);
@@ -234,6 +235,7 @@ interface ParsedAgent {
   skills?: string[];
   inheritContext?: boolean;
   runInBackground?: boolean;
+  visible: boolean;
   enabled: boolean;
   permission?: AgentPermission;
   systemPrompt: string;
@@ -316,6 +318,7 @@ const parseAgentFile = (rawContent: string, filePath: string, sourceScope: Agent
     frontmatter.run_in_background,
     'run_in_background',
   );
+  const visible = normalizeBoolean(frontmatter.visible, true);
   const enabled = normalizeBoolean(frontmatter.enabled, true);
 
   let permission: AgentPermission | undefined;
@@ -340,6 +343,7 @@ const parseAgentFile = (rawContent: string, filePath: string, sourceScope: Agent
     skills,
     inheritContext,
     runInBackground,
+    visible,
     enabled,
     permission,
     systemPrompt,
@@ -426,6 +430,7 @@ export const getAgentConfigSignature = (agent: ParsedAgent | null | undefined): 
     skills: agent.skills || [],
     inheritContext: agent.inheritContext ?? null,
     runInBackground: agent.runInBackground ?? null,
+    visible: agent.visible !== false,
     permission: agent.permission || {},
     enabled: agent.enabled !== false,
   });
@@ -533,6 +538,7 @@ export interface AgentPayload {
   skills: string[] | string | null;
   inherit_context: boolean | null;
   run_in_background: boolean | null;
+  visible: boolean;
   enabled: boolean;
   permission?: AgentPermission;
   prompt: string;
@@ -552,6 +558,7 @@ const serializeAgentFile = (config: AgentPayload): string => {
   pushYamlValue(lines, 'skills', serializeStringList(config.skills));
   pushYamlValue(lines, 'inherit_context', config.inherit_context ?? undefined);
   pushYamlValue(lines, 'run_in_background', config.run_in_background ?? undefined);
+  pushYamlValue(lines, 'visible', config.visible);
   pushYamlValue(lines, 'enabled', config.enabled);
   pushYamlValue(lines, 'permission', config.permission);
   lines.push('---');
@@ -587,6 +594,7 @@ const normalizeAgentPayload = (
     'skills',
     'inherit_context',
     'run_in_background',
+    'visible',
     'enabled',
     'permission',
     'prompt',
@@ -703,6 +711,10 @@ const normalizeAgentPayload = (
     payload.enabled === undefined
       ? (options.existing?.enabled ?? true)
       : normalizeBoolean(payload.enabled, true);
+  const visible =
+    payload.visible === undefined
+      ? (options.existing?.visible ?? true)
+      : normalizeBoolean(payload.visible, true);
 
   let permission: AgentPermission | undefined;
   try {
@@ -739,6 +751,7 @@ const normalizeAgentPayload = (
     skills: skills ?? null,
     inherit_context: inheritContext ?? null,
     run_in_background: runInBackground ?? null,
+    visible,
     enabled,
     permission,
     prompt,

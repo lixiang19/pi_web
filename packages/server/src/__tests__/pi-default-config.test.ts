@@ -117,6 +117,8 @@ describe("Pi default config", () => {
 			const { discoverAgents } = await import("../agents.js");
 			const agents = await discoverAgents(process.cwd());
 			const assistant = agents.find((agent) => agent.name === "assistant");
+			const fleetingAgent = agents.find((agent) => agent.name === "fleeting-agent");
+			const memoryAgent = agents.find((agent) => agent.name === "memory-agent");
 			const taskAgent = agents.find((agent) => agent.name === "task-agent");
 
 			expect(assistant).toMatchObject({
@@ -127,6 +129,30 @@ describe("Pi default config", () => {
 				systemPrompt: "",
 			});
 			expect(assistant?.source).toBe("builtin:assistant");
+			expect(fleetingAgent).toMatchObject({
+				name: "fleeting-agent",
+				visible: false,
+				permission: {
+					ask: "deny",
+					subagent: "deny",
+				},
+				sourceScope: "default",
+			});
+			expect(memoryAgent).toMatchObject({
+				name: "memory-agent",
+				visible: false,
+				permission: {
+					ask: "deny",
+					subagent: "deny",
+					bash: "deny",
+					edit: {
+						"*": "deny",
+						"记忆/MEMORY.md": "allow",
+						"记忆/scenarios/*": "allow",
+					},
+				},
+				sourceScope: "default",
+			});
 			expect(taskAgent).toBeUndefined();
 			await expect(fs.access(path.join(targetDir, "agents", "assistant.md"))).rejects.toThrow();
 			await expect(fs.access(path.join(targetDir, "agents", "task-agent.md"))).rejects.toThrow();

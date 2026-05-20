@@ -2,28 +2,60 @@ import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import path from "node:path";
-import type { Api, Model } from "@mariozechner/pi-ai";
+import {
+	complete as realComplete,
+	type Api,
+	type AssistantMessage,
+	type Context,
+	type Model,
+	type ProviderStreamOptions,
+} from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import {
 	AuthStorage,
 	createAgentSession as realCreateAgentSession,
+	DefaultResourceLoader,
 	ModelRegistry,
 	SessionManager,
+	type SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import type { createBackgroundJobQueue } from "./background-jobs.js";
 import {
 	createPiDefaultAuthStorage,
 	createPiDefaultModelRegistry,
+	createPiDefaultSettingsManager,
+	getPiDefaultAgentDir,
 } from "./pi-default-config.js";
-import type { ThinkingLevel } from "./types/index.js";
+import type { AgentPermission, ThinkingLevel } from "./types/index.js";
 import { toPosixPath } from "./utils/paths.js";
 import { normalizeString } from "./utils/strings.js";
+import {
+	compileAgentPermission,
+	createPermissionGateExtension,
+	loadGlobalPermissionConfig,
+} from "./agent-permissions.js";
+import {
+	discoverAgents,
+	normalizeThinkingLevel,
+	type AgentConfigInternal,
+} from "./agents.js";
+import {
+	createInternalTaskCompletionExtension,
+	INTERNAL_TASK_COMPLETION_TOOL_NAME,
+	normalizeInternalTaskCompletionInput,
+	type InternalTaskCompletionInput,
+	type InternalTaskCompletionResult,
+} from "./internal-agent-tools.js";
 
 type BackgroundJobQueue = ReturnType<typeof createBackgroundJobQueue>;
 
 interface PromptableSession {
 	prompt(prompt: string, options?: unknown): Promise<void> | void;
 	messages: Array<{ role: string; content: unknown }>;
+	getActiveToolNames?: () => string[];
+	setActiveToolsByName?: (names: string[]) => Promise<void> | void;
+	setModel?: (model: Model<Api>) => Promise<void> | void;
+	setThinkingLevel?: (level: ThinkingLevel) => Promise<void> | void;
 }
 
 interface ShutdownableSessionManager {
@@ -34,15 +66,24 @@ export interface CreateAgentSessionOptions {
 	cwd: string;
 	authStorage: AuthStorage;
 	modelRegistry: ModelRegistry;
-	noTools: "all" | "builtin";
+	noTools?: "all" | "builtin";
 	sessionManager: ShutdownableSessionManager;
+	settingsManager?: SettingsManager;
+	resourceLoader?: DefaultResourceLoader;
 	model?: Model<Api>;
 	thinkingLevel?: ThinkingLevel;
+	completeInternalTask?: (input: InternalTaskCompletionInput) => Promise<InternalTaskCompletionResult>;
 }
 
 export type CreateAgentSessionFn = (
 	options: CreateAgentSessionOptions,
 ) => Promise<{ session: PromptableSession; extensionsResult: unknown }>;
+
+export type SummaryCompleteFn = (
+	model: Model<Api>,
+	context: Context,
+	options?: ProviderStreamOptions,
+) => Promise<AssistantMessage>;
 
 export interface EnqueueSessionSummaryInput {
 	sessionId: string;
@@ -62,56 +103,6 @@ interface SummaryJobPayload extends EnqueueSessionSummaryInput {
 	dailyTime: string;
 }
 
-interface SummaryResult {
-	title: string;
-	summary: string;
-	atoms: SummaryAtomInput[];
-	artifacts: string[];
-}
-
-type MemoryAtomType = "preference" | "decision" | "constraint" | "lesson" | "fact" | "workflow";
-type MemoryAtomConfidence = "explicit" | "inferred";
-
-interface SummaryAtomInput {
-	type: MemoryAtomType;
-	scope: string;
-	confidence: MemoryAtomConfidence;
-	evidence: string;
-	content: string;
-}
-
-interface CompletedMemoryAtom extends SummaryAtomInput {
-	id: string;
-	status: "active";
-	observedAt: string;
-	sourceSessionId: string;
-}
-
-interface MemoryMaintainResult {
-	scenarios: ScenarioUpdate[];
-	memories: MemoryEntryInput[];
-}
-
-interface ScenarioAtomRef {
-	id: string;
-	date: string;
-	note: string;
-}
-
-interface ScenarioUpdate {
-	slug: string;
-	title: string;
-	conclusions: string[];
-	atomRefs: ScenarioAtomRef[];
-	superseded: string[];
-}
-
-interface MemoryEntryInput {
-	scope: string;
-	date: string;
-	content: string;
-}
-
 export interface WorkspaceMemoryWorkersOptions {
 	jobQueue: BackgroundJobQueue;
 	workspaceDir: string;
@@ -120,6 +111,7 @@ export interface WorkspaceMemoryWorkersOptions {
 	pollIntervalMs?: number;
 	now?: () => number;
 	createAgentSessionFn?: CreateAgentSessionFn;
+	completeFn?: SummaryCompleteFn;
 	sessionManagerFactory?: (workspaceDir: string) => ShutdownableSessionManager;
 	resolveBackgroundModel?: () => Promise<string | undefined> | string | undefined;
 	resolveBackgroundThinkingLevel?: () => Promise<ThinkingLevel | undefined> | ThinkingLevel | undefined;
@@ -128,24 +120,12 @@ export interface WorkspaceMemoryWorkersOptions {
 const MEMORY_HEADER = "# MEMORY\n";
 const WIKI_HEADER = "# Wiki\n";
 const MAX_TRANSCRIPT_CHARS = 32_000;
-const MAX_MEMORY_CHARS = 4_000;
 const MAX_MEMORY_LINES = 40;
 const MAX_SCENARIO_CONTEXT_CHARS = 16_000;
 const SENSITIVE_PATTERN =
 	/(token|api[_-]?key|apikey|password|passwd|secret|private key|私钥|密码|密钥|令牌|sk-[a-z0-9_-]{8,})/i;
-const MEMORY_ATOM_TYPES = new Set<MemoryAtomType>([
-	"preference",
-	"decision",
-	"constraint",
-	"lesson",
-	"fact",
-	"workflow",
-]);
-const MEMORY_ATOM_CONFIDENCES = new Set<MemoryAtomConfidence>(["explicit", "inferred"]);
-const MEMORY_SCOPE_PATTERN = /^(global|pi_web|module:[a-z0-9_-]+|task:[a-z0-9_-]+|repo:[a-z0-9_-]+)$/i;
-const MEMORY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const MEMORY_ATOM_ID_PATTERN = /^mem_\d{8}_\d{4}_\d{3}$/;
 const SCENARIO_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,80}$/i;
+const MEMORY_AGENT_NAME = "memory-agent";
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
@@ -158,20 +138,6 @@ const localDateParts = (timestamp: number) => {
 		hour: pad2(date.getHours()),
 		minute: pad2(date.getMinutes()),
 	};
-};
-
-const formatLocalIso = (timestamp: number): string => {
-	const date = new Date(timestamp);
-	const offsetMinutes = -date.getTimezoneOffset();
-	const sign = offsetMinutes >= 0 ? "+" : "-";
-	const absoluteOffset = Math.abs(offsetMinutes);
-	return [
-		`${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`,
-		"T",
-		`${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`,
-		sign,
-		`${pad2(Math.floor(absoluteOffset / 60))}:${pad2(absoluteOffset % 60)}`,
-	].join("");
 };
 
 export const buildDailyInfo = (timestamp: number) => {
@@ -287,6 +253,9 @@ const normalizeMemoryLine = (value: string): string => {
 
 const isSensitiveMemory = (value: string) => SENSITIVE_PATTERN.test(value);
 
+const formatMemoryEntry = (entry: { scope: string; date: string; content: string }): string =>
+	normalizeMemoryLine(`[${entry.scope}][${entry.date}] ${entry.content}`);
+
 const readMemoryLines = async (workspaceDir: string): Promise<string[]> => {
 	const filePath = await ensureMemoryFile(workspaceDir);
 	const content = await fs.readFile(filePath, "utf8");
@@ -382,16 +351,6 @@ const messageToText = (message: AgentMessage | { role: string; content: unknown 
 	return text ? `${message.role}: ${text}` : "";
 };
 
-const getLastAssistantText = (session: PromptableSession): string => {
-	for (let index = session.messages.length - 1; index >= 0; index -= 1) {
-		const message = session.messages[index];
-		if (message?.role !== "assistant") continue;
-		const text = extractTextParts(message.content).join("\n").trim();
-		if (text) return text;
-	}
-	return "";
-};
-
 const readStoredSessionMessages = async (sessionFile: string): Promise<AgentMessage[]> => {
 	const content = await fs.readFile(sessionFile, "utf8");
 	const messages: AgentMessage[] = [];
@@ -415,200 +374,9 @@ const readStoredSessionMessages = async (sessionFile: string): Promise<AgentMess
 const isMissingFileError = (error: unknown): boolean =>
 	error instanceof Error && "code" in error && error.code === "ENOENT";
 
-const extractJsonObject = (text: string): unknown => {
-	const match = text.match(/\{[\s\S]*\}/);
-	if (!match) {
-		throw new Error("Agent response does not contain JSON");
-	}
-	return JSON.parse(match[0]) as unknown;
-};
-
-const normalizeStringArray = (value: unknown): string[] => {
-	if (!Array.isArray(value)) return [];
-	return value.map((item) => normalizeString(item)).filter(Boolean);
-};
-
-const parseSummaryAtoms = (value: unknown): SummaryAtomInput[] => {
-	if (!Array.isArray(value)) return [];
-	const atoms: SummaryAtomInput[] = [];
-	for (const item of value) {
-		if (!item || typeof item !== "object") continue;
-		const data = item as Record<string, unknown>;
-		const type = normalizeString(data.type) as MemoryAtomType;
-		const confidence = normalizeString(data.confidence) as MemoryAtomConfidence;
-		const scope = normalizeString(data.scope);
-		const evidence = normalizeString(data.evidence);
-		const content = normalizeString(data.content);
-		if (
-			!MEMORY_ATOM_TYPES.has(type) ||
-			!MEMORY_ATOM_CONFIDENCES.has(confidence) ||
-			!MEMORY_SCOPE_PATTERN.test(scope) ||
-			!evidence ||
-			!content
-		) {
-			continue;
-		}
-		if (isSensitiveMemory(`${evidence}\n${content}`)) continue;
-		atoms.push({
-			type,
-			scope,
-			confidence,
-			evidence,
-			content,
-		});
-	}
-	return atoms;
-};
-
 const isPathWithin = (root: string, target: string): boolean => {
 	const relative = path.relative(path.resolve(root), path.resolve(target));
 	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-};
-
-const stripLeadingDotSlash = (value: string): string => value.replace(/^\.?[\\/]+/, "");
-
-const isExternalPayload = (payload: Pick<SummaryJobPayload, "workspaceDir" | "cwd" | "projectRoot">): boolean => {
-	const projectRoot = normalizeString(payload.projectRoot) || payload.cwd;
-	return !isPathWithin(payload.workspaceDir, projectRoot);
-};
-
-const normalizeArtifactPath = (artifact: string, payload: SummaryJobPayload): string => {
-	const value = normalizeString(artifact);
-	if (!value) return "";
-
-	const projectRoot = path.resolve(normalizeString(payload.projectRoot) || payload.cwd);
-	const projectLabel = normalizeString(payload.projectLabel) || path.basename(projectRoot);
-
-	if (isExternalPayload(payload)) {
-		if (value.startsWith(`${projectLabel}:`)) {
-			return value;
-		}
-		if (path.isAbsolute(value)) {
-			if (isPathWithin(projectRoot, value)) {
-				const relative = stripLeadingDotSlash(toPosixPath(path.relative(projectRoot, value)));
-				return relative ? `${projectLabel}: ${relative}` : projectLabel;
-			}
-			return `${projectLabel}: ${path.basename(value)}`;
-		}
-		return `${projectLabel}: ${stripLeadingDotSlash(toPosixPath(value))}`;
-	}
-
-	if (path.isAbsolute(value) && isPathWithin(payload.workspaceDir, value)) {
-		return stripLeadingDotSlash(toPosixPath(path.relative(payload.workspaceDir, value)));
-	}
-	return stripLeadingDotSlash(toPosixPath(value));
-};
-
-const normalizeSummaryArtifacts = (
-	result: SummaryResult,
-	payload: SummaryJobPayload,
-): SummaryResult => ({
-	...result,
-	artifacts: [
-		...new Set(
-			result.artifacts
-				.map((artifact) => normalizeArtifactPath(artifact, payload))
-				.filter(Boolean),
-		),
-	],
-});
-
-const parseSummaryResult = (raw: unknown): SummaryResult => {
-	if (!raw || typeof raw !== "object") {
-		throw new Error("Invalid summary result");
-	}
-	const data = raw as Record<string, unknown>;
-	const title = normalizeString(data.title).slice(0, 80) || "未命名会话";
-	const summary = normalizeString(data.summary);
-	if (!summary) {
-		throw new Error("Summary result missing summary");
-	}
-	return {
-		title,
-		summary,
-		atoms: parseSummaryAtoms(data.atoms),
-		artifacts: normalizeStringArray(data.artifacts),
-	};
-};
-
-const parseMemoryMaintainResult = (raw: unknown): MemoryMaintainResult => {
-	if (!raw || typeof raw !== "object") {
-		throw new Error("Invalid memory result");
-	}
-	const data = raw as Record<string, unknown>;
-	return {
-		scenarios: parseScenarioUpdates(data.scenarios),
-		memories: parseMemoryEntries(data.memories),
-	};
-};
-
-const parseScenarioAtomRefs = (value: unknown): ScenarioAtomRef[] => {
-	if (!Array.isArray(value)) return [];
-	const refs: ScenarioAtomRef[] = [];
-	for (const item of value) {
-		if (!item || typeof item !== "object") continue;
-		const data = item as Record<string, unknown>;
-		const id = normalizeString(data.id);
-		const date = normalizeString(data.date);
-		const note = normalizeString(data.note);
-		if (!MEMORY_ATOM_ID_PATTERN.test(id) || !MEMORY_DATE_PATTERN.test(date) || !note) {
-			continue;
-		}
-		if (isSensitiveMemory(`${id}\n${date}\n${note}`)) continue;
-		refs.push({ id, date, note });
-	}
-	return refs;
-};
-
-const parseScenarioUpdates = (value: unknown): ScenarioUpdate[] => {
-	if (!Array.isArray(value)) return [];
-	const scenarios: ScenarioUpdate[] = [];
-	for (const item of value) {
-		if (!item || typeof item !== "object") continue;
-		const data = item as Record<string, unknown>;
-		const slug = normalizeString(data.slug);
-		const title = normalizeString(data.title);
-		const conclusions = normalizeStringArray(data.conclusions).filter(
-			(conclusion) => !isSensitiveMemory(conclusion),
-		);
-		const atomRefs = parseScenarioAtomRefs(data.atomRefs);
-		const superseded = normalizeStringArray(data.superseded).filter(
-			(item) => !isSensitiveMemory(item),
-		);
-		if (
-			!SCENARIO_SLUG_PATTERN.test(slug) ||
-			!title ||
-			conclusions.length === 0 ||
-			atomRefs.length === 0 ||
-			isSensitiveMemory(`${title}\n${slug}`)
-		) {
-			continue;
-		}
-		scenarios.push({ slug, title, conclusions, atomRefs, superseded });
-	}
-	return scenarios;
-};
-
-const parseMemoryEntries = (value: unknown): MemoryEntryInput[] => {
-	if (!Array.isArray(value)) return [];
-	const entries: MemoryEntryInput[] = [];
-	for (const item of value) {
-		if (!item || typeof item !== "object") continue;
-		const data = item as Record<string, unknown>;
-		const scope = normalizeString(data.scope);
-		const date = normalizeString(data.date);
-		const content = normalizeString(data.content);
-		if (
-			!MEMORY_SCOPE_PATTERN.test(scope) ||
-			!MEMORY_DATE_PATTERN.test(date) ||
-			!content ||
-			isSensitiveMemory(content)
-		) {
-			continue;
-		}
-		entries.push({ scope, date, content });
-	}
-	return entries;
 };
 
 const readScenarioContext = async (workspaceDir: string): Promise<string> => {
@@ -645,22 +413,14 @@ const buildSummaryPrompt = (payload: SummaryJobPayload, messages: AgentMessage[]
 		cwdRel && !cwdRel.startsWith("..")
 			? `工作空间相对路径：${toPosixPath(cwdRel)}`
 			: `外部项目：${payload.projectLabel || path.basename(payload.cwd)}，项目路径：${payload.cwd}`;
-	return `你是 ridge 的 summary agent。只读取下面这一段会话记录，生成 daily 会话记忆条目。
+	return `请读取下面这一段会话记录，生成可以直接追加到 daily 文档里的 Markdown 摘要。
 
 要求：
-- 只输出 JSON，不要解释。
-- title 是一句短标题。
-- summary 是一句短摘要。
-- atoms 是结构化 L1 Atom 数组，每个 Atom 只表达一个事实、偏好、决策、约束或教训。
-- Atom type 只能是 preference、decision、constraint、lesson、fact、workflow。
-- Atom scope 只能是 global、pi_web、module:<name>、task:<id>、repo:<name>。
-- Atom confidence 只能是 explicit 或 inferred。
-- Atom evidence 必须是足够支撑 content 的用户原话或短证据。
-- 临时操作、一次性命令、未确认推测、敏感信息不要写入 atoms。
-- artifacts 是字符串数组。
-- 工作空间产物写相对路径。
-- 外部项目产物写项目名和项目内相对路径。
-- 不生成单个会话摘要文件，不整理旧 daily。
+- 只输出 Markdown 正文。
+- 摘要要短，保留对后续工作有用的事实、决策、约束和产物。
+- 涉及文件时使用工作空间相对路径；外部项目写项目名和项目内相对路径。
+- 不输出 JSON。
+- 不写 token、密码、私钥、密钥等敏感信息。
 
 会话：
 - sessionId: ${payload.sessionId}
@@ -668,23 +428,23 @@ const buildSummaryPrompt = (payload: SummaryJobPayload, messages: AgentMessage[]
 - cwd: ${cwdDescription}
 
 记录：
-${transcript || "无可读消息"}
-
-JSON 格式：
-{"title":"","summary":"","atoms":[{"type":"decision","scope":"module:memory","confidence":"explicit","evidence":"","content":""}],"artifacts":[]}`;
+${transcript || "无可读消息"}`;
 };
 
-const buildMemoryPrompt = (memory: string, daily: string, scenarios: string) => `你是 ridge 的 memory agent。请读取今天 daily 里的 L1 Atom、现有 Scenario 和当前 MEMORY，维护 L2 Scenario 与 L3 MEMORY。
+const SUMMARY_SYSTEM_PROMPT = `你是 ridge 的 summary agent。你把一次会话压缩成可以直接追加到 daily 文档的 Markdown。`;
 
-要求：
-- 只输出 JSON，不要解释。
-- scenarios 是需要写入的场景页数组，slug 只能用小写英文、数字和连字符。
-- Scenario 只写当前结论、依据 Atom 和历史覆盖；必须引用 atomRefs，不要产生无法追溯的新事实。
-- memories 是当前应写入 MEMORY 的条目数组，每条必须包含 scope、date、content。
-- 新近且明确的新结论覆盖旧弱结论。
-- 删除旧弱记忆，让总量保持很短；MEMORY 不写完整证据，证据留在 L1。
-- 不写 token、密码、私钥、密钥等敏感信息。
-- 临时进度、一次性命令、刚改过的文件、短期调试结论不要进入 MEMORY。
+const buildMemoryPrompt = (memory: string, daily: string, scenarios: string) => `请维护长期记忆。
+
+可编辑文件：
+- 记忆/MEMORY.md
+- 记忆/scenarios/*.md
+
+工作方法：
+- 读取今天 daily、当前 MEMORY 和现有 Scenario。
+- 更新 记忆/scenarios/ 下的主题页。
+- 更新 记忆/MEMORY.md，只保留适合启动注入的当前有效结论。
+- 日期用于可信度和冲突判断。
+- 完成后调用 ${INTERNAL_TASK_COMPLETION_TOOL_NAME}。
 
 当前 MEMORY:
 ${memory || "# MEMORY"}
@@ -693,52 +453,15 @@ ${memory || "# MEMORY"}
 ${scenarios || "无"}
 
 今天 daily:
-${daily || "无"}
-
-JSON 格式：
-{"scenarios":[{"slug":"conversation-memory","title":"对话记忆系统","conclusions":[],"atomRefs":[{"id":"mem_20260517_1032_001","date":"2026-05-17","note":""}],"superseded":[]}],"memories":[{"scope":"module:memory","date":"2026-05-17","content":""}]}`;
-
-const runAgentJson = async (
-	options: {
-		workspaceDir: string;
-		authStorage: AuthStorage;
-		modelRegistry: ModelRegistry;
-		createAgentSessionFn: CreateAgentSessionFn;
-		sessionManagerFactory: (workspaceDir: string) => ShutdownableSessionManager;
-		backgroundModel?: Model<Api>;
-		backgroundThinkingLevel?: ThinkingLevel;
-	},
-	prompt: string,
-): Promise<unknown> => {
-	const sessionManager = options.sessionManagerFactory(options.workspaceDir);
-	const { session } = await options.createAgentSessionFn({
-		cwd: options.workspaceDir,
-		authStorage: options.authStorage,
-		modelRegistry: options.modelRegistry,
-		noTools: "all",
-		sessionManager,
-		model: options.backgroundModel,
-		thinkingLevel: options.backgroundThinkingLevel,
-	});
-	try {
-		await session.prompt(prompt, { source: "interactive" });
-		const response = getLastAssistantText(session);
-		if (!response.trim()) {
-			throw new Error("Empty response from memory agent");
-		}
-		return extractJsonObject(response);
-	} finally {
-		await sessionManager.shutdown?.();
-	}
-};
+${daily || "无"}`;
 
 const resolveMaybe = async <T>(value: (() => Promise<T | undefined> | T | undefined) | undefined): Promise<T | undefined> =>
 	typeof value === "function" ? await value() : undefined;
 
-const resolveBackgroundModel = async (
+const resolveBackgroundModel = (
 	modelRegistry: ModelRegistry,
 	modelSpec: string | undefined,
-): Promise<Model<Api> | undefined> => {
+): Model<Api> | undefined => {
 	const normalized = normalizeString(modelSpec);
 	if (!normalized) return undefined;
 	const slashIndex = normalized.indexOf("/");
@@ -751,52 +474,69 @@ const resolveBackgroundModel = async (
 	return modelRegistry.find(provider, modelId);
 };
 
-const formatListBlock = (items: string[]) =>
-	items.length > 0
-		? `\n${items.map((item) => `  - ${item}`).join("\n")}`
-		: " 无";
-
-const quoteMemoryValue = (value: string): string => JSON.stringify(value);
-
-const completeSummaryAtoms = (
-	payload: SummaryJobPayload,
-	summary: SummaryResult,
-): CompletedMemoryAtom[] => {
-	const observedAt = formatLocalIso(payload.endedAt ?? Date.now());
-	const datePart = payload.dailyDate.replaceAll("-", "");
-	const timePart = payload.dailyTime.replace(":", "");
-	return summary.atoms.map((atom, index) => ({
-		...atom,
-		id: `mem_${datePart}_${timePart}_${String(index + 1).padStart(3, "0")}`,
-		status: "active",
-		observedAt,
-		sourceSessionId: payload.sessionId,
-	}));
+const resolveRequiredModel = (
+	modelRegistry: ModelRegistry,
+	modelSpec: string | undefined,
+): Model<Api> => {
+	const explicit = resolveBackgroundModel(modelRegistry, modelSpec);
+	if (explicit) return explicit;
+	modelRegistry.refresh();
+	const [first] = modelRegistry.getAvailable();
+	if (!first) {
+		throw new Error("No configured Pi model is available for summary agent");
+	}
+	return first;
 };
 
-const formatAtomBlock = (atoms: CompletedMemoryAtom[]) => {
-	if (atoms.length === 0) return "无";
-	return atoms
-		.map((atom) =>
-			[
-				`- id: ${atom.id}`,
-				`  type: ${atom.type}`,
-				`  scope: ${atom.scope}`,
-				`  status: ${atom.status}`,
-				`  confidence: ${atom.confidence}`,
-				`  observedAt: ${atom.observedAt}`,
-				`  sourceSessionId: ${atom.sourceSessionId}`,
-				`  evidence: ${quoteMemoryValue(atom.evidence)}`,
-				`  content: ${quoteMemoryValue(atom.content)}`,
-			].join("\n"),
-		)
-		.join("\n\n");
+const assistantMessageText = (message: AssistantMessage): string =>
+	extractTextParts(message.content).join("\n").trim();
+
+const runSummaryCompletion = async (
+	options: {
+		modelRegistry: ModelRegistry;
+		completeFn: SummaryCompleteFn;
+		modelSpec?: string;
+		thinkingLevel?: ThinkingLevel;
+	},
+	prompt: string,
+): Promise<string> => {
+	const model = resolveRequiredModel(options.modelRegistry, options.modelSpec);
+	const auth = await options.modelRegistry.getApiKeyAndHeaders(model);
+	if (!auth.ok) {
+		throw new Error(auth.error);
+	}
+	const completionOptions: ProviderStreamOptions = {
+		apiKey: auth.apiKey,
+		headers: auth.headers,
+		temperature: 0.2,
+		maxTokens: 1400,
+	};
+	if (model.reasoning && options.thinkingLevel) {
+		completionOptions.reasoning = options.thinkingLevel;
+	}
+	const response = await options.completeFn(
+		model,
+		{
+			systemPrompt: SUMMARY_SYSTEM_PROMPT,
+			messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
+			tools: [],
+		},
+		completionOptions,
+	);
+	if (response.stopReason === "error" || response.stopReason === "aborted") {
+		throw new Error(response.errorMessage || "Summary model request failed");
+	}
+	const markdown = assistantMessageText(response);
+	if (!markdown) {
+		throw new Error("Empty response from summary agent");
+	}
+	return markdown;
 };
 
 const appendDailySummary = async (
 	workspaceDir: string,
 	payload: SummaryJobPayload,
-	summary: SummaryResult,
+	summaryMarkdown: string,
 ) => {
 	const filePath = dailyFilePath(workspaceDir, payload);
 	await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -806,66 +546,143 @@ const appendDailySummary = async (
 	}
 	const entry = [
 		"",
-		`## ${payload.dailyTime} ${payload.sessionId} ${summary.title}`,
+		`## ${payload.dailyTime} ${payload.sessionId} ${payload.title}`,
 		"",
-		`- 摘要：${summary.summary}`,
-		"",
-		"### L1-Atom",
-		"",
-		formatAtomBlock(completeSummaryAtoms(payload, summary)),
-		"",
-		`- 产物：${formatListBlock(summary.artifacts)}`,
+		summaryMarkdown.trim(),
 		"",
 	].join("\n");
 	await fs.writeFile(filePath, `${current.replace(/\s*$/, "\n")}${entry}`, "utf8");
 };
 
-const formatMemoryEntry = (entry: MemoryEntryInput): string =>
-	normalizeMemoryLine(`[${entry.scope}][${entry.date}] ${entry.content}`);
-
-const normalizeMaintainedMemory = (result: MemoryMaintainResult): string[] => {
-	const lines = result.memories
-		.map(formatMemoryEntry)
-		.filter(Boolean)
-		.filter((line) => !isSensitiveMemory(line));
-	const unique = [...new Set(lines)];
-	let total = 0;
-	const kept: string[] = [];
-	for (const line of unique) {
-		if (kept.length >= MAX_MEMORY_LINES) break;
-		const nextTotal = total + line.length + 3;
-		if (nextTotal > MAX_MEMORY_CHARS) break;
-		kept.push(line);
-		total = nextTotal;
+async function getMemoryAgent(workspaceDir: string): Promise<AgentConfigInternal> {
+	const agents = await discoverAgents(workspaceDir);
+	const agent = agents.find((item) => item.name === MEMORY_AGENT_NAME);
+	if (!agent || agent.enabled === false) {
+		return {
+			name: MEMORY_AGENT_NAME,
+			description: "维护长期记忆",
+			displayName: "Memory Agent",
+			mode: "all",
+			visible: false,
+			enabled: true,
+			inheritContext: false,
+			permission: {
+				ask: "deny",
+				subagent: "deny",
+				bash: "deny",
+				edit: {
+					"*": "deny",
+					"记忆/MEMORY.md": "allow",
+					"记忆/scenarios/*": "allow",
+				},
+			} as AgentPermission,
+			systemPrompt: "你是 ridge 的记忆维护 Agent。你维护 记忆/MEMORY.md 和 记忆/scenarios/，完成后调用 complete_internal_task。",
+			source: "builtin:memory-agent",
+			sourceScope: "default",
+		} as AgentConfigInternal;
 	}
-	return kept;
-};
+	return {
+		...agent,
+		visible: false,
+		permission: {
+			...(agent.permission || {}),
+			ask: "deny",
+			subagent: "deny",
+			bash: "deny",
+			edit: {
+				"*": "deny",
+				"记忆/MEMORY.md": "allow",
+				"记忆/scenarios/*": "allow",
+			},
+		},
+	};
+}
 
-const formatScenarioPage = (scenario: ScenarioUpdate) => {
-	const sections = [
-		`# ${scenario.title}`,
-		"",
-		"## 当前结论",
-		"",
-		...scenario.conclusions.map((conclusion) => `- ${conclusion}`),
-		"",
-		"## 依据 Atom",
-		"",
-		...scenario.atomRefs.map((ref) => `- \`${ref.id}\`：${ref.date} ${ref.note}`),
-	];
-	if (scenario.superseded.length > 0) {
-		sections.push("", "## 历史覆盖", "", ...scenario.superseded.map((item) => `- ${item}`));
-	}
-	return `${sections.join("\n")}\n`;
-};
+const runMemoryAgent = async (
+	options: {
+		workspaceDir: string;
+		authStorage: AuthStorage;
+		modelRegistry: ModelRegistry;
+		createAgentSessionFn: CreateAgentSessionFn;
+		sessionManagerFactory: (workspaceDir: string) => ShutdownableSessionManager;
+		backgroundModel?: Model<Api>;
+		backgroundThinkingLevel?: ThinkingLevel;
+	},
+	prompt: string,
+): Promise<InternalTaskCompletionResult> => {
+	const agent = await getMemoryAgent(options.workspaceDir);
+	let completion: InternalTaskCompletionResult | null = null;
+	const completeInternalTask = async (
+		rawInput: InternalTaskCompletionInput,
+	): Promise<InternalTaskCompletionResult> => {
+		const input = normalizeInternalTaskCompletionInput(rawInput);
+		completion = {
+			agentName: MEMORY_AGENT_NAME,
+			status: input.status,
+			summary: input.summary,
+			error: input.status === "failed" ? (input.error || input.summary) : undefined,
+			completedAt: Date.now(),
+		};
+		return completion;
+	};
 
-const writeScenarioPages = async (workspaceDir: string, scenarios: ScenarioUpdate[]) => {
-	const scenarioDir = path.join(workspaceDir, "记忆", "scenarios");
-	await fs.mkdir(scenarioDir, { recursive: true });
-	for (const scenario of scenarios) {
-		const filePath = path.join(scenarioDir, `${scenario.slug}.md`);
-		if (!isPathWithin(scenarioDir, filePath)) continue;
-		await fs.writeFile(filePath, formatScenarioPage(scenario), "utf8");
+	let permissionPolicy: ReturnType<typeof compileAgentPermission> | null = null;
+	const settingsManager = createPiDefaultSettingsManager(options.workspaceDir);
+	const sessionManager = options.sessionManagerFactory(options.workspaceDir);
+	const resourceLoader = new DefaultResourceLoader({
+		cwd: options.workspaceDir,
+		agentDir: getPiDefaultAgentDir(),
+		settingsManager,
+		appendSystemPromptOverride: (base: string[]) => [
+			...base,
+			agent.systemPrompt,
+		],
+		extensionFactories: [
+			createPermissionGateExtension(() => permissionPolicy),
+			createInternalTaskCompletionExtension({
+				agentName: MEMORY_AGENT_NAME,
+				onComplete: completeInternalTask,
+			}),
+		],
+	});
+
+	try {
+		await resourceLoader.reload();
+		const { session } = await options.createAgentSessionFn({
+			cwd: options.workspaceDir,
+			authStorage: options.authStorage,
+			modelRegistry: options.modelRegistry,
+			sessionManager,
+			settingsManager,
+			resourceLoader,
+			model: options.backgroundModel,
+			thinkingLevel: options.backgroundThinkingLevel,
+			completeInternalTask,
+		});
+		if (options.backgroundModel && session.setModel) {
+			await session.setModel(options.backgroundModel);
+		}
+		const thinking = normalizeThinkingLevel(options.backgroundThinkingLevel || agent.thinking);
+		if (thinking && session.setThinkingLevel) {
+			await session.setThinkingLevel(thinking);
+		}
+		const activeTools = session.getActiveToolNames?.() || [];
+		permissionPolicy = compileAgentPermission(
+			options.workspaceDir,
+			agent.permission,
+			activeTools,
+			await loadGlobalPermissionConfig(getPiDefaultAgentDir()),
+		);
+		if (session.setActiveToolsByName) {
+			await session.setActiveToolsByName(permissionPolicy.activeToolNames);
+		}
+		await session.prompt(prompt, { source: "background" });
+		if (!completion) {
+			throw new Error(`${MEMORY_AGENT_NAME} did not call ${INTERNAL_TASK_COMPLETION_TOOL_NAME}`);
+		}
+		return completion;
+	} finally {
+		await sessionManager.shutdown?.();
 	}
 };
 
@@ -901,6 +718,7 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 	const createAgentSessionFn =
 		options.createAgentSessionFn ??
 		(realCreateAgentSession as unknown as CreateAgentSessionFn);
+	const completeFn = options.completeFn ?? realComplete;
 	const sessionManagerFactory =
 		options.sessionManagerFactory ??
 		((workspaceDir: string) => SessionManager.inMemory(workspaceDir) as ShutdownableSessionManager);
@@ -932,28 +750,18 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 				throw error;
 			}
 			const prompt = buildSummaryPrompt(payload as SummaryJobPayload, messages);
-			const backgroundModel = await resolveBackgroundModel(
-				modelRegistry,
-				await resolveMaybe(options.resolveBackgroundModel),
-			);
+			const backgroundModelSpec = await resolveMaybe(options.resolveBackgroundModel);
 			const backgroundThinkingLevel = await resolveMaybe(options.resolveBackgroundThinkingLevel);
-			const raw = await runAgentJson(
+			const summaryMarkdown = await runSummaryCompletion(
 				{
-					workspaceDir: options.workspaceDir,
-					authStorage,
 					modelRegistry,
-					createAgentSessionFn,
-					sessionManagerFactory,
-					backgroundModel,
-					backgroundThinkingLevel,
+					completeFn,
+					modelSpec: backgroundModelSpec,
+					thinkingLevel: backgroundThinkingLevel,
 				},
 				prompt,
 			);
-			const result = normalizeSummaryArtifacts(
-				parseSummaryResult(raw),
-				payload as SummaryJobPayload,
-			);
-			await appendDailySummary(options.workspaceDir, payload as SummaryJobPayload, result);
+			await appendDailySummary(options.workspaceDir, payload as SummaryJobPayload, summaryMarkdown);
 			options.jobQueue.complete(job.jobId, {
 				dailyDate: payload.dailyDate,
 				sessionId: payload.sessionId,
@@ -1000,12 +808,12 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 				}),
 			);
 			const scenarios = await readScenarioContext(options.workspaceDir);
-			const backgroundModel = await resolveBackgroundModel(
+			const backgroundModel = resolveBackgroundModel(
 				modelRegistry,
 				await resolveMaybe(options.resolveBackgroundModel),
 			);
 			const backgroundThinkingLevel = await resolveMaybe(options.resolveBackgroundThinkingLevel);
-			const raw = await runAgentJson(
+			const result = await runMemoryAgent(
 				{
 					workspaceDir: options.workspaceDir,
 					authStorage,
@@ -1017,19 +825,7 @@ export function createWorkspaceMemoryWorkers(options: WorkspaceMemoryWorkersOpti
 				},
 				buildMemoryPrompt(currentMemory, daily, scenarios),
 			);
-			const result = parseMemoryMaintainResult(raw);
-			await writeScenarioPages(options.workspaceDir, result.scenarios);
-			const nextLines = normalizeMaintainedMemory(result);
-			const currentLines = await readMemoryLines(options.workspaceDir);
-			const changed = nextLines.join("\n") !== currentLines.join("\n");
-			if (changed) {
-				await writeMemoryLines(options.workspaceDir, nextLines);
-			}
-			options.jobQueue.complete(job.jobId, {
-				changed,
-				memoryCount: nextLines.length,
-				scenarioCount: result.scenarios.length,
-			});
+			options.jobQueue.complete(job.jobId, result);
 		} catch (error) {
 			options.jobQueue.fail(
 				job.jobId,

@@ -1,28 +1,48 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import {
-	complete as realComplete,
-	StringEnum,
-	Type,
-	type Api,
-	type AssistantMessage,
-	type Context,
-	type Model,
-	type ProviderStreamOptions,
-	type ThinkingLevel,
-	type Tool,
-} from "@mariozechner/pi-ai";
+	AuthStorage,
+	createAgentSession as realCreateAgentSession,
+	DefaultResourceLoader,
+	ModelRegistry,
+	SessionManager,
+	type SettingsManager,
+} from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@mariozechner/pi-ai";
 import type { RidgeDatabase } from "./db/index.js";
 import { getFleetingAttachments } from "./fleeting-attachments.js";
 import type { createBackgroundJobQueue } from "./background-jobs.js";
-import { createPiDefaultSettingsManager } from "./pi-default-config.js";
+import {
+	createPiDefaultSettingsManager,
+	getPiDefaultAgentDir,
+} from "./pi-default-config.js";
 import {
 	deriveTaskFromExtension,
 	type ConversionJob,
 	type ConversionServiceClient,
 	type DownloadedArtifact,
 } from "./conversion-service-client.js";
+import { createPlanningToolsExtension } from "./planning-tools.js";
+import {
+	compileAgentPermission,
+	createPermissionGateExtension,
+	loadGlobalPermissionConfig,
+} from "./agent-permissions.js";
+import {
+	discoverAgents,
+	normalizeThinkingLevel,
+	type AgentConfigInternal,
+} from "./agents.js";
+import type { AgentPermission, ThinkingLevel } from "./types/index.js";
+import { normalizeString } from "./utils/strings.js";
+import { buildWorkspaceMemoryInjectionSync } from "./workspace-memory.js";
+import {
+	createInternalTaskCompletionExtension,
+	INTERNAL_TASK_COMPLETION_TOOL_NAME,
+	normalizeInternalTaskCompletionInput,
+	type InternalTaskCompletionInput,
+	type InternalTaskCompletionResult,
+} from "./internal-agent-tools.js";
 
 type BackgroundJobQueue = ReturnType<typeof createBackgroundJobQueue>;
 
@@ -31,28 +51,36 @@ export interface FleetingAnalysisRunner {
 	resetJob: (noteId: string) => void;
 }
 
-export interface FleetingAnalysisResult {
-	recommendationType: "journal" | "clip" | "task" | "delete";
-	recommendationText: string;
-	draft: string;
-	requiresInput: boolean;
+export type FleetingCompletionInput = InternalTaskCompletionInput;
+export type FleetingCompletionResult = InternalTaskCompletionResult;
+
+interface FleetingAgentSession {
+	prompt(prompt: string, options?: unknown): Promise<void> | void;
+	getActiveToolNames(): string[];
+	setActiveToolsByName(names: string[]): Promise<void> | void;
+	setModel?(model: Model<Api>): Promise<void> | void;
+	setThinkingLevel?(level: ThinkingLevel): Promise<void> | void;
+	sessionId?: string;
+	sessionFile?: string;
 }
 
-export type CompleteFn = (
-	model: Model<Api>,
-	context: Context,
-	options?: ProviderStreamOptions,
-) => Promise<AssistantMessage>;
-
-export interface FleetingAnalysisSettings {
-	defaultProvider?: string;
-	defaultModel?: string;
-	defaultThinkingLevel?: string;
+interface ShutdownableSessionManager {
+	shutdown?: () => Promise<void> | void;
 }
 
-export type FleetingAnalysisSettingsResolver = (
-	workspaceDir: string,
-) => FleetingAnalysisSettings;
+export interface CreateFleetingAgentSessionOptions {
+	cwd: string;
+	authStorage: AuthStorage;
+	modelRegistry: ModelRegistry;
+	sessionManager: ShutdownableSessionManager;
+	settingsManager: SettingsManager;
+	resourceLoader: DefaultResourceLoader;
+	completeInternalTask: (input: FleetingCompletionInput) => Promise<FleetingCompletionResult>;
+}
+
+export type CreateFleetingAgentSessionFn = (
+	options: CreateFleetingAgentSessionOptions,
+) => Promise<{ session: FleetingAgentSession }>;
 
 type FleetingAnalysisConversionClient = Pick<
 	ConversionServiceClient,
@@ -67,109 +95,29 @@ interface FleetingAnalysisWorkerOptions {
 	workspaceDir: string;
 	pollIntervalMs?: number;
 	modelSpec?: string;
-	completeFn?: CompleteFn;
-	settingsResolver?: FleetingAnalysisSettingsResolver;
+	createAgentSessionFn?: CreateFleetingAgentSessionFn;
 	getConversionClient?: () => FleetingAnalysisConversionClient | undefined;
 }
 
-const FLEETING_ANALYSIS_TOOL_NAME = "fleeting_analysis_result";
+const FLEETING_AGENT_NAME = "fleeting-agent";
 const MAX_ATTACHMENT_CONTEXT_CHARS = 16_000;
 const MAX_ATTACHMENT_TEXT_CHARS = 6_000;
 const MAX_DIRECT_TEXT_BYTES = 64 * 1024;
 
-const FLEETING_ANALYSIS_SYSTEM_PROMPT = `你是 ridge 的闪念分析器。你的唯一任务是根据一次闪念内容和附件列表判断后续处理建议。
+const DEFAULT_FLEETING_AGENT_PROMPT = `你是 ridge 的闪念处理 Agent。你接收一条刚捕捉的闪念、附件信息、工作空间目录和可用工具。
 
-边界：
-- 只分析用户提供的闪念内容和附件摘要。
-- 不读取项目文件，不执行命令，不使用技能、提示词模板、扩展或上下文文件。
-- 必须以 ${FLEETING_ANALYSIS_TOOL_NAME} 工具调用作为最终结果。
-- 不输出普通文本，不输出 JSON 文本。`;
+职责：
+- 判断闪念适合沉淀到日记、笔记、剪藏、任务、里程碑或正式附件。
+- 使用工作空间文件、规划工具和命令完成沉淀动作。
+- 需要任务或里程碑时使用规划工具创建或更新。
+- 需要日记、笔记、剪藏时直接读写工作空间文件。
+- 需要理解上下文时先探索相关目录和已有内容。
+- 处理完成后调用 ${INTERNAL_TASK_COMPLETION_TOOL_NAME} 汇报结果。
 
-const analysisResultTool: Tool = {
-	name: FLEETING_ANALYSIS_TOOL_NAME,
-	description: "Return the final structured analysis result for one fleeting note.",
-	parameters: Type.Object({
-		recommendationType: StringEnum(["journal", "clip", "task", "delete"] as const, {
-			description: "闪念建议类型",
-		}),
-		recommendationText: Type.String({
-			description: "简短的理由说明，20字内",
-		}),
-		draft: Type.String({
-			description: "journal 日记草稿；clip 剪藏内容；task 任务标题和描述；delete 留空",
-		}),
-		requiresInput: Type.Boolean({
-			description: "是否还需要用户补充信息",
-		}),
-	}),
-};
-
-const ANALYSIS_PROMPT_TEMPLATE = `你是一个闪念整理助手。请分析以下用户闪念，给出最合适的处理建议。
-
-可选建议类型：
-- journal：适合写入日记的个人想法、备忘、记录
-- clip：适合收藏的链接、文章摘录、参考资料
-- task：适合转化为待办任务的工作项、需要跟进的事项
-- delete：无价值或已过期，建议直接删除
-
-闪念内容：
-{content}
-
-附件列表：
-{attachments}
-
-附件正文（转换或读取后，可能已截断）：
-{attachmentContexts}
-
-必须调用 ${FLEETING_ANALYSIS_TOOL_NAME} 工具返回最终结构化结果。不要输出普通文本，不要输出 JSON 文本。`;
-
-function buildAnalysisPrompt(
-	content: string,
-	attachments: { originalName: string; mimeType: string; size?: number }[],
-	attachmentContexts: { originalName: string; content: string; truncated: boolean }[] = [],
-): string {
-	const attSummary =
-		attachments.length === 0
-			? "无"
-			: attachments
-					.map((a) => `- ${a.originalName} (${a.mimeType}${typeof a.size === "number" ? `, ${a.size} bytes` : ""})`)
-					.join("\n");
-	const contextSummary =
-		attachmentContexts.length === 0
-			? "无"
-			: attachmentContexts
-					.map(
-						(a) =>
-							`## ${a.originalName}${a.truncated ? "（已截断）" : ""}\n${a.content}`,
-					)
-					.join("\n\n");
-	return ANALYSIS_PROMPT_TEMPLATE.replace("{content}", content).replace(
-		"{attachments}",
-		attSummary,
-	).replace("{attachmentContexts}", contextSummary);
-}
-
-function parseAnalysisResult(raw: unknown): FleetingAnalysisResult {
-	if (!raw || typeof raw !== "object") {
-		throw new Error("Invalid analysis result structure");
-	}
-	const obj = raw as Record<string, unknown>;
-	const type = obj.recommendationType;
-	if (
-		type !== "journal" &&
-		type !== "clip" &&
-		type !== "task" &&
-		type !== "delete"
-	) {
-		throw new Error(`Invalid recommendationType: ${String(type)}`);
-	}
-	return {
-		recommendationType: type,
-		recommendationText: typeof obj.recommendationText === "string" ? obj.recommendationText : "",
-		draft: typeof obj.draft === "string" ? obj.draft : "",
-		requiresInput: obj.requiresInput === true,
-	};
-}
+完成汇报：
+- status 为 completed 表示闪念已经完成沉淀。
+- status 为 failed 表示本次处理遇到可记录的错误。
+- summary 写明完成内容或失败原因。`;
 
 function truncateText(text: string, maxChars: number): { text: string; truncated: boolean } {
 	if (text.length <= maxChars) {
@@ -252,9 +200,9 @@ async function buildAttachmentContexts(
 					options: task === "audio.transcription"
 						? { format: "markdown" }
 						: { engine: "markitdown", ocrFallback: true },
-					clientJobId: `fleeting-analysis-${path.basename(attachment.storedPath)}-${Date.now()}`,
+					clientJobId: `fleeting-agent-${path.basename(attachment.storedPath)}-${Date.now()}`,
 					metadata: {
-						source: "fleeting.analysis",
+						source: "fleeting.agent",
 						originalName: attachment.originalName,
 						mimeType: attachment.mimeType,
 					},
@@ -278,162 +226,273 @@ async function buildAttachmentContexts(
 	return contexts;
 }
 
-function getAnalysisToolResult(response: AssistantMessage): FleetingAnalysisResult {
-	if (response.stopReason === "error" || response.stopReason === "aborted") {
-		throw new Error(response.errorMessage || "Fleeting analysis model request failed");
-	}
-	for (const block of response.content) {
-		if (block.type !== "toolCall") continue;
-		if (block.name !== FLEETING_ANALYSIS_TOOL_NAME) continue;
-		return parseAnalysisResult(block.arguments);
-	}
-	throw new Error(`Fleeting analysis did not call ${FLEETING_ANALYSIS_TOOL_NAME}`);
+const formatAttachmentList = (
+	attachments: { originalName: string; mimeType: string; size?: number }[],
+): string =>
+	attachments.length === 0
+		? "无"
+		: attachments
+				.map((a) => `- ${a.originalName} (${a.mimeType}${typeof a.size === "number" ? `, ${a.size} bytes` : ""})`)
+				.join("\n");
+
+const formatAttachmentContexts = (
+	attachmentContexts: { originalName: string; content: string; truncated: boolean }[],
+): string =>
+	attachmentContexts.length === 0
+		? "无"
+		: attachmentContexts
+				.map((a) => `## ${a.originalName}${a.truncated ? "（已截断）" : ""}\n${a.content}`)
+				.join("\n\n");
+
+function buildFleetingAgentPrompt(
+	input: {
+		noteId: string;
+		content: string;
+		workspaceDir: string;
+		attachments: { originalName: string; mimeType: string; size?: number }[];
+		attachmentContexts: { originalName: string; content: string; truncated: boolean }[];
+	},
+): string {
+	return `请处理这条闪念。
+
+闪念 ID:
+${input.noteId}
+
+工作空间:
+${input.workspaceDir}
+
+常用沉淀目录:
+- 日记/
+- 笔记/
+- 剪藏/
+- 附件/
+- 记忆/
+- Wiki/
+- 项目/
+
+闪念内容:
+${input.content}
+
+附件列表:
+${formatAttachmentList(input.attachments)}
+
+附件正文:
+${formatAttachmentContexts(input.attachmentContexts)}
+
+完成后调用 ${INTERNAL_TASK_COMPLETION_TOOL_NAME}。`;
 }
 
-function parseModelSpec(modelSpec: string | undefined): { provider: string; modelId: string } | undefined {
-	const normalized = modelSpec?.trim();
-	if (!normalized) return undefined;
-	const slashIndex = normalized.indexOf("/");
-	if (slashIndex <= 0 || slashIndex === normalized.length - 1) {
-		throw new Error(`Invalid fleeting analysis model spec: ${normalized}`);
-	}
-	return {
-		provider: normalized.slice(0, slashIndex),
-		modelId: normalized.slice(slashIndex + 1),
-	};
-}
-
-function resolveDefaultSettings(workspaceDir: string): FleetingAnalysisSettings {
-	const settings = createPiDefaultSettingsManager(workspaceDir);
-	return {
-		defaultProvider: settings.getDefaultProvider(),
-		defaultModel: settings.getDefaultModel(),
-		defaultThinkingLevel: settings.getDefaultThinkingLevel(),
-	};
-}
-
-function resolveReasoningLevel(level: string | undefined): ThinkingLevel | undefined {
-	if (
-		level === "minimal" ||
-		level === "low" ||
-		level === "medium" ||
-		level === "high" ||
-		level === "xhigh"
-	) {
-		return level;
-	}
-	return undefined;
-}
-
-function resolveAnalysisModel(
+function resolveModel(
 	modelRegistry: ModelRegistry,
 	modelSpec: string | undefined,
-	settings: FleetingAnalysisSettings,
-): Model<Api> {
+): Model<Api> | null {
+	const normalized = normalizeString(modelSpec);
+	if (!normalized) {
+		return null;
+	}
+	const slashIndex = normalized.indexOf("/");
+	if (slashIndex <= 0 || slashIndex === normalized.length - 1) {
+		throw new Error(`Invalid fleeting agent model spec: ${normalized}`);
+	}
 	modelRegistry.refresh();
-
-	const explicit = parseModelSpec(modelSpec);
-	if (explicit) {
-		const model = modelRegistry.find(explicit.provider, explicit.modelId);
-		if (!model) {
-			throw new Error(
-				`Fleeting analysis model is not available: ${explicit.provider}/${explicit.modelId}`,
-			);
-		}
-		return model;
+	const provider = normalized.slice(0, slashIndex);
+	const modelId = normalized.slice(slashIndex + 1);
+	const model = modelRegistry.find(provider, modelId);
+	if (!model) {
+		throw new Error(`Fleeting agent model is not available: ${normalized}`);
 	}
-
-	if (settings.defaultProvider && settings.defaultModel) {
-		const model = modelRegistry.find(settings.defaultProvider, settings.defaultModel);
-		if (model) return model;
-	}
-
-	const [firstAvailable] = modelRegistry.getAvailable();
-	if (!firstAvailable) {
-		throw new Error("No configured Pi model is available for fleeting analysis");
-	}
-	return firstAvailable;
+	return model;
 }
 
-async function runAnalysis(
+async function getFleetingAgent(workspaceDir: string): Promise<AgentConfigInternal> {
+	const agents = await discoverAgents(workspaceDir);
+	const agent = agents.find((item) => item.name === FLEETING_AGENT_NAME);
+	if (!agent || agent.enabled === false) {
+		return {
+			name: FLEETING_AGENT_NAME,
+			description: "自动处理闪念",
+			displayName: "Fleeting Agent",
+			mode: "all",
+			visible: false,
+			enabled: true,
+			permission: {
+				ask: "deny",
+				subagent: "deny",
+			} as AgentPermission,
+			systemPrompt: DEFAULT_FLEETING_AGENT_PROMPT,
+			source: "builtin:fleeting-agent",
+			sourceScope: "default",
+		} as AgentConfigInternal;
+	}
+	return {
+		...agent,
+		visible: false,
+		permission: {
+			...(agent.permission || {}),
+			ask: "deny",
+			subagent: "deny",
+		},
+	};
+}
+
+const defaultCreateFleetingAgentSession: CreateFleetingAgentSessionFn = async (options) => {
+	await options.resourceLoader.reload();
+	const { session } = await realCreateAgentSession({
+		cwd: options.cwd,
+		authStorage: options.authStorage,
+		modelRegistry: options.modelRegistry,
+		sessionManager: options.sessionManager as SessionManager,
+		settingsManager: options.settingsManager,
+		resourceLoader: options.resourceLoader,
+	});
+	return { session: session as unknown as FleetingAgentSession };
+};
+
+async function runFleetingAgent(
 	options: {
 		db: RidgeDatabase;
 		modelRegistry: ModelRegistry;
 		authStorage: AuthStorage;
 		workspaceDir: string;
 		modelSpec?: string;
-		completeFn?: CompleteFn;
-		settingsResolver?: FleetingAnalysisSettingsResolver;
+		createAgentSessionFn: CreateFleetingAgentSessionFn;
 		getConversionClient?: () => FleetingAnalysisConversionClient | undefined;
 	},
 	noteId: string,
-): Promise<FleetingAnalysisResult> {
-	const {
-		db,
-		modelRegistry,
-		workspaceDir,
-		modelSpec,
-		completeFn = realComplete,
-		settingsResolver = resolveDefaultSettings,
-		getConversionClient,
-	} = options;
-
-	// 1. Read note
-	const note = db
+): Promise<FleetingCompletionResult> {
+	const note = options.db
 		.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
-		.get(noteId) as
-		| Record<string, unknown>
-		| undefined;
+		.get(noteId) as Record<string, unknown> | undefined;
 	if (!note) {
 		throw new Error(`Fleeting note not found: ${noteId}`);
 	}
 
-	const content = String(note.content ?? "");
-
-	// 2. Read attachments
-	const attachments = getFleetingAttachments(db, noteId).map((att) => ({
+	const attachments = getFleetingAttachments(options.db, noteId).map((att) => ({
 		originalName: att.original_name,
 		mimeType: att.mime_type,
 		storedPath: att.stored_path,
 		size: att.size,
 	}));
-
-	// 3. Build prompt
 	const attachmentContexts = await buildAttachmentContexts(
 		attachments,
-		getConversionClient?.(),
+		options.getConversionClient?.(),
 	);
-	const prompt = buildAnalysisPrompt(content, attachments, attachmentContexts);
 
-	// 4. Call the configured Pi model directly via pi-ai.
-	const settings = settingsResolver(workspaceDir);
-	const model = resolveAnalysisModel(modelRegistry, modelSpec, settings);
-	const auth = await modelRegistry.getApiKeyAndHeaders(model);
-	if (!auth.ok) {
-		throw new Error(auth.error);
-	}
+	const agent = await getFleetingAgent(options.workspaceDir);
+	let completion: FleetingCompletionResult | null = null;
 
-	const completionOptions: ProviderStreamOptions = {
-		apiKey: auth.apiKey,
-		headers: auth.headers,
-		temperature: 0,
-		maxTokens: 800,
+	const completeInternalTask = async (
+		rawInput: FleetingCompletionInput,
+	): Promise<FleetingCompletionResult> => {
+		const input = normalizeInternalTaskCompletionInput(rawInput);
+		const now = Date.now();
+		if (input.status === "completed") {
+			options.db.prepare(
+				`UPDATE fleeting_notes SET
+				  status = 'processed',
+				  analysis_status = 'processed',
+				  recommendation_type = NULL,
+				  recommendation_text = ?,
+				  draft = NULL,
+				  requires_input = 0,
+				  last_error = NULL,
+				  updated_at = ?
+				 WHERE note_id = ?`,
+			).run(input.summary, now, noteId);
+		} else {
+			options.db.prepare(
+				`UPDATE fleeting_notes SET
+				  analysis_status = 'failed',
+				  recommendation_type = NULL,
+				  recommendation_text = ?,
+				  draft = NULL,
+				  requires_input = 0,
+				  last_error = ?,
+				  updated_at = ?
+				 WHERE note_id = ?`,
+			).run(input.summary, input.error || input.summary, now, noteId);
+		}
+		completion = {
+			agentName: FLEETING_AGENT_NAME,
+			status: input.status,
+			summary: input.summary,
+			error: input.status === "failed" ? (input.error || input.summary) : undefined,
+			completedAt: now,
+		};
+		return completion;
 	};
-	const reasoning = model.reasoning
-		? resolveReasoningLevel(settings.defaultThinkingLevel)
-		: undefined;
-	if (reasoning) {
-		completionOptions.reasoning = reasoning;
+
+	let permissionPolicy: ReturnType<typeof compileAgentPermission> | null = null;
+	const settingsManager = createPiDefaultSettingsManager(options.workspaceDir);
+	const sessionManager = SessionManager.inMemory(options.workspaceDir) as ShutdownableSessionManager;
+	const resourceLoader = new DefaultResourceLoader({
+		cwd: options.workspaceDir,
+		agentDir: getPiDefaultAgentDir(),
+		settingsManager,
+		appendSystemPromptOverride: (base: string[]) => {
+			const sections = [...base];
+			const memoryInjection = buildWorkspaceMemoryInjectionSync(options.workspaceDir);
+			if (memoryInjection) {
+				sections.push(memoryInjection);
+			}
+			sections.push(agent.systemPrompt || DEFAULT_FLEETING_AGENT_PROMPT);
+			return sections;
+		},
+		extensionFactories: [
+			createPermissionGateExtension(() => permissionPolicy),
+			createPlanningToolsExtension(options.workspaceDir),
+			createInternalTaskCompletionExtension({
+				agentName: FLEETING_AGENT_NAME,
+				onComplete: completeInternalTask,
+			}),
+		],
+	});
+
+	try {
+		const { session } = await options.createAgentSessionFn({
+			cwd: options.workspaceDir,
+			authStorage: options.authStorage,
+			modelRegistry: options.modelRegistry,
+			sessionManager,
+			settingsManager,
+			resourceLoader,
+			completeInternalTask,
+		});
+
+		const model = resolveModel(options.modelRegistry, options.modelSpec || agent.model);
+		if (model && session.setModel) {
+			await session.setModel(model);
+		}
+
+		const thinking = normalizeThinkingLevel(agent.thinking);
+		if (thinking && session.setThinkingLevel) {
+			await session.setThinkingLevel(thinking);
+		}
+
+		permissionPolicy = compileAgentPermission(
+			options.workspaceDir,
+			agent.permission,
+			session.getActiveToolNames(),
+			await loadGlobalPermissionConfig(getPiDefaultAgentDir()),
+		);
+		await session.setActiveToolsByName(permissionPolicy.activeToolNames);
+
+		const prompt = buildFleetingAgentPrompt({
+			noteId,
+			content: String(note.content ?? ""),
+			workspaceDir: options.workspaceDir,
+			attachments,
+			attachmentContexts,
+		});
+		await session.prompt(prompt, { source: "background" });
+
+		if (!completion) {
+			throw new Error(`${FLEETING_AGENT_NAME} did not call ${INTERNAL_TASK_COMPLETION_TOOL_NAME}`);
+		}
+		return completion;
+	} finally {
+		await sessionManager.shutdown?.();
 	}
-
-	const context: Context = {
-		systemPrompt: FLEETING_ANALYSIS_SYSTEM_PROMPT,
-		messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
-		tools: [analysisResultTool],
-	};
-	const response = await completeFn(model, context, completionOptions);
-
-	return getAnalysisToolResult(response);
 }
 
 export function createFleetingAnalysisRunner(options: {
@@ -445,13 +504,13 @@ export function createFleetingAnalysisRunner(options: {
 		run: async (noteId: string) => {
 			const note = db
 				.prepare(
-					"SELECT note_id, analysis_status FROM fleeting_notes WHERE note_id = ?",
+					"SELECT note_id, status, analysis_status FROM fleeting_notes WHERE note_id = ?",
 				)
 				.get(noteId) as
-					| { note_id: string; analysis_status: string }
+					| { note_id: string; status: string; analysis_status: string }
 					| undefined;
 			if (!note) return;
-			if (note.analysis_status === "suggested") return;
+			if (note.status === "processed" || note.analysis_status === "processed") return;
 
 			jobQueue.enqueue({
 				type: "fleeting.analyze",
@@ -463,14 +522,12 @@ export function createFleetingAnalysisRunner(options: {
 			});
 		},
 		resetJob: (noteId: string) => {
-			// Use queue's type-safe cancel: deletes pending/failed, marks running as cancelled.
 			jobQueue.cancel({
 				type: "fleeting.analyze",
 				relatedType: "fleeting_note",
 				relatedId: noteId,
 			});
 
-			// Reset note status to unanalyzed
 			db.prepare(
 				`UPDATE fleeting_notes SET
 				  analysis_status = 'unanalyzed',
@@ -479,7 +536,6 @@ export function createFleetingAnalysisRunner(options: {
 				 WHERE note_id = ?`,
 			).run(Date.now(), noteId);
 
-			// Enqueue a fresh job
 			jobQueue.enqueue({
 				type: "fleeting.analyze",
 				relatedType: "fleeting_note",
@@ -503,8 +559,7 @@ export function createFleetingAnalysisWorker(
 		workspaceDir,
 		pollIntervalMs = 5000,
 		modelSpec,
-		completeFn,
-		settingsResolver,
+		createAgentSessionFn = defaultCreateFleetingAgentSession,
 		getConversionClient,
 	} = options;
 
@@ -531,30 +586,33 @@ export function createFleetingAnalysisWorker(
 			return;
 		}
 
-		// Update note status to analyzing
 		db.prepare(
 			"UPDATE fleeting_notes SET analysis_status = 'analyzing', updated_at = ? WHERE note_id = ?",
 		).run(Date.now(), noteId);
 
-		let result: FleetingAnalysisResult;
+		let result: FleetingCompletionResult;
 		try {
-			result = await runAnalysis(
-				{ db, modelRegistry, authStorage, workspaceDir, modelSpec, completeFn, settingsResolver, getConversionClient },
+			result = await runFleetingAgent(
+				{
+					db,
+					modelRegistry,
+					authStorage,
+					workspaceDir,
+					modelSpec,
+					createAgentSessionFn,
+					getConversionClient,
+				},
 				noteId,
 			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 
-			// If the job was cancelled while we were working, do not touch the note.
-			// The note was already reset to 'unanalyzed' by resetJob() and a new job is running.
 			const currentJob = jobQueue.get(job.jobId);
 			if (currentJob?.status === "cancelled") {
 				return;
 			}
 
 			const now = Date.now();
-			// Note: jobQueue.fail() increments retryCount by 1.
-			// We must compute if there will be another retry *after* this fail.
 			const willRetry = job.retryCount + 1 < job.maxAttempts;
 			if (willRetry) {
 				db.prepare(
@@ -583,37 +641,12 @@ export function createFleetingAnalysisWorker(
 			return;
 		}
 
-		// If the job was cancelled while we were working, do not write stale results.
 		const currentJob = jobQueue.get(job.jobId);
 		if (currentJob?.status === "cancelled") {
 			return;
 		}
 
-		// Write result to note
-		const now = Date.now();
-		db.prepare(
-			`UPDATE fleeting_notes SET
-			  analysis_status = 'suggested',
-			  recommendation_type = ?,
-			  recommendation_text = ?,
-			  draft = ?,
-			  requires_input = ?,
-			  last_error = NULL,
-			  updated_at = ?
-			 WHERE note_id = ?`,
-		).run(
-			result.recommendationType,
-			result.recommendationText,
-			result.draft,
-			result.requiresInput ? 1 : 0,
-			now,
-			noteId,
-		);
-
-		jobQueue.complete(job.jobId, {
-			recommendationType: result.recommendationType,
-			recommendationText: result.recommendationText,
-		});
+		jobQueue.complete(job.jobId, result);
 	}
 
 	async function tick() {
@@ -621,7 +654,7 @@ export function createFleetingAnalysisWorker(
 		try {
 			await processJob();
 		} catch (error) {
-			console.error("Fleeting analysis worker error:", error);
+			console.error("Fleeting agent worker error:", error);
 		}
 		if (running) {
 			timer = setTimeout(tick, pollIntervalMs);

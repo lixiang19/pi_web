@@ -11,7 +11,11 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import type { Api, Message, Model } from '@mariozechner/pi-ai';
 
-import { compileAgentPermission, createPermissionGateExtension } from './agent-permissions.js';
+import {
+  compileAgentPermission,
+  createPermissionGateExtension,
+  loadGlobalPermissionConfig,
+} from './agent-permissions.js';
 import {
   createPiDefaultSettingsManager,
   getPiDefaultAgentDir,
@@ -465,6 +469,7 @@ const runChildSession = async (
     parentRecord.cwd,
     agent.permission,
     session.getActiveToolNames(),
+    await loadGlobalPermissionConfig(getPiDefaultAgentDir()),
   );
   await session.setActiveToolsByName(permissionPolicy.activeToolNames);
 
@@ -482,10 +487,10 @@ export const createSubagentToolExtension = (
   extOptions: SubagentExtensionOptions,
 ) =>
   (pi: ExtensionAPI): void => {
-    // ---- task ----
+    // ---- subagent ----
     pi.registerTool({
-      name: 'task',
-      label: 'Task',
+      name: 'subagent',
+      label: 'Subagent',
       description:
         'Launch a subagent as a real persistent child session. ' +
         'Returns { sessionId, sessionFile, status, result?, error? }. ' +
@@ -532,7 +537,7 @@ export const createSubagentToolExtension = (
 
         const agents = await discoverAgents(parentRecord.cwd);
         const agent = agents.find((item) => item.name === agentName);
-        if (!agent || agent.enabled === false) {
+        if (!agent || agent.enabled === false || agent.visible === false || agent.name === 'fleeting-agent' || agent.name === 'memory-agent') {
           throw createHttpError(`子代理不存在或已禁用: ${agentName}`, 404);
         }
         if (agent.mode === 'primary') {

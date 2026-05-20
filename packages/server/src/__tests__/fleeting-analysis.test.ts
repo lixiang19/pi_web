@@ -1,15 +1,16 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
+import express from "express";
+import request from "supertest";
+
 import { RIDGE_DB_BOOTSTRAP_SQL } from "../db/migrations.js";
 import { createBackgroundJobQueue } from "../background-jobs.js";
 import {
 	createFleetingAnalysisRunner,
 	createFleetingAnalysisWorker,
+	type CreateFleetingAgentSessionFn,
 } from "../fleeting-analysis.js";
 import { createFleetingRouter } from "../routes/fleeting.js";
-import express from "express";
-import request from "supertest";
-import type { Api, AssistantMessage, Model } from "@mariozechner/pi-ai";
 import { getFleetingAttachments } from "../fleeting-attachments.js";
 
 const createDb = () => {
@@ -18,126 +19,48 @@ const createDb = () => {
 	return db;
 };
 
-// ============================================================================
-// Mock pi-ai complete() so we don't need real API keys
-// ============================================================================
-const mockModel = {
-	provider: "aurora",
-	id: "kimi2.6",
-	name: "kimi2.6",
-	reasoning: true,
-} as Model<Api>;
-
-const baseUsage = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		total: 0,
-	},
-};
-
-const createToolCallMessage = (
-	args: Record<string, unknown> = {
-		recommendationType: "clip",
-		recommendationText: "建议收藏",
-		draft: "SQLite article summary",
-		requiresInput: false,
-	},
-): AssistantMessage => ({
-	role: "assistant",
-	content: [
-		{
-			type: "toolCall",
-			id: "call-1",
-			name: "fleeting_analysis_result",
-			arguments: args,
-		},
-	],
-	api: "openai-responses",
-	provider: "aurora",
-	model: "kimi2.6",
-	usage: baseUsage,
-	stopReason: "toolUse",
-	timestamp: Date.now(),
-});
-
-const createTextMessage = (text: string): AssistantMessage => ({
-	role: "assistant",
-	content: [{ type: "text", text }],
-	api: "openai-responses",
-	provider: "aurora",
-	model: "kimi2.6",
-	usage: baseUsage,
-	stopReason: "stop",
-	timestamp: Date.now(),
-});
-
-const mockComplete = vi.fn(async () => createToolCallMessage()) satisfies import("../fleeting-analysis.js").CompleteFn;
-
-const createMockModelRegistry = () => ({
-	refresh: vi.fn(),
-	find: vi.fn((provider: string, modelId: string) =>
-		provider === "aurora" && modelId === "kimi2.6" ? mockModel : undefined,
-	),
-	getAvailable: vi.fn(() => [mockModel]),
-	getApiKeyAndHeaders: vi.fn(async () => ({
-		ok: true as const,
-		apiKey: "test-api-key",
-		headers: { "x-provider": "aurora" },
-	})),
-});
-
-const mockSettingsResolver = vi.fn(() => ({
-	defaultProvider: "aurora",
-	defaultModel: "kimi2.6",
-	defaultThinkingLevel: "high",
-}));
-
 vi.mock("../fleeting-attachments.js", () => ({
 	getFleetingAttachments: vi.fn(() => []),
 }));
 
 const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
 
-const createMockConversionClient = () => ({
-	createConversionWithFile: vi.fn(async () => ({
-		jobId: "conv-1",
-		status: "succeeded" as const,
-		task: "document.markdown" as const,
-		createdAt: new Date().toISOString(),
-		artifacts: [
-			{
-				artifactId: "artifact-1",
-				name: "report.md",
-				mimeType: "text/markdown",
-				size: 32,
-				inline: true,
-				content: "# Report\n\nConverted body",
-			},
-		],
-	})),
-	downloadArtifacts: vi.fn(async () => [
-		{
-			artifact: {
-				artifactId: "artifact-1",
-				name: "report.md",
-				mimeType: "text/markdown",
-				size: 32,
-				inline: true,
-			},
-			buffer: Buffer.from("# Report\n\nConverted body"),
-		},
-	]),
-});
+type FleetingSessionOptions = Parameters<CreateFleetingAgentSessionFn>[0];
 
-describe("fleeting analysis runner", () => {
+const createMockSessionFactory = (
+	onPrompt: (options: FleetingSessionOptions, prompt: string) => Promise<void> | void,
+) => {
+	const activeToolNamesByCall: string[][] = [];
+	const createAgentSessionFn: CreateFleetingAgentSessionFn = vi.fn(async (options) => {
+		const session = {
+			sessionId: "fleeting-session-1",
+			sessionFile: undefined,
+			getActiveToolNames: () => [
+				"read",
+				"edit",
+				"bash",
+				"ask",
+				"subagent",
+				"steer_subagent",
+				"get_subagent_result",
+				"create_task",
+				"complete_internal_task",
+			],
+			setActiveToolsByName: vi.fn(async (names: string[]) => {
+				activeToolNamesByCall.push(names);
+			}),
+			setModel: vi.fn(async () => {}),
+			setThinkingLevel: vi.fn(async () => {}),
+			prompt: vi.fn(async (prompt: string) => {
+				await onPrompt(options, prompt);
+			}),
+		};
+		return { session };
+	});
+	return { createAgentSessionFn, activeToolNamesByCall };
+};
+
+describe("fleeting agent runner", () => {
 	it("enqueues a job when run is called", () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
@@ -172,13 +95,13 @@ describe("fleeting analysis runner", () => {
 		db.close();
 	});
 
-	it("does not enqueue for already suggested notes", () => {
+	it("does not enqueue for processed notes", () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
 		const runner = createFleetingAnalysisRunner({ db, jobQueue: queue });
 
 		db.prepare(
-			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'suggested', ?, ?)",
+			"INSERT INTO fleeting_notes(note_id, content, status, analysis_status, created_at, updated_at) VALUES(?, ?, 'processed', 'processed', ?, ?)",
 		).run("note-1", "Test content", Date.now(), Date.now());
 
 		runner.run("note-1");
@@ -188,7 +111,7 @@ describe("fleeting analysis runner", () => {
 	});
 });
 
-describe("fleeting analysis runner.resetJob", () => {
+describe("fleeting agent runner.resetJob", () => {
 	it("deletes old job and enqueues a fresh one", () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
@@ -198,63 +121,27 @@ describe("fleeting analysis runner.resetJob", () => {
 			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'failed', ?, ?)",
 		).run("note-1", "Test content", Date.now(), Date.now());
 
-		// First enqueue via run
 		runner.run("note-1");
 		const firstJobId = queue.list()[0]?.jobId;
 		expect(firstJobId).toBeDefined();
 
-		// Reset should delete old and create new
 		runner.resetJob("note-1");
 		const jobs = queue.list();
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]?.jobId).not.toBe(firstJobId);
 		expect(jobs[0]?.status).toBe("pending");
 
-		// Note should be reset to unanalyzed
 		const note = db
-			.prepare("SELECT analysis_status FROM fleeting_notes WHERE note_id = ?")
-			.get("note-1") as { analysis_status: string };
+			.prepare("SELECT analysis_status, last_error FROM fleeting_notes WHERE note_id = ?")
+			.get("note-1") as { analysis_status: string; last_error: string | null };
 		expect(note.analysis_status).toBe("unanalyzed");
-
-		db.close();
-	});
-
-	it("deletes any existing pending/running/failed job for the same note", () => {
-		const db = createDb();
-		const queue = createBackgroundJobQueue(db);
-		const runner = createFleetingAnalysisRunner({ db, jobQueue: queue });
-
-		db.prepare(
-			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'failed', ?, ?)",
-		).run("note-1", "Test content", Date.now(), Date.now());
-
-		queue.enqueue({
-			type: "fleeting.analyze",
-			relatedType: "fleeting_note",
-			relatedId: "note-1",
-			payload: { noteId: "note-1" },
-			maxAttempts: 1,
-		});
-		// Mark as failed manually
-		// Use cancel API instead of raw SQL to match production behavior.
-		queue.cancel({ type: "fleeting.analyze", relatedType: "fleeting_note", relatedId: "note-1" });
-
-		expect(queue.list()).toHaveLength(0);
-
-		runner.resetJob("note-1");
-		const jobs = queue.list();
-		expect(jobs).toHaveLength(1);
-		expect(jobs[0]?.status).toBe("pending");
-
+		expect(note.last_error).toBeNull();
 		db.close();
 	});
 });
 
-describe("fleeting analysis worker", () => {
+describe("fleeting agent worker", () => {
 	beforeEach(() => {
-		mockComplete.mockReset();
-		mockComplete.mockResolvedValue(createToolCallMessage());
-		mockSettingsResolver.mockClear();
 		mockGetFleetingAttachments.mockReturnValue([]);
 	});
 
@@ -265,20 +152,18 @@ describe("fleeting analysis worker", () => {
 	it("only claims fleeting.analyze jobs, not other types", async () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
+		const { createAgentSessionFn } = createMockSessionFactory(async () => {});
 
-		// Enqueue a non-fleeting job
 		queue.enqueue({ type: "memory.maintain", payload: {} });
-		expect(queue.list()).toHaveLength(1);
 
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: createMockModelRegistry() as never,
+			modelRegistry: {} as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			completeFn: mockComplete,
-			settingsResolver: mockSettingsResolver,
+			createAgentSessionFn,
 		});
 
 		worker.start();
@@ -289,203 +174,92 @@ describe("fleeting analysis worker", () => {
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]?.status).toBe("pending");
 		expect(jobs[0]?.type).toBe("memory.maintain");
+		expect(createAgentSessionFn).not.toHaveBeenCalled();
 		db.close();
 	});
 
-	it("processes a fleeting job: runs analysis and marks note suggested", async () => {
+	it("runs a real internal agent and marks the note processed only after the completion tool is called", async () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
-		const modelRegistry = createMockModelRegistry();
+		const { createAgentSessionFn, activeToolNamesByCall } = createMockSessionFactory(
+			async (options, prompt) => {
+				expect(prompt).toContain("Read a great article about SQLite");
+				expect(prompt).toContain("complete_internal_task");
+				await options.completeInternalTask({
+					status: "completed",
+					summary: "保存到剪藏并建立后续阅读任务",
+				});
+			},
+		);
 
 		db.prepare(
 			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
 		).run("note-1", "Read a great article about SQLite", Date.now(), Date.now());
-		mockComplete.mockResolvedValue(createToolCallMessage());
-
 		queue.enqueue({
 			type: "fleeting.analyze",
 			relatedType: "fleeting_note",
 			relatedId: "note-1",
 			payload: { noteId: "note-1" },
 		});
-		expect(queue.list()).toHaveLength(1);
 
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: modelRegistry as never,
+			modelRegistry: {} as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			completeFn: mockComplete,
-			settingsResolver: mockSettingsResolver,
+			createAgentSessionFn,
 		});
 
 		worker.start();
-		await new Promise((r) => setTimeout(r, 200));
+		await new Promise((r) => setTimeout(r, 120));
 		worker.stop();
 
 		const note = db
 			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
 			.get("note-1") as Record<string, unknown>;
-		expect(note.analysis_status).toBe("suggested");
-		expect(note.recommendation_type).toBe("clip");
-		expect(note.recommendation_text).toBe("建议收藏");
-		expect(note.draft).toBe("SQLite article summary");
-		expect(modelRegistry.refresh).toHaveBeenCalled();
-		expect(modelRegistry.find).toHaveBeenCalledWith("aurora", "kimi2.6");
-		expect(modelRegistry.getApiKeyAndHeaders).toHaveBeenCalledWith(mockModel);
-		expect(mockComplete).toHaveBeenCalledWith(
-			mockModel,
-			expect.objectContaining({
-				systemPrompt: expect.stringContaining("ridge 的闪念分析器"),
-				messages: [
-					expect.objectContaining({
-						role: "user",
-						content: expect.stringContaining("Read a great article about SQLite"),
-					}),
-				],
-				tools: [
-					expect.objectContaining({
-						name: "fleeting_analysis_result",
-					}),
-				],
-			}),
-			expect.objectContaining({
-				apiKey: "test-api-key",
-				headers: { "x-provider": "aurora" },
-				temperature: 0,
-				maxTokens: 800,
-				reasoning: "high",
-			}),
-		);
+		expect(note.status).toBe("processed");
+		expect(note.analysis_status).toBe("processed");
+		expect(note.recommendation_type).toBeNull();
+		expect(note.recommendation_text).toBe("保存到剪藏并建立后续阅读任务");
+		expect(note.draft).toBeNull();
+		expect(note.requires_input).toBe(0);
+		expect(note.last_error).toBeNull();
+
+		expect(createAgentSessionFn).toHaveBeenCalledTimes(1);
+		expect(activeToolNamesByCall.at(-1)).toEqual([
+			"read",
+			"edit",
+			"bash",
+			"create_task",
+			"complete_internal_task",
+		]);
 
 		const job = queue.list()[0];
 		expect(job?.status).toBe("completed");
+		expect(job?.result).toMatchObject({
+			agentName: "fleeting-agent",
+			status: "completed",
+			summary: "保存到剪藏并建立后续阅读任务",
+		});
 		db.close();
 	});
 
-	it("converts binary attachments and sends truncated body to the model", async () => {
+	it("records an agent-declared failure without retrying the job", async () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
-		const conversionClient = createMockConversionClient();
-		const storedPath = "/tmp/report.pdf";
-
-		db.prepare(
-			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
-		).run("note-1", "Analyze attached report", Date.now(), Date.now());
-		db.prepare(
-			`INSERT INTO fleeting_attachments(
-				attachment_id, note_id, original_name, stored_name, stored_path, mime_type, size, sha256, created_at
-			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		).run(
-			"att-1",
-			"note-1",
-			"report.pdf",
-			"att-1-report.pdf",
-			storedPath,
-			"application/pdf",
-			1024,
-			"abc",
-			Date.now(),
-		);
-
-		queue.enqueue({
-			type: "fleeting.analyze",
-			relatedType: "fleeting_note",
-			relatedId: "note-1",
-			payload: { noteId: "note-1" },
-		});
-
-		const worker = createFleetingAnalysisWorker({
-			db,
-			jobQueue: queue,
-			modelRegistry: createMockModelRegistry() as never,
-			authStorage: {} as never,
-			workspaceDir: "/tmp",
-			pollIntervalMs: 10,
-			completeFn: mockComplete,
-			settingsResolver: mockSettingsResolver,
-			getConversionClient: () => conversionClient,
-		});
-
-		worker.start();
-		await new Promise((r) => setTimeout(r, 200));
-		worker.stop();
-
-		expect(mockComplete).toHaveBeenCalled();
-		expect(conversionClient.createConversionWithFile).toHaveBeenCalledWith(
-			storedPath,
-			expect.objectContaining({
-				task: "document.markdown",
-				preferredFormat: "markdown",
-				waitMs: 30_000,
-			}),
-		);
-		const context = (mockComplete.mock.calls.at(-1) as Parameters<import("../fleeting-analysis.js").CompleteFn> | undefined)?.[1];
-		const userMessage = context?.messages[0]?.content;
-		expect(userMessage).toContain("附件正文");
-		expect(userMessage).toContain("## report.pdf");
-		expect(userMessage).toContain("Converted body");
-		db.close();
-	});
-
-	it("does not accept assistant text JSON when the structured output tool was not called", async () => {
-		const db = createDb();
-		const queue = createBackgroundJobQueue(db, {
-			retryDelaysMs: [0],
+		const { createAgentSessionFn } = createMockSessionFactory(async (options) => {
+			await options.completeInternalTask({
+				status: "failed",
+				summary: "附件损坏，无法读取",
+				error: "附件转换失败",
+			});
 		});
 
 		db.prepare(
 			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
-		).run("note-1", "Read a great article about SQLite", Date.now(), Date.now());
-		mockComplete.mockResolvedValue(
-			createTextMessage('{"recommendationType":"clip","recommendationText":"建议收藏","draft":"SQLite article summary","requiresInput":false}'),
-		);
-
-		queue.enqueue({
-			type: "fleeting.analyze",
-			relatedType: "fleeting_note",
-			relatedId: "note-1",
-			payload: { noteId: "note-1" },
-			maxAttempts: 1,
-		});
-
-		const worker = createFleetingAnalysisWorker({
-			db,
-			jobQueue: queue,
-			modelRegistry: createMockModelRegistry() as never,
-			authStorage: {} as never,
-			workspaceDir: "/tmp",
-			pollIntervalMs: 10,
-			completeFn: mockComplete,
-			settingsResolver: mockSettingsResolver,
-		});
-
-		worker.start();
-		await new Promise((r) => setTimeout(r, 100));
-		worker.stop();
-
-		const note = db
-			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
-			.get("note-1") as Record<string, unknown>;
-		expect(note.analysis_status).toBe("failed");
-		expect(note.last_error).toBe("Fleeting analysis did not call fleeting_analysis_result");
-
-		const job = queue.list()[0];
-		expect(job?.status).toBe("failed");
-		db.close();
-	});
-
-	it("on first failure: note stays unanalyzed, job retries", async () => {
-		const db = createDb();
-		const queue = createBackgroundJobQueue(db);
-
-		db.prepare(
-			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'analyzing', ?, ?)",
-		).run("note-1", "Test", Date.now(), Date.now());
-		mockComplete.mockRejectedValue(new Error("LLM timeout"));
-
+		).run("note-1", "Broken attachment", Date.now(), Date.now());
 		queue.enqueue({
 			type: "fleeting.analyze",
 			relatedType: "fleeting_note",
@@ -497,91 +271,130 @@ describe("fleeting analysis worker", () => {
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: createMockModelRegistry() as never,
+			modelRegistry: {} as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			completeFn: mockComplete,
-			settingsResolver: mockSettingsResolver,
+			createAgentSessionFn,
 		});
 
 		worker.start();
-		await new Promise((r) => setTimeout(r, 100));
+		await new Promise((r) => setTimeout(r, 120));
+		worker.stop();
+
+		const note = db
+			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
+			.get("note-1") as Record<string, unknown>;
+		expect(note.status).toBe("active");
+		expect(note.analysis_status).toBe("failed");
+		expect(note.last_error).toBe("附件转换失败");
+
+		const job = queue.list()[0];
+		expect(job?.status).toBe("completed");
+		expect(job?.retryCount).toBe(0);
+		expect(job?.result).toMatchObject({
+			agentName: "fleeting-agent",
+			status: "failed",
+			error: "附件转换失败",
+		});
+		db.close();
+	});
+
+	it("fails and retries if the agent exits without calling the completion tool", async () => {
+		const db = createDb();
+		const queue = createBackgroundJobQueue(db);
+		const { createAgentSessionFn } = createMockSessionFactory(async () => {});
+
+		db.prepare(
+			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'analyzing', ?, ?)",
+		).run("note-1", "Test", Date.now(), Date.now());
+		queue.enqueue({
+			type: "fleeting.analyze",
+			relatedType: "fleeting_note",
+			relatedId: "note-1",
+			payload: { noteId: "note-1" },
+			maxAttempts: 3,
+		});
+
+		const worker = createFleetingAnalysisWorker({
+			db,
+			jobQueue: queue,
+			modelRegistry: {} as never,
+			authStorage: {} as never,
+			workspaceDir: "/tmp",
+			pollIntervalMs: 10,
+			createAgentSessionFn,
+		});
+
+		worker.start();
+		await new Promise((r) => setTimeout(r, 120));
 		worker.stop();
 
 		const note = db
 			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
 			.get("note-1") as Record<string, unknown>;
 		expect(note.analysis_status).toBe("unanalyzed");
-		expect(note.last_error).toBe("LLM timeout");
+		expect(note.last_error).toBe("fleeting-agent did not call complete_internal_task");
 		expect(note.retry_count).toBe(1);
 
 		const job = queue.list()[0];
-		expect(job?.status).toBe("pending"); // will retry
+		expect(job?.status).toBe("pending");
+		expect(job?.retryCount).toBe(1);
 		db.close();
 	});
 
-	it("on final failure: note becomes failed, job does not retry", async () => {
+	it("fails when the internal completion status is invalid", async () => {
 		const db = createDb();
-		const queue = createBackgroundJobQueue(db, {
-			retryDelaysMs: [0],
+		const queue = createBackgroundJobQueue(db, { retryDelaysMs: [0] });
+		const { createAgentSessionFn } = createMockSessionFactory(async (options) => {
+			await options.completeInternalTask({
+				status: "processed" as never,
+				summary: "wrong",
+			});
 		});
 
 		db.prepare(
-			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'analyzing', ?, ?)",
+			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
 		).run("note-1", "Test", Date.now(), Date.now());
-		mockComplete.mockRejectedValue(new Error("Persistent error"));
-
 		queue.enqueue({
 			type: "fleeting.analyze",
 			relatedType: "fleeting_note",
 			relatedId: "note-1",
 			payload: { noteId: "note-1" },
 			maxAttempts: 1,
-			notifyOnFailure: true,
 		});
 
 		const worker = createFleetingAnalysisWorker({
 			db,
 			jobQueue: queue,
-			modelRegistry: createMockModelRegistry() as never,
+			modelRegistry: {} as never,
 			authStorage: {} as never,
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
-			completeFn: mockComplete,
-			settingsResolver: mockSettingsResolver,
+			createAgentSessionFn,
 		});
 
 		worker.start();
-		await new Promise((r) => setTimeout(r, 100));
+		await new Promise((r) => setTimeout(r, 120));
 		worker.stop();
 
 		const note = db
-			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
+			.prepare("SELECT analysis_status, last_error FROM fleeting_notes WHERE note_id = ?")
 			.get("note-1") as Record<string, unknown>;
 		expect(note.analysis_status).toBe("failed");
-		expect(note.last_error).toBe("Persistent error");
-		expect(note.retry_count).toBe(1);
-
-		const job = queue.list()[0];
-		expect(job?.status).toBe("failed");
-
-		const notif = db
-			.prepare("SELECT * FROM notification_events WHERE event_type = ?")
-			.get("background_job.failed") as Record<string, unknown> | undefined;
-		expect(notif).toBeDefined();
-		expect(notif?.body).toBe("Persistent error");
+		expect(note.last_error).toBe("complete_internal_task status must be completed or failed");
+		expect(queue.list()[0]?.status).toBe("failed");
 		db.close();
 	});
 });
 
-	describe("fleeting router with delayed analysis runner", () => {
+describe("fleeting router with delayed analysis runner", () => {
 	it("calls getAnalysisRunner at request time, not at creation time", async () => {
 		const db = createDb();
 		const workspaceDir = "/tmp/test-ws";
 		const queue = createBackgroundJobQueue(db);
 
-		let runnerRef: ReturnType<typeof createFleetingAnalysisRunner> | undefined = undefined;
+		const runnerRef: { value?: ReturnType<typeof createFleetingAnalysisRunner> } = {};
 
 		const app = express();
 		app.use(express.json());
@@ -590,24 +403,17 @@ describe("fleeting analysis worker", () => {
 			createFleetingRouter({
 				db,
 				workspaceDir,
-				getAnalysisRunner: () => runnerRef,
+				getAnalysisRunner: () => runnerRef.value,
 			}),
 		);
 
-		// Before runner exists: creating a note should not crash and not enqueue
-		const res1 = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "Before runner" });
+		const res1 = await request(app).post("/api/fleeting").send({ content: "Before runner" });
 		expect(res1.status).toBe(201);
 		expect(queue.list()).toHaveLength(0);
 
-		// Now create the runner
-		runnerRef = createFleetingAnalysisRunner({ db, jobQueue: queue });
+		runnerRef.value = createFleetingAnalysisRunner({ db, jobQueue: queue });
 
-		// After runner exists: creating a note should enqueue analysis
-		const res2 = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "After runner" });
+		const res2 = await request(app).post("/api/fleeting").send({ content: "After runner" });
 		expect(res2.status).toBe(201);
 		const jobs = queue.list();
 		expect(jobs).toHaveLength(1);
@@ -641,40 +447,6 @@ describe("fleeting analysis worker", () => {
 
 		db.close();
 	});
-
-	it("POST capture with attachments does not enqueue when delayAnalysis is true", async () => {
-		const db = createDb();
-		const workspaceDir = "/tmp/test-ws";
-		const queue = createBackgroundJobQueue(db);
-		const runner = createFleetingAnalysisRunner({ db, jobQueue: queue });
-
-		const app = express();
-		app.use(express.json());
-		app.use(
-			"/api/fleeting",
-			createFleetingRouter({
-				db,
-				workspaceDir,
-				getAnalysisRunner: () => runner,
-			}),
-		);
-		app.use((err: Error & { statusCode?: number }, _req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }, _next: unknown) => {
-			res.status(err.statusCode ?? 500).json({ error: err.message });
-		});
-
-		const res = await request(app)
-			.post("/api/fleeting/capture")
-			.send({
-				content: "Screenshot",
-				type: "screenshot_region",
-				attachments: [],
-				delayAnalysis: true,
-			});
-		expect(res.status).toBe(201);
-		expect(queue.list()).toHaveLength(0);
-
-		db.close();
-	});
 });
 
 describe("POST /api/fleeting/:noteId/analyze", () => {
@@ -683,7 +455,7 @@ describe("POST /api/fleeting/:noteId/analyze", () => {
 		const workspaceDir = "/tmp/test-ws";
 		const queue = createBackgroundJobQueue(db);
 
-		let runnerRef: ReturnType<typeof createFleetingAnalysisRunner> | undefined = undefined;
+		const runnerRef: { value?: ReturnType<typeof createFleetingAnalysisRunner> } = {};
 
 		const app = express();
 		app.use(express.json());
@@ -692,31 +464,27 @@ describe("POST /api/fleeting/:noteId/analyze", () => {
 			createFleetingRouter({
 				db,
 				workspaceDir,
-				getAnalysisRunner: () => runnerRef,
+				getAnalysisRunner: () => runnerRef.value,
 			}),
 		);
 
-		// Insert a note and an old job
 		const now = Date.now();
 		db.prepare(
 			"INSERT INTO fleeting_notes(note_id, content, analysis_status, last_error, retry_count, created_at, updated_at) VALUES(?, ?, 'failed', 'old error', 2, ?, ?)",
 		).run("note-1", "Bad note", now, now);
 
-		runnerRef = createFleetingAnalysisRunner({ db, jobQueue: queue });
+		runnerRef.value = createFleetingAnalysisRunner({ db, jobQueue: queue });
 
-		// Call the analyze endpoint
 		const res = await request(app).post("/api/fleeting/note-1/analyze");
 		expect(res.status).toBe(200);
 		expect(res.body.triggered).toBe(true);
 		expect(res.body.note.analysisStatus).toBe("unanalyzed");
 
-		// Old job should be gone, new job should exist
 		const jobs = queue.list();
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]?.type).toBe("fleeting.analyze");
 		expect(jobs[0]?.status).toBe("pending");
 
-		// Note should be reset
 		const note = db
 			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
 			.get("note-1") as Record<string, unknown>;
@@ -753,213 +521,7 @@ describe("POST /api/fleeting/:noteId/analyze", () => {
 		const res = await request(app).post("/api/fleeting/note-1/analyze");
 		expect(res.status).toBe(503);
 		expect(res.body.error).toContain("尚未就绪");
-		// No job queued because runner is undefined
 		expect(queue.list()).toHaveLength(0);
-
-		db.close();
-	});
-});
-
-describe("fleeting router toPublicNote includes failure fields", () => {
-	it("returns lastError and retryCount in list response", async () => {
-		const db = createDb();
-		const workspaceDir = "/tmp/test-ws";
-
-		const app = express();
-		app.use(express.json());
-		app.use(
-			"/api/fleeting",
-			createFleetingRouter({ db, workspaceDir }),
-		);
-
-		const now = Date.now();
-		db.prepare(
-			"INSERT INTO fleeting_notes(note_id, content, analysis_status, last_error, retry_count, created_at, updated_at) VALUES(?, ?, 'failed', ?, ?, ?, ?)",
-		).run("note-fail", "Bad note", "LLM rejected", 3, now, now);
-
-		const res = await request(app).get("/api/fleeting");
-		expect(res.status).toBe(200);
-		expect(res.body.notes).toHaveLength(1);
-		expect(res.body.notes[0].lastError).toBe("LLM rejected");
-		expect(res.body.notes[0].retryCount).toBe(3);
-		expect(res.body.notes[0].analysisStatus).toBe("failed");
-
-		db.close();
-	});
-});
-
-	describe("cancelled job safety", () => {
-	it("worker complete() does not throw when job was cancelled mid-flight", async () => {
-		const db = createDb();
-		const queue = createBackgroundJobQueue(db);
-
-		const job = queue.enqueue({
-			type: "fleeting.analyze",
-			relatedType: "fleeting_note",
-			relatedId: "note-1",
-			payload: { noteId: "note-1" },
-		});
-
-		// Simulate worker claiming
-		const claimed = queue.claimNext("worker-1", "fleeting.analyze");
-		expect(claimed).not.toBeNull();
-		expect(claimed!.status).toBe("running");
-
-		// Cancel while running
-		queue.cancel({ type: "fleeting.analyze", relatedType: "fleeting_note", relatedId: "note-1" });
-		const cancelledJob = queue.get(job.jobId);
-		expect(cancelledJob!.status).toBe("cancelled");
-
-		// Worker completes — should not throw and should return the cancelled job
-		const afterComplete = queue.complete(job.jobId, { ok: true });
-		expect(afterComplete!.status).toBe("cancelled");
-
-		db.close();
-	});
-
-	it("worker fail() does not throw when job was cancelled mid-flight", async () => {
-		const db = createDb();
-		const queue = createBackgroundJobQueue(db);
-
-		const job = queue.enqueue({
-			type: "fleeting.analyze",
-			relatedType: "fleeting_note",
-			relatedId: "note-1",
-			payload: { noteId: "note-1" },
-		});
-
-		// Simulate worker claiming
-		queue.claimNext("worker-1", "fleeting.analyze");
-
-		// Cancel while running
-		queue.cancel({ type: "fleeting.analyze", relatedType: "fleeting_note", relatedId: "note-1" });
-
-		// Worker fails — should not throw and should return the cancelled job
-		const afterFail = queue.fail(job.jobId, new Error("boom"));
-		expect(afterFail!.status).toBe("cancelled");
-
-		db.close();
-	});
-
-	it("old worker on success must NOT write to fleeting_notes after cancel", async () => {
-		const db = createDb();
-		const queue = createBackgroundJobQueue(db);
-
-		db.prepare(
-			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
-		).run("note-1", "Test content", Date.now(), Date.now());
-
-		// Mock LLM to be slow so we can cancel mid-analysis
-		mockComplete.mockImplementation(async () => {
-			await new Promise((r) => setTimeout(r, 80));
-			return createToolCallMessage({
-				recommendationType: "clip",
-				recommendationText: "建议收藏",
-				draft: "d",
-				requiresInput: false,
-			});
-		});
-
-		queue.enqueue({
-			type: "fleeting.analyze",
-			relatedType: "fleeting_note",
-			relatedId: "note-1",
-			payload: { noteId: "note-1" },
-		});
-
-		const worker = createFleetingAnalysisWorker({
-			db,
-			jobQueue: queue,
-			modelRegistry: createMockModelRegistry() as never,
-			authStorage: {} as never,
-			workspaceDir: "/tmp",
-			pollIntervalMs: 10,
-			completeFn: mockComplete,
-			settingsResolver: mockSettingsResolver,
-		});
-
-		worker.start();
-
-		// Wait for worker to claim the job
-		await new Promise((r) => setTimeout(r, 30));
-
-		// Cancel the job while analysis is running (prompt still in flight)
-		queue.cancel({ type: "fleeting.analyze", relatedType: "fleeting_note", relatedId: "note-1" });
-
-		// Reset note to unanalyzed (what resetJob does)
-		db.prepare("UPDATE fleeting_notes SET analysis_status = 'unanalyzed' WHERE note_id = ?").run("note-1");
-
-		// Wait for slow analysis to finish
-		await new Promise((r) => setTimeout(r, 200));
-
-		worker.stop();
-
-		// The old worker must NOT have written its stale result
-		const note = db
-			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
-			.get("note-1") as Record<string, unknown>;
-		expect(note.analysis_status).toBe("unanalyzed");
-		expect(note.recommendation_type).toBeNull();
-
-		db.close();
-	});
-
-	it("old worker on error must NOT write to fleeting_notes after cancel", async () => {
-		const db = createDb();
-		const queue = createBackgroundJobQueue(db);
-
-		db.prepare(
-			"INSERT INTO fleeting_notes(note_id, content, analysis_status, created_at, updated_at) VALUES(?, ?, 'unanalyzed', ?, ?)",
-		).run("note-1", "Test content", Date.now(), Date.now());
-
-		// Mock LLM to be slow and then fail
-		mockComplete.mockImplementation(async () => {
-			await new Promise((r) => setTimeout(r, 80));
-			throw new Error("LLM timeout");
-		});
-
-		queue.enqueue({
-			type: "fleeting.analyze",
-			relatedType: "fleeting_note",
-			relatedId: "note-1",
-			payload: { noteId: "note-1" },
-			maxAttempts: 3,
-		});
-
-		const worker = createFleetingAnalysisWorker({
-			db,
-			jobQueue: queue,
-			modelRegistry: createMockModelRegistry() as never,
-			authStorage: {} as never,
-			workspaceDir: "/tmp",
-			pollIntervalMs: 10,
-			completeFn: mockComplete,
-			settingsResolver: mockSettingsResolver,
-		});
-
-		worker.start();
-
-		// Wait for worker to claim the job
-		await new Promise((r) => setTimeout(r, 30));
-
-		// Cancel the job while analysis is running
-		queue.cancel({ type: "fleeting.analyze", relatedType: "fleeting_note", relatedId: "note-1" });
-
-		// Reset note (what resetJob does)
-		db.prepare("UPDATE fleeting_notes SET analysis_status = 'unanalyzed' WHERE note_id = ?").run("note-1");
-
-		// Wait for slow failing analysis to finish
-		await new Promise((r) => setTimeout(r, 200));
-
-		worker.stop();
-
-		// The old worker must NOT have written its stale error state
-		const note = db
-			.prepare("SELECT * FROM fleeting_notes WHERE note_id = ?")
-			.get("note-1") as Record<string, unknown>;
-		expect(note.analysis_status).toBe("unanalyzed");
-		expect(note.last_error).toBeNull();
-		expect(note.retry_count).toBe(0);
 
 		db.close();
 	});

@@ -14,6 +14,7 @@ import {
 import {
 	compileAgentPermission,
 	createPermissionGateExtension,
+	loadGlobalPermissionConfig,
 } from "./agent-permissions.js";
 import {
 	type AgentConfigInternal,
@@ -61,6 +62,8 @@ import { createWorkspaceChatProject } from "./workspace-chat.js";
 import { createPlanningToolsExtension } from "./planning-tools.js";
 import { buildWorkspaceMemoryInjectionSync } from "./workspace-memory.js";
 import { createBundleBackedResourceLoader } from "./bundle-resource-loader.js";
+
+const INTERNAL_AGENT_NAMES = new Set(["fleeting-agent", "memory-agent"]);
 
 // ===== Dependency injection =====
 export interface SessionContextDeps {
@@ -469,6 +472,7 @@ export const createAgentSummary = (
 	skills: agent.skills,
 	inheritContext: agent.inheritContext,
 	runInBackground: agent.runInBackground,
+	visible: agent.visible !== false,
 	enabled: agent.enabled !== false,
 	permission: agent.permission as Record<string, unknown> | undefined,
 	sourceScope: agent.sourceScope,
@@ -487,6 +491,7 @@ export const createAgentConfigResponse = (agent: AgentConfigInternal) => ({
 	skills: agent.skills ?? null,
 	inherit_context: agent.inheritContext ?? null,
 	run_in_background: agent.runInBackground ?? null,
+	visible: agent.visible !== false,
 	enabled: agent.enabled !== false,
 	permission: agent.permission,
 	prompt: agent.systemPrompt,
@@ -547,12 +552,19 @@ export const createSessionResourceLoader = (record: SessionRecord) =>
 export const isEnabledAgent = (
 	agent: AgentConfigInternal | null | undefined,
 ): boolean => Boolean(agent && agent.enabled !== false);
+export const isVisibleAgent = (
+	agent: AgentConfigInternal | null | undefined,
+): boolean => Boolean(
+	isEnabledAgent(agent) &&
+		agent!.visible !== false &&
+		!INTERNAL_AGENT_NAMES.has(agent!.name),
+);
 export const isPrimarySessionAgent = (
 	agent: AgentConfigInternal | null | undefined,
-): boolean => Boolean(isEnabledAgent(agent) && agent!.mode !== "task");
+): boolean => Boolean(isVisibleAgent(agent) && agent!.mode !== "task");
 export const isTaskSessionAgent = (
 	agent: AgentConfigInternal | null | undefined,
-): boolean => Boolean(isEnabledAgent(agent) && agent!.mode === "task");
+): boolean => Boolean(isVisibleAgent(agent) && agent!.mode === "task");
 export const ensurePrimaryAgentOrThrow = (
 	agentName: string | null | undefined,
 	agent: AgentConfigInternal | null | undefined,
@@ -569,6 +581,11 @@ export const ensurePrimaryAgentOrThrow = (
 	if (!isEnabledAgent(agent)) {
 		const error = new Error(`Agent 已禁用: ${agentName}`) as HttpError;
 		error.statusCode = 400;
+		throw error;
+	}
+	if (agent.visible === false || INTERNAL_AGENT_NAMES.has(agent.name)) {
+		const error = new Error(`Agent 不可见: ${agentName}`) as HttpError;
+		error.statusCode = 404;
 		throw error;
 	}
 	if (!isPrimarySessionAgent(agent)) {
@@ -597,6 +614,11 @@ export const ensureTaskAgentOrThrow = (
 	if (!isEnabledAgent(agent)) {
 		const error = new Error(`Agent 已禁用: ${agentName}`) as HttpError;
 		error.statusCode = 400;
+		throw error;
+	}
+	if (agent.visible === false || INTERNAL_AGENT_NAMES.has(agent.name)) {
+		const error = new Error(`Agent 不可见: ${agentName}`) as HttpError;
+		error.statusCode = 404;
 		throw error;
 	}
 	if (!isTaskSessionAgent(agent)) {
@@ -638,6 +660,7 @@ export const applySessionAgentSelection = async (
 		record.cwd,
 		agent?.permission as AgentPermission | undefined,
 		record.defaultToolNames,
+		await loadGlobalPermissionConfig(getPiDefaultAgentDir()),
 	);
 	if (shouldReload || record.turnBudget.maxTurns !== agent?.maxTurns) {
 		record.turnBudget = {
@@ -734,6 +757,7 @@ export const applyTaskSessionAgentSelection = async (
 		record.cwd,
 		agent?.permission as AgentPermission | undefined,
 		record.defaultToolNames,
+		await loadGlobalPermissionConfig(getPiDefaultAgentDir()),
 	);
 	if (shouldReload || record.turnBudget.maxTurns !== agent?.maxTurns) {
 		record.turnBudget = {

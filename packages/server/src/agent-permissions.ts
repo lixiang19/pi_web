@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import type {
   ExtensionAPI,
@@ -15,10 +17,16 @@ import type {
 import { toPosixPath } from './utils/paths.js';
 import { normalizeString } from './utils/strings.js';
 
+export interface GlobalPermissionConfig {
+  default?: AgentPermission;
+  defaults?: AgentPermission;
+  locked?: AgentPermission;
+}
 
 type ToolCallEvent = PiToolCallEvent & { toolCallId?: string };
 
 const PERMISSION_ACTIONS = new Set<PermissionAction>(['allow', 'ask', 'deny']);
+const EXTERNAL_DIRECTORY_PERMISSION_KEY: LogicalPermissionKey = 'external_directory';
 const SIMPLE_PERMISSION_KEYS = new Set<LogicalPermissionKey>([
   'read',
   'grep',
@@ -27,10 +35,47 @@ const SIMPLE_PERMISSION_KEYS = new Set<LogicalPermissionKey>([
   'bash',
   'ask',
   'task',
+  'subagent',
+]);
+const CONFIG_PERMISSION_KEYS = new Set<LogicalPermissionKey>([
+  ...SIMPLE_PERMISSION_KEYS,
+  EXTERNAL_DIRECTORY_PERMISSION_KEY,
 ]);
 const EDIT_PERMISSION_KEY: LogicalPermissionKey = 'edit';
 const LEGACY_EDIT_TOOL_KEYS = new Set(['write']);
 const MUTATION_TOOL_NAMES = new Set(['edit', 'write']);
+const PATH_RULE_PERMISSION_KEYS = new Set<LogicalPermissionKey>([
+  'read',
+  'ls',
+  EDIT_PERMISSION_KEY,
+]);
+const PATH_INPUT_KEYS = new Set([
+  'path',
+  'file',
+  'directory',
+  'cwd',
+  'root',
+  'target',
+  'targetPath',
+  'source',
+  'sourcePath',
+  'destination',
+  'destinationPath',
+  'dest',
+  'from',
+  'to',
+]);
+const SHELL_OPERATOR_TOKENS = new Set([
+  '&&',
+  '||',
+  ';',
+  '|',
+  '>',
+  '>>',
+  '<',
+  '2>',
+  '2>>',
+]);
 const PLANNING_TOOL_NAMES = new Set([
   'create_task',
   'update_task',
@@ -39,6 +84,11 @@ const PLANNING_TOOL_NAMES = new Set([
   'move_task',
   'set_blocked',
   'set_reviewing',
+]);
+const SUBAGENT_TOOL_NAMES = new Set([
+  'subagent',
+  'steer_subagent',
+  'get_subagent_result',
 ]);
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -51,7 +101,69 @@ const normalizePermissionAction = (value: unknown): PermissionAction | null => {
     : null;
 };
 
-const normalizeRulePattern = (value: unknown): string | null => {
+const expandHomePathStart = (value: string): string => {
+  if (value === '~' || value === '$HOME') {
+    return os.homedir();
+  }
+  if (value.startsWith('~/')) {
+    return path.join(os.homedir(), value.slice(2));
+  }
+  if (value.startsWith('$HOME/')) {
+    return path.join(os.homedir(), value.slice(6));
+  }
+  return value;
+};
+
+const normalizeExternalDirectoryPattern = (value: unknown): string | null => {
+  const pattern = expandHomePathStart(normalizeString(value).replace(/\\/g, '/'));
+  if (!pattern) {
+    return null;
+  }
+  if (pattern === '*') {
+    return pattern;
+  }
+  if (!path.isAbsolute(pattern)) {
+    throw new Error(
+      `External directory permission pattern must be absolute, home-relative, or "*": ${String(value)}`,
+    );
+  }
+  return toPosixPath(path.resolve(pattern));
+};
+
+const normalizePathPermissionPattern = (value: unknown): string | null => {
+  const pattern = normalizeString(value).replace(/\\/g, '/');
+  if (!pattern) {
+    return null;
+  }
+
+  const expanded = expandHomePathStart(pattern);
+  if (path.isAbsolute(expanded)) {
+    return toPosixPath(path.resolve(expanded));
+  }
+
+  if (path.posix.isAbsolute(expanded)) {
+    return toPosixPath(path.resolve(expanded));
+  }
+
+  const segments = expanded.split('/').filter(Boolean);
+  if (segments.includes('..')) {
+    throw new Error(`Permission pattern cannot escape the workspace: ${String(value)}`);
+  }
+
+  return expanded;
+};
+
+const normalizeRulePattern = (
+  value: unknown,
+  key: string,
+): string | null => {
+  if (key === EXTERNAL_DIRECTORY_PERMISSION_KEY) {
+    return normalizeExternalDirectoryPattern(value);
+  }
+  if (PATH_RULE_PERMISSION_KEYS.has(key as LogicalPermissionKey)) {
+    return normalizePathPermissionPattern(value);
+  }
+
   const pattern = normalizeString(value).replace(/\\/g, '/');
   if (!pattern) {
     return null;
@@ -79,7 +191,7 @@ const normalizeRuleObject = (
 
   const normalized: Record<string, PermissionAction> = {};
   for (const [rawPattern, rawAction] of Object.entries(value)) {
-    const pattern = normalizeRulePattern(rawPattern);
+    const pattern = normalizeRulePattern(rawPattern, key);
     const action = normalizePermissionAction(rawAction);
     if (!pattern || !action) {
       throw new Error(`Invalid permission rule for "${key}": ${rawPattern}`);
@@ -127,7 +239,7 @@ const normalizeRuleEntries = (
           throw new Error(`Permission "${key}" contains an invalid rule entry.`);
         }
 
-        const pattern = normalizeRulePattern(item.pattern);
+        const pattern = normalizeRulePattern(item.pattern, key);
         const itemAction = normalizePermissionAction(item.action);
         if (!pattern || !itemAction) {
           throw new Error(`Permission "${key}" contains an invalid rule entry.`);
@@ -162,6 +274,37 @@ const isToolFullyDenied = (rules: PermissionRule[] | undefined): boolean =>
       rules[0].pattern === '*' &&
       rules[0].action === 'deny',
   );
+
+const appendPermissionRules = (
+  target: Partial<Record<LogicalPermissionKey, PermissionRule[]>>,
+  permission: AgentPermission | undefined,
+): void => {
+  if (!permission) {
+    return;
+  }
+
+  for (const [permissionKey, rawValue] of Object.entries(permission)) {
+    const key = permissionKey as LogicalPermissionKey;
+    target[key] = [
+      ...(target[key] || []),
+      ...normalizeRuleEntries(rawValue, permissionKey),
+    ];
+  }
+};
+
+const assertLockedRulesDenyOnly = (
+  lockedRulesByPermission: Partial<Record<LogicalPermissionKey, PermissionRule[]>>,
+): void => {
+  for (const [permissionKey, rules] of Object.entries(lockedRulesByPermission)) {
+    for (const rule of rules || []) {
+      if (rule.action !== 'deny') {
+        throw new Error(
+          `Locked permission "${permissionKey}" only supports deny rules.`,
+        );
+      }
+    }
+  }
+};
 
 const getStringField = (
   input: Record<string, unknown>,
@@ -202,8 +345,18 @@ const getAskPromptSummary = (input: Record<string, unknown>): string => {
   return '';
 };
 
-const normalizePermissionPath = (cwd: string, rawPath: string): string =>
-  normalizePathRelativeToCwd(cwd, rawPath) || normalizeString(rawPath);
+const normalizePermissionPath = (cwd: string, rawPath: string): string => {
+  const normalizedPath = normalizeString(rawPath).replace(/\\/g, '/');
+  const expandedPath = expandHomePathStart(normalizedPath);
+  const relativePath = normalizePathRelativeToCwd(cwd, expandedPath);
+  if (relativePath) {
+    return relativePath;
+  }
+  if (path.isAbsolute(expandedPath)) {
+    return toPosixPath(path.resolve(expandedPath));
+  }
+  return normalizedPath;
+};
 
 const deriveCommandPrefixPattern = (command: string): string | null => {
   const normalized = normalizeString(command);
@@ -242,7 +395,7 @@ export const normalizeAgentPermission = (
       continue;
     }
 
-    if (!SIMPLE_PERMISSION_KEYS.has(key as LogicalPermissionKey)) {
+    if (!CONFIG_PERMISSION_KEYS.has(key as LogicalPermissionKey)) {
       throw new Error(`Unsupported permission key: ${rawKey}`);
     }
 
@@ -250,6 +403,57 @@ export const normalizeAgentPermission = (
   }
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+};
+
+export const normalizeGlobalPermissionConfig = (
+  value: unknown,
+): GlobalPermissionConfig | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!isPlainObject(value)) {
+    throw new Error('Global permissions config must be an object.');
+  }
+
+  const unsupportedKeys = Object.keys(value).filter(
+    (key) => key !== 'default' && key !== 'defaults' && key !== 'locked',
+  );
+  if (unsupportedKeys.length > 0) {
+    throw new Error(
+      `Unsupported global permissions config key: ${unsupportedKeys[0]}`,
+    );
+  }
+
+  const normalizedDefault = normalizeAgentPermission(
+    value.default ?? value.defaults,
+  );
+  const normalizedLocked = normalizeAgentPermission(value.locked);
+
+  if (!normalizedDefault && !normalizedLocked) {
+    return undefined;
+  }
+
+  return {
+    default: normalizedDefault,
+    locked: normalizedLocked,
+  };
+};
+
+export const loadGlobalPermissionConfig = async (
+  agentDir: string,
+): Promise<GlobalPermissionConfig | undefined> => {
+  const configPath = path.join(agentDir, 'permissions.json');
+  let content: string;
+  try {
+    content = await fs.readFile(configPath, 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
+    throw error;
+  }
+
+  return normalizeGlobalPermissionConfig(JSON.parse(content));
 };
 
 export const normalizePathRelativeToCwd = (
@@ -276,6 +480,140 @@ export const normalizePathRelativeToCwd = (
   }
 
   return normalizedRelative;
+};
+
+const isPathInsideCwd = (cwd: string, absoluteTarget: string): boolean => {
+  const relative = path.relative(path.resolve(cwd), path.resolve(absoluteTarget));
+  return Boolean(
+    !relative ||
+      relative === '.' ||
+      (!relative.startsWith('..') && !path.isAbsolute(relative)),
+  );
+};
+
+const isLikelyUrl = (value: string): boolean =>
+  /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+
+const stripShellQuotes = (value: string): string => {
+  if (value.length < 2) {
+    return value;
+  }
+  const first = value[0];
+  const last = value[value.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+    return value.slice(1, -1);
+  }
+  return value;
+};
+
+const normalizeExternalPathCandidate = (
+  cwd: string,
+  value: unknown,
+): string | null => {
+  const rawValue = stripShellQuotes(normalizeString(value).replace(/\\/g, '/'));
+  if (!rawValue || rawValue === '-' || isLikelyUrl(rawValue)) {
+    return null;
+  }
+
+  const expanded = expandHomePathStart(rawValue);
+  const absoluteTarget = path.isAbsolute(expanded)
+    ? path.resolve(expanded)
+    : path.resolve(cwd, expanded);
+
+  if (isPathInsideCwd(cwd, absoluteTarget)) {
+    return null;
+  }
+
+  return toPosixPath(absoluteTarget);
+};
+
+const collectPathCandidates = (input: Record<string, unknown>): string[] => {
+  const candidates: string[] = [];
+  for (const [key, value] of Object.entries(input)) {
+    const normalizedKey = key.replace(/[_-]/g, '').toLowerCase();
+    const isPathKey =
+      PATH_INPUT_KEYS.has(key) ||
+      normalizedKey.endsWith('path') ||
+      normalizedKey.endsWith('paths') ||
+      normalizedKey.endsWith('file') ||
+      normalizedKey.endsWith('files') ||
+      normalizedKey.endsWith('directory') ||
+      normalizedKey.endsWith('directories');
+    if (!isPathKey) {
+      continue;
+    }
+
+    if (typeof value === 'string') {
+      candidates.push(value);
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === 'string') {
+          candidates.push(item);
+        }
+      }
+    }
+  }
+  return candidates;
+};
+
+const tokenizeShellCommand = (command: string): string[] =>
+  command.match(/(?:[^\s"'`]+|"[^"]*"|'[^']*')+/g) || [];
+
+const collectBashPathCandidates = (input: Record<string, unknown>): string[] => {
+  const command = getStringField(input, 'command');
+  if (!command) {
+    return [];
+  }
+
+  const candidates: string[] = [];
+  for (const rawToken of tokenizeShellCommand(command)) {
+    const token = stripShellQuotes(rawToken);
+    if (
+      !token ||
+      token.startsWith('-') ||
+      SHELL_OPERATOR_TOKENS.has(token) ||
+      isLikelyUrl(token)
+    ) {
+      continue;
+    }
+
+    const assignmentIndex = token.indexOf('=');
+    const pathLikeToken = assignmentIndex > 0
+      ? token.slice(assignmentIndex + 1)
+      : token;
+
+    if (
+      pathLikeToken.includes('/') ||
+      pathLikeToken.startsWith('~') ||
+      pathLikeToken.startsWith('$HOME')
+    ) {
+      candidates.push(pathLikeToken);
+    }
+  }
+  return candidates;
+};
+
+const extractExternalDirectorySubject = (
+  cwd: string,
+  toolName: string,
+  input: Record<string, unknown>,
+): string | null => {
+  const normalizedToolName = normalizeString(toolName).toLowerCase();
+  const pathCandidates = normalizedToolName === 'bash'
+    ? collectBashPathCandidates(input)
+    : collectPathCandidates(input);
+
+  for (const candidate of pathCandidates) {
+    const externalPath = normalizeExternalPathCandidate(cwd, candidate);
+    if (externalPath) {
+      return externalPath;
+    }
+  }
+
+  return null;
 };
 
 export const matchSimplePattern = (pattern: string, value: string): boolean => {
@@ -305,6 +643,9 @@ export const mapToolToLogicalPermission = (
   }
   if (PLANNING_TOOL_NAMES.has(normalized)) {
     return 'task';
+  }
+  if (normalized === 'subagent') {
+    return 'subagent';
   }
   return SIMPLE_PERMISSION_KEYS.has(normalized as LogicalPermissionKey)
     ? (normalized as LogicalPermissionKey)
@@ -352,6 +693,7 @@ export const extractPermissionSubject = (
       return rawPath ? normalizePermissionPath(cwd, rawPath) : '*';
     }
     case 'task':
+    case 'subagent':
       return getStringField(input, 'agent') || '*';
     case 'ask':
       return getAskPromptSummary(input) || '*';
@@ -387,13 +729,14 @@ export const derivePermissionPattern = (
       const rawPath = logicalPermission === 'edit'
         ? extractMutationPath(toolName, input)
         : getStringField(input, 'path');
-      return rawPath ? normalizePathRelativeToCwd(cwd, rawPath) : null;
+      return rawPath ? normalizePermissionPath(cwd, rawPath) : null;
     }
     case 'grep':
       return getStringField(input, 'pattern') || null;
     case 'find':
       return getStringField(input, 'pattern', 'glob', 'path') || null;
     case 'task':
+    case 'subagent':
       return getStringField(input, 'agent') || null;
     case 'ask':
       return getAskPromptSummary(input) || null;
@@ -406,16 +749,25 @@ export const compileAgentPermission = (
   cwd: string,
   permission: AgentPermission | undefined,
   availableToolNames: string[] = [],
+  globalPermission?: GlobalPermissionConfig,
 ): CompiledPermissionPolicy => {
-  const normalizedPermission = normalizeAgentPermission(permission) || {};
+  const normalizedGlobalPermission = normalizeGlobalPermissionConfig(
+    globalPermission,
+  );
+  const normalizedPermission = normalizeAgentPermission(permission);
   const activeToolNames = [...availableToolNames];
   const rulesByPermission: Partial<Record<LogicalPermissionKey, PermissionRule[]>> = {};
+  const lockedRulesByPermission: Partial<Record<LogicalPermissionKey, PermissionRule[]>> = {};
 
-  for (const [permissionKey, rawValue] of Object.entries(normalizedPermission)) {
-    rulesByPermission[permissionKey as LogicalPermissionKey] = normalizeRuleEntries(
-      rawValue,
-      permissionKey,
-    );
+  appendPermissionRules(rulesByPermission, normalizedGlobalPermission?.default);
+  appendPermissionRules(rulesByPermission, normalizedPermission);
+  appendPermissionRules(lockedRulesByPermission, normalizedGlobalPermission?.locked);
+  assertLockedRulesDenyOnly(lockedRulesByPermission);
+
+  if (!rulesByPermission[EXTERNAL_DIRECTORY_PERMISSION_KEY]) {
+    rulesByPermission[EXTERNAL_DIRECTORY_PERMISSION_KEY] = [
+      { pattern: '*', action: 'ask' },
+    ];
   }
 
   if (isToolFullyDenied(rulesByPermission[EDIT_PERMISSION_KEY])) {
@@ -449,11 +801,58 @@ export const compileAgentPermission = (
     }
   }
 
+  if (isToolFullyDenied(rulesByPermission['subagent'])) {
+    for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
+      if (SUBAGENT_TOOL_NAMES.has(normalizeString(activeToolNames[index]).toLowerCase())) {
+        activeToolNames.splice(index, 1);
+      }
+    }
+  }
+
+  if (isToolFullyDenied(lockedRulesByPermission[EDIT_PERMISSION_KEY])) {
+    const blockedTools = new Set(['edit', 'write']);
+    for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
+      if (blockedTools.has(normalizeString(activeToolNames[index]).toLowerCase())) {
+        activeToolNames.splice(index, 1);
+      }
+    }
+  }
+
+  for (const permissionKey of SIMPLE_PERMISSION_KEYS) {
+    if (!isToolFullyDenied(lockedRulesByPermission[permissionKey])) {
+      continue;
+    }
+
+    for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
+      const normalized = normalizeString(activeToolNames[index]).toLowerCase();
+      if (normalized === permissionKey) {
+        activeToolNames.splice(index, 1);
+      }
+    }
+  }
+
+  if (isToolFullyDenied(lockedRulesByPermission['task'])) {
+    for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
+      if (PLANNING_TOOL_NAMES.has(normalizeString(activeToolNames[index]).toLowerCase())) {
+        activeToolNames.splice(index, 1);
+      }
+    }
+  }
+
+  if (isToolFullyDenied(lockedRulesByPermission['subagent'])) {
+    for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
+      if (SUBAGENT_TOOL_NAMES.has(normalizeString(activeToolNames[index]).toLowerCase())) {
+        activeToolNames.splice(index, 1);
+      }
+    }
+  }
+
   return {
-    raw: normalizedPermission,
+    raw: normalizedPermission || {},
     cwd,
     activeToolNames,
     rulesByPermission,
+    lockedRulesByPermission,
   };
 };
 
@@ -514,6 +913,107 @@ export const buildPermissionRequest = (
   };
 };
 
+const buildPermissionRequestForKey = (
+  event: ToolCallEvent,
+  permissionKey: LogicalPermissionKey,
+  subject: string,
+  suggestedPattern: string | undefined,
+): PermissionInteractiveRequest => {
+  const toolCallId = event.toolCallId || `${event.toolName}:${Date.now()}`;
+  return {
+    id: permissionKey === EXTERNAL_DIRECTORY_PERMISSION_KEY
+      ? `${toolCallId}:external_directory:permission`
+      : `${toolCallId}:permission`,
+    toolCallId,
+    toolName: event.toolName,
+    permissionKey,
+    title: '需要权限批准',
+    message: `Agent 请求调用 ${event.toolName}。`,
+    subject,
+    suggestedPattern,
+    createdAt: Date.now(),
+  };
+};
+
+const resolvePermissionForToolCall = async (
+  policy: CompiledPermissionPolicy,
+  event: PiToolCallEvent,
+  permissionKey: LogicalPermissionKey,
+  subject: string,
+  suggestedPattern: string | undefined,
+  options: PermissionGateRuntimeOptions,
+): Promise<{ block: boolean; reason: string } | undefined> => {
+  const lockedRules = policy.lockedRulesByPermission[permissionKey] || [];
+  const lockedAction = matchPermissionRule(subject, lockedRules);
+  if (lockedAction === 'deny') {
+    return {
+      block: true,
+      reason: buildPermissionBlockedReason(
+        permissionKey,
+        event.toolName,
+        subject,
+      ),
+    };
+  }
+
+  const staticRules = policy.rulesByPermission[permissionKey] || [];
+  const runtimeRules = options.getRuntimeRules?.()?.[permissionKey] || [];
+  const action = matchPermissionRule(subject, [...staticRules, ...runtimeRules]);
+
+  if (action === 'allow') {
+    return undefined;
+  }
+
+  if (action === 'deny') {
+    return {
+      block: true,
+      reason: buildPermissionBlockedReason(
+        permissionKey,
+        event.toolName,
+        subject,
+      ),
+    };
+  }
+
+  if (!options.requestPermission) {
+    return {
+      block: true,
+      reason: `PERMISSION_APPROVAL_REQUIRES_UI:${permissionKey}:${event.toolName}`,
+    };
+  }
+
+  const request = buildPermissionRequestForKey(
+    event,
+    permissionKey,
+    subject,
+    suggestedPattern,
+  );
+  const decision = await options.requestPermission(request);
+  if (decision === 'reject') {
+    return {
+      block: true,
+      reason: buildPermissionBlockedReason(
+        permissionKey,
+        event.toolName,
+        subject,
+        true,
+      ),
+    };
+  }
+
+  if (decision === 'always') {
+    if (!request.suggestedPattern) {
+      return {
+        block: true,
+        reason: `PERMISSION_ALWAYS_PATTERN_UNAVAILABLE:${permissionKey}:${event.toolName}`,
+      };
+    }
+    options.onGrantAlways?.(permissionKey, request.suggestedPattern);
+  }
+
+  return undefined;
+};
+
 export const createPermissionGateExtension = (
   policyOrGetter:
     | CompiledPermissionPolicy
@@ -528,69 +1028,42 @@ export const createPermissionGateExtension = (
       return undefined;
     }
 
+    if (!isPlainObject(event.input)) {
+      return undefined;
+    }
+
+    const externalDirectorySubject = extractExternalDirectorySubject(
+      policy.cwd,
+      event.toolName,
+      event.input,
+    );
+    if (externalDirectorySubject) {
+      const externalResult = await resolvePermissionForToolCall(
+        policy,
+        event,
+        EXTERNAL_DIRECTORY_PERMISSION_KEY,
+        externalDirectorySubject,
+        externalDirectorySubject,
+        options,
+      );
+      if (externalResult) {
+        return externalResult;
+      }
+    }
+
     const logicalPermission = mapToolToLogicalPermission(event.toolName);
     if (!logicalPermission) {
       return undefined;
     }
 
     const subject = extractPermissionSubject(policy.cwd, event.toolName, event.input) || '*';
-    const staticRules = policy.rulesByPermission[logicalPermission] || [];
-    const runtimeRules = options.getRuntimeRules?.()?.[logicalPermission] || [];
-    const action = matchPermissionRule(subject, [...staticRules, ...runtimeRules]);
-
-    if (action === 'allow') {
-      return undefined;
-    }
-
-    if (action === 'deny') {
-      return {
-        block: true,
-        reason: buildPermissionBlockedReason(
-          logicalPermission,
-          event.toolName,
-          subject,
-        ),
-      };
-    }
-
-    if (!options.requestPermission) {
-      return {
-        block: true,
-        reason: `PERMISSION_APPROVAL_REQUIRES_UI:${logicalPermission}:${event.toolName}`,
-      };
-    }
-
-    const request = buildPermissionRequest(policy.cwd, event);
-    if (!request) {
-      return {
-        block: true,
-        reason: `PERMISSION_REQUEST_BUILD_FAILED:${logicalPermission}:${event.toolName}`,
-      };
-    }
-
-    const decision = await options.requestPermission(request);
-    if (decision === 'reject') {
-      return {
-        block: true,
-        reason: buildPermissionBlockedReason(
-          logicalPermission,
-          event.toolName,
-          subject,
-          true,
-        ),
-      };
-    }
-
-    if (decision === 'always') {
-      if (!request.suggestedPattern) {
-        return {
-          block: true,
-          reason: `PERMISSION_ALWAYS_PATTERN_UNAVAILABLE:${logicalPermission}:${event.toolName}`,
-        };
-      }
-      options.onGrantAlways?.(logicalPermission, request.suggestedPattern);
-    }
-
-    return undefined;
+    return resolvePermissionForToolCall(
+      policy,
+      event,
+      logicalPermission,
+      subject,
+      derivePermissionPattern(policy.cwd, event.toolName, event.input) || undefined,
+      options,
+    );
   });
 };

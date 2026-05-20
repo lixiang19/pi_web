@@ -68,6 +68,7 @@ export interface AgentConfig {
   skills?: string[];
   inheritContext?: boolean;
   runInBackground?: boolean;
+  visible?: boolean;
   enabled: boolean;
   permission?: AgentPermission;
   systemPrompt: string;
@@ -84,7 +85,9 @@ export type LogicalPermissionKey =
   | 'bash'
   | 'ask'
   | 'task'
-  | 'edit';
+  | 'subagent'
+  | 'edit'
+  | 'external_directory';
 export interface AgentPermission {
   read?: PermissionAction | PermissionRules;
   grep?: PermissionAction | PermissionRules;
@@ -93,7 +96,9 @@ export interface AgentPermission {
   bash?: PermissionAction | PermissionRules;
   ask?: PermissionAction | PermissionRules;
   task?: PermissionAction | PermissionRules;
+  subagent?: PermissionAction | PermissionRules;
   edit?: PermissionAction | PermissionRules | PermissionRule[];
+  external_directory?: PermissionAction | PermissionRules;
 }
 export interface PermissionRule {
   pattern: string;
@@ -107,6 +112,7 @@ export interface CompiledPermissionPolicy {
   cwd: string;
   activeToolNames: string[];
   rulesByPermission: Partial<Record<LogicalPermissionKey, PermissionRule[]>>;
+  lockedRulesByPermission: Partial<Record<LogicalPermissionKey, PermissionRule[]>>;
 }
 export type AskOption = ProtocolAskOption;
 export type AskQuestion = ProtocolAskQuestion;

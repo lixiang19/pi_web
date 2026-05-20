@@ -20,13 +20,31 @@ export const mcpSchema = z.object({
 export const permissionsRuleSchema = z.object({
   pattern: z.string().min(1),
   action: z.enum(['allow', 'deny', 'ask']),
-  scope: z.enum(['read', 'write', 'execute', 'all']).optional(),
 });
+const permissionActionSchema = z.enum(['allow', 'deny', 'ask']);
+const permissionKeySchema = z.enum([
+  'read',
+  'grep',
+  'find',
+  'ls',
+  'bash',
+  'ask',
+  'task',
+  'subagent',
+  'edit',
+  'external_directory',
+]);
+const permissionValueSchema = z.union([
+  permissionActionSchema,
+  z.record(z.string(), permissionActionSchema),
+]);
+const agentPermissionSchema = z.record(permissionKeySchema, permissionValueSchema);
 
 export const permissionsSchema = z.object({
-  rules: z.array(permissionsRuleSchema).optional(),
-  defaultAction: z.enum(['allow', 'deny', 'ask']).optional(),
-});
+  default: agentPermissionSchema.optional(),
+  defaults: agentPermissionSchema.optional(),
+  locked: agentPermissionSchema.optional(),
+}).strict();
 
 export const toolsSchema = z.object({
   tools: z.record(z.string(), z.object({

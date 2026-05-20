@@ -248,7 +248,9 @@ export interface PermissionInteractiveRequest {
 		| "bash"
 		| "ask"
 		| "task"
-		| "edit";
+		| "subagent"
+		| "edit"
+		| "external_directory";
 	title: string;
 	message: string;
 	subject: string;
@@ -319,6 +321,7 @@ export interface AgentSummary {
 	skills?: string[];
 	inheritContext?: boolean;
 	runInBackground?: boolean;
+	visible?: boolean;
 	enabled: boolean;
 	permission?: Record<string, unknown>;
 	sourceScope: "default" | "user" | "project";

@@ -583,6 +583,7 @@ const agentUpsertSchema = z
 			.optional(),
 		inherit_context: z.boolean().nullable().optional(),
 		run_in_background: z.boolean().nullable().optional(),
+		visible: z.boolean().optional(),
 		enabled: z.boolean().optional(),
 		permission: z.record(z.string(), z.any()).optional(),
 		prompt: z.string().optional(),
