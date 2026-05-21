@@ -60,6 +60,7 @@ import { normalizeString } from "./utils/strings.js";
 import type { WorkspaceChatConfig } from "./workspace-chat.js";
 import { createWorkspaceChatProject } from "./workspace-chat.js";
 import { createPlanningToolsExtension } from "./planning-tools.js";
+import { createConversionToolsExtension } from "./conversion-tools.js";
 import { buildWorkspaceMemoryInjectionSync } from "./workspace-memory.js";
 import { createBundleBackedResourceLoader } from "./bundle-resource-loader.js";
 
@@ -546,8 +547,9 @@ export const createSessionResourceLoader = (record: SessionRecord) =>
 				resolveModel: findModel,
 			}),
 			createPlanningToolsExtension(deps.defaultWorkspaceDir),
+			createConversionToolsExtension(deps.defaultWorkspaceDir),
 		],
-	});
+		});
 
 export const isEnabledAgent = (
 	agent: AgentConfigInternal | null | undefined,

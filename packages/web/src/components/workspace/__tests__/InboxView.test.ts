@@ -1,71 +1,33 @@
 import { mount, flushPromises } from "@vue/test-utils";
-import { defineComponent, h } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Test-friendly stubs for shadcn Select (rendered as native <select>)
-const SelectStub = defineComponent({
-  props: { modelValue: { type: [String, Number, null], default: null } },
-  emits: ["update:modelValue"],
-  setup(props, { emit, slots }) {
-    return () =>
-      h("select", {
-        value: props.modelValue ?? "",
-        onChange: (e: Event) => {
-          const val = (e.target as HTMLSelectElement).value;
-          emit("update:modelValue", val === "" ? null : val);
-        },
-        "data-testid": "native-select",
-      },
-      slots["default"]?.());
-  },
-});
-const SelectContentStub = defineComponent({
-  setup(_, { slots }) {
-    return () => slots["default"]?.();
-  },
-});
-const SelectItemStub = defineComponent({
-  props: { value: { type: [String, Number, null], default: null } },
-  setup(props, { slots }) {
-    return () => h("option", { value: props.value ?? "" }, slots["default"]?.());
-  },
-});
-const SelectTriggerStub = defineComponent({ setup() { return () => null; } });
-const SelectValueStub = defineComponent({ setup() { return () => null; } });
-
 vi.mock("vue-sonner", () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-  },
+	toast: {
+		success: vi.fn(),
+		error: vi.fn(),
+		info: vi.fn(),
+	},
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
-  Dialog: { template: "<div v-if='open'><slot /></div>", props: ["open"] },
-  DialogContent: { template: "<div><slot /></div>" },
-  DialogDescription: { template: "<span><slot /></span>" },
-  DialogFooter: { template: "<div><slot /></div>" },
-  DialogHeader: { template: "<div><slot /></div>" },
-  DialogTitle: { template: "<div><slot /></div>" },
+	Dialog: { template: "<div v-if='open'><slot /></div>", props: ["open"] },
+	DialogContent: { template: "<div><slot /></div>" },
+	DialogDescription: { template: "<span><slot /></span>" },
+	DialogFooter: { template: "<div><slot /></div>" },
+	DialogHeader: { template: "<div><slot /></div>" },
+	DialogTitle: { template: "<div><slot /></div>" },
 }));
 
 vi.mock("@/components/ui/tooltip", () => ({
-  TooltipProvider: { template: "<div><slot /></div>" },
-  Tooltip: { template: "<div><slot /></div>" },
-  TooltipTrigger: { template: "<div><slot /></div>" },
-  TooltipContent: { template: "<div><slot /></div>" },
+	TooltipProvider: { template: "<div><slot /></div>" },
+	Tooltip: { template: "<div><slot /></div>" },
+	TooltipTrigger: { template: "<div><slot /></div>" },
+	TooltipContent: { template: "<div><slot /></div>" },
 }));
 
 vi.mock("@/lib/api", () => ({
 	getFleetingNotes: vi.fn(),
 	createFleetingNote: vi.fn(),
-	deleteFleetingNote: vi.fn(),
-	processFleetingToJournal: vi.fn(),
-	processFleetingToClip: vi.fn(),
-	processFleetingToTask: vi.fn(),
-	processFleetingToMilestone: vi.fn(),
-	processFleetingToAttachment: vi.fn(),
 	uploadFleetingAttachments: vi.fn(),
 	getFleetingAttachments: vi.fn(),
 	triggerFleetingAnalysis: vi.fn(),
@@ -73,18 +35,18 @@ vi.mock("@/lib/api", () => ({
 		Promise.resolve({
 			projects: [
 				{ id: "proj-1", name: "Aurora", path: "/a", updatedAt: Date.now() },
-				{ id: "proj-2", name: "openchamber", path: "/b", updatedAt: Date.now() },
 			],
 		}),
 	),
+	captureFromDesktop: vi.fn(),
+	getAuthSession: vi.fn(() => Promise.resolve({ authenticated: true })),
 }));
 
 import {
 	createFleetingNote,
-	getFleetingNotes,
 	getFleetingAttachments,
-	processFleetingToTask,
-	processFleetingToMilestone,
+	getFleetingNotes,
+	triggerFleetingAnalysis,
 } from "@/lib/api";
 
 import InboxView from "../InboxView.vue";
@@ -92,8 +54,7 @@ import InboxView from "../InboxView.vue";
 const mockGetFleetingNotes = vi.mocked(getFleetingNotes);
 const mockCreateFleetingNote = vi.mocked(createFleetingNote);
 const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
-const mockProcessFleetingToTask = vi.mocked(processFleetingToTask);
-const mockProcessFleetingToMilestone = vi.mocked(processFleetingToMilestone);
+const mockTriggerFleetingAnalysis = vi.mocked(triggerFleetingAnalysis);
 
 const note = {
 	id: "flash-1",
@@ -118,65 +79,50 @@ describe("InboxView", () => {
 		mockGetFleetingNotes.mockResolvedValue({ notes: [note] });
 		mockGetFleetingAttachments.mockResolvedValue({ attachments: [] });
 		mockCreateFleetingNote.mockResolvedValue({ note });
-		mockProcessFleetingToTask.mockResolvedValue({
-			processed: true,
-			note: { ...note, status: "processed", updatedAt: Date.now() },
-			task: {
-				id: "task-1",
-				workspacePath: "/workspace",
-				projectId: null,
-				milestoneId: "milestone-1",
-				title: "整理任务系统",
-				status: "pending",
-				priority: "normal",
-				acceptanceCriteria: "完成",
-				dueDate: null,
-				blockedReason: null,
-				processingSessionId: null,
-				sortOrder: 0,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-		});
-		mockProcessFleetingToMilestone.mockResolvedValue({
-			processed: true,
-			note: { ...note, status: "processed", updatedAt: Date.now() },
-			milestone: {
-				id: "ms-1",
-				workspacePath: "/workspace",
-				projectId: null,
-				title: "Q2 里程碑",
-				goal: "完成核心功能",
-				acceptanceCriteria: "通过验收",
-				status: "pending",
-				dueDate: null,
-				isSystem: false,
-				color: "#64748b",
-				sortOrder: 0,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-				taskCount: 0,
-			},
-		});
+		mockTriggerFleetingAnalysis.mockResolvedValue({ triggered: true, note });
 	});
 
-	it("renders DB queue notes and fixed process buttons", async () => {
+	it("renders fleeting notes without manual suggestion or processing actions", async () => {
 		const wrapper = mount(InboxView, {
 			props: { workspaceDir: "/workspace" },
 		});
 
 		await flushPromises();
 		expect(wrapper.text()).toContain("明天整理任务系统");
-		expect(wrapper.text()).toContain("按建议");
-		// 纯图标按钮通过 aria-label 存在性验证
-		expect(wrapper.find('button[aria-label="转为日记"]').exists()).toBe(true);
-		expect(wrapper.find('button[aria-label="转为任务"]').exists()).toBe(true);
-		expect(wrapper.find('button[aria-label="转为里程碑"]').exists()).toBe(true);
-		expect(wrapper.find('button[aria-label="保存剪藏"]').exists()).toBe(true);
-		expect(wrapper.find('button[aria-label="删除"]').exists()).toBe(true);
+		expect(wrapper.text()).not.toContain("按建议");
+		expect(wrapper.text()).not.toContain("建议转为任务");
+		expect(wrapper.find('button[aria-label="转为日记"]').exists()).toBe(false);
+		expect(wrapper.find('button[aria-label="转为任务"]').exists()).toBe(false);
+		expect(wrapper.find('button[aria-label="转为里程碑"]').exists()).toBe(false);
+		expect(wrapper.find('button[aria-label="保存剪藏"]').exists()).toBe(false);
+		expect(wrapper.find('button[aria-label="查看附件"]').exists()).toBe(false);
+		expect(wrapper.find('button[aria-label="删除"]').exists()).toBe(false);
 	});
 
-	it("renders processed notes with handled state and without process actions", async () => {
+	it("keeps retry analysis visible for failed notes", async () => {
+		mockGetFleetingNotes.mockResolvedValue({
+			notes: [
+				{
+					...note,
+					analysisStatus: "failed" as const,
+					lastError: "model unavailable",
+				},
+			],
+		});
+		const wrapper = mount(InboxView, {
+			props: { workspaceDir: "/workspace" },
+		});
+
+		await flushPromises();
+		const retryButton = wrapper.find('button[aria-label="重试分析"]');
+		expect(retryButton.exists()).toBe(true);
+
+		await retryButton.trigger("click");
+		await flushPromises();
+		expect(mockTriggerFleetingAnalysis).toHaveBeenCalledWith(note.id);
+	});
+
+	it("renders processed notes without manual actions", async () => {
 		mockGetFleetingNotes.mockResolvedValue({
 			notes: [{ ...note, status: "processed" as const }],
 		});
@@ -187,145 +133,6 @@ describe("InboxView", () => {
 		await flushPromises();
 		expect(wrapper.text()).toContain("已处理");
 		expect(wrapper.find('button[aria-label="转为任务"]').exists()).toBe(false);
-		expect(wrapper.find('button[aria-label="删除"]').exists()).toBe(true);
-	});
-
-	it("opens task dialog but doesn't remove note from queue immediately", async () => {
-		const wrapper = mount(InboxView, {
-			props: { workspaceDir: "/workspace" },
-		});
-
-		await flushPromises();
-		expect(wrapper.text()).toContain("明天整理任务系统");
-		// Clicking task button opens dialog, doesn't immediately process
-		const taskButton = wrapper.find('button[aria-label="转为任务"]');
-		await taskButton.trigger("click");
-
-		// Should still show the note because dialog is open, not processed yet
-		expect(wrapper.text()).toContain("明天整理任务系统");
-	});
-
-	it("submits task with selected projectId through DOM interaction", async () => {
-		const wrapper = mount(InboxView, {
-			props: { workspaceDir: "/workspace" },
-			global: {
-				stubs: {
-					Select: SelectStub,
-					SelectContent: SelectContentStub,
-					SelectItem: SelectItemStub,
-					SelectTrigger: SelectTriggerStub,
-					SelectValue: SelectValueStub,
-				},
-			},
-		});
-
-		await flushPromises();
-
-		const taskButton = wrapper.find('button[aria-label="转为任务"]');
-		await taskButton.trigger("click");
-		await flushPromises();
-
-		// Fill task title
-		const inputs = wrapper.findAll("input");
-		const titleInput = inputs.find(
-			(input) => input.attributes("placeholder") === "任务标题",
-		);
-		expect(titleInput).toBeTruthy();
-		await titleInput!.setValue("带项目的任务");
-
-		// Fill acceptance criteria
-		const textareas = wrapper.findAll("textarea");
-		const acceptanceTextarea = textareas.find(
-			(t) => t.attributes("placeholder") === "完成标准 / 验收标准",
-		);
-		expect(acceptanceTextarea).toBeTruthy();
-		await acceptanceTextarea!.setValue("完成验收");
-
-		// Select project via native select
-		const selects = wrapper.findAll("[data-testid='native-select']");
-		expect(selects.length).toBeGreaterThanOrEqual(2);
-		const projectSelect = selects[1];
-		expect(projectSelect).toBeTruthy();
-		const selEl = projectSelect!.element as HTMLSelectElement;
-		selEl.value = "proj-1";
-		selEl.dispatchEvent(new Event("change", { bubbles: true }));
-		await flushPromises();
-
-		const confirmButton = wrapper
-			.findAll("button")
-			.find((button) => button.text().includes("创建任务"))!;
-		await confirmButton.trigger("click");
-		await flushPromises();
-
-		expect(mockProcessFleetingToTask).toHaveBeenCalledWith(note.id, {
-			title: "带项目的任务",
-			priority: "normal",
-			acceptanceCriteria: "完成验收",
-			projectId: "proj-1",
-		});
-	});
-
-	it("submits milestone with selected projectId through DOM interaction", async () => {
-		const wrapper = mount(InboxView, {
-			props: { workspaceDir: "/workspace" },
-			global: {
-				stubs: {
-					Select: SelectStub,
-					SelectContent: SelectContentStub,
-					SelectItem: SelectItemStub,
-					SelectTrigger: SelectTriggerStub,
-					SelectValue: SelectValueStub,
-				},
-			},
-		});
-
-		await flushPromises();
-
-		// Open milestone dialog
-		const msButton = wrapper.find('button[aria-label="转为里程碑"]');
-		await msButton.trigger("click");
-		await flushPromises();
-
-		// Fill milestone title
-		const inputs = wrapper.findAll("input");
-		const titleInput = inputs.find(
-			(input) => input.attributes("placeholder") === "里程碑标题",
-		);
-		expect(titleInput).toBeTruthy();
-		await titleInput!.setValue("带项目的里程碑");
-
-		// Fill goal and acceptance via textareas
-		const textareas = wrapper.findAll("textarea");
-		const goalTextarea = textareas.find((t) => t.attributes("placeholder") === "目标");
-		expect(goalTextarea).toBeTruthy();
-		await goalTextarea!.setValue("达成目标");
-
-		const acceptanceTextarea = textareas.find(
-			(t) => t.attributes("placeholder") === "完成标准 / 验收标准",
-		);
-		expect(acceptanceTextarea).toBeTruthy();
-		await acceptanceTextarea!.setValue("通过验收");
-
-		// Interact with project select via DOM
-		const selects = wrapper.findAll("select");
-		expect(selects.length).toBeGreaterThanOrEqual(1);
-		const projectSelect = selects[0];
-		expect(projectSelect).toBeTruthy();
-		await projectSelect!.setValue("proj-2");
-		await flushPromises();
-
-		// Submit form
-		const confirmButton = wrapper
-			.findAll("button")
-			.find((button) => button.text().includes("创建里程碑"))!;
-		await confirmButton.trigger("click");
-		await flushPromises();
-
-		expect(mockProcessFleetingToMilestone).toHaveBeenCalledWith(note.id, {
-			title: "带项目的里程碑",
-			goal: "达成目标",
-			acceptanceCriteria: "通过验收",
-			projectId: "proj-2",
-		});
+		expect(wrapper.find('button[aria-label="删除"]').exists()).toBe(false);
 	});
 });

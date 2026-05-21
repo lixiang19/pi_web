@@ -11,13 +11,7 @@ import { toast } from "vue-sonner";
 
 import {
 	createFleetingNote,
-	deleteFleetingNote,
 	getFleetingNotes,
-	processFleetingToClip,
-	processFleetingToJournal,
-	processFleetingToTask,
-	processFleetingToMilestone,
-	processFleetingToAttachment,
 	uploadFleetingAttachments,
 	getFleetingAttachments,
 	triggerFleetingAnalysis,
@@ -180,76 +174,6 @@ function useInboxInner(workspaceDir: () => string) {
 		}
 	};
 
-	const deleteItem = async (id: string) => {
-		const prev = [...inboxFiles.value];
-		inboxFiles.value = inboxFiles.value.filter((item) => item.id !== id);
-		try {
-			await deleteFleetingNote(id);
-			toast.success("闪念已删除");
-		} catch (err) {
-			inboxFiles.value = prev;
-			toast.error("删除失败", {
-				description: err instanceof Error ? err.message : String(err),
-			});
-			throw err;
-		}
-	};
-
-	const markProcessed = (id: string, note: FleetingNote) => {
-		inboxFiles.value = inboxFiles.value.map((item) => (item.id === id ? note : item));
-		const newMap = { ...attachmentsMap.value };
-		delete newMap[id];
-		attachmentsMap.value = newMap;
-	};
-
-	const processToJournal = async (id: string, content: string) => {
-		const res = await processFleetingToJournal(id, content);
-		markProcessed(id, res.note);
-		toast.success("已写入今日日记");
-		if (res.migratedAttachments?.length) {
-			toast.info(`已迁移 ${res.migratedAttachments.length} 个附件到正式目录`);
-		}
-	};
-
-	const processToClip = async (
-		id: string,
-		data: { title: string; url?: string; content: string; source?: string },
-	) => {
-		const res = await processFleetingToClip(id, data);
-		markProcessed(id, res.note);
-		toast.success("已保存为剪藏");
-		if (res.migratedAttachments?.length) {
-			toast.info(`已迁移 ${res.migratedAttachments.length} 个附件到正式目录`);
-		}
-	};
-
-	const processToTask = async (id: string, data: { title: string; priority: "normal" | "important" | "urgent"; acceptanceCriteria: string; dueDate?: number | null; projectId?: string | null }) => {
-		const res = await processFleetingToTask(id, data);
-		markProcessed(id, res.note);
-		toast.success("已创建任务");
-		if (res.migratedAttachments?.length) {
-			toast.info(`已迁移 ${res.migratedAttachments.length} 个附件到正式目录`);
-		}
-	};
-
-	const processToMilestone = async (id: string, data: { title: string; goal: string; acceptanceCriteria: string; dueDate?: number | null; color?: string; projectId?: string | null }) => {
-		const res = await processFleetingToMilestone(id, data);
-		markProcessed(id, res.note);
-		toast.success("已创建里程碑");
-		if (res.migratedAttachments?.length) {
-			toast.info(`已迁移 ${res.migratedAttachments.length} 个附件到正式目录`);
-		}
-	};
-
-	const processToAttachment = async (id: string) => {
-		const res = await processFleetingToAttachment(id);
-		markProcessed(id, res.note);
-		toast.success("已保存为正式附件");
-		if (res.migratedAttachments?.length) {
-			toast.info(`已迁移 ${res.migratedAttachments.length} 个附件到正式目录`);
-		}
-	};
-
 	const retryAnalysis = async (id: string) => {
 		try {
 			await triggerFleetingAnalysis(id);
@@ -323,12 +247,6 @@ function useInboxInner(workspaceDir: () => string) {
 		load,
 		captureNote,
 		uploadAttachments,
-		deleteItem,
-		processToJournal,
-		processToClip,
-		processToTask,
-		processToMilestone,
-		processToAttachment,
 		retryAnalysis,
 		getNoteAttachments,
 		formatTime,

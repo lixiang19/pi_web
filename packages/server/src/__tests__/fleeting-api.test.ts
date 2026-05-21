@@ -4,19 +4,18 @@ import Database from "better-sqlite3";
 import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-	ConversionJob,
-	CreateConversionRequest,
-	DownloadedArtifact,
-} from "../conversion-service-client.js";
-import type { RagIndexOptions } from "../rag-indexer.js";
 import { createFleetingRouter } from "../routes/fleeting.js";
 import { createTempDir } from "../test/helpers.js";
 
 type TestDatabase = ReturnType<typeof Database>;
-type CreateConversionFn = (request: CreateConversionRequest) => Promise<ConversionJob>;
-type DownloadArtifactsFn = (job: ConversionJob) => Promise<DownloadedArtifact[]>;
-type MarkRagTargetPendingFn = (targetPath: string, options?: RagIndexOptions) => Promise<void>;
+
+const manualActionPaths = [
+	"/process/journal",
+	"/process/clip",
+	"/process/task",
+	"/process/milestone",
+	"/process/attachment",
+];
 
 describe("fleeting API", () => {
 	let workspaceDir: string;
@@ -25,15 +24,12 @@ describe("fleeting API", () => {
 	let cleanup: () => Promise<void>;
 	let app: ReturnType<typeof express>;
 	let runAnalysis: (noteId: string) => Promise<void>;
-	let createConversion: ReturnType<typeof vi.fn<CreateConversionFn>>;
-	let downloadArtifacts: ReturnType<typeof vi.fn<DownloadArtifactsFn>>;
-	let markRagTargetPending: ReturnType<typeof vi.fn<MarkRagTargetPendingFn>>;
+	let resetJob: (noteId: string) => void;
 
 	beforeEach(async () => {
 		workspaceDir = await createTempDir("ridge-fleeting-");
 		dbPath = path.join(workspaceDir, "ridge-test.db");
 		db = new Database(dbPath);
-		// Bootstrap schema for isolated test DB (normally done by migrations)
 		db.exec(`
 CREATE TABLE IF NOT EXISTS fleeting_notes (
   note_id TEXT PRIMARY KEY,
@@ -48,46 +44,13 @@ CREATE TABLE IF NOT EXISTS fleeting_notes (
   pi_session_file TEXT,
   retry_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
+  capture_type TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fleeting_notes_created_at
   ON fleeting_notes(created_at DESC);
-CREATE TABLE IF NOT EXISTS workspace_milestones (
-  milestone_id TEXT PRIMARY KEY,
-  workspace_path TEXT NOT NULL,
-  project_id TEXT,
-  title TEXT NOT NULL,
-  goal TEXT NOT NULL,
-  acceptance_criteria TEXT NOT NULL,
-  status TEXT NOT NULL,
-  due_date INTEGER,
-  is_system INTEGER NOT NULL DEFAULT 0,
-  color TEXT NOT NULL DEFAULT '#64748b',
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_milestones_default
-  ON workspace_milestones(workspace_path, title)
-  WHERE is_system = 1;
-CREATE TABLE IF NOT EXISTS workspace_tasks (
-  task_id TEXT PRIMARY KEY,
-  workspace_path TEXT NOT NULL,
-  project_id TEXT,
-  milestone_id TEXT NOT NULL,
-  title TEXT NOT NULL,
-  status TEXT NOT NULL,
-  priority TEXT NOT NULL,
-  acceptance_criteria TEXT NOT NULL,
-  due_date INTEGER,
-  blocked_reason TEXT,
-  processing_session_id TEXT UNIQUE,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  FOREIGN KEY(milestone_id) REFERENCES workspace_milestones(milestone_id) ON DELETE RESTRICT
-);
 CREATE TABLE IF NOT EXISTS clips (
   clip_id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -112,50 +75,19 @@ CREATE TABLE IF NOT EXISTS fleeting_attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
   ON fleeting_attachments(note_id, created_at DESC);
-			`);
-			runAnalysis = vi.fn(async () => undefined);
-			createConversion = vi.fn<CreateConversionFn>(async () => ({
-				jobId: "conv-clip",
-				status: "succeeded",
-				task: "document.markdown",
-				createdAt: new Date().toISOString(),
-				artifacts: [
-					{
-						artifactId: "art-md",
-						name: "article.md",
-						mimeType: "text/markdown",
-						size: 26,
-						inline: true,
-						content: "# Converted\n\nfrom webpage",
-					},
-				],
-			}));
-			downloadArtifacts = vi.fn<DownloadArtifactsFn>(async () => [
-				{
-					artifact: {
-						artifactId: "art-md",
-						name: "article.md",
-						mimeType: "text/markdown",
-						size: 26,
-						inline: true,
-						content: "# Converted\n\nfrom webpage",
-					},
-					buffer: Buffer.from("# Converted\n\nfrom webpage", "utf-8"),
-				},
-			]);
-			markRagTargetPending = vi.fn<MarkRagTargetPendingFn>(async () => undefined);
-			app = express();
-			app.use(express.json());
-			app.use(
+		`);
+		runAnalysis = vi.fn(async () => undefined);
+		resetJob = vi.fn();
+		app = express();
+		app.use(express.json());
+		app.use(
 			"/api/fleeting",
 			createFleetingRouter({
-					db,
-					workspaceDir,
-					getAnalysisRunner: () => ({ run: runAnalysis, resetJob: vi.fn() }),
-					getConversionClient: () => ({ createConversion, downloadArtifacts }),
-					markRagTargetPending,
-				}),
-			);
+				db,
+				workspaceDir,
+				getAnalysisRunner: () => ({ run: runAnalysis, resetJob }),
+			}),
+		);
 		app.use((err: Error & { statusCode?: number }, _req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }, _next: unknown) => {
 			res.status(err.statusCode ?? 500).json({ error: err.message });
 		});
@@ -185,345 +117,62 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(res.status).toBe(400);
 	});
 
-	it("lists only unprocessed fleeting notes", async () => {
-		const created = await request(app)
+	it("lists notes without hiding processed records", async () => {
+		const first = await request(app)
 			.post("/api/fleeting")
-			.send({ content: "写一段复盘" });
-		await request(app).delete(`/api/fleeting/${created.body.note.id}`);
+			.send({ content: "待处理闪念" });
+		const second = await request(app)
+			.post("/api/fleeting")
+			.send({ content: "已处理闪念" });
+		db.prepare("UPDATE fleeting_notes SET status = 'processed' WHERE note_id = ?")
+			.run(second.body.note.id);
 
 		const list = await request(app).get("/api/fleeting");
 		expect(list.status).toBe(200);
-		expect(list.body.notes).toEqual([]);
-	});
-
-	it("writes to today's journal and marks the original fleeting note as processed", async () => {
-		const created = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "今天把闪念系统边界讨论清楚了" });
-
-		const res = await request(app)
-			.post(`/api/fleeting/${created.body.note.id}/process/journal`)
-			.send({ content: "今天把闪念系统边界讨论清楚了" });
-
-		expect(res.status).toBe(200);
-		expect(res.body.processed).toBe(true);
-		expect(res.body.note).toMatchObject({
-			id: created.body.note.id,
-			content: "今天把闪念系统边界讨论清楚了",
-			status: "processed",
-		});
-		const today = new Date();
-		const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-		const journalPath = path.join(
-			workspaceDir,
-			"日记",
-			String(today.getFullYear()),
-			String(today.getMonth() + 1).padStart(2, "0"),
-			`${date}.md`,
-		);
-		await expect(fs.readFile(journalPath, "utf-8")).resolves.toContain(
-			"今天把闪念系统边界讨论清楚了",
-		);
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-		expect(list.body.notes[0]).toMatchObject({
-			id: created.body.note.id,
-			status: "processed",
-		});
-	});
-
-	it("appends multiple fleeting notes under a single journal heading", async () => {
-		const first = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "第一条日记闪念" });
-		const second = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "第二条日记闪念" });
-
-		await request(app)
-			.post(`/api/fleeting/${first.body.note.id}/process/journal`)
-			.send({ content: "第一条日记闪念" });
-		await request(app)
-			.post(`/api/fleeting/${second.body.note.id}/process/journal`)
-			.send({ content: "第二条日记闪念" });
-
-		const today = new Date();
-		const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-		const journalPath = path.join(
-			workspaceDir,
-			"日记",
-			String(today.getFullYear()),
-			String(today.getMonth() + 1).padStart(2, "0"),
-			`${date}.md`,
-		);
-		const content = await fs.readFile(journalPath, "utf-8");
-		expect(content.match(/^## 闪念$/gm)).toHaveLength(1);
-		expect(content).toContain("第一条日记闪念");
-		expect(content).toContain("第二条日记闪念");
-	});
-
-	it("converts URL fleeting notes through the Python converter, writes a Markdown clip file, and marks the original fleeting note as processed", async () => {
-		const created = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "https://example.com/article" });
-
-		const res = await request(app)
-			.post(`/api/fleeting/${created.body.note.id}/process/clip`)
-			.send({
-					title: "好文",
-					url: "https://example.com/article",
-					content: "https://example.com/article",
-					source: "闪念",
-				});
-
-		expect(res.status).toBe(200);
-		expect(res.body.clip.title).toBe("好文");
-		expect(res.body.clip.markdownPath).toBe("剪藏/好文.md");
-		expect(res.body.processed).toBe(true);
-		expect(res.body.note).toMatchObject({
-			id: created.body.note.id,
-			status: "processed",
-		});
-		expect(createConversion).toHaveBeenCalledWith(expect.objectContaining({
-			task: "document.markdown",
-			input: { url: "https://example.com/article", mimeType: "text/html" },
-			options: { engine: "markitdown" },
-			waitMs: 30000,
-		}));
-		expect(markRagTargetPending).toHaveBeenCalledWith(
-			path.join(workspaceDir, "剪藏", "好文.md"),
-			expect.objectContaining({ workspaceDir, refreshPolicy: "immediate", event: "manual" }),
-		);
-		await expect(fs.readFile(path.join(workspaceDir, "剪藏", "好文.md"), "utf-8"))
-			.resolves.toContain("# Converted");
-		const row = db
-			.prepare("SELECT title, url, content FROM clips WHERE clip_id = ?")
-			.get(res.body.clip.id) as { title: string; url: string; content: string };
-		expect(row).toEqual({
-			title: "好文",
-			url: "https://example.com/article",
-			content: "# Converted\n\nfrom webpage",
-		});
-	});
-
-	it("keeps the URL fleeting note when webpage markdown conversion fails", async () => {
-		createConversion.mockResolvedValueOnce({
-			jobId: "conv-failed",
-			status: "failed",
-			task: "document.markdown",
-			createdAt: new Date().toISOString(),
-			error: { code: "conversion_failed", message: "converter failed" },
-		});
-		const created = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "https://example.com/fail" });
-
-		const res = await request(app)
-			.post(`/api/fleeting/${created.body.note.id}/process/clip`)
-			.send({
-				title: "失败网页",
-				url: "https://example.com/fail",
-				content: "https://example.com/fail",
-				source: "闪念",
-			});
-
-		expect(res.status).toBe(502);
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-		await expect(fs.readdir(path.join(workspaceDir, "剪藏"))).rejects.toMatchObject({ code: "ENOENT" });
-	});
-
-	it("lists clips ordered by creation time", async () => {
-		const first = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "第一条剪藏" });
-		const second = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "第二条剪藏" });
-
-		await request(app)
-			.post(`/api/fleeting/${first.body.note.id}/process/clip`)
-			.send({ title: "第一条", content: "第一条剪藏" });
-
-		// Ensure distinct created_at timestamps so ORDER BY is deterministic
-		await new Promise((r) => setTimeout(r, 5));
-
-		await request(app)
-			.post(`/api/fleeting/${second.body.note.id}/process/clip`)
-			.send({ title: "第二条", content: "第二条剪藏" });
-
-		const list = await request(app).get("/api/fleeting/clips");
-		expect(list.status).toBe(200);
-		expect(list.body.clips.map((clip: { title: string }) => clip.title)).toEqual([
-			"第二条",
-			"第一条",
+		expect(list.body.notes.map((item: { id: string }) => item.id)).toEqual([
+			second.body.note.id,
+			first.body.note.id,
 		]);
 	});
 
-	it("creates a task and marks the original fleeting note as processed", async () => {
+	it("deletes a note and cleans up temporary attachments", async () => {
 		const created = await request(app)
 			.post("/api/fleeting")
-			.send({ content: "明天整理任务系统" });
+			.send({ content: "要清理的闪念" });
 		const noteId = created.body.note.id;
-
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/task`)
-			.send({ title: "整理任务系统", priority: "normal", acceptanceCriteria: "完成闪念处理功能" });
-
-		expect(res.status).toBe(200);
-		expect(res.body.processed).toBe(true);
-		expect(res.body.task).toBeTruthy();
-		expect(res.body.task.title).toBe("整理任务系统");
-		expect(res.body.task.status).toBe("pending");
-
-		const row = db
-			.prepare("SELECT title, status, priority, acceptance_criteria FROM workspace_tasks WHERE task_id = ?")
-			.get(res.body.task.id) as { title: string; status: string; priority: string; acceptance_criteria: string };
-		expect(row).toEqual({
-			title: "整理任务系统",
-			status: "pending",
-			priority: "normal",
-			acceptance_criteria: "完成闪念处理功能",
-		});
-
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-		expect(list.body.notes[0]).toMatchObject({ id: noteId, status: "processed" });
-	});
-
-	it("creates a milestone and marks the original fleeting note as processed", async () => {
-		const created = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "建立Q2里程碑" });
-		const noteId = created.body.note.id;
-
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/milestone`)
-			.send({ title: "Q2 里程碑", goal: "完成核心功能", acceptanceCriteria: "所有模块通过验收" });
-
-		expect(res.status).toBe(200);
-		expect(res.body.processed).toBe(true);
-		expect(res.body.milestone).toBeTruthy();
-		expect(res.body.milestone.title).toBe("Q2 里程碑");
-		expect(res.body.milestone.status).toBe("pending");
-
-		const row = db
-			.prepare("SELECT title, status, goal, acceptance_criteria FROM workspace_milestones WHERE milestone_id = ?")
-			.get(res.body.milestone.id) as { title: string; status: string; goal: string; acceptance_criteria: string };
-		expect(row).toEqual({
-			title: "Q2 里程碑",
-			status: "pending",
-			goal: "完成核心功能",
-			acceptance_criteria: "所有模块通过验收",
-		});
-
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-		expect(list.body.notes[0]).toMatchObject({ id: noteId, status: "processed" });
-	});
-
-	it("migrates attachments to formal directory on attachment processing", async () => {
-		const noteRes = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "带附件的闪念" });
-		const noteId = noteRes.body.note.id;
-
 		await request(app)
 			.post(`/api/fleeting/${noteId}/attachments`)
-			.attach("files", Buffer.from("attachment content"), { filename: "doc.txt" });
+			.attach("files", Buffer.from("attachment"), { filename: "note.txt" });
 
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/attachment`);
+		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
+		expect(await fs.readdir(tempDir)).toHaveLength(1);
 
-		expect(res.status).toBe(200);
-		expect(res.body.processed).toBe(true);
-		expect(res.body.migratedAttachments).toHaveLength(1);
-		expect(res.body.migratedAttachments[0]).toContain("附件/doc.txt");
-
-		const formalPath = path.join(workspaceDir, "附件", "doc.txt");
-		const content = await fs.readFile(formalPath, "utf-8");
-		expect(content).toBe("attachment content");
-
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-		expect(list.body.notes[0]).toMatchObject({ id: noteId, status: "processed" });
-	});
-
-	it("keeps the fleeting note when task creation fails due to missing required fields", async () => {
-		const created = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "明天整理任务系统" });
-		const noteId = created.body.note.id;
-
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/task`)
-			.send({ title: "" }); // invalid: empty title
-
-		expect(res.status).toBe(400);
-
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-		expect(list.body.notes[0].id).toBe(noteId);
-	});
-
-	it("keeps the fleeting note when milestone creation fails", async () => {
-		const created = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "里程碑闪念" });
-		const noteId = created.body.note.id;
-
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/milestone`)
-			.send({ title: "" }); // invalid
-
-		expect(res.status).toBe(400);
-
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-	});
-
-	it("keeps the fleeting note when clipping creation fails", async () => {
-		const created = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "剪藏闪念" });
-		const noteId = created.body.note.id;
-
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/clip`)
-			.send({ title: "", content: "" }); // invalid
-
-		expect(res.status).toBe(400);
-
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-	});
-
-	it("allows selecting a project when processing to task", async () => {
-		const created = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "项目相关任务" });
-		const noteId = created.body.note.id;
-
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/task`)
-			.send({ title: "项目任务", priority: "important", acceptanceCriteria: "完成", projectId: "proj-123" });
+		const res = await request(app).delete(`/api/fleeting/${noteId}`);
 
 		expect(res.status).toBe(200);
-		expect(res.body.task.projectId).toBe("proj-123");
+		expect(res.body.deleted).toBe(true);
+		await expect(fs.readdir(tempDir)).rejects.toThrow();
+		expect(
+			db.prepare("SELECT COUNT(*) AS count FROM fleeting_attachments WHERE note_id = ?")
+				.get(noteId),
+		).toEqual({ count: 0 });
 	});
 
-	it("allows selecting a project when processing to milestone", async () => {
+	it("does not expose manual backend processing action routes", async () => {
 		const created = await request(app)
 			.post("/api/fleeting")
-			.send({ content: "项目里程碑" });
+			.send({ content: "AI 自主处理，不走手动动作" });
 		const noteId = created.body.note.id;
 
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/milestone`)
-			.send({ title: "项目里程碑", goal: "达成目标", acceptanceCriteria: "验收", projectId: "proj-456" });
+		for (const suffix of manualActionPaths) {
+			const res = await request(app)
+				.post(`/api/fleeting/${noteId}${suffix}`)
+				.send({ title: "x", content: "x", priority: "normal", acceptanceCriteria: "x" });
+			expect(res.status).toBe(404);
+		}
 
-		expect(res.status).toBe(200);
-		expect(res.body.milestone.projectId).toBe("proj-456");
+		expect(db.prepare("SELECT status FROM fleeting_notes WHERE note_id = ?").get(noteId))
+			.toEqual({ status: "pending" });
 	});
 
 	it("ignores late AI writeback after a note has been deleted", async () => {
@@ -545,142 +194,16 @@ CREATE INDEX IF NOT EXISTS idx_fleeting_attachments_note
 		expect(res.body.ignored).toBe(true);
 	});
 
-	it("keeps fleeting note and temp attachments when attachment copy fails", async () => {
-		const noteRes = await request(app)
+	it("resets and re-enqueues analysis through the retry endpoint", async () => {
+		const created = await request(app)
 			.post("/api/fleeting")
-			.send({ content: "附件迁移失败闪念" });
-		const noteId = noteRes.body.note.id;
-
-		await request(app)
-			.post(`/api/fleeting/${noteId}/attachments`)
-			.attach("files", Buffer.from("content"), { filename: "doc.txt" });
-
-		// Make target directory read-only to force copy failure
-		const targetDir = path.join(workspaceDir, "附件");
-		await fs.mkdir(targetDir, { recursive: true });
-		await fs.chmod(targetDir, 0o500);
+			.send({ content: "需要重试分析" });
 
 		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/task`)
-			.send({ title: "任务", priority: "normal", acceptanceCriteria: "完成" });
+			.post(`/api/fleeting/${created.body.note.id}/analyze`);
 
-		expect(res.status).toBe(500);
-
-		// Note must still exist
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-		expect(list.body.notes[0].id).toBe(noteId);
-
-		// Temp file must still exist
-		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
-		expect(await fs.readdir(tempDir)).toHaveLength(1);
-
-		// DB record must still exist
-		const rows = db
-			.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
-			.all(noteId) as unknown[];
-		expect(rows).toHaveLength(1);
-
-		// Restore permission for cleanup
-		await fs.chmod(targetDir, 0o755);
-	});
-
-	it("keeps fleeting note, temp attachments, and cleans up formal files when one of multiple attachments partially fails to migrate", async () => {
-		const noteRes = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "多附件部分迁移失败闪念" });
-		const noteId = noteRes.body.note.id;
-
-		await request(app)
-			.post(`/api/fleeting/${noteId}/attachments`)
-			.attach("files", Buffer.from("first content"), { filename: "first.txt" });
-
-		await request(app)
-			.post(`/api/fleeting/${noteId}/attachments`)
-			.attach("files", Buffer.from("second content"), { filename: "second.txt" });
-
-		// Monkey-patch fs.readFile to succeed on first call, fail on second call
-		let callCount = 0;
-		const originalReadFile = fs.readFile;
-			const readFileSpy = vi.spyOn(fs, "readFile").mockImplementation(async (...args: Parameters<typeof fs.readFile>) => {
-				callCount++;
-				if (callCount === 2) {
-					throw new Error("Simulated read failure on second attachment");
-				}
-				return originalReadFile(...args);
-			});
-
-		try {
-			const res = await request(app)
-				.post(`/api/fleeting/${noteId}/process/attachment`)
-				.send({});
-
-			expect(res.status).toBe(500);
-			expect(res.body.error).toContain("附件迁移失败");
-
-			// Note must still exist
-			const list = await request(app).get("/api/fleeting");
-			expect(list.body.notes).toHaveLength(1);
-			expect(list.body.notes[0].id).toBe(noteId);
-
-			// All temp DB records must still exist
-			const dbRows = db
-				.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
-				.all(noteId) as unknown[];
-			expect(dbRows).toHaveLength(2);
-
-			// All temp files must still exist
-			const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
-			const tempFiles = await fs.readdir(tempDir);
-			expect(tempFiles).toHaveLength(2);
-
-			// No half-copied files should remain in formal directory
-			const formalDir = path.join(workspaceDir, "附件");
-			try {
-				const formalFiles = await fs.readdir(formalDir);
-				expect(formalFiles).toHaveLength(0);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			}
-		} finally {
-			readFileSpy.mockRestore();
-		}
-	});
-
-	it("keeps fleeting note and temp attachments when target INSERT fails after successful copy", async () => {
-		const noteRes = await request(app)
-			.post("/api/fleeting")
-			.send({ content: "事务失败闪念" });
-		const noteId = noteRes.body.note.id;
-
-		await request(app)
-			.post(`/api/fleeting/${noteId}/attachments`)
-			.attach("files", Buffer.from("content"), { filename: "doc.txt" });
-
-		// Rename target DB table to force INSERT to fail
-		db.prepare("ALTER TABLE workspace_tasks RENAME TO workspace_tasks_bak").run();
-
-		const res = await request(app)
-			.post(`/api/fleeting/${noteId}/process/task`)
-			.send({ title: "任务", priority: "normal", acceptanceCriteria: "完成" });
-
-		expect(res.status).toBe(500);
-
-		// Formal file was written but note must still exist because INSERT failed
-		const list = await request(app).get("/api/fleeting");
-		expect(list.body.notes).toHaveLength(1);
-
-		// Temp file must still exist
-		const tempDir = path.join(workspaceDir, ".ridge", "fleeting-attachments", noteId);
-		expect(await fs.readdir(tempDir)).toHaveLength(1);
-
-		// Temp DB record must still exist
-		const rows = db
-			.prepare("SELECT * FROM fleeting_attachments WHERE note_id = ?")
-			.all(noteId) as unknown[];
-		expect(rows).toHaveLength(1);
-
-		// Restore table for other tests
-		db.prepare("ALTER TABLE workspace_tasks_bak RENAME TO workspace_tasks").run();
+		expect(res.status).toBe(200);
+		expect(res.body.triggered).toBe(true);
+		expect(resetJob).toHaveBeenCalledWith(created.body.note.id);
 	});
 });

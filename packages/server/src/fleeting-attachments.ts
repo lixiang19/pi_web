@@ -1,10 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import { accessSync } from "node:fs";
 import path from "node:path";
 import type { RidgeDatabase } from "./db/index.js";
-
-type HttpError = Error & { statusCode?: number };
 
 export interface FleetingAttachmentRecord {
 	attachment_id: string;
@@ -95,32 +92,6 @@ export function getFleetingAttachments(
 		.all(noteId) as FleetingAttachmentRecord[];
 }
 
-export function getFleetingAttachmentById(
-	db: RidgeDatabase,
-	attachmentId: string,
-): FleetingAttachmentRecord | null {
-	const row = db
-		.prepare("SELECT * FROM fleeting_attachments WHERE attachment_id = ?")
-		.get(attachmentId) as FleetingAttachmentRecord | undefined;
-	return row ?? null;
-}
-
-export async function deleteFleetingAttachment(
-	db: RidgeDatabase,
-	attachmentId: string,
-): Promise<boolean> {
-	const row = getFleetingAttachmentById(db, attachmentId);
-	if (!row) return false;
-
-	db.prepare("DELETE FROM fleeting_attachments WHERE attachment_id = ?").run(attachmentId);
-	try {
-		await fs.rm(row.stored_path, { force: true });
-	} catch {
-		// File may already be deleted or inaccessible; ignore
-	}
-	return true;
-}
-
 export async function deleteFleetingAttachmentsForNote(
 	db: RidgeDatabase,
 	workspaceDir: string,
@@ -141,106 +112,4 @@ export async function deleteFleetingAttachmentsForNote(
 	} catch {
 		// Directory may not be empty or may not exist; ignore
 	}
-}
-
-// ============================================================================
-// Safe migration: copy-only + explicit cleanup
-// ============================================================================
-
-/**
- * Copy fleeting attachments to the formal attachments directory.
- * Does NOT delete temporary attachments — caller must clean up after confirming success.
- * Throws on first copy failure so caller can abort and keep the fleeting note intact.
- */
-export async function copyFleetingAttachmentsToFormal(
-	db: RidgeDatabase,
-	workspaceDir: string,
-	noteId: string,
-): Promise<{ migratedPaths: string[] }> {
-	const attachments = getFleetingAttachments(db, noteId);
-	if (attachments.length === 0) {
-		return { migratedPaths: [] };
-	}
-
-	const targetDir = path.join(workspaceDir, "附件");
-	await fs.mkdir(targetDir, { recursive: true });
-
-	const migratedPaths: string[] = [];
-	for (const att of attachments) {
-		try {
-			const buffer = await fs.readFile(att.stored_path);
-			const targetName = resolveUniqueFileName(targetDir, att.original_name);
-			const targetPath = path.join(targetDir, targetName);
-			await fs.writeFile(targetPath, buffer, { mode: 0o644 });
-			migratedPaths.push(targetPath);
-		} catch {
-			// Clean up any already-copied files on partial failure to avoid
-			// leaving half-migrated artifacts in the formal directory.
-			for (const copiedPath of migratedPaths) {
-				try {
-					await fs.rm(copiedPath, { force: true });
-				} catch {
-					// Best-effort cleanup
-				}
-			}
-			const error = new Error(`附件迁移失败: ${att.original_name}`) as HttpError;
-			error.statusCode = 500;
-			throw error;
-		}
-	}
-
-	return { migratedPaths };
-}
-
-/**
- * Delete attachment DB records (synchronous, for use inside db.transaction).
- */
-export function deleteFleetingAttachmentRecords(db: RidgeDatabase, noteId: string): void {
-	const attachments = getFleetingAttachments(db, noteId);
-	for (const att of attachments) {
-		db.prepare("DELETE FROM fleeting_attachments WHERE attachment_id = ?").run(att.attachment_id);
-	}
-}
-
-/**
- * Delete temporary attachment files and directory (best effort, after DB success).
- */
-export async function deleteFleetingTempFiles(
-	workspaceDir: string,
-	noteId: string,
-): Promise<void> {
-	const dir = getFleetingAttachmentsDir(workspaceDir, noteId);
-	try {
-		const files = await fs.readdir(dir);
-		for (const file of files) {
-			try {
-				await fs.rm(path.join(dir, file), { force: true });
-			} catch {
-				// Best effort
-			}
-		}
-		await fs.rmdir(dir);
-	} catch {
-		// Directory may not exist
-	}
-}
-
-function resolveUniqueFileName(targetDir: string, originalName: string): string {
-	const safeName = sanitizeStoredName(originalName);
-	const candidate = path.join(targetDir, safeName);
-	try {
-		fsSyncAccess(candidate);
-		// File exists; need unique name
-	} catch {
-		return safeName;
-	}
-
-	const ext = path.extname(safeName);
-	const base = path.basename(safeName, ext);
-	const suffix = crypto.randomBytes(3).toString("hex");
-	return `${base}-${suffix}${ext}`;
-}
-
-function fsSyncAccess(filePath: string): void {
-	accessSync(filePath);
 }

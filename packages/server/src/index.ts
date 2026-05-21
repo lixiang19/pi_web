@@ -884,8 +884,6 @@ app.use("/api/fleeting", createFleetingRouter({
 	db: await initializeRidgeDb(defaultWorkspaceDir),
 	workspaceDir: defaultWorkspaceDir,
 	getAnalysisRunner: () => fleetingRunnerRef.value,
-	getConversionClient: () => conversionClientRef.value ?? undefined,
-	markRagTargetPending,
 }));
 
 // ===== Notes API =====

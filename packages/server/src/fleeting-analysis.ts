@@ -18,6 +18,7 @@ import {
 } from "./pi-default-config.js";
 import {
 	deriveTaskFromExtension,
+	type ConversionOptions,
 	type ConversionJob,
 	type ConversionServiceClient,
 	type DownloadedArtifact,
@@ -195,12 +196,15 @@ async function buildAttachmentContexts(
 		} else if (conversionClient) {
 			const task = deriveTaskFromExtension(path.extname(attachment.originalName));
 			if (task) {
+				const options: ConversionOptions = task === "audio.transcription"
+					? { format: "markdown" }
+					: task === "image.ocr"
+						? { language: "auto", outputBlocks: true }
+						: { engine: "markitdown", ocrFallback: true };
 				const job = await conversionClient.createConversionWithFile(attachment.storedPath, {
 					task,
-					options: task === "audio.transcription"
-						? { format: "markdown" }
-						: { engine: "markitdown", ocrFallback: true },
-					clientJobId: `fleeting-agent-${path.basename(attachment.storedPath)}-${Date.now()}`,
+					options,
+					clientJobId: `fleeting-analysis-${path.basename(attachment.storedPath)}-${Date.now()}`,
 					metadata: {
 						source: "fleeting.agent",
 						originalName: attachment.originalName,

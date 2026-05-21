@@ -1153,62 +1153,6 @@ export function deleteFleetingNote(noteId: string) {
 	});
 }
 
-export function processFleetingToJournal(noteId: string, content: string) {
-	return request<{ processed: true; note: FleetingNote; journalPath: string; migratedAttachments?: string[]; failedAttachments?: string[] }>(
-		`/api/fleeting/${noteId}/process/journal`,
-		{
-			method: "POST",
-			body: JSON.stringify({ content }),
-		},
-	);
-}
-
-export function processFleetingToClip(
-	noteId: string,
-	data: { title: string; url?: string; content: string; source?: string },
-) {
-	return request<{ processed: true; note: FleetingNote; clip: ClipRecord; migratedAttachments?: string[]; failedAttachments?: string[] }>(
-		`/api/fleeting/${noteId}/process/clip`,
-		{
-			method: "POST",
-			body: JSON.stringify(data),
-		},
-	);
-}
-
-export function processFleetingToTask(
-	noteId: string,
-	data: { title: string; priority: WorkspaceTaskPriority; acceptanceCriteria: string; dueDate?: number | null; projectId?: string | null },
-) {
-	return request<{ processed: true; note: FleetingNote; task: WorkspaceTask; migratedAttachments?: string[]; failedAttachments?: string[] }>(
-		`/api/fleeting/${noteId}/process/task`,
-		{
-			method: "POST",
-			body: JSON.stringify(data),
-		},
-	);
-}
-
-export function processFleetingToMilestone(
-	noteId: string,
-	data: { title: string; goal: string; acceptanceCriteria: string; dueDate?: number | null; color?: string; projectId?: string | null },
-) {
-	return request<{ processed: true; note: FleetingNote; milestone: WorkspaceMilestone; migratedAttachments?: string[]; failedAttachments?: string[] }>(
-		`/api/fleeting/${noteId}/process/milestone`,
-		{
-			method: "POST",
-			body: JSON.stringify(data),
-		},
-	);
-}
-
-export function processFleetingToAttachment(noteId: string) {
-	return request<{ processed: true; note: FleetingNote; migratedAttachments?: string[]; failedAttachments?: string[] }>(
-		`/api/fleeting/${noteId}/process/attachment`,
-		{ method: "POST" },
-	);
-}
-
 export function triggerFleetingAnalysis(noteId: string) {
 	return request<{ triggered: true; note: FleetingNote }>(`/api/fleeting/${noteId}/analyze`, {
 		method: "POST",

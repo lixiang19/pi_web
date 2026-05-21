@@ -18,7 +18,7 @@ export interface ConversionInput {
 }
 
 export interface DocumentMarkdownOptions {
-  engine?: "markitdown" | "pandoc" | "docling";
+  engine?: "markitdown";
   extractImages?: boolean;
   extractTables?: boolean;
   pageRange?: [number, number];
@@ -26,7 +26,10 @@ export interface DocumentMarkdownOptions {
 }
 
 export interface AudioTranscriptionOptions {
+  engine?: "groq" | "markitdown" | "faster-whisper";
+  model?: string;
   language?: string;
+  prompt?: string;
   modelSize?: "tiny" | "base" | "small" | "medium" | "large";
   segmentDuration?: number;
   diarization?: boolean;
@@ -34,15 +37,30 @@ export interface AudioTranscriptionOptions {
 }
 
 export interface ImageOcrOptions {
+  engine?: "vision" | "openai" | "openai-vision" | "markitdown" | "tesseract";
+  model?: string;
   language?: string;
+  prompt?: string;
   outputBlocks?: boolean;
   confidenceThreshold?: number;
 }
 
-export interface ConversionOptions
-  extends Partial<DocumentMarkdownOptions>,
-    Partial<AudioTranscriptionOptions>,
-    Partial<ImageOcrOptions> {}
+export interface ConversionOptions {
+  engine?: DocumentMarkdownOptions["engine"] | AudioTranscriptionOptions["engine"] | ImageOcrOptions["engine"];
+  extractImages?: boolean;
+  extractTables?: boolean;
+  pageRange?: [number, number];
+  ocrFallback?: boolean;
+  model?: string;
+  language?: string;
+  prompt?: string;
+  modelSize?: AudioTranscriptionOptions["modelSize"];
+  segmentDuration?: number;
+  diarization?: boolean;
+  format?: AudioTranscriptionOptions["format"];
+  outputBlocks?: boolean;
+  confidenceThreshold?: number;
+}
 
 export interface CreateConversionRequest {
   task: ConversionTask;

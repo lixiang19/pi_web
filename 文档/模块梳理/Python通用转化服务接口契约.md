@@ -37,14 +37,14 @@
 当前 ridge 仓库内已提供 `services/converter/` Python 后端实现：
 
 - `FastAPI` 暴露 `/v1/health`、`/v1/capabilities`、`/v1/conversions`、查询、取消、产物列表和产物下载；
-- API Key 使用 `Authorization: Bearer <key>`，默认从 `RIDGE_CONVERTER_API_KEYS` 读取；
+- API Key 使用 `Authorization: Bearer <key>`，从 `RIDGE_CONVERTER_API_KEYS` 读取；本地 loopback 开发可用 `dev-key`，公网绑定或 production 环境必须显式配置非默认强随机 key；
 - 支持 multipart 文件上传、HTTPS URL、base64 Data URI，拒绝本地路径、非 HTTPS URL、localhost/private network URL；
 - `document.markdown`：默认走 MarkItDown，覆盖文本、Markdown、HTML、PDF、DOCX、PPTX、XLSX、CSV、JSON 等 MarkItDown 支持的输入；
 - `input.url` 指向网页且路径没有扩展名时，Converter 按响应 `Content-Type` 或调用方传入的 `mimeType` 补齐临时文件扩展名，例如 `text/html` 补 `.html`，保证 MarkItDown 能按 HTML 处理；
 - `document.ocr_markdown`：默认走 MarkItDown；图片输入也交给 MarkItDown 图片转换；
-- `image.ocr`：默认走 MarkItDown 图片转换（EXIF + 可选 LLM caption），`options.engine="tesseract"` 时才走本地 pytesseract fallback；
-- `image.description`：默认走 MarkItDown 图片转换；配置 `OPENAI_API_KEY` 后向 MarkItDown 注入 OpenAI client/model；
-- `audio.transcription`：默认走 MarkItDown audio converter（`markitdown[all]` 的 audio-transcription 依赖），`options.engine="faster-whisper"` 时才走 faster-whisper fallback；
+- `image.ocr`：默认走 OpenAI-compatible 视觉模型 OCR，配置 `RIDGE_CONVERTER_VISION_API_KEY` / `RIDGE_CONVERTER_VISION_BASE_URL` / `RIDGE_CONVERTER_VISION_MODEL`，`OPENAI_API_KEY` 可作为视觉 API key 兼容 fallback；`options.engine="tesseract"` 时走本地 pytesseract fallback，`options.engine="markitdown"` 时才走 MarkItDown 图片转换；
+- `image.description`：默认走同一套 OpenAI-compatible 视觉模型配置生成图片描述；`options.engine="markitdown"` 时才走 MarkItDown 图片转换；
+- `audio.transcription`：默认走 Groq Speech to Text，配置 `GROQ_API_KEY` / `RIDGE_CONVERTER_GROQ_BASE_URL` / `RIDGE_CONVERTER_GROQ_AUDIO_MODEL`；`options.engine="faster-whisper"` 时走 faster-whisper fallback，`options.engine="markitdown"` 时才走 MarkItDown audio converter；
 - 产物仍按契约返回 `<name>.md`、`<name>.metadata.json`、可选 blocks/segments/assets，由 ridge Node 下载并落盘。
 
 本实现不改变职责矩阵：Converter 不读取 workspace 本地路径、不写 `.originals/`、不更新 `file_processing_status`、不触发 RAG。
@@ -83,6 +83,7 @@
 
 - **方式**：HTTP `Authorization: Bearer <apiKey>`
 - **apiKey 归属**：按 client/project 维度发放；ridge 可持有多个 Key（如开发/生产分离）
+- **公网门禁**：当 Converter 绑定非 loopback host（如 `0.0.0.0`）或 `NODE_ENV/RIDGE_ENV=production` 时，`RIDGE_CONVERTER_API_KEYS` 不允许为空或使用默认 `dev-key`，配置错误必须启动失败；
 - **校验**：Converter 校验 Key 有效性 + project 白名单；非法时返回 `401 auth_failed`
 - **与 ridge 认证解耦**：Converter **不读取** ridge `ridge_session` Cookie；API Key 是唯一凭证
 
@@ -161,7 +162,7 @@ canceled  failed    artifacts 可用
 |------|----------|----------|
 | `document.markdown` | `<name>.md`, `<name>.metadata.json` | `img-NNN.*`（提取的图片） |
 | `audio.transcription` | `<name>.md`, `<name>.metadata.json` | `<name>.segments.json` |
-| `image.ocr` | `<name>.md`, `<name>.metadata.json` | `<name>.blocks.json` |
+| `image.ocr` | `<name>.md`, `<name>.metadata.json` | `<name>.blocks.json`（仅 tesseract fallback） |
 | `image.description` | `<name>.md`, `<name>.metadata.json` | — |
 | `document.ocr_markdown` | `<name>.md`, `<name>.metadata.json` | `img-NNN.*` |
 
@@ -297,7 +298,7 @@ Node 落盘时保留 Python 侧全部字段，并追加 `_ridge` 对象：
 
 ```json
 {
-  "engine": "markitdown",
+  "engine": "markitdown | vision-ocr | vision-description | groq | pytesseract | faster-whisper",
   "engineVersion": "0.0.1a40",
   "_ridge": {
     "sourcePath": "附件/report.pdf",
@@ -324,29 +325,19 @@ Body: ConversionJob (同 GET /v1/conversions/{jobId})
 - 根据 `clientJobId` 或 `metadata.ridgeFileId` 关联到具体任务记录；
 - 若找不到关联记录，返回 `200` 避免 Converter 重试风暴（幂等投递）。
 
-### 11.5 闪念 URL 剪藏流程
+### 11.5 闪念 URL 转换边界
 
 ```
 Chrome 插件 / 浏览器网址采集
   → POST /api/browser/captures
     → fleeting_notes.content = 脱敏 URL
-    → 用户处理为剪藏
-      → POST /api/fleeting/{noteId}/process/clip
-        → Node 调用 POST /v1/conversions
-            task=document.markdown
-            input.url=<URL>
-            input.mimeType=text/html
-            options.engine=markitdown
-        → 下载 Markdown artifact
-        → 写入 剪藏/<标题>.md
-        → INSERT clips(content=Markdown, url=<URL>)
-        → UPDATE fleeting_notes.status = 'processed'
-        → markRagTargetPending(剪藏/<标题>.md)
+    → fleeting.analyze 读取 URL/附件上下文
+    → 后续 AI 主导链路决定是否调用 Converter 转 Markdown
 ```
 
-- 转换失败时返回错误并保留原闪念；
-- 剪藏 Markdown 文件由 Node 写入工作空间，Converter 不直接写 workspace；
-- URL 剪藏不经过 `file_processing_status`，它属于闪念处理动作，不是文件上传转换任务。
+- 旧的 `POST /api/fleeting/{noteId}/process/clip` 人工剪藏动作已移除；
+- Converter 仍只负责把 URL / 文件转换为 Markdown artifact，不直接写 workspace；
+- URL 闪念不经过 `file_processing_status`，它属于闪念捕捉和后续 AI 主导处理链路。
 
 ---
 
@@ -354,7 +345,7 @@ Chrome 插件 / 浏览器网址采集
 
 - **输出目标**：LLM / 文本分析友好的 Markdown，**不承诺高保真排版还原**；
 - **字段尽力提取**：`pages`、`images`、`tables`、`footnotes`、`endnotes` 缺失时用 `null`，不用 `0`；
-- **引擎溯源**：metadata 必须含 `engine: "markitdown"`、`engineVersion: "x.y.z"`；
+- **引擎溯源**：MarkItDown 产物 metadata 必须含 `engine: "markitdown"`、`engineVersion: "x.y.z"`；视觉 OCR 和 Groq 音频转写 metadata 必须含各自 `engine`、`model`、`baseUrl`；
 - **表格降级**：复杂表格可转为简化 Markdown 或 `[TABLE]` 占位符；
 - **ridge 不依赖精细字段**：RAG 索引和搜索以 Markdown 正文为主，metadata 为辅助。
 

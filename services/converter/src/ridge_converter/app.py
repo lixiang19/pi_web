@@ -52,25 +52,41 @@ def _capabilities(settings: ConverterSettings) -> CapabilitiesResponse:
                 task="document.markdown",
                 supportedInputFormats=["pdf", "docx", "pptx", "xlsx", "html", "txt", "md", "csv", "json"],
                 supportedOutputFormats=["markdown", "json"],
-                optionsSchema={"engine": ["markitdown", "plain-text", "beautifulsoup4"], "extractImages": "boolean", "extractTables": "boolean"},
+                optionsSchema={"engine": ["markitdown"], "extractImages": "boolean", "extractTables": "boolean"},
             ),
             CapabilityTask(
                 task="audio.transcription",
-                supportedInputFormats=["mp3", "wav", "m4a", "flac", "ogg", "webm"],
+                supportedInputFormats=["mp3", "wav", "m4a", "flac", "ogg", "webm", "mp4", "mpeg", "mpga"],
                 supportedOutputFormats=["markdown", "json"],
-                optionsSchema={"language": "string", "modelSize": "tiny|base|small|medium|large", "format": "markdown"},
+                optionsSchema={
+                    "engine": ["groq", "markitdown", "faster-whisper"],
+                    "model": "Groq audio model id",
+                    "language": "ISO-639-1 language code or auto",
+                    "prompt": "string",
+                    "format": "markdown",
+                },
             ),
             CapabilityTask(
                 task="image.ocr",
                 supportedInputFormats=["png", "jpg", "jpeg", "webp", "tiff", "bmp"],
                 supportedOutputFormats=["markdown", "json"],
-                optionsSchema={"language": "string", "outputBlocks": "boolean"},
+                optionsSchema={
+                    "engine": ["vision", "markitdown", "tesseract"],
+                    "model": "OpenAI-compatible vision model id",
+                    "language": "string",
+                    "prompt": "string",
+                    "outputBlocks": "boolean",
+                },
             ),
             CapabilityTask(
                 task="image.description",
                 supportedInputFormats=["png", "jpg", "jpeg", "webp"],
                 supportedOutputFormats=["markdown", "json"],
-                optionsSchema={"model": "OpenAI vision model name"},
+                optionsSchema={
+                    "engine": ["vision", "markitdown"],
+                    "model": "OpenAI-compatible vision model id",
+                    "prompt": "string",
+                },
             ),
             CapabilityTask(
                 task="document.ocr_markdown",
@@ -84,6 +100,7 @@ def _capabilities(settings: ConverterSettings) -> CapabilitiesResponse:
 
 def create_app(settings: ConverterSettings | None = None) -> FastAPI:
     actual_settings = settings or ConverterSettings()
+    actual_settings.validate_security()
     actual_settings.ensure_dirs()
     store = JobStore()
     app = FastAPI(title="ridge converter", version=__version__)

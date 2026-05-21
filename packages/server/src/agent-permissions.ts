@@ -90,6 +90,10 @@ const SUBAGENT_TOOL_NAMES = new Set([
   'steer_subagent',
   'get_subagent_result',
 ]);
+const CONVERSION_TOOL_NAMES = new Set([
+  'convert_file_to_markdown',
+  'convert_url_to_markdown',
+]);
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -644,8 +648,11 @@ export const mapToolToLogicalPermission = (
   if (PLANNING_TOOL_NAMES.has(normalized)) {
     return 'task';
   }
-  if (normalized === 'subagent') {
+  if (SUBAGENT_TOOL_NAMES.has(normalized)) {
     return 'subagent';
+  }
+  if (CONVERSION_TOOL_NAMES.has(normalized)) {
+    return 'read';
   }
   return SIMPLE_PERMISSION_KEYS.has(normalized as LogicalPermissionKey)
     ? (normalized as LogicalPermissionKey)
@@ -673,8 +680,16 @@ export const extractPermissionSubject = (
     return null;
   }
 
-  if (PLANNING_TOOL_NAMES.has(toolName)) {
+  const normalizedToolName = normalizeString(toolName).toLowerCase();
+  if (PLANNING_TOOL_NAMES.has(normalizedToolName)) {
     return toolName;
+  }
+  if (CONVERSION_TOOL_NAMES.has(normalizedToolName)) {
+    if (normalizedToolName === 'convert_url_to_markdown') {
+      return getStringField(input, 'url') || '*';
+    }
+    const rawPath = getStringField(input, 'path');
+    return rawPath ? normalizePermissionPath(cwd, rawPath) : '*';
   }
 
   switch (logicalPermission) {
@@ -716,8 +731,16 @@ export const derivePermissionPattern = (
     return null;
   }
 
-  if (PLANNING_TOOL_NAMES.has(toolName)) {
+  const normalizedToolName = normalizeString(toolName).toLowerCase();
+  if (PLANNING_TOOL_NAMES.has(normalizedToolName)) {
     return toolName;
+  }
+  if (CONVERSION_TOOL_NAMES.has(normalizedToolName)) {
+    if (normalizedToolName === 'convert_url_to_markdown') {
+      return getStringField(input, 'url') || null;
+    }
+    const rawPath = getStringField(input, 'path');
+    return rawPath ? normalizePathRelativeToCwd(cwd, rawPath) : null;
   }
 
   switch (logicalPermission) {
@@ -786,7 +809,10 @@ export const compileAgentPermission = (
 
     for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
       const normalized = normalizeString(activeToolNames[index]).toLowerCase();
-      if (normalized === permissionKey) {
+      if (
+        normalized === permissionKey ||
+        (permissionKey === 'read' && CONVERSION_TOOL_NAMES.has(normalized))
+      ) {
         activeToolNames.splice(index, 1);
       }
     }

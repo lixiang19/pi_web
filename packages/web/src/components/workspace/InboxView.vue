@@ -1,19 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
 import {
-	BookOpen,
-	Bookmark,
 	LoaderCircle,
-	Trash2,
-	CheckSquare,
 	Image,
 	FileText,
 	RefreshCw,
-	Flag,
-	Archive,
 	Mic,
 	Paperclip,
-	Wand2,
 	Lightbulb,
 	Link,
 	Send,
@@ -23,25 +16,8 @@ import {
 import { toast } from "vue-sonner";
 
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkspaceInbox, type InboxItem } from "@/composables/useInbox";
-import { useProjects } from "@/composables/useProjects";
 import { captureFromDesktop, getAuthSession, type DesktopCaptureType } from "@/lib/api";
 
 const props = defineProps<{
@@ -55,28 +31,18 @@ const {
 	totalCount,
 	processedCount,
 	analyzingCount,
-	deleteItem,
 	captureNote,
 	uploadAttachments,
-	processToJournal,
-	processToClip,
-	processToTask,
-	processToMilestone,
-	processToAttachment,
 	retryAnalysis,
 	formatTime,
 	getNoteAttachments,
 } = useWorkspaceInbox(() => props.workspaceDir);
 
-const { projects, load: loadProjects } = useProjects();
-
 onMounted(() => {
-	void loadProjects();
 	isOnline.value = navigator.onLine;
 	void checkAuth();
 });
 
-const activeNote = ref<InboxItem | null>(null);
 const activeFilter = ref<"all" | "processed" | "unprocessed">("all");
 const expandedNotes = ref<Record<string, boolean>>({});
 
@@ -117,7 +83,7 @@ const statusLabel = (note: InboxItem) => {
 	if (note.analysisStatus === "analyzing") return "分析中";
 	if (note.analysisStatus === "failed") return note.lastError ? `分析失败：${note.lastError}` : "分析失败";
 	if (note.analysisStatus === "unanalyzed") return "等待分析";
-	return note.recommendationText || "已分析";
+	return "已分析";
 };
 
 const statusPillClass = (note: InboxItem) => {
@@ -262,62 +228,6 @@ const handleCaptureKeydown = (e: KeyboardEvent) => {
 	}
 };
 
-/* ───────── 列表卡片操作 ───────── */
-
-const openJournalDialog = (note: InboxItem) => {
-	if (isProcessed(note)) return;
-	activeNote.value = note;
-	journalContent.value = note.draft || note.content;
-	journalDialogOpen.value = true;
-};
-
-const firstUrl = (text: string) => text.match(/https?:\/\/\S+/)?.[0] ?? "";
-
-const openClipDialog = (note: InboxItem) => {
-	if (isProcessed(note)) return;
-	activeNote.value = note;
-	clipContent.value = note.draft || note.content;
-	clipUrl.value = firstUrl(note.content);
-	clipTitle.value = note.content.split("\n")[0]?.replace(/^https?:\/\/\S+\s*/, "").slice(0, 80) || "未命名剪藏";
-	clipSource.value = "闪念";
-	clipDialogOpen.value = true;
-};
-
-const openTaskDialog = (note: InboxItem) => {
-	if (isProcessed(note)) return;
-	activeNote.value = note;
-	taskTitle.value = note.content.split("\n")[0]?.slice(0, 80) || "未命名任务";
-	taskPriority.value = "normal";
-	taskAcceptance.value = "";
-	taskProjectId.value = null;
-	taskDialogOpen.value = true;
-};
-
-const openMilestoneDialog = (note: InboxItem) => {
-	if (isProcessed(note)) return;
-	activeNote.value = note;
-	milestoneTitle.value = note.content.split("\n")[0]?.slice(0, 80) || "未命名里程碑";
-	milestoneGoal.value = "";
-	milestoneAcceptance.value = "";
-	milestoneProjectId.value = null;
-	milestoneDialogOpen.value = true;
-};
-
-const handleAttachment = async (note: InboxItem) => {
-	if (isProcessed(note)) return;
-	const atts = getNoteAttachments(note.id);
-	if (atts.length === 0) { toast.error("该闪念没有附件"); return; }
-	await processToAttachment(note.id);
-};
-
-const handleSuggestion = (note: InboxItem) => {
-	if (isProcessed(note)) return;
-	if (note.recommendationType === "journal") openJournalDialog(note);
-	else if (note.recommendationType === "clip") openClipDialog(note);
-	else if (note.recommendationType === "task") openTaskDialog(note);
-	else if (note.recommendationType === "delete") deleteItem(note.id);
-};
-
 const getAttachmentIcon = (mimeType: string) => {
 	if (mimeType.startsWith("image/")) return Image;
 	return FileText;
@@ -327,68 +237,6 @@ const formatFileSize = (bytes: number) => {
 	if (bytes < 1024) return `${bytes} B`;
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
-
-/* ───────── Dialog 状态 ───────── */
-
-const journalDialogOpen = ref(false);
-const journalContent = ref("");
-
-const clipDialogOpen = ref(false);
-const clipTitle = ref("");
-const clipUrl = ref("");
-const clipContent = ref("");
-const clipSource = ref("闪念");
-
-const taskDialogOpen = ref(false);
-const taskTitle = ref("");
-const taskPriority = ref<"normal" | "important" | "urgent">("normal");
-const taskAcceptance = ref("");
-const taskProjectId = ref<string | null>(null);
-
-const milestoneDialogOpen = ref(false);
-const milestoneTitle = ref("");
-const milestoneGoal = ref("");
-const milestoneAcceptance = ref("");
-const milestoneProjectId = ref<string | null>(null);
-
-const confirmJournal = async () => {
-	if (!activeNote.value || !journalContent.value.trim()) return;
-	await processToJournal(activeNote.value.id, journalContent.value.trim());
-	journalDialogOpen.value = false;
-};
-
-const confirmClip = async () => {
-	if (!activeNote.value || !clipTitle.value.trim() || !clipContent.value.trim()) return;
-	await processToClip(activeNote.value.id, {
-		title: clipTitle.value.trim(),
-		url: clipUrl.value.trim(),
-		content: clipContent.value.trim(),
-		source: clipSource.value.trim(),
-	});
-	clipDialogOpen.value = false;
-};
-
-const confirmTask = async () => {
-	if (!activeNote.value || !taskTitle.value.trim() || !taskAcceptance.value.trim()) return;
-	await processToTask(activeNote.value.id, {
-		title: taskTitle.value.trim(),
-		priority: taskPriority.value,
-		acceptanceCriteria: taskAcceptance.value.trim(),
-		projectId: taskProjectId.value,
-	});
-	taskDialogOpen.value = false;
-};
-
-const confirmMilestone = async () => {
-	if (!activeNote.value || !milestoneTitle.value.trim() || !milestoneGoal.value.trim() || !milestoneAcceptance.value.trim()) return;
-	await processToMilestone(activeNote.value.id, {
-		title: milestoneTitle.value.trim(),
-		goal: milestoneGoal.value.trim(),
-		acceptanceCriteria: milestoneAcceptance.value.trim(),
-		projectId: milestoneProjectId.value,
-	});
-	milestoneDialogOpen.value = false;
 };
 </script>
 
@@ -558,35 +406,12 @@ const confirmMilestone = async () => {
 									</div>
 
 									<div
+										v-if="!isProcessed(note) && (note.analysisStatus === 'failed' || note.lastError)"
 										class="mt-1 hidden items-center gap-1 border-t border-default/60 pt-1.5 group-hover:flex"
 										@click.stop
 									>
-										<Button v-if="!isProcessed(note) && note.analysisStatus === 'suggested'" size="sm" class="h-6 gap-1 px-2 text-micro" @click="handleSuggestion(note)">
-											<Wand2 class="size-3" />
-											按建议
-										</Button>
-										<Button v-if="!isProcessed(note)" variant="outline" size="sm" class="h-6 gap-1 px-2 text-micro" aria-label="转为日记" @click="openJournalDialog(note)">
-											<BookOpen class="size-3" />
-											日记
-										</Button>
-										<Button v-if="!isProcessed(note)" variant="outline" size="sm" class="h-6 gap-1 px-2 text-micro" aria-label="转为任务" @click="openTaskDialog(note)">
-											<CheckSquare class="size-3" />
-											任务
-										</Button>
-										<Button v-if="!isProcessed(note)" variant="outline" size="sm" class="h-6 gap-1 px-2 text-micro" aria-label="转为里程碑" @click="openMilestoneDialog(note)">
-											<Flag class="size-3" />
-											里程碑
-										</Button>
-										<Button v-if="!isProcessed(note)" variant="outline" size="sm" class="h-6 gap-1 px-2 text-micro" aria-label="保存剪藏" @click="openClipDialog(note)">
-											<Bookmark class="size-3" />
-											剪藏
-										</Button>
-										<Button v-if="!isProcessed(note) && (note.analysisStatus === 'failed' || note.lastError)" variant="ghost" size="icon" class="size-6 text-muted-foreground" aria-label="重试分析" @click="retryAnalysis(note.id)">
+										<Button variant="ghost" size="icon" class="size-6 text-muted-foreground" aria-label="重试分析" @click="retryAnalysis(note.id)">
 											<RefreshCw class="size-3" />
-										</Button>
-										<div class="flex-1" />
-										<Button variant="ghost" size="icon" class="size-6 text-muted-foreground/60 hover:text-destructive" aria-label="删除" @click="deleteItem(note.id)">
-											<Trash2 class="size-3" />
 										</Button>
 									</div>
 								</div>
@@ -622,39 +447,6 @@ const confirmMilestone = async () => {
 											</Button>
 										</div>
 
-										<div class="flex flex-wrap items-center gap-1">
-											<Button v-if="!isProcessed(note) && note.analysisStatus === 'suggested'" size="sm" class="h-7 gap-1.5 px-3 text-micro" @click="handleSuggestion(note)">
-												<Wand2 class="size-3" />
-												按建议处理
-											</Button>
-											<template v-if="!isProcessed(note)">
-												<Button variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="转为日记" @click="openJournalDialog(note)">
-													<BookOpen class="size-3.5" />
-													日记
-												</Button>
-												<Button variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="转为任务" @click="openTaskDialog(note)">
-													<CheckSquare class="size-3.5" />
-													任务
-												</Button>
-												<Button variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="转为里程碑" @click="openMilestoneDialog(note)">
-													<Flag class="size-3.5" />
-													里程碑
-												</Button>
-												<Button variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="保存剪藏" @click="openClipDialog(note)">
-													<Bookmark class="size-3.5" />
-													剪藏
-												</Button>
-												<Button v-if="getNoteAttachments(note.id).length > 0" variant="outline" size="sm" class="h-7 gap-1 px-2 text-micro" aria-label="查看附件" @click="handleAttachment(note)">
-													<Archive class="size-3.5" />
-													附件
-												</Button>
-											</template>
-											<div class="flex-1" />
-											<Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-micro text-muted-foreground/70 hover:text-destructive" aria-label="删除" @click="deleteItem(note.id)">
-												<Trash2 class="size-3.5" />
-												删除
-											</Button>
-										</div>
 									</div>
 								</div>
 							</div>
@@ -666,107 +458,4 @@ const confirmMilestone = async () => {
 	</div>
 </div>
 
-	<!-- Journal Dialog -->
-	<Dialog v-model:open="journalDialogOpen">
-		<DialogContent>
-			<DialogHeader>
-				<DialogTitle>写入今日日记</DialogTitle>
-				<DialogDescription>闪念会追加到今天的日记，成功后标记为已处理。</DialogDescription>
-			</DialogHeader>
-			<Textarea v-model="journalContent" class="min-h-32" />
-			<DialogFooter>
-				<Button variant="outline" @click="journalDialogOpen = false">取消</Button>
-				<Button :disabled="!journalContent.trim()" @click="confirmJournal">写入日记</Button>
-			</DialogFooter>
-		</DialogContent>
-	</Dialog>
-
-	<!-- Clip Dialog -->
-	<Dialog v-model:open="clipDialogOpen">
-		<DialogContent>
-			<DialogHeader>
-				<DialogTitle>保存为剪藏</DialogTitle>
-				<DialogDescription>剪藏会保存到 DB，成功后标记为已处理。</DialogDescription>
-			</DialogHeader>
-			<div class="space-y-3">
-				<Input v-model="clipTitle" placeholder="标题" />
-				<Input v-model="clipUrl" placeholder="URL，可为空" />
-				<Input v-model="clipSource" placeholder="来源说明，可为空" />
-				<Textarea v-model="clipContent" class="min-h-32" placeholder="摘录或正文" />
-			</div>
-			<DialogFooter>
-				<Button variant="outline" @click="clipDialogOpen = false">取消</Button>
-				<Button :disabled="!clipTitle.trim() || !clipContent.trim()" @click="confirmClip">保存剪藏</Button>
-			</DialogFooter>
-		</DialogContent>
-	</Dialog>
-
-	<!-- Task Dialog -->
-	<Dialog v-model:open="taskDialogOpen">
-		<DialogContent>
-			<DialogHeader>
-				<DialogTitle>创建任务</DialogTitle>
-				<DialogDescription>从闪念创建任务，成功后标记为已处理。</DialogDescription>
-			</DialogHeader>
-			<div class="space-y-3">
-				<Input v-model="taskTitle" placeholder="任务标题" />
-				<Select v-model="taskPriority">
-					<SelectTrigger>
-						<SelectValue placeholder="优先级" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="normal">普通</SelectItem>
-						<SelectItem value="important">重要</SelectItem>
-						<SelectItem value="urgent">紧急</SelectItem>
-					</SelectContent>
-				</Select>
-				<Textarea v-model="taskAcceptance" class="min-h-20" placeholder="完成标准 / 验收标准" />
-				<Select v-model="taskProjectId">
-					<SelectTrigger>
-						<SelectValue placeholder="选择项目（可选）" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem :value="null">无项目</SelectItem>
-						<SelectItem v-for="project in projects" :key="project.id" :value="project.id">
-							{{ project.name }}
-						</SelectItem>
-					</SelectContent>
-				</Select>
-			</div>
-			<DialogFooter>
-				<Button variant="outline" @click="taskDialogOpen = false">取消</Button>
-				<Button :disabled="!taskTitle.trim() || !taskAcceptance.trim()" @click="confirmTask">创建任务</Button>
-			</DialogFooter>
-		</DialogContent>
-	</Dialog>
-
-	<!-- Milestone Dialog -->
-	<Dialog v-model:open="milestoneDialogOpen">
-		<DialogContent>
-			<DialogHeader>
-				<DialogTitle>创建里程碑</DialogTitle>
-				<DialogDescription>从闪念创建里程碑，成功后标记为已处理。</DialogDescription>
-			</DialogHeader>
-			<div class="space-y-3">
-				<Input v-model="milestoneTitle" placeholder="里程碑标题" />
-				<Textarea v-model="milestoneGoal" class="min-h-20" placeholder="目标" />
-				<Textarea v-model="milestoneAcceptance" class="min-h-20" placeholder="完成标准 / 验收标准" />
-				<Select v-model="milestoneProjectId">
-					<SelectTrigger>
-						<SelectValue placeholder="选择项目（可选）" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem :value="null">无项目</SelectItem>
-						<SelectItem v-for="project in projects" :key="project.id" :value="project.id">
-							{{ project.name }}
-						</SelectItem>
-					</SelectContent>
-				</Select>
-			</div>
-			<DialogFooter>
-				<Button variant="outline" @click="milestoneDialogOpen = false">取消</Button>
-				<Button :disabled="!milestoneTitle.trim() || !milestoneGoal.trim() || !milestoneAcceptance.trim()" @click="confirmMilestone">创建里程碑</Button>
-			</DialogFooter>
-		</DialogContent>
-	</Dialog>
 </template>
