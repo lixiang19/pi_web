@@ -61,6 +61,7 @@ import type { WorkspaceChatConfig } from "./workspace-chat.js";
 import { createWorkspaceChatProject } from "./workspace-chat.js";
 import { createPlanningToolsExtension } from "./planning-tools.js";
 import { createConversionToolsExtension } from "./conversion-tools.js";
+import { createExaToolsExtension } from "./exa-tools.js";
 import { buildWorkspaceMemoryInjectionSync } from "./workspace-memory.js";
 import { createBundleBackedResourceLoader } from "./bundle-resource-loader.js";
 
@@ -548,6 +549,7 @@ export const createSessionResourceLoader = (record: SessionRecord) =>
 			}),
 			createPlanningToolsExtension(deps.defaultWorkspaceDir),
 			createConversionToolsExtension(deps.defaultWorkspaceDir),
+			createExaToolsExtension(),
 		],
 		});
 

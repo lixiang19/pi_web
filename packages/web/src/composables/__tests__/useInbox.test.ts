@@ -32,6 +32,23 @@ const mockGetFleetingAttachments = vi.mocked(getFleetingAttachments);
 const mockTriggerFleetingAnalysis = vi.mocked(triggerFleetingAnalysis);
 const mockUploadFleetingAttachments = vi.mocked(uploadFleetingAttachments);
 
+class MockEventSource {
+	static instances: MockEventSource[] = [];
+	url: string;
+	close = vi.fn();
+	onmessage: ((event: { data: string }) => void) | null = null;
+	onerror: (() => void) | null = null;
+
+	constructor(url: string) {
+		this.url = url;
+		MockEventSource.instances.push(this);
+	}
+
+	emit(payload: unknown) {
+		this.onmessage?.({ data: JSON.stringify(payload) });
+	}
+}
+
 const note = {
 	id: "flash-1",
 	content: "今天复盘闪念系统",
@@ -52,6 +69,8 @@ const note = {
 describe("useWorkspaceInbox", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		MockEventSource.instances = [];
+		(globalThis as unknown as { EventSource: typeof MockEventSource }).EventSource = MockEventSource;
 		mockGetFleetingNotes.mockResolvedValue({ notes: [note] });
 		mockGetFleetingAttachments.mockResolvedValue({ attachments: [] });
 		mockCreateFleetingNote.mockResolvedValue({ note });
@@ -101,15 +120,63 @@ describe("useWorkspaceInbox", () => {
 		expect("deleteItem" in store).toBe(false);
 	});
 
-	it("polls while notes are waiting for analysis", async () => {
+	it("opens the fleeting event stream when the workspace is available", async () => {
+		useWorkspaceInbox(() => "/workspace");
+		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1));
+		expect(MockEventSource.instances.at(-1)?.url).toBe("/api/fleeting/events");
+	});
+
+	it("does not poll unanalyzed or analyzing notes", async () => {
 		vi.useFakeTimers();
 		mockGetFleetingNotes.mockResolvedValue({
-			notes: [{ ...note, analysisStatus: "unanalyzed" }],
+			notes: [
+				{ ...note, id: "flash-1", analysisStatus: "unanalyzed" },
+				{ ...note, id: "flash-2", analysisStatus: "analyzing" },
+			],
 		});
 		useWorkspaceInbox(() => "/workspace");
 		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1));
-		await vi.advanceTimersByTimeAsync(3000);
-		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1);
+	});
+
+	it("updates a note from the fleeting event stream without reloading the list", async () => {
+		const store = useWorkspaceInbox(() => "/workspace");
+		await vi.waitFor(() => expect(mockGetFleetingAttachments).toHaveBeenCalledTimes(1));
+
+		MockEventSource.instances.at(-1)?.emit({
+			type: "fleeting.note.updated",
+			note: {
+				...note,
+				status: "processed",
+				analysisStatus: "processed",
+				recommendationText: "已经沉淀到剪藏",
+			},
+		});
+
+		expect(store.inboxFiles.value[0]?.status).toBe("processed");
+		expect(store.inboxFiles.value[0]?.analysisStatus).toBe("processed");
+		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1);
+		expect(mockGetFleetingAttachments).toHaveBeenCalledTimes(1);
+	});
+
+	it("updates local state from retry response without reloading or polling", async () => {
+		mockGetFleetingNotes.mockResolvedValue({
+			notes: [{ ...note, analysisStatus: "failed", lastError: "boom" }],
+		});
+		mockTriggerFleetingAnalysis.mockResolvedValue({
+			triggered: true,
+			note: { ...note, analysisStatus: "unanalyzed", lastError: null },
+		});
+		const store = useWorkspaceInbox(() => "/workspace");
+		await vi.waitFor(() => expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1));
+
+		await store.retryAnalysis("flash-1");
+
+		expect(mockTriggerFleetingAnalysis).toHaveBeenCalledWith("flash-1");
+		expect(store.inboxFiles.value[0]?.analysisStatus).toBe("unanalyzed");
+		expect(store.inboxFiles.value[0]?.lastError).toBeNull();
+		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1);
 	});
 
 	it("keeps retry analysis as the only explicit note action", async () => {
@@ -119,6 +186,6 @@ describe("useWorkspaceInbox", () => {
 		await store.retryAnalysis("flash-1");
 
 		expect(mockTriggerFleetingAnalysis).toHaveBeenCalledWith("flash-1");
-		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(2);
+		expect(mockGetFleetingNotes).toHaveBeenCalledTimes(1);
 	});
 });

@@ -44,6 +44,7 @@ export const permissionsSchema = z.object({
   default: agentPermissionSchema.optional(),
   defaults: agentPermissionSchema.optional(),
   locked: agentPermissionSchema.optional(),
+  rules: z.array(z.never()).length(0).optional(),
 }).strict();
 
 export const toolsSchema = z.object({

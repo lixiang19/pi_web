@@ -19,13 +19,11 @@ import { normalizeString } from "./utils/strings.js";
 
 export const CONVERSION_TOOL_NAMES = [
 	"convert_file_to_markdown",
-	"convert_url_to_markdown",
 ] as const;
 
 export interface ConversionToolResultDetails {
 	task: string;
 	sourcePath?: string;
-	url?: string;
 	jobId: string;
 	markdown: string;
 	artifacts: Array<{ name: string; mimeType: string; size: number }>;
@@ -38,7 +36,7 @@ export interface ConversionToolExecutorsOptions {
 	loadConfig?: () => Promise<ConversionServiceConfig | null>;
 	createClient?: (config: ConversionServiceConfig) => Pick<
 		ConversionServiceClient,
-		"createConversion" | "createConversionWithFile" | "downloadArtifacts"
+		"createConversionWithFile" | "downloadArtifacts"
 	>;
 }
 
@@ -55,11 +53,6 @@ const ConvertFileSchema = Type.Object({
 	model: Type.Optional(Type.String({ description: "可选模型 ID" })),
 	language: Type.Optional(Type.String({ description: "可选语言，如 auto、zh、en" })),
 	prompt: Type.Optional(Type.String({ description: "可选提示词，用于视觉 OCR/图片描述或音频转写" })),
-});
-
-const ConvertUrlSchema = Type.Object({
-	url: Type.String({ description: "HTTPS URL" }),
-	mimeType: Type.Optional(Type.String({ description: "可选 MIME 类型，默认 text/html" })),
 });
 
 const normalizeToolPath = async (
@@ -81,23 +74,6 @@ const normalizeToolPath = async (
 	}
 	const relativePath = path.relative(workspaceDir, absolutePath).replaceAll(path.sep, "/");
 	return { absolutePath, relativePath };
-};
-
-const ensureHttpsUrl = (value: unknown): string => {
-	const rawUrl = normalizeString(value);
-	if (!rawUrl) {
-		throw new Error("缺少 url 参数");
-	}
-	let parsed: URL;
-	try {
-		parsed = new URL(rawUrl);
-	} catch {
-		throw new Error("url 必须是合法 URL");
-	}
-	if (parsed.protocol !== "https:") {
-		throw new Error("url 只支持 HTTPS");
-	}
-	return parsed.toString();
 };
 
 const optionsFromParams = (params: Record<string, unknown>, fallback?: ConversionOptions): ConversionOptions | undefined => {
@@ -202,38 +178,6 @@ export const createConversionToolExecutors = (
 			});
 		},
 
-		async convert_url_to_markdown(params: Record<string, unknown>): Promise<ConversionToolResult> {
-			const url = ensureHttpsUrl(params.url);
-			const config = await requireConfig(loadConfig);
-			const client = createClient(config);
-			const job = await client.createConversion({
-				task: "document.markdown",
-				input: {
-					url,
-					mimeType: normalizeString(params.mimeType) || "text/html",
-				},
-				options: { engine: "markitdown" },
-				clientJobId: `pi-tool-url-${Date.now()}`,
-				metadata: {
-					source: "pi.tool",
-					url,
-				},
-				preferredFormat: "markdown",
-				waitMs: 30_000,
-			});
-			const { markdown, artifacts } = await getMarkdownArtifact(client, job);
-			return buildResult({
-				task: "document.markdown",
-				url,
-				jobId: job.jobId,
-				markdown,
-				artifacts: artifacts.map(({ artifact }) => ({
-					name: artifact.name,
-					mimeType: artifact.mimeType,
-					size: artifact.size,
-				})),
-			});
-		},
 	};
 };
 
@@ -252,13 +196,4 @@ export const createConversionToolsExtension =
 			},
 		});
 
-		pi.registerTool({
-			name: "convert_url_to_markdown",
-			label: "Convert URL To Markdown",
-			description: "调用 ridge Python Converter，将 HTTPS 网页 URL 转换为 Markdown。",
-			parameters: ConvertUrlSchema,
-			async execute(_toolCallId: string, params: Record<string, unknown>) {
-				return executors.convert_url_to_markdown(params);
-			},
-		});
 	};

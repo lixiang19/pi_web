@@ -85,6 +85,7 @@ import {
 	createFleetingAnalysisRunner,
 	createFleetingAnalysisWorker,
 } from "./fleeting-analysis.js";
+import { FleetingEventHub } from "./fleeting-events.js";
 import {
 	createTaskReviewScheduler,
 	createTaskReviewWorkers,
@@ -316,6 +317,7 @@ let graphRunner: GraphMaintenanceRunner | undefined;
 const fleetingRunnerRef: {
 	value?: ReturnType<typeof createFleetingAnalysisRunner>;
 } = {};
+const fleetingEventHub = new FleetingEventHub();
 const conversionClientRef: {
 	value?: ConversionServiceClient | null;
 } = {};
@@ -884,6 +886,7 @@ app.use("/api/fleeting", createFleetingRouter({
 	db: await initializeRidgeDb(defaultWorkspaceDir),
 	workspaceDir: defaultWorkspaceDir,
 	getAnalysisRunner: () => fleetingRunnerRef.value,
+	eventHub: fleetingEventHub,
 }));
 
 // ===== Notes API =====
@@ -2254,6 +2257,7 @@ export async function startServer() {
 		authStorage,
 		workspaceDir: defaultWorkspaceDir,
 		getConversionClient: () => conversionClientRef.value ?? undefined,
+		eventHub: fleetingEventHub,
 	});
 	fleetingAnalysisWorker.start();
 	const conversionConfig = await loadConversionServiceConfigFromDb();

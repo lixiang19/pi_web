@@ -1033,7 +1033,7 @@ export interface FleetingNote {
 	id: string;
 	content: string;
 	status: "pending" | "processing" | "processed";
-	analysisStatus: "unanalyzed" | "analyzing" | "suggested" | "failed";
+	analysisStatus: "unanalyzed" | "analyzing" | "suggested" | "failed" | "processed";
 	recommendationType: FleetingRecommendationType | null;
 	recommendationText: string | null;
 	draft: string | null;

@@ -21,6 +21,7 @@ export interface GlobalPermissionConfig {
   default?: AgentPermission;
   defaults?: AgentPermission;
   locked?: AgentPermission;
+  rules?: unknown;
 }
 
 type ToolCallEvent = PiToolCallEvent & { toolCallId?: string };
@@ -90,9 +91,12 @@ const SUBAGENT_TOOL_NAMES = new Set([
   'steer_subagent',
   'get_subagent_result',
 ]);
+const SUBAGENT_PERMISSION_TOOL_NAME = 'subagent';
 const CONVERSION_TOOL_NAMES = new Set([
   'convert_file_to_markdown',
-  'convert_url_to_markdown',
+]);
+const EXA_TOOL_NAMES = new Set([
+  'exa_get_contents',
 ]);
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -419,9 +423,12 @@ export const normalizeGlobalPermissionConfig = (
     throw new Error('Global permissions config must be an object.');
   }
 
-  const unsupportedKeys = Object.keys(value).filter(
-    (key) => key !== 'default' && key !== 'defaults' && key !== 'locked',
-  );
+  const hasEmptyLegacyRules = Array.isArray(value.rules) && value.rules.length === 0;
+  const supportedKeys = new Set(['default', 'defaults', 'locked']);
+  if (hasEmptyLegacyRules) {
+    supportedKeys.add('rules');
+  }
+  const unsupportedKeys = Object.keys(value).filter((key) => !supportedKeys.has(key));
   if (unsupportedKeys.length > 0) {
     throw new Error(
       `Unsupported global permissions config key: ${unsupportedKeys[0]}`,
@@ -648,10 +655,10 @@ export const mapToolToLogicalPermission = (
   if (PLANNING_TOOL_NAMES.has(normalized)) {
     return 'task';
   }
-  if (SUBAGENT_TOOL_NAMES.has(normalized)) {
+  if (normalized === SUBAGENT_PERMISSION_TOOL_NAME) {
     return 'subagent';
   }
-  if (CONVERSION_TOOL_NAMES.has(normalized)) {
+  if (CONVERSION_TOOL_NAMES.has(normalized) || EXA_TOOL_NAMES.has(normalized)) {
     return 'read';
   }
   return SIMPLE_PERMISSION_KEYS.has(normalized as LogicalPermissionKey)
@@ -684,10 +691,10 @@ export const extractPermissionSubject = (
   if (PLANNING_TOOL_NAMES.has(normalizedToolName)) {
     return toolName;
   }
+  if (EXA_TOOL_NAMES.has(normalizedToolName)) {
+    return getStringField(input, 'url') || '*';
+  }
   if (CONVERSION_TOOL_NAMES.has(normalizedToolName)) {
-    if (normalizedToolName === 'convert_url_to_markdown') {
-      return getStringField(input, 'url') || '*';
-    }
     const rawPath = getStringField(input, 'path');
     return rawPath ? normalizePermissionPath(cwd, rawPath) : '*';
   }
@@ -735,10 +742,10 @@ export const derivePermissionPattern = (
   if (PLANNING_TOOL_NAMES.has(normalizedToolName)) {
     return toolName;
   }
+  if (EXA_TOOL_NAMES.has(normalizedToolName)) {
+    return getStringField(input, 'url') || null;
+  }
   if (CONVERSION_TOOL_NAMES.has(normalizedToolName)) {
-    if (normalizedToolName === 'convert_url_to_markdown') {
-      return getStringField(input, 'url') || null;
-    }
     const rawPath = getStringField(input, 'path');
     return rawPath ? normalizePathRelativeToCwd(cwd, rawPath) : null;
   }
@@ -811,7 +818,7 @@ export const compileAgentPermission = (
       const normalized = normalizeString(activeToolNames[index]).toLowerCase();
       if (
         normalized === permissionKey ||
-        (permissionKey === 'read' && CONVERSION_TOOL_NAMES.has(normalized))
+        (permissionKey === 'read' && (CONVERSION_TOOL_NAMES.has(normalized) || EXA_TOOL_NAMES.has(normalized)))
       ) {
         activeToolNames.splice(index, 1);
       }
@@ -851,7 +858,10 @@ export const compileAgentPermission = (
 
     for (let index = activeToolNames.length - 1; index >= 0; index -= 1) {
       const normalized = normalizeString(activeToolNames[index]).toLowerCase();
-      if (normalized === permissionKey) {
+      if (
+        normalized === permissionKey ||
+        (permissionKey === 'read' && (CONVERSION_TOOL_NAMES.has(normalized) || EXA_TOOL_NAMES.has(normalized)))
+      ) {
         activeToolNames.splice(index, 1);
       }
     }

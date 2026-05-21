@@ -21,6 +21,9 @@ import {
 
 export type InboxItem = FleetingNote;
 export type InboxSortKey = "modified" | "created" | "name";
+export interface InboxActionOptions {
+	successToast?: boolean;
+}
 
 export const WORKSPACE_INBOX_KEY: InjectionKey<ReturnType<typeof useInboxInner>> =
 	Symbol("workspace-inbox");
@@ -66,6 +69,20 @@ function useInboxInner(workspaceDir: () => string) {
 	const sortKey = ref<InboxSortKey>("modified");
 	const attachmentsMap = ref<Record<string, FleetingAttachment[]>>({});
 	const isUploadingAttachments = ref(false);
+	let eventSource: EventSource | null = null;
+
+	const upsertNote = (note: FleetingNote) => {
+		const index = inboxFiles.value.findIndex((item) => item.id === note.id);
+		if (index >= 0) {
+			inboxFiles.value = [
+				...inboxFiles.value.slice(0, index),
+				note,
+				...inboxFiles.value.slice(index + 1),
+			];
+			return;
+		}
+		inboxFiles.value = [note, ...inboxFiles.value];
+	};
 
 	const load = async () => {
 		if (!workspaceDir()) return;
@@ -74,7 +91,6 @@ function useInboxInner(workspaceDir: () => string) {
 		try {
 			const res = await getFleetingNotes();
 			inboxFiles.value = res.notes;
-			// Load attachments for all notes
 			const newMap: Record<string, FleetingAttachment[]> = {};
 			await Promise.all(
 				res.notes.map(async (note) => {
@@ -138,11 +154,6 @@ function useInboxInner(workspaceDir: () => string) {
 		() => inboxFiles.value.filter((item) => item.status !== "processed").length,
 	);
 	const count = pendingCount;
-	const hasPendingAnalysis = computed(() =>
-		inboxFiles.value.some(
-			(item) => item.analysisStatus === "unanalyzed" || item.analysisStatus === "analyzing",
-		),
-	);
 
 	const captureNote = async (text: string, delayAnalysis?: boolean) => {
 		if (!text.trim() || !workspaceDir()) return;
@@ -153,7 +164,11 @@ function useInboxInner(workspaceDir: () => string) {
 		return response.note;
 	};
 
-	const uploadAttachments = async (noteId: string, files: File[]) => {
+	const uploadAttachments = async (
+		noteId: string,
+		files: File[],
+		options: InboxActionOptions = {},
+	) => {
 		if (!files.length || !workspaceDir()) return;
 		isUploadingAttachments.value = true;
 		try {
@@ -162,7 +177,9 @@ function useInboxInner(workspaceDir: () => string) {
 				...attachmentsMap.value,
 				[noteId]: [...(attachmentsMap.value[noteId] || []), ...res.attachments],
 			};
-			toast.success(`已上传 ${files.length} 个附件`);
+			if (options.successToast !== false) {
+				toast.success(`已上传 ${files.length} 个附件`);
+			}
 			return res.attachments;
 		} catch (err) {
 			toast.error("上传附件失败", {
@@ -174,11 +191,13 @@ function useInboxInner(workspaceDir: () => string) {
 		}
 	};
 
-	const retryAnalysis = async (id: string) => {
+	const retryAnalysis = async (id: string, options: InboxActionOptions = {}) => {
 		try {
-			await triggerFleetingAnalysis(id);
-			toast.success("已触发重新分析");
-			await load();
+			const response = await triggerFleetingAnalysis(id);
+			upsertNote(response.note);
+			if (options.successToast !== false) {
+				toast.success("已触发重新分析");
+			}
 		} catch (err) {
 			toast.error("重新分析失败", {
 				description: err instanceof Error ? err.message : String(err),
@@ -191,30 +210,40 @@ function useInboxInner(workspaceDir: () => string) {
 
 	const formatTime = (ts: number) => formatRelativeTime(ts);
 
-	watch(
-		() => workspaceDir(),
-		(dir) => {
-			if (dir) load();
-		},
-		{ immediate: true },
-	);
+	const closeEvents = () => {
+		eventSource?.close();
+		eventSource = null;
+	};
 
-	let pollTimer: number | null = null;
-	const stopPolling = () => {
-		if (pollTimer) {
-			window.clearInterval(pollTimer);
-			pollTimer = null;
-		}
+	const connectEvents = () => {
+		closeEvents();
+		if (!workspaceDir()) return;
+		eventSource = new EventSource("/api/fleeting/events");
+		eventSource.onmessage = (event) => {
+			try {
+				const payload = JSON.parse(event.data) as {
+					type?: string;
+					note?: FleetingNote;
+				};
+				if (payload.type === "fleeting.note.updated" && payload.note) {
+					upsertNote(payload.note);
+				}
+			} catch {
+				// Ignore malformed event payloads from stale connections.
+			}
+		};
+		eventSource.onerror = () => {
+			closeEvents();
+		};
 	};
 
 	watch(
-		hasPendingAnalysis,
-		(shouldPoll) => {
-			stopPolling();
-			if (shouldPoll) {
-				pollTimer = window.setInterval(() => {
-					void load();
-				}, 3000);
+		() => workspaceDir(),
+		(dir) => {
+			closeEvents();
+			if (dir) {
+				void load();
+				connectEvents();
 			}
 		},
 		{ immediate: true },
@@ -226,7 +255,7 @@ function useInboxInner(workspaceDir: () => string) {
 
 	window.addEventListener("ridge:fleeting-created", handleExternalCreated);
 	onUnmounted(() => {
-		stopPolling();
+		closeEvents();
 		window.removeEventListener("ridge:fleeting-created", handleExternalCreated);
 	});
 

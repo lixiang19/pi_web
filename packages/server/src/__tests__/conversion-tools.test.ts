@@ -8,7 +8,11 @@ import {
 	extractPermissionSubject,
 	mapToolToLogicalPermission,
 } from "../agent-permissions.js";
-import type { ConversionServiceConfig } from "../conversion-service-client.js";
+import type {
+	Artifact,
+	ConversionJob,
+	ConversionServiceConfig,
+} from "../conversion-service-client.js";
 import {
 	CONVERSION_TOOL_NAMES,
 	createConversionToolExecutors,
@@ -20,6 +24,17 @@ const config: ConversionServiceConfig = {
 	baseUrl: "https://converter.example/v1",
 	apiKey: "test-key",
 	callbackToken: "",
+};
+
+const inlineArtifactBuffer = (artifact: Artifact) =>
+	Buffer.from(artifact.content ?? "", "utf-8");
+
+const firstTextContent = (result: { content: Array<{ type: string }> }) => {
+	const content = result.content[0];
+	if (!content || content.type !== "text" || !("text" in content)) {
+		throw new Error("Expected a text tool result");
+	}
+	return content.text;
 };
 
 describe("conversion tools", () => {
@@ -46,9 +61,9 @@ describe("conversion tools", () => {
 					},
 				],
 			})),
-			downloadArtifacts: vi.fn(async (job) => job.artifacts.map((artifact) => ({
+			downloadArtifacts: vi.fn(async (job: ConversionJob) => (job.artifacts ?? []).map((artifact) => ({
 				artifact,
-				buffer: Buffer.from(artifact.content ?? "", "utf-8"),
+				buffer: inlineArtifactBuffer(artifact),
 			}))),
 		};
 		const executors = createConversionToolExecutors({
@@ -69,55 +84,12 @@ describe("conversion tools", () => {
 				waitMs: 30_000,
 			}),
 		);
-		expect(result.content[0].text).toContain("HELLO RIDGE");
+		expect(firstTextContent(result)).toContain("HELLO RIDGE");
 		expect(result.details).toMatchObject({
 			task: "image.ocr",
 			sourcePath: "scan.png",
 			markdown: "HELLO RIDGE",
 		});
-	});
-
-	it("converts an HTTPS URL through document.markdown", async () => {
-		const client = {
-			createConversion: vi.fn(async () => ({
-				jobId: "job-url",
-				status: "succeeded" as const,
-				task: "document.markdown" as const,
-				createdAt: new Date().toISOString(),
-				artifacts: [
-					{
-						artifactId: "md-1",
-						name: "article.md",
-						mimeType: "text/markdown",
-						size: 11,
-						inline: true,
-						content: "# Article",
-					},
-				],
-			})),
-			downloadArtifacts: vi.fn(async (job) => job.artifacts.map((artifact) => ({
-				artifact,
-				buffer: Buffer.from(artifact.content ?? "", "utf-8"),
-			}))),
-		};
-		const executors = createConversionToolExecutors({
-			workspaceDir: WORKSPACE,
-			loadConfig: async () => config,
-			createClient: () => client as never,
-		});
-
-		const result = await executors.convert_url_to_markdown({
-			url: "https://example.com/article",
-		});
-
-		expect(client.createConversion).toHaveBeenCalledWith(expect.objectContaining({
-			task: "document.markdown",
-			input: { url: "https://example.com/article", mimeType: "text/html" },
-			options: { engine: "markitdown" },
-			preferredFormat: "markdown",
-			waitMs: 30_000,
-		}));
-		expect(result.details.markdown).toBe("# Article");
 	});
 
 	it("rejects file paths outside the workspace", async () => {
@@ -140,29 +112,23 @@ describe("conversion tool permissions", () => {
 		}
 	});
 
-	it("uses source path or URL as permission subject", () => {
+	it("uses source path as permission subject", () => {
 		expect(extractPermissionSubject(WORKSPACE, "convert_file_to_markdown", { path: "scan.png" }))
 			.toBe("scan.png");
-		expect(extractPermissionSubject(WORKSPACE, "convert_url_to_markdown", { url: "https://example.com" }))
-			.toBe("https://example.com");
 	});
 
-	it("uses source path or URL as permission pattern", () => {
+	it("uses source path as permission pattern", () => {
 		expect(derivePermissionPattern(WORKSPACE, "convert_file_to_markdown", { path: "scan.png" }))
 			.toBe("scan.png");
-		expect(derivePermissionPattern(WORKSPACE, "convert_url_to_markdown", { url: "https://example.com" }))
-			.toBe("https://example.com");
 	});
 
 	it("removes conversion tools when read is denied", () => {
 		const policy = compileAgentPermission(WORKSPACE, { read: "deny" }, [
 			"read",
 			"convert_file_to_markdown",
-			"convert_url_to_markdown",
 		]);
 
 		expect(policy.activeToolNames).not.toContain("read");
 		expect(policy.activeToolNames).not.toContain("convert_file_to_markdown");
-		expect(policy.activeToolNames).not.toContain("convert_url_to_markdown");
 	});
 });

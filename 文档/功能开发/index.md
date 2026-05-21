@@ -64,6 +64,9 @@
 | 68 内置闪念 Agent 真实处理与 AI 主导去手动动作 | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ |
 | 69 Pi 后端转化工具 | N/A | ✅ | ✅ | N/A | ✅ | N/A | ✅ |
 | 70 内部 Agent 统一完成工具与记忆运行时 | N/A | ✅ | N/A | N/A | ✅ | N/A | ✅ |
+| 74 闪念展开详情与折叠 | ✅ | N/A | N/A | ✅ | ✅ | N/A | ✅ |
+| 75 闪念附件成功提示收敛 | ✅ | N/A | N/A | ✅ | ✅ | N/A | ✅ |
+| 76 Exa 官方 API 网页内容工具 | N/A | ✅ | N/A | N/A | ✅ | N/A | ✅ |
 
 ### 真实实现口径（2026-05-12）
 
@@ -71,7 +74,8 @@
 
 - **13 闪念临时附件生命周期**：后端 `fleeting-attachments.ts` 含 store/get/delete；`fleeting.ts` 含上传、列表和删除清理。Web 文件/音频捕捉默认走 multipart 临时附件上传到 `.ridge/fleeting-attachments/<noteId>/`，前端 `InboxView.vue` 渲染附件列表（图标+文件名+大小），人工附件处理按钮已下线。`fleeting_attachments` 表在 migration v8。已标 ✅。
 - **15/64/68 内置闪念 Agent 真实处理**：闪念创建后异步入队 `fleeting.analyze`，worker 创建内存 `AgentSession` 启动不可见内置 `fleeting-agent`。该 Agent 是真实运行 Agent，可读写工作空间、运行 bash、使用任务/里程碑规划工具，并通过统一 `complete_internal_task` 汇报 `completed/failed` 和 summary。`fleeting-agent` 配置 `visible:false`，前端 `/api/agents` 不返回，普通主会话不能选择，普通 Agent 也不能通过 `subagent` 调用；权限配置显式拒绝 `ask: deny` 与 `subagent: deny`。worker 在启动 Agent 前读取附件正文，文本/Markdown/JSON 等读取前缀，PDF/Word/音频/图片等通过 Python Converter 转 Markdown/转写/OCR，并把截断后的正文放入内部 Agent prompt。Agent 调用完成工具成功时写 `fleeting_notes.status='processed'`、`analysis_status='processed'`；主动失败时写 `analysis_status='failed'` 和 `last_error` 且 job 完成；运行异常或未调用完成工具进入后台 job 重试/最终失败路径。`fleeting-analysis.test.ts` 覆盖真实内部 Agent 会话、统一完成工具、权限裁剪、主动失败、未完成重试和附件转换正文。
-- **16/63/68 闪念 AI 主导处理边界**：`routes/fleeting.ts` 已下线 `process/journal`、`process/clip`、`process/task`、`process/milestone`、`process/attachment` 人工处理动作；默认 UI 不展示“按建议”、日记、任务、里程碑、剪藏、附件处理或删除按钮。`InboxView.vue` 保留瀑布流时间线、全部/未处理/已处理过滤、附件展示、分析状态和失败重试。`useInbox.ts` 封装加载、捕捉、附件上传和重试。`fleeting-api.test.ts` 与 `fleeting-attachments.test.ts` 覆盖手动 process 路由不暴露；`InboxView.test.ts` 覆盖手动按钮隐藏、重试保留。已标 ✅。
+- **16/63/68/74/75 闪念 AI 主导处理边界**：`routes/fleeting.ts` 已下线 `process/journal`、`process/clip`、`process/task`、`process/milestone`、`process/attachment` 人工处理动作；默认 UI 不展示“按建议”、日记、任务、里程碑、剪藏、附件处理或删除按钮。`InboxView.vue` 保留瀑布流时间线、全部/未处理/已处理过滤、附件展示、分析状态、失败重试、已处理闪念的 Agent summary 展示，以及展开态显式收起入口。附件闪念保存会串联创建、上传和触发分析，但成功反馈只展示一次。`useInbox.ts` 封装加载、捕捉、附件上传、重试和内部动作静默成功提示。`fleeting-api.test.ts` 与 `fleeting-attachments.test.ts` 覆盖手动 process 路由不暴露；`InboxView.test.ts` 覆盖手动按钮隐藏、重试保留、处理结果展示、展开后再次折叠和附件保存单成功提示。已标 ✅。
+- **76 Exa 官方 API 网页内容工具**：`convert_url_to_markdown` 已从 Pi 转换工具中移除；URL 网页正文提取改为 `exa_get_contents`，由 `packages/server/src/exa-tools.ts` 直接调用 Exa 官方 `POST /contents` API。普通 Pi 会话和内部 `fleeting-agent` 都注册该工具；闪念 prompt 明确要求 URL 闪念优先调用 `exa_get_contents` 后写入剪藏或资料 Markdown。工具读取 `app_settings.exa_api_key` 或 `EXA_API_KEY`，拒绝非 HTTP/HTTPS、localhost 和私网 URL，权限归类为 `read`。`exa-tools.test.ts` 覆盖请求体、鉴权配置、URL 边界和权限收口。已标 ✅。
 - **22 RAG 标准产物索引与 chunk**：`rag-indexer.ts` 已按 Markdown 标题、段落、表格、代码块切 chunk，并读取 `.metadata.json`；空间 `index.html` 作为 HTML 标准源进入 RAG；`search_chunks` 保存 `source_path`、`heading_path`、`content_hash`、`file_type`、`embedding_id`、`embedding_vector`、行号等来源定位字段；检索使用精确文本召回 + 本地 embedding 相似度；外部路径、`.ridge`、`.originals`、realpath 越界 symlink 不进入 RAG。`rag-standard-indexer.test.ts` 覆盖结构化 chunk、metadata、embedding、hash skip、空间 HTML、外部路径/符号链接排除和来源定位。
 - **23 RAG 更新删除移动规则**：Markdown 上传同步索引；普通 Markdown 编辑写 `refresh_policy=deferred` 并保留旧 chunk；RAG worker 每天 03:00 运行 deferred 夜间入口，显式 `rag.index` job 按 manual 重建；`POST /api/workspace/rag/refresh` 手动立即重建且校验 realpath 边界；删除文件/目录清理 RAG 表；移动/改名更新 RAG metadata；索引失败写 `notification_events`。`rag-standard-indexer.test.ts`、`rag-worker-e2e.test.ts` 和 `rag-consumer.test.ts` 覆盖手动刷新、夜间刷新、删除、移动、失败通知和默认工作空间消费链路。
 - **24 全局搜索资产导航器**：`WorkspaceSearchView.vue` 与 `GET /api/workspace/search` 保留为真实搜索能力，但主左侧固定入口不再展示「搜索」。搜索 API 聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间、RAG。后端仍支持类型/时间/目录/项目筛选给内部调用，搜索组件保持一个搜索框和扁平结果列表，不展示类型筛选、类型分组、索引状态或 Wiki/记忆/RAG 等内部名词；结果可打开文件、项目主页、任务页、会话、空间预览。`workspace-search-api.test.ts` 覆盖聚合、类型筛选、项目内 file/RAG、目录边界筛选、缺失空间入口、符号链接越界和外部项目文件内容排除；`WorkspaceSearchView.test.ts` 覆盖极简空态、异常重新整理和普通结果不暴露手动刷新。

@@ -638,4 +638,28 @@ describe("planning tool permissions", () => {
 			locked: { read: { "secrets/*": "deny" } },
 		});
 	});
+
+	it("treats an empty legacy rules array in permissions.json as no global config", async () => {
+		const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "ridge-permissions-"));
+		await fs.writeFile(
+			path.join(agentDir, "permissions.json"),
+			JSON.stringify({ rules: [] }, null, 2),
+			"utf-8",
+		);
+
+		await expect(loadGlobalPermissionConfig(agentDir)).resolves.toBeUndefined();
+	});
+
+	it("rejects non-empty legacy rules arrays in permissions.json", async () => {
+		const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "ridge-permissions-"));
+		await fs.writeFile(
+			path.join(agentDir, "permissions.json"),
+			JSON.stringify({ rules: [{ permission: "read", action: "allow" }] }, null, 2),
+			"utf-8",
+		);
+
+		await expect(loadGlobalPermissionConfig(agentDir)).rejects.toThrow(
+			"Unsupported global permissions config key: rules",
+		);
+	});
 });

@@ -11,6 +11,11 @@ import {
 	getFleetingAttachments,
 	storeFleetingAttachment,
 } from "../fleeting-attachments.js";
+import {
+	type FleetingEventHub,
+	publishFleetingNoteUpdated,
+	toPublicFleetingNote,
+} from "../fleeting-events.js";
 import type { RidgeDatabase } from "../db/index.js";
 
 type HttpError = Error & { statusCode?: number };
@@ -24,6 +29,7 @@ interface FleetingRouterDeps {
 	db: RidgeDatabase;
 	workspaceDir: string;
 	getAnalysisRunner?: () => FleetingAnalysisRunner | undefined;
+	eventHub?: FleetingEventHub;
 }
 
 const captureSchema = z.object({
@@ -67,22 +73,7 @@ const analysisSchema = z.object({
 	piSessionFile: z.string().optional(),
 });
 
-const toPublicNote = (row: Record<string, unknown>) => ({
-	id: row.note_id,
-	content: row.content,
-	status: row.status,
-	analysisStatus: row.analysis_status,
-	recommendationType: row.recommendation_type,
-	recommendationText: row.recommendation_text,
-	draft: row.draft,
-	requiresInput: row.requires_input === 1,
-	lastError: row.last_error,
-	retryCount: row.retry_count,
-	piSessionId: row.pi_session_id,
-	piSessionFile: row.pi_session_file,
-	createdAt: row.created_at,
-	updatedAt: row.updated_at,
-});
+const toPublicNote = toPublicFleetingNote;
 
 const toPublicAttachment = (row: Record<string, unknown>) => ({
 	id: row.attachment_id,
@@ -130,7 +121,7 @@ const upload = multer({
 
 export function createFleetingRouter(deps: FleetingRouterDeps) {
 	const router = express.Router();
-	const { db, workspaceDir, getAnalysisRunner } = deps;
+	const { db, workspaceDir, getAnalysisRunner, eventHub } = deps;
 
 	router.get("/", (_req: Request, res: Response, next: NextFunction) => {
 		try {
@@ -162,6 +153,22 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 		} catch (error) {
 			forwardError(error, next);
 		}
+	});
+
+	router.get("/events", (req: Request, res: Response) => {
+		res.setHeader("Content-Type", "text/event-stream");
+		res.setHeader("Cache-Control", "no-cache");
+		res.setHeader("Connection", "keep-alive");
+		res.flushHeaders();
+		res.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`);
+
+		const unsubscribe = eventHub?.subscribe((event) => {
+			res.write(`data: ${JSON.stringify(event)}\n\n`);
+		});
+
+		req.on("close", () => {
+			unsubscribe?.();
+		});
 	});
 
 	router.post("/", (req: Request, res: Response, next: NextFunction) => {
@@ -356,7 +363,7 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 		"/:noteId/analyze",
 		async (req: Request, res: Response, next: NextFunction) => {
 			try {
-				const note = getNoteOrThrow(db, req.params.noteId);
+				getNoteOrThrow(db, req.params.noteId);
 				const runner = getAnalysisRunner?.();
 				if (!runner) {
 					const error = new Error("分析服务尚未就绪，请稍后重试") as HttpError;
@@ -373,7 +380,9 @@ export function createFleetingRouter(deps: FleetingRouterDeps) {
 				).run(now, req.params.noteId);
 
 				runner.resetJob(req.params.noteId);
-				res.json({ triggered: true, note: toPublicNote({ ...note, analysis_status: "unanalyzed", updated_at: now }) });
+				const updatedNote = getNoteOrThrow(db, req.params.noteId);
+				publishFleetingNoteUpdated(eventHub, updatedNote);
+				res.json({ triggered: true, note: toPublicNote(updatedNote) });
 			} catch (error) {
 				forwardError(error, next);
 			}

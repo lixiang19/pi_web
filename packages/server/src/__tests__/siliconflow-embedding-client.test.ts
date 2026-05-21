@@ -97,17 +97,16 @@ describe("SiliconFlowEmbeddingClient", () => {
 		expect(result.vector).toEqual([1, 0]);
 	});
 
-	it("loads config from app settings with environment fallback", async () => {
-		const getSetting = vi.fn(async (key: string) => key === "siliconflow_embedding_api_key" ? "db_key" : null);
-
-		const config = await loadSiliconFlowEmbeddingConfig(getSetting, {
+	it("loads config from environment variables", async () => {
+		const config = await loadSiliconFlowEmbeddingConfig({
+			SILICONFLOW_EMBEDDING_API_KEY: "env_key",
 			SILICONFLOW_EMBEDDING_BASE_URL: "https://sf.example.com/v1",
 			SILICONFLOW_EMBEDDING_MODEL: "Custom/Embedding",
 			SILICONFLOW_EMBEDDING_DIMENSIONS: "2048",
 		});
 
 		expect(config).toMatchObject({
-			apiKey: "db_key",
+			apiKey: "env_key",
 			baseUrl: "https://sf.example.com/v1",
 			model: "Custom/Embedding",
 			dimensions: 2048,
@@ -115,6 +114,6 @@ describe("SiliconFlowEmbeddingClient", () => {
 	});
 
 	it("fails explicitly when no API key is configured", async () => {
-		await expect(loadSiliconFlowEmbeddingConfig(async () => null, {})).rejects.toBeInstanceOf(MissingEmbeddingConfigError);
+		await expect(loadSiliconFlowEmbeddingConfig({})).rejects.toBeInstanceOf(MissingEmbeddingConfigError);
 	});
 });

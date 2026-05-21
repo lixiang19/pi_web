@@ -12,6 +12,7 @@ import {
 } from "../fleeting-analysis.js";
 import { createFleetingRouter } from "../routes/fleeting.js";
 import { getFleetingAttachments } from "../fleeting-attachments.js";
+import { FleetingEventHub, type FleetingEvent } from "../fleeting-events.js";
 
 const createDb = () => {
 	const db = new Database(":memory:");
@@ -44,6 +45,7 @@ const createMockSessionFactory = (
 				"steer_subagent",
 				"get_subagent_result",
 				"create_task",
+				"exa_get_contents",
 				"complete_internal_task",
 			],
 			setActiveToolsByName: vi.fn(async (names: string[]) => {
@@ -181,10 +183,14 @@ describe("fleeting agent worker", () => {
 	it("runs a real internal agent and marks the note processed only after the completion tool is called", async () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
+		const eventHub = new FleetingEventHub();
+		const events: FleetingEvent[] = [];
+		eventHub.subscribe((event) => events.push(event));
 		const { createAgentSessionFn, activeToolNamesByCall } = createMockSessionFactory(
 			async (options, prompt) => {
 				expect(prompt).toContain("Read a great article about SQLite");
 				expect(prompt).toContain("complete_internal_task");
+				expect(prompt).toContain("exa_get_contents");
 				await options.completeInternalTask({
 					status: "completed",
 					summary: "保存到剪藏并建立后续阅读任务",
@@ -210,6 +216,7 @@ describe("fleeting agent worker", () => {
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
 			createAgentSessionFn,
+			eventHub,
 		});
 
 		worker.start();
@@ -233,6 +240,7 @@ describe("fleeting agent worker", () => {
 			"edit",
 			"bash",
 			"create_task",
+			"exa_get_contents",
 			"complete_internal_task",
 		]);
 
@@ -243,12 +251,20 @@ describe("fleeting agent worker", () => {
 			status: "completed",
 			summary: "保存到剪藏并建立后续阅读任务",
 		});
+		expect(events.map((event) => event.note.analysisStatus)).toEqual([
+			"analyzing",
+			"processed",
+		]);
+		expect(events.at(-1)?.note.status).toBe("processed");
 		db.close();
 	});
 
 	it("records an agent-declared failure without retrying the job", async () => {
 		const db = createDb();
 		const queue = createBackgroundJobQueue(db);
+		const eventHub = new FleetingEventHub();
+		const events: FleetingEvent[] = [];
+		eventHub.subscribe((event) => events.push(event));
 		const { createAgentSessionFn } = createMockSessionFactory(async (options) => {
 			await options.completeInternalTask({
 				status: "failed",
@@ -276,6 +292,7 @@ describe("fleeting agent worker", () => {
 			workspaceDir: "/tmp",
 			pollIntervalMs: 10,
 			createAgentSessionFn,
+			eventHub,
 		});
 
 		worker.start();
@@ -297,6 +314,11 @@ describe("fleeting agent worker", () => {
 			status: "failed",
 			error: "附件转换失败",
 		});
+		expect(events.map((event) => event.note.analysisStatus)).toEqual([
+			"analyzing",
+			"failed",
+		]);
+		expect(events.at(-1)?.note.lastError).toBe("附件转换失败");
 		db.close();
 	});
 

@@ -11,6 +11,7 @@ import {
 	Link,
 	Send,
 	StopCircle,
+	ChevronUp,
 	X,
 } from "lucide-vue-next";
 import { toast } from "vue-sonner";
@@ -70,6 +71,11 @@ const toggleExpanded = (noteId: string) => {
 };
 
 const isProcessed = (note: InboxItem) => note.status === "processed";
+
+const analysisSummary = (note: InboxItem) => {
+	if (note.status !== "processed" && note.analysisStatus !== "processed") return "";
+	return note.recommendationText?.trim() ?? "";
+};
 
 const hasUrl = (text: string) => /https?:\/\/\S+/.test(text);
 
@@ -183,8 +189,8 @@ const doCapture = async (type: DesktopCaptureType, text: string, files?: File[])
 				attachments: [],
 				delayAnalysis: true,
 			});
-			await uploadAttachments(String(created.note.id), files);
-			await retryAnalysis(String(created.note.id));
+			await uploadAttachments(String(created.note.id), files, { successToast: false });
+			await retryAnalysis(String(created.note.id), { successToast: false });
 		} else {
 			await captureFromDesktop({ content: text, type });
 		}
@@ -192,7 +198,7 @@ const doCapture = async (type: DesktopCaptureType, text: string, files?: File[])
 		newNoteContent.value = "";
 		selectedFiles.value = [];
 		recordedBlob.value = null;
-		toast.success("已保存闪念");
+		toast.success(files && files.length > 0 ? `已保存闪念，${files.length} 个附件已进入分析` : "已保存闪念");
 	} catch (err) {
 		toast.error("保存闪念失败", { description: err instanceof Error ? err.message : String(err) });
 	} finally {
@@ -383,6 +389,7 @@ const formatFileSize = (bytes: number) => {
 								<div
 									v-if="!expandedNotes[note.id]"
 									class="cursor-pointer"
+									data-testid="fleeting-note-collapsed"
 									@click="toggleExpanded(note.id)"
 								>
 									<div class="flex min-h-6 items-center gap-1.5">
@@ -417,11 +424,32 @@ const formatFileSize = (bytes: number) => {
 								</div>
 
 								<div v-else>
-									<div v-if="hasUrl(note.content)" class="mb-2 inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-caption font-medium text-primary">
-										<Link class="size-3.5" />
-										链接
+									<div class="mb-3 flex items-start justify-between gap-3">
+										<div class="flex flex-wrap items-center gap-2">
+											<div v-if="hasUrl(note.content)" class="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-caption font-medium text-primary">
+												<Link class="size-3.5" />
+												链接
+											</div>
+											<span class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-micro font-medium" :class="statusPillClass(note)">
+												<span class="size-1.5 rounded-full" :class="statusDotClass(note)" />
+												{{ statusLabel(note) }}
+											</span>
+											<span class="text-micro text-muted-foreground/55 tabular-nums">{{ formatTime(note.createdAt) }}</span>
+										</div>
+										<Button variant="ghost" size="icon" class="size-7 shrink-0 text-muted-foreground" aria-label="收起闪念详情" @click="toggleExpanded(note.id)">
+											<ChevronUp class="size-4" />
+										</Button>
 									</div>
-									<p class="whitespace-pre-wrap break-words text-body leading-relaxed text-foreground">{{ note.content }}</p>
+
+									<section v-if="analysisSummary(note)" class="mb-3 rounded-lg border border-primary/15 bg-primary/[0.04] px-3 py-2.5">
+										<p class="text-micro font-medium text-primary">处理结果</p>
+										<p class="mt-1 whitespace-pre-wrap break-words text-body-sm leading-relaxed text-foreground">{{ analysisSummary(note) }}</p>
+									</section>
+
+									<section>
+										<p class="mb-1.5 text-micro font-medium text-muted-foreground">原始内容</p>
+										<p class="whitespace-pre-wrap break-words text-body leading-relaxed text-foreground">{{ note.content }}</p>
+									</section>
 
 									<div v-if="getNoteAttachments(note.id).length > 0" class="mt-3 flex flex-wrap gap-1.5">
 										<span
@@ -435,18 +463,11 @@ const formatFileSize = (bytes: number) => {
 										</span>
 									</div>
 
-									<div class="mt-3 border-t border-default pt-2.5">
-										<div class="mb-2.5 flex items-center gap-2">
-											<span class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-micro font-medium" :class="statusPillClass(note)">
-												<span class="size-1.5 rounded-full" :class="statusDotClass(note)" />
-												{{ statusLabel(note) }}
-											</span>
-											<span class="text-micro text-muted-foreground/55 tabular-nums">{{ formatTime(note.createdAt) }}</span>
-											<Button v-if="!isProcessed(note) && (note.analysisStatus === 'failed' || note.lastError)" variant="ghost" size="icon" class="size-6 text-muted-foreground" aria-label="重试分析" @click="retryAnalysis(note.id)">
-												<RefreshCw class="size-3" />
-											</Button>
-										</div>
-
+									<div v-if="!isProcessed(note) && (note.analysisStatus === 'failed' || note.lastError)" class="mt-3 border-t border-default pt-2.5">
+										<Button variant="ghost" size="sm" class="h-7 gap-1.5 px-2.5 text-caption text-muted-foreground" aria-label="重试分析" @click="retryAnalysis(note.id)">
+											<RefreshCw class="size-3" />
+											重试分析
+										</Button>
 									</div>
 								</div>
 							</div>

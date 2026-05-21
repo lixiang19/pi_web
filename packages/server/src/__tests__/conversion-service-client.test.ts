@@ -8,7 +8,6 @@ import {
   generateClientJobId,
   isConvertibleExtension,
   loadConversionServiceConfig,
-  saveConversionServiceConfig,
 } from "../conversion-service-client.js";
 
 describe("ConversionServiceClient", () => {
@@ -269,20 +268,25 @@ describe("ConversionServiceClient with fake HTTP server", () => {
   });
 });
 
-describe("loadConversionServiceConfig / saveConversionServiceConfig", () => {
+describe("loadConversionServiceConfig", () => {
   it("load returns null when missing keys", async () => {
-    const config = await loadConversionServiceConfig(async () => null);
+    const config = await loadConversionServiceConfig({});
     expect(config).toBeNull();
   });
 
-  it("load returns config when all keys present", async () => {
-    const settings = new Map<string, string>();
-    await saveConversionServiceConfig(
-      async (k, v) => { settings.set(k, v); },
-      { baseUrl: "https://example.com/v1", apiKey: "key123", callbackToken: "ctok" },
-    );
-    const config = await loadConversionServiceConfig(async (k) => settings.get(k) ?? null);
-    expect(config).toEqual({ baseUrl: "https://example.com/v1", apiKey: "key123", callbackToken: "ctok" });
+  it("load returns config from environment variables", async () => {
+    const config = await loadConversionServiceConfig({
+      PYTHON_CONVERTER_BASE_URL: "https://example.com/v1",
+      PYTHON_CONVERTER_API_KEY: "key123",
+      PYTHON_CONVERTER_CALLBACK_TOKEN: "ctok",
+      PYTHON_CONVERTER_CALLBACK_BASE_URL: "https://ridge.example.com",
+    });
+    expect(config).toEqual({
+      baseUrl: "https://example.com/v1",
+      apiKey: "key123",
+      callbackToken: "ctok",
+      callbackBaseUrl: "https://ridge.example.com",
+    });
   });
 });
 

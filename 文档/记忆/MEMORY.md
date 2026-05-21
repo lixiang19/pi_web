@@ -19,7 +19,7 @@
 - [单用户认证] VPS 个人部署采用固定密码登录，登录成功后使用服务端内存 Session 和 `ridge_session` HttpOnly Cookie；除 `/api/auth/session|login|logout` 外，其余 `/api/*` 和终端 WebSocket 都必须鉴权。当前固定密码写在服务端，仓库或镜像泄露即视为密码泄露。
 - [云化架构] 多用户商业化采用“中心控制面 + 每用户专属 VPS runtime”，不是共享数据库多租户；中心只管账号、VPS、路由、升级、备份和计费，用户 workspace、Pi 会话正文、RAG、图谱和 `~/.pi/ridge.db` 留在用户 VPS。
 - [重型转换服务边界] 文档/PDF/Word/音频/图片等重型解析与转换长期由独立 Python 通用转化服务承载；文档/URL 默认走 MarkItDown，图片 OCR/描述默认走 OpenAI-compatible 视觉模型，音频转写默认走 Groq Speech to Text；MarkItDown 图片/音频、Tesseract 与 faster-whisper 只作为显式 fallback。ridge Node 后端只做 workspace 安全校验、`file_processing_status` 状态机、`background_jobs` 队列调度、产物落盘（`.md/.assets/.metadata.json/.originals`）；Node 不自研 PDF/Word/图片/音频解析栈、不内嵌模型推理。Python 服务源码已内置到 `services/converter/`，但运行时仍是独立进程/容器，按 `文档/功能开发/40-Python通用转化服务API契约.md` 对外提供 `/v1` API。
-- [Pi转化工具] Pi Agent 自定义工具 `convert_file_to_markdown` / `convert_url_to_markdown` 只调用 Python Converter 并把 Markdown 返回给 Agent，不写 workspace、不归档原文件、不更新 `file_processing_status`；正式文件产物仍走文件处理队列或闪念剪藏。工具归类为 `read` 权限，`read: deny` 时必须从可用工具移除。
+- [Pi转化工具] Pi Agent 自定义工具 `convert_file_to_markdown` 只调用 Python Converter 并把 Markdown 返回给 Agent，不写 workspace、不归档原文件、不更新 `file_processing_status`；正式文件产物仍走文件处理队列或闪念沉淀。URL 网页正文提取走 `exa_get_contents`，直接调用 Exa 官方 Contents API。两类工具都归类为 `read` 权限，`read: deny` 时必须从可用工具移除。
 - [Converter公网认证] Python Converter 虽然所有 `/v1` 请求都要求 `Authorization: Bearer <key>`，但 `dev-key` 只能用于本地 loopback 开发；绑定 `0.0.0.0` 或 production 环境必须显式配置非默认 `RIDGE_CONVERTER_API_KEYS`，并让 ridge Node 的 `python_converter_api_key` 使用同一个值。
 
 ## 规范与教训
@@ -158,7 +158,9 @@
 - [路径规范] 工作空间内部统一用绝对路径（workspaceDir 为前缀），只在调后端 API 时转为相对路径（strip workspaceDir 前缀）。CalendarView/DashboardView emit 的 open-file 路径必须也是绝对路径
 - [createNote 必须支持路径] 后端 createNote API 必须增强支持指定子目录路径，否则日记（日记/YYYY/MM/）、闪念（收件箱/）都无法正确创建
 - [闪念队列边界] 闪念 PRD 语义是 DB 队列，不是 `收件箱/*.md` 文件列表；2026-05-20 后默认产品边界改为 AI 主导，后端不再暴露 `process/*` 人工处理动作，前端不再展示按建议/日记/任务/里程碑/剪藏/附件处理/删除按钮，只保留分析失败重试。
-- [网页端闪念输入契约] 网页端闪念不是让 AI 判断是否保留；用户输入即表示要沉淀。图片进入临时附件库后作为视觉输入，不默认 OCR；录音进入临时附件库后转写 Markdown，原音频迁移到正式附件库且 YAML 引用附件地址；PDF/Word 等文档转 Markdown 但原件默认不进正式附件库；URL 默认进入剪藏/资料沉淀，剪藏 Markdown 必须记录 URL YAML。URL 转 Markdown 由后端自动做还是 Agent 调受控工具仍待定，但安全抓取必须留在后端。
+- [闪念展开详情] 已处理闪念的 `recommendationText` 是 Agent summary，展开卡片必须展示为“处理结果”；展开态要提供卡片内显式收起入口，不能只依赖时间线小圆点。
+- [闪念附件提示] 带附件保存会串联创建闪念、上传附件和触发分析；这些内部成功状态要支持静默，只由外层保存流程展示一次成功 toast，避免一次操作弹出多条绿条。
+- [网页端闪念输入契约] 网页端闪念不是让 AI 判断是否保留；用户输入即表示要沉淀。图片进入临时附件库后作为视觉输入，不默认 OCR；录音进入临时附件库后转写 Markdown，原音频迁移到正式附件库且 YAML 引用附件地址；PDF/Word 等文档转 Markdown 但原件默认不进正式附件库；URL 默认进入剪藏/资料沉淀，剪藏 Markdown 必须记录 URL YAML，正文提取由 `fleeting-agent` 调用 `exa_get_contents` 完成。
 - [闪念刷新链路] 全局闪念入口保存后必须广播前端事件或走实时通道通知收件箱 store；否则 DB 已写入但当前页面 badge/list 不会更新。后台分析建议完成前 store 需要轮询或 SSE 刷新。
 - [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
 - [首页选择器异步默认值] 首页这类长驻标签页不要只在 setup 时拷贝异步 props；模型/Agent/thinking 默认值从 core/settings 异步到达后，需要在“不覆盖用户有效选择”的前提下同步本地选择状态
