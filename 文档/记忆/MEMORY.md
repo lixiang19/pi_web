@@ -20,7 +20,7 @@
 - [云化架构] 多用户商业化采用“中心控制面 + 每用户专属 VPS runtime”，不是共享数据库多租户；中心只管账号、VPS、路由、升级、备份和计费，用户 workspace、Pi 会话正文、RAG、图谱和 `~/.pi/ridge.db` 留在用户 VPS。
 - [重型转换服务边界] 文档/PDF/Word/音频/图片等重型解析与转换长期由独立 Python 通用转化服务承载；文档/URL 默认走 MarkItDown，图片 OCR/描述默认走 OpenAI-compatible 视觉模型，音频转写默认走 Groq Speech to Text；MarkItDown 图片/音频、Tesseract 与 faster-whisper 只作为显式 fallback。ridge Node 后端只做 workspace 安全校验、`file_processing_status` 状态机、`background_jobs` 队列调度、产物落盘（`.md/.assets/.metadata.json/.originals`）；Node 不自研 PDF/Word/图片/音频解析栈、不内嵌模型推理。Python 服务源码已内置到 `services/converter/`，但运行时仍是独立进程/容器，按 `文档/功能开发/40-Python通用转化服务API契约.md` 对外提供 `/v1` API。
 - [Pi转化工具] Pi Agent 自定义工具 `convert_file_to_markdown` 只调用 Python Converter 并把 Markdown 返回给 Agent，不写 workspace、不归档原文件、不更新 `file_processing_status`；正式文件产物仍走文件处理队列或闪念沉淀。URL 网页正文提取走 `exa_get_contents`，直接调用 Exa 官方 Contents API。两类工具都归类为 `read` 权限，`read: deny` 时必须从可用工具移除。
-- [Converter公网认证] Python Converter 虽然所有 `/v1` 请求都要求 `Authorization: Bearer <key>`，但 `dev-key` 只能用于本地 loopback 开发；绑定 `0.0.0.0` 或 production 环境必须显式配置非默认 `RIDGE_CONVERTER_API_KEYS`，并让 ridge Node 的 `python_converter_api_key` 使用同一个值。
+- [Converter公网认证] Python Converter 虽然所有 `/v1` 请求都要求 `Authorization: Bearer <key>`，但 `dev-key` 只能用于本地 loopback 开发；绑定 `0.0.0.0` 或 production 环境必须显式配置非默认 `RIDGE_CONVERTER_API_KEYS`，并让 ridge Node 的 `PYTHON_CONVERTER_API_KEY` 使用同一个值。
 
 ## 规范与教训
 
@@ -95,7 +95,7 @@
 - [V2阶段2文件闭环] 文件页操作入口已收口到 `FilesView` + `useWorkspaceFiles`，支持上传、新建文件夹、重命名、移动、删除、重试和重新转换；Markdown 编辑保存必须走 `/api/files/content`，不能再走 notes API，否则会丢失 workspace 文件路径、RAG deferred 和隐藏版本点。
 - [空间隐藏版本契约] `空间/<作品名>/index.html` 可通过普通文件编辑器保存；保存走 `/api/files/content`，写入 RAG immediate pending，并通过 `workspace-version.ts` 创建隐藏版本点。预览 API 仍只负责私有 `srcdoc` 读取，不创建公开 URL。
 - [Wiki维护契约] 夜间维护顺序固定为 RAG deferred 索引 -> graph -> Wiki -> Wiki immediate RAG；Wiki agent 必须读取当前 `Wiki/**/*.md` 作为用户可编辑真源，只维护少量 canonical Markdown 页面，拒绝隐藏/越界/符号链接写入路径，空 `Wiki/index.md` 不注入。
-- [RAG向量契约] RAG embedding 使用 SiliconFlow `Qwen/Qwen3-VL-Embedding-8B`；配置从 `app_settings` 的 `siliconflow_embedding_*` 或 `SILICONFLOW_*` 环境变量读取。索引阶段缺 Key/远端失败必须写 `index_failed` 和通知；搜索阶段只允许旧 chunk 做精确文本命中，不能把历史 96 维本地 hash 向量继续混入语义相似度。
+- [RAG向量契约] RAG embedding 使用 SiliconFlow `Qwen/Qwen3-VL-Embedding-8B`；配置统一从 `.env` / `SILICONFLOW_*` 环境变量读取。索引阶段缺 Key/远端失败必须写 `index_failed` 和通知；搜索阶段只允许旧 chunk 做精确文本命中，不能把历史 96 维本地 hash 向量继续混入语义相似度。
 - [图片RAG契约] 图片原文件是 RAG 一等源：上传 `.png/.jpg/.jpeg/.webp/.bmp/.gif/.tif/.tiff` 后直接用 Qwen3-VL 图片 embedding 入库；图片 OCR 转换产物 `.md` 仍作为独立文本 RAG 源入库，二者互补，不能只依赖 OCR 代表图片 RAG。
 - [全局搜索边界] 全局搜索聚合文件、任务、里程碑、项目、会话索引、记忆、Wiki、空间和 RAG，但不搜索外部项目文件内容，也不读取 Pi 会话正文；项目注册信息可以出现，外部项目文件路径不能作为 file/RAG 结果泄露。
 - [知识诊断入口] V2 阶段 5 的知识健康状态统一从 `GET /api/workspace/knowledge/diagnostics` 读取；搜索页空查询态展示 RAG 队列/失败目标、记忆/Wiki 注入、图谱、MCP 只读工具、后台任务和通知，禁止前端另造诊断协议或伪造图谱/MCP 状态。
@@ -500,7 +500,7 @@
 - **路径安全逐级 realpath**：`assertWorkspaceSafe` 对不存在路径逐级向上 `fs.realpath` 已存在父目录，拼接 suffix，防止父级 symlink 绕过。
 - **目录删除 LIKE 必须转义**：前缀匹配清理子文件时，`%` `_` 是 SQL LIKE 通配符，必须用 `ESCAPE '\'` 配合转义。
 - **回调找不到记录返回 200**：Python 服务在回调投递失败时会指数退避重试；若 ridge 侧找不到关联记录（如文件已删除），返回 200 让 Python 侧停止重试，避免重试风暴。
-- **配置体系隔离**：Python 转换服务配置通过 `app_settings` 表（`python_converter_base_url`、`api_key`、`callback_token`、`callback_base_url`），不混用 `ridge-settings.json` 或 `getSettings()`。
+- **配置体系隔离**：Python 转换服务配置通过 `.env` / 环境变量（`PYTHON_CONVERTER_BASE_URL`、`PYTHON_CONVERTER_API_KEY`、`PYTHON_CONVERTER_CALLBACK_TOKEN`、`PYTHON_CONVERTER_CALLBACK_BASE_URL`），不混用 `ridge-settings.json` 或 `getSettings()`。
 - **manual convert API 只改状态不入队直接转换**：`POST /api/workspace/files/convert` 只把状态重置为 `pending` 并 enqueue `file.convert` job；实际转换由 worker 异步执行，避免 API 超时。
 - **callbackBaseUrl 未配置 = pure polling**：`callbackUrl` 仅在 `config.callbackBaseUrl` 存在时传入 Python 服务；未配置时 worker 纯轮询，不依赖 webhook。
 
@@ -535,7 +535,7 @@
 ### 改造要点
 
 - **契约消费**：ridge Node 后端不再自研 PDF/Word/音频/图片解析转换栈，全部迁移为调用独立 Python 通用转化服务，按 `40-Python通用转化服务API契约.md` 消费。
-- **类型与客户端**：`conversion-service-client.ts` 实现契约全部 TypeScript 类型、`ConversionServiceClient`（multipart 上传、查询、取消、产物下载/inline 解析）、`ConversionServiceError` 及 `mapErrorToRidgeAction`（按契约错误码表映射 retry 策略）、配置读写（`app_settings` 表 `python_converter_base_url` / `api_key` / `callback_token`）。
+- **类型与客户端**：`conversion-service-client.ts` 实现契约全部 TypeScript 类型、`ConversionServiceClient`（multipart 上传、查询、取消、产物下载/inline 解析）、`ConversionServiceError` 及 `mapErrorToRidgeAction`（按契约错误码表映射 retry 策略）、`.env` / 环境变量配置读取。
 - **Worker 改造**：`file-conversion-worker.ts` 重写——`processOne` 提交任务到 Python 服务（multipart + `callbackUrl` + `clientJobId`），记录 `pythonJobId`，启动补偿轮询（30s 间隔 / 10min 最大）。`handleConversionResult` 幂等，可被 worker 轮询和 webhook 回调共用：成功则下载产物、落盘、归档原文件、更新 `converted`；失败则写 `convert_failed` + `notification_events`。
 - **Webhook 路由**：`POST /api/webhooks/conversion` 带 `?token=` 验签，从 payload `metadata.ridgeFileId` 或 `clientJobId` 关联本地文件；找不到记录返回 `200` 避免 Python 服务重试风暴。
 - **产物落盘**：`writeArtifactsToWorkspace` 写入 `<name>.md`、`<name>.assets/`、`<name>.metadata.json`（追加 `_ridge` 字段），原文件归档到 `.originals/`。
@@ -547,7 +547,7 @@
 - **不要 mock Python 服务能力**：测试中可用 fake HTTP server 验证 ridge 侧契约消费，但业务实现必须是真 HTTP 客户端（`ConversionServiceClient`）。
 - **worker 与回调共用同一结果处理函数**：`handleConversionResult` 必须幂等（检查当前状态是否已是终态），避免回调和轮询同时到达导致重复落盘或状态竞争。
 - **回调找不到记录返回 200**：Python 服务在回调投递失败时会指数退避重试；若 ridge 侧找不到关联记录（如文件已删除），返回 200 可让 Python 侧停止重试，避免重试风暴。
-- **配置体系**：`index.ts` `startServer` 中使用 `loadConversionServiceConfigFromDb()` 从 `app_settings` 表读取 `python_converter_base_url`、`python_converter_api_key`、`python_converter_callback_token`、`python_converter_callback_base_url`；不再通过 `getSettings()` 读取 Python 配置。
+- **配置体系**：`index.ts` `startServer` 中使用 `loadConversionServiceConfigFromEnv()` 从 `.env` / 环境变量读取 `PYTHON_CONVERTER_BASE_URL`、`PYTHON_CONVERTER_API_KEY`、`PYTHON_CONVERTER_CALLBACK_TOKEN`、`PYTHON_CONVERTER_CALLBACK_BASE_URL`；不再通过 `getSettings()` 或 `app_settings` 读取 Python 配置。
 - **手动转换 API 已迁移**：旧 JS 自研转换栈已废弃，`POST /api/workspace/files/convert` 现在重置 `file_processing_status` 为 `pending` 并重新入队 `file.convert`，由 Python 服务 worker 执行转换。
 - **产物落盘追加 `_ridge` 而非覆盖**：`metadata.json` 中保留 Python 侧全部字段，只追加 `_ridge` 对象，符合契约“Python 侧透传未知字段”原则。
 - **轮询间隔用 sleep 而非 setTimeout**：worker `processOne` 中补偿轮询用 `await sleep(pollFallbackMs)` 顺序执行，比 setTimeout 更易控和测试。

@@ -1,7 +1,5 @@
 import crypto from "node:crypto";
 
-import { getAppSetting } from "./conversion-service-client.js";
-
 export const DEFAULT_SILICONFLOW_EMBEDDING_BASE_URL = "https://api.siliconflow.cn/v1";
 export const DEFAULT_SILICONFLOW_EMBEDDING_MODEL = "Qwen/Qwen3-VL-Embedding-8B";
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -72,36 +70,29 @@ function parsePositiveInteger(value: string | null, fallback?: number): number |
 }
 
 export async function loadSiliconFlowEmbeddingConfig(
-	getSetting: (key: string) => Promise<string | null>,
 	env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): Promise<SiliconFlowEmbeddingConfig> {
 	const apiKey =
-		await getSetting("siliconflow_embedding_api_key") ??
 		envValue(env, "SILICONFLOW_EMBEDDING_API_KEY") ??
 		envValue(env, "SILICONFLOW_API_KEY");
 	if (!apiKey) {
 		throw new MissingEmbeddingConfigError();
 	}
 	const baseUrl =
-		await getSetting("siliconflow_embedding_base_url") ??
 		envValue(env, "SILICONFLOW_EMBEDDING_BASE_URL") ??
 		envValue(env, "SILICONFLOW_BASE_URL") ??
 		DEFAULT_SILICONFLOW_EMBEDDING_BASE_URL;
 	const model =
-		await getSetting("siliconflow_embedding_model") ??
 		envValue(env, "SILICONFLOW_EMBEDDING_MODEL") ??
 		DEFAULT_SILICONFLOW_EMBEDDING_MODEL;
 	const dimensions = parsePositiveInteger(
-		await getSetting("siliconflow_embedding_dimensions") ??
 		envValue(env, "SILICONFLOW_EMBEDDING_DIMENSIONS"),
 	);
 	const timeoutMs = parsePositiveInteger(
-		await getSetting("siliconflow_embedding_timeout_ms") ??
 		envValue(env, "SILICONFLOW_EMBEDDING_TIMEOUT_MS"),
 		DEFAULT_TIMEOUT_MS,
 	) ?? DEFAULT_TIMEOUT_MS;
 	const maxRetries = parsePositiveInteger(
-		await getSetting("siliconflow_embedding_max_retries") ??
 		envValue(env, "SILICONFLOW_EMBEDDING_MAX_RETRIES"),
 		DEFAULT_MAX_RETRIES,
 	) ?? DEFAULT_MAX_RETRIES;
@@ -115,8 +106,8 @@ export async function loadSiliconFlowEmbeddingConfig(
 	};
 }
 
-export async function loadSiliconFlowEmbeddingConfigFromDb(): Promise<SiliconFlowEmbeddingConfig> {
-	return loadSiliconFlowEmbeddingConfig(getAppSetting);
+export async function loadSiliconFlowEmbeddingConfigFromEnv(): Promise<SiliconFlowEmbeddingConfig> {
+	return loadSiliconFlowEmbeddingConfig(process.env);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -248,5 +239,5 @@ export class SiliconFlowEmbeddingClient implements RagEmbeddingProvider {
 }
 
 export async function createSiliconFlowEmbeddingProvider(): Promise<RagEmbeddingProvider> {
-	return new SiliconFlowEmbeddingClient(await loadSiliconFlowEmbeddingConfigFromDb());
+	return new SiliconFlowEmbeddingClient(await loadSiliconFlowEmbeddingConfigFromEnv());
 }

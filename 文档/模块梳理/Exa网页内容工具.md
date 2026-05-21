@@ -18,9 +18,10 @@ Exa 网页内容工具负责把公开网页 URL 的正文提取交给 Exa 官方
 
 ## 配置
 
-- 优先读取 `app_settings.exa_api_key`。
-- 未配置 DB 值时读取环境变量 `EXA_API_KEY`。
-- `exa_base_url` / `EXA_BASE_URL` 可覆盖默认 `https://api.exa.ai`。
+- 只读取环境变量，可写入仓库根目录 `.env`。
+- `EXA_API_KEY`：必填 API Key。
+- `EXA_BASE_URL`：可选，默认 `https://api.exa.ai`。
+- 由 `packages/server/src/env.ts` 在 server 启动时加载 `.env` / `.env.local`。
 
 ## 工具
 

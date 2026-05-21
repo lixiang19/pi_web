@@ -21,6 +21,22 @@ describe("auth state", () => {
 		expect(authState.authenticated).toBe(false);
 	});
 
+	it("keeps the app renderable when the session check fails", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: false,
+				status: 502,
+				text: async () => "Bad Gateway",
+			}),
+		);
+		const { authState, ensureAuthSession } = await import("../auth");
+
+		await expect(ensureAuthSession()).resolves.toBe(false);
+		expect(authState.checked).toBe(true);
+		expect(authState.authenticated).toBe(false);
+	});
+
 	it("marks the user authenticated after password login", async () => {
 		vi.stubGlobal(
 			"fetch",

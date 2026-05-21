@@ -155,16 +155,16 @@ export async function searchContent(
 
 默认模型为 `Qwen/Qwen3-VL-Embedding-8B`，默认 endpoint 为 `https://api.siliconflow.cn/v1/embeddings`。
 
-配置来源优先级：`app_settings` 高于环境变量。
+配置来源统一为环境变量，可写入仓库根目录 `.env`。
 
-| app_settings key | 环境变量 | 说明 |
-|------------------|----------|------|
-| `siliconflow_embedding_api_key` | `SILICONFLOW_EMBEDDING_API_KEY` 或 `SILICONFLOW_API_KEY` | 必填 API Key |
-| `siliconflow_embedding_base_url` | `SILICONFLOW_EMBEDDING_BASE_URL` 或 `SILICONFLOW_BASE_URL` | 可选，默认 `https://api.siliconflow.cn/v1` |
-| `siliconflow_embedding_model` | `SILICONFLOW_EMBEDDING_MODEL` | 可选，默认 `Qwen/Qwen3-VL-Embedding-8B` |
-| `siliconflow_embedding_dimensions` | `SILICONFLOW_EMBEDDING_DIMENSIONS` | 可选，传给 Qwen/Qwen3 系列 dimensions |
-| `siliconflow_embedding_timeout_ms` | `SILICONFLOW_EMBEDDING_TIMEOUT_MS` | 可选，默认 30000 |
-| `siliconflow_embedding_max_retries` | `SILICONFLOW_EMBEDDING_MAX_RETRIES` | 可选，默认 2 |
+| 环境变量 | 说明 |
+|----------|------|
+| `SILICONFLOW_EMBEDDING_API_KEY` 或 `SILICONFLOW_API_KEY` | 必填 API Key |
+| `SILICONFLOW_EMBEDDING_BASE_URL` 或 `SILICONFLOW_BASE_URL` | 可选，默认 `https://api.siliconflow.cn/v1` |
+| `SILICONFLOW_EMBEDDING_MODEL` | 可选，默认 `Qwen/Qwen3-VL-Embedding-8B` |
+| `SILICONFLOW_EMBEDDING_DIMENSIONS` | 可选，传给 Qwen/Qwen3 系列 dimensions |
+| `SILICONFLOW_EMBEDDING_TIMEOUT_MS` | 可选，默认 30000 |
+| `SILICONFLOW_EMBEDDING_MAX_RETRIES` | 可选，默认 2 |
 
 索引阶段缺少配置或远端失败会把目标写为 `index_failed` 并产生 `rag.index_failed` 通知，不静默标记成功。搜索阶段如果 embedding 查询向量不可用，只返回精确文本命中的旧 chunk，不把历史 96 维本地 hash 向量继续用于语义相似度。精确文本匹配必须下推到 SQL 并覆盖整个工作空间，向量相似度候选也必须覆盖全部兼容 embedding chunk，禁止用“最新 N 条 chunk”作为候选全集。
 

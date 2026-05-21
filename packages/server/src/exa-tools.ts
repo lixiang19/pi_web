@@ -1,6 +1,5 @@
 import { Type } from "@sinclair/typebox";
 import type { AgentToolResult, ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getAppSetting } from "./conversion-service-client.js";
 import { normalizeString } from "./utils/strings.js";
 
 export const EXA_TOOL_NAMES = ["exa_get_contents"] as const;
@@ -81,15 +80,15 @@ const ensurePublicHttpUrl = (value: unknown): string => {
 	return parsed.toString();
 };
 
-export async function loadExaToolsConfigFromDb(): Promise<ExaToolsConfig | null> {
-	const dbApiKey = await getAppSetting("exa_api_key");
-	const apiKey = normalizeString(dbApiKey || process.env.EXA_API_KEY);
+export async function loadExaToolsConfigFromEnv(
+	env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): Promise<ExaToolsConfig | null> {
+	const apiKey = normalizeString(env.EXA_API_KEY);
 	if (!apiKey) {
 		return null;
 	}
-	const dbBaseUrl = await getAppSetting("exa_base_url");
 	const baseUrl = normalizeBaseUrl(
-		normalizeString(dbBaseUrl || process.env.EXA_BASE_URL) || DEFAULT_EXA_BASE_URL,
+		normalizeString(env.EXA_BASE_URL) || DEFAULT_EXA_BASE_URL,
 	);
 	return { apiKey, baseUrl };
 }
@@ -123,7 +122,7 @@ const buildResult = (details: ExaGetContentsResultDetails): ExaGetContentsResult
 export const createExaToolExecutors = (
 	options: ExaToolExecutorsOptions = {},
 ) => {
-	const loadConfig = options.loadConfig ?? loadExaToolsConfigFromDb;
+	const loadConfig = options.loadConfig ?? loadExaToolsConfigFromEnv;
 	const fetchImpl = options.fetchImpl ?? fetch;
 
 	return {
@@ -131,7 +130,7 @@ export const createExaToolExecutors = (
 			const url = ensurePublicHttpUrl(params.url);
 			const config = await loadConfig();
 			if (!config) {
-				throw new Error("Exa API 未配置：缺少 exa_api_key 或 EXA_API_KEY");
+				throw new Error("Exa API 未配置：缺少 EXA_API_KEY");
 			}
 
 			const response = await fetchImpl(`${normalizeBaseUrl(config.baseUrl)}/contents`, {

@@ -23,10 +23,16 @@ export async function ensureAuthSession() {
 	if (authState.checked) {
 		return authState.authenticated;
 	}
-	const session = await getAuthSession();
+	let authenticated = false;
+	try {
+		const session = await getAuthSession();
+		authenticated = session.authenticated;
+	} catch (error) {
+		console.warn("Failed to check auth session", error);
+	}
 	authState.checked = true;
-	authState.authenticated = session.authenticated;
-	void syncDesktopStatus(navigator.onLine, session.authenticated);
+	authState.authenticated = authenticated;
+	void syncDesktopStatus(navigator.onLine, authenticated);
 	return authState.authenticated;
 }
 

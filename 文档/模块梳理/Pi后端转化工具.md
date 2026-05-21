@@ -23,7 +23,8 @@
 
 ## 边界
 
-- 转换工具直接读取 `app_settings` 中的 `python_converter_base_url` / `python_converter_api_key`；未配置时明确报错。
+- 转换工具直接读取环境变量 `PYTHON_CONVERTER_BASE_URL` / `PYTHON_CONVERTER_API_KEY`；可写入仓库根目录 `.env`。未配置时明确报错。
+- 可选读取 `PYTHON_CONVERTER_CALLBACK_TOKEN` / `PYTHON_CONVERTER_CALLBACK_BASE_URL`。
 - 文件工具不接收 workspace 外路径，也不读取 `.ridge` 等隐藏系统目录之外的文件处理契约。
 - 工具返回 Markdown 给 Agent，不写 workspace 文件；若要写正式产物，仍走文件处理队列或由 Agent 后续显式写入。旧的闪念人工剪藏动作已移除。
 - URL 网页内容提取不再走 Python Converter；见 `Exa网页内容工具.md`。

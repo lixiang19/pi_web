@@ -1,3 +1,4 @@
+import "./env.js";
 import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -102,7 +103,7 @@ import {
 import { createConversionWebhookRouter } from "./routes/conversion-webhook.js";
 import {
 	ConversionServiceClient,
-	loadConversionServiceConfigFromDb,
+	loadConversionServiceConfigFromEnv,
 } from "./conversion-service-client.js";
 import { createFileConversionWorker } from "./file-conversion-worker.js";
 import { createRagWorker } from "./rag-worker.js";
@@ -2260,7 +2261,7 @@ export async function startServer() {
 		eventHub: fleetingEventHub,
 	});
 	fleetingAnalysisWorker.start();
-	const conversionConfig = await loadConversionServiceConfigFromDb();
+	const conversionConfig = await loadConversionServiceConfigFromEnv();
 	const conversionClient = conversionConfig
 		? new ConversionServiceClient({
 			baseUrl: conversionConfig.baseUrl,

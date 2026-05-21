@@ -13,7 +13,7 @@ Python Converter 的 URL 转 Markdown 对 JS-heavy、反爬和动态页面不稳
   - `packages/server/src/exa-tools.ts` 调用 `POST https://api.exa.ai/contents`。
   - header 使用 `x-api-key`。
   - body 使用 `{ urls: [url], text: true }`。
-  - 配置读取 `app_settings.exa_api_key`，回退 `EXA_API_KEY`；`exa_base_url` / `EXA_BASE_URL` 可覆盖默认 base URL。
+  - 配置读取 `.env` / 环境变量 `EXA_API_KEY`；`EXA_BASE_URL` 可覆盖默认 base URL。
   - 拒绝非 HTTP/HTTPS、localhost 和私网 URL。
 - 注册范围：
   - 普通会话 `createSessionResourceLoader` 注册 `createExaToolsExtension()`。

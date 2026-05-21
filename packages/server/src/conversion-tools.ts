@@ -5,7 +5,7 @@ import type { ExtensionAPI, AgentToolResult } from "@mariozechner/pi-coding-agen
 import {
 	ConversionServiceClient,
 	deriveTaskFromExtension,
-	loadConversionServiceConfigFromDb,
+	loadConversionServiceConfigFromEnv,
 	type ConversionJob,
 	type ConversionOptions,
 	type ConversionServiceConfig,
@@ -128,7 +128,7 @@ const requireConfig = async (
 ): Promise<ConversionServiceConfig> => {
 	const config = await loadConfig();
 	if (!config) {
-		throw new Error("Python 转化服务未配置：缺少 python_converter_base_url 或 python_converter_api_key");
+		throw new Error("Python 转化服务未配置：缺少 PYTHON_CONVERTER_BASE_URL 或 PYTHON_CONVERTER_API_KEY");
 	}
 	return config;
 };
@@ -136,7 +136,7 @@ const requireConfig = async (
 export const createConversionToolExecutors = (
 	options: ConversionToolExecutorsOptions,
 ) => {
-	const loadConfig = options.loadConfig ?? loadConversionServiceConfigFromDb;
+	const loadConfig = options.loadConfig ?? loadConversionServiceConfigFromEnv;
 	const createClient = options.createClient ?? ((config: ConversionServiceConfig) =>
 		new ConversionServiceClient({
 			baseUrl: config.baseUrl,

@@ -488,15 +488,23 @@ export function parseInlineArtifact(artifact: Artifact): Buffer {
   }
 }
 
+const envValue = (
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  key: string,
+): string | null => {
+  const value = env[key]?.trim();
+  return value ? value : null;
+};
+
 // === 配置加载 ===
 
 export async function loadConversionServiceConfig(
-  getSetting: (key: string) => Promise<string | null>,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): Promise<ConversionServiceConfig | null> {
-  const baseUrl = await getSetting("python_converter_base_url");
-  const apiKey = await getSetting("python_converter_api_key");
-  const callbackToken = await getSetting("python_converter_callback_token");
-  const callbackBaseUrl = await getSetting("python_converter_callback_base_url");
+  const baseUrl = envValue(env, "PYTHON_CONVERTER_BASE_URL");
+  const apiKey = envValue(env, "PYTHON_CONVERTER_API_KEY");
+  const callbackToken = envValue(env, "PYTHON_CONVERTER_CALLBACK_TOKEN");
+  const callbackBaseUrl = envValue(env, "PYTHON_CONVERTER_CALLBACK_BASE_URL");
 
   if (!baseUrl || !apiKey) {
     return null;
@@ -510,54 +518,8 @@ export async function loadConversionServiceConfig(
   };
 }
 
-export async function saveConversionServiceConfig(
-  setSetting: (key: string, value: string) => Promise<void>,
-  config: ConversionServiceConfig,
-): Promise<void> {
-  await setSetting("python_converter_base_url", config.baseUrl);
-  await setSetting("python_converter_api_key", config.apiKey);
-  await setSetting("python_converter_callback_token", config.callbackToken);
-  if (config.callbackBaseUrl) {
-    await setSetting("python_converter_callback_base_url", config.callbackBaseUrl);
-  }
-}
-
-// === DB 层配置读写（不依赖 Settings 类型） ===
-
-import { getRidgeDb } from "./db/index.js";
-
-export async function getAppSetting(key: string): Promise<string | null> {
-  const db = await getRidgeDb();
-  const row = db
-    .prepare("SELECT value_json FROM app_settings WHERE key = ?")
-    .get(key) as { value_json: string } | undefined;
-  if (!row) return null;
-  try {
-    const parsed = JSON.parse(row.value_json);
-    if (typeof parsed === "string") return parsed;
-    return String(parsed);
-  } catch {
-    return null;
-  }
-}
-
-export async function setAppSetting(key: string, value: string): Promise<void> {
-  const db = await getRidgeDb();
-  db.prepare(
-    `INSERT INTO app_settings(key, value_json, updated_at)
-     VALUES(?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       value_json = excluded.value_json,
-       updated_at = excluded.updated_at`,
-  ).run(key, JSON.stringify(value), Date.now());
-}
-
-export async function loadConversionServiceConfigFromDb(): Promise<ConversionServiceConfig | null> {
-  return loadConversionServiceConfig(getAppSetting);
-}
-
-export async function saveConversionServiceConfigToDb(config: ConversionServiceConfig): Promise<void> {
-  return saveConversionServiceConfig(setAppSetting, config);
+export async function loadConversionServiceConfigFromEnv(): Promise<ConversionServiceConfig | null> {
+  return loadConversionServiceConfig(process.env);
 }
 
 // === 路径工具 ===
