@@ -158,6 +158,7 @@
 - [路径规范] 工作空间内部统一用绝对路径（workspaceDir 为前缀），只在调后端 API 时转为相对路径（strip workspaceDir 前缀）。CalendarView/DashboardView emit 的 open-file 路径必须也是绝对路径
 - [createNote 必须支持路径] 后端 createNote API 必须增强支持指定子目录路径，否则日记（日记/YYYY/MM/）、闪念（收件箱/）都无法正确创建
 - [闪念队列边界] 闪念 PRD 语义是 DB 队列，不是 `收件箱/*.md` 文件列表；2026-05-20 后默认产品边界改为 AI 主导，后端不再暴露 `process/*` 人工处理动作，前端不再展示按建议/日记/任务/里程碑/剪藏/附件处理/删除按钮，只保留分析失败重试。
+- [网页端闪念输入契约] 网页端闪念不是让 AI 判断是否保留；用户输入即表示要沉淀。图片进入临时附件库后作为视觉输入，不默认 OCR；录音进入临时附件库后转写 Markdown，原音频迁移到正式附件库且 YAML 引用附件地址；PDF/Word 等文档转 Markdown 但原件默认不进正式附件库；URL 默认进入剪藏/资料沉淀，剪藏 Markdown 必须记录 URL YAML。URL 转 Markdown 由后端自动做还是 Agent 调受控工具仍待定，但安全抓取必须留在后端。
 - [闪念刷新链路] 全局闪念入口保存后必须广播前端事件或走实时通道通知收件箱 store；否则 DB 已写入但当前页面 badge/list 不会更新。后台分析建议完成前 store 需要轮询或 SSE 刷新。
 - [checkbox 回写] checkbox 来源的待办任务切换完成状态不能只更新 DB；必须回写 .md 文件对应行的 `- [ ]` ↔ `- [x]`，否则刷新后状态丢失
 - [首页选择器异步默认值] 首页这类长驻标签页不要只在 setup 时拷贝异步 props；模型/Agent/thinking 默认值从 core/settings 异步到达后，需要在“不覆盖用户有效选择”的前提下同步本地选择状态
