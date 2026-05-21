@@ -3,42 +3,32 @@ import { ensureAuthSession } from "@/lib/auth";
 import LoginPage from "@/pages/LoginPage.vue";
 import NotFoundPage from "@/pages/NotFoundPage.vue";
 import WorkspacePage from "@/pages/WorkspacePage.vue";
-import InboxPrototypePage from "@/pages/prototype/InboxPrototypePage.vue";
-
 const router = createRouter({
-	history: createWebHistory(),
-	routes: [
-		{
-			path: "/login",
-			name: "login",
-			component: LoginPage,
-			meta: {
-				title: "登录",
-			},
-		},
-		{
-			path: "/",
-			name: "workspace",
-			component: WorkspacePage,
-			meta: {
-				title: "工作空间",
-				description: "个人内容平台：笔记、待办、日历、白板、数据库。",
-			},
-		},
-		{
-			path: "/prototype/inbox",
-			name: "prototype-inbox",
-			component: InboxPrototypePage,
-			meta: {
-				title: "[原型] 闪念页面",
-			},
-		},
-		{
-			path: "/:pathMatch(.*)*",
-			name: "not-found",
-			component: NotFoundPage,
-		},
-	],
+ history: createWebHistory(),
+ routes: [
+  {
+   path: "/login",
+   name: "login",
+   component: LoginPage,
+   meta: {
+    title: "登录",
+   },
+  },
+  {
+   path: "/",
+   name: "workspace",
+   component: WorkspacePage,
+   meta: {
+    title: "工作空间",
+    description: "个人内容平台：笔记、待办、日历、白板、数据库。",
+   },
+  },
+  {
+   path: "/:pathMatch(.*)*",
+   name: "not-found",
+   component: NotFoundPage,
+  },
+ ],
 });
 
 router.beforeEach(async (to) => {
